@@ -1,5 +1,6 @@
 package br.com.cshub.taxify.common;
 
+import br.com.cshub.taxify.domain.AbstractAuditingEntity;
 import br.com.cshub.taxify.exception.ResourceNotFoundException;
 import br.com.cshub.taxify.search.AbstractsSpecification;
 import br.com.cshub.taxify.search.SearchCriteriaUtil;
@@ -10,7 +11,7 @@ import org.springframework.transaction.annotation.Transactional;
 
 import java.io.Serializable;
 
-public abstract class AbstractCrudService<E, ID extends Serializable, M, F> implements Serializable {
+public abstract class AbstractCrudService<E extends AbstractAuditingEntity, ID extends Serializable, M, F> implements Serializable {
 
     private String messageNotFound = "error.entity.not.found";
 
@@ -118,7 +119,8 @@ public abstract class AbstractCrudService<E, ID extends Serializable, M, F> impl
     @Transactional
     public void delete(ID id) {
         var entity = findCheckById(id);
-        repository.delete(entity);
+        entity.setDeleted(true);
+        repository.save(entity);
     }
 
     public void setMessageNotFound(String messageNotFound) {
