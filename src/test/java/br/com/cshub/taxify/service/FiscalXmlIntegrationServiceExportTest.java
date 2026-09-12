@@ -8,6 +8,7 @@ import br.com.cshub.taxify.dto.fiscalxml.FiscalXmlItemDTO;
 import br.com.cshub.taxify.dto.sieg.XmlDownloadFilterDTO;
 import br.com.cshub.taxify.enumerated.DocumentTypeEnum;
 import br.com.cshub.taxify.integration.fiscalxml.FiscalXmlPackageExtractor;
+import br.com.cshub.taxify.integration.fiscalxml.FiscalXmlSyncProperties;
 import br.com.cshub.taxify.integration.sieg.FiscalXmlFileStorage;
 import br.com.cshub.taxify.integration.sieg.FiscalXmlMetadataParser;
 import br.com.cshub.taxify.integration.sieg.SiegClient;
@@ -102,12 +103,12 @@ class FiscalXmlIntegrationServiceExportTest {
         company.setDocument(new Document("11594485000105", DocumentTypeEnum.CNPJ));
         lenient().when(companyValidation.checkExist(companyId)).thenReturn(company);
 
-        SiegProperties properties = new SiegProperties();
-        properties.setXmlStoragePath(tempDir.toString());
+        FiscalXmlSyncProperties properties = new FiscalXmlSyncProperties();
+        properties.setStoragePath(tempDir.toString());
 
         service = new FiscalXmlIntegrationService(siegClient, new FiscalXmlMetadataParser(),
                 new FiscalXmlFileStorage(properties, messageService), new FiscalXmlPackageExtractor(),
-                xmlDocumentRepository, syncControlRepository, companyValidation, messageService, properties);
+                xmlDocumentRepository, syncControlRepository, companyValidation, messageService, new SiegProperties());
     }
 
     @Test
