@@ -98,7 +98,7 @@ public class FiscalXmlIntegrationService {
 
         SiegBaixarXmlsRequest request = new SiegBaixarXmlsRequest(
                 filter.xmlType(),
-                normalizeTake(filter.take()),
+                filter.take(),
                 normalizeSkip(filter.skip()),
                 startOfDayUtc(filter.dataEmissaoInicio()),
                 endOfDayUtc(filter.dataEmissaoFim()),
@@ -529,13 +529,6 @@ public class FiscalXmlIntegrationService {
         }
 
         return companyValidation.checkExist(id);
-    }
-
-    private Integer normalizeTake(Integer take) {
-        if (take == null || take <= 0 || take > properties.getMaxTakePerRequest()) {
-            return properties.getMaxTakePerRequest();
-        }
-        return take;
     }
 
     private Integer normalizeSkip(Integer skip) {

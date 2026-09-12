@@ -50,6 +50,9 @@ public class SecurityConfig {
                                 .requestMatchers(HttpMethod.POST, base + "/auth").permitAll()
                                 .requestMatchers(HttpMethod.POST, base + "/users").permitAll()
                                     .requestMatchers("/v3/api-docs/**", "/swagger-ui.html", "/swagger-ui/**").permitAll()
+                                // Actuator health/prometheus - see application.yaml's management.endpoints
+                                // comment for why only these two are exposed.
+                                .requestMatchers("/actuator/health", "/actuator/prometheus").permitAll()
                                 // Manipulação (criar/editar/excluir) de empresas, usuários (e seus
                                 // vínculos com empresas), planos, assinaturas e regras fiscais é
                                 // restrita a ADMIN - leitura (GET) continua liberada pra qualquer

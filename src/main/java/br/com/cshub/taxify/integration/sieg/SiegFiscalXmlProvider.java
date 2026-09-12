@@ -32,7 +32,7 @@ public class SiegFiscalXmlProvider implements FiscalXmlProvider {
                 TIPO_XML_NFE,
                 request.dataEmissaoInicio(),
                 request.dataEmissaoFim(),
-                properties.getMaxTakePerRequest(),
+                50,
                 request.alreadyImportedCount(),
                 null
         );

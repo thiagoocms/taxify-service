@@ -31,6 +31,7 @@ services:
         condition: service_healthy
     environment:
       SERVER_PORT: 5000
+      SPRING_PROFILES_ACTIVE: test
       DB_HOST: mysql
       DB_PORT: 3306
       DB_NAME: ${DB_NAME:-taxify_dev}
@@ -40,7 +41,7 @@ services:
       SIEG_CLIENT_SECRET: ${SIEG_CLIENT_SECRET}
       FISCAL_XML_STORAGE_PATH: /data/fiscal-xml
       FISCAL_XML_SYNC_ENABLED: true
-      FISCAL_XML_SYNC_CRON: 0 0/10 * * * *
+      FISCAL_XML_SYNC_CRON: 0 0/1 * * * *
       FISCAL_XML_SYNC_BATCH_SIZE: 2
       FISCAL_XML_SYNC_PROVIDER: sieg
       FISCAL_XML_RECTIFICATION_ENABLED: true
@@ -67,6 +68,52 @@ services:
     ports:
       - "8080:80"
 
+  # Scrapes /actuator/prometheus off the backend's management port (8081, internal-only -
+  # see application.yaml) every 15s. Not published to the host: only Grafana and anyone
+  # exec'd into the taxify network need to reach it.
+  prometheus:
+    image: prom/prometheus:v3.0.1
+    container_name: taxify-prometheus
+    restart: unless-stopped
+    # route-prefix/external-url: the frontend's nginx proxies this at /prometheus/ (see
+    # taxify-front/nginx.conf) without stripping the prefix, so Prometheus itself needs to
+    # know it's mounted there too, or its own asset/links break.
+    command:
+      - --config.file=/etc/prometheus/prometheus.yml
+      - --storage.tsdb.path=/prometheus
+      - --web.console.libraries=/usr/share/prometheus/console_libraries
+      - --web.console.templates=/usr/share/prometheus/consoles
+      - --web.external-url=/prometheus/
+      - --web.route-prefix=/prometheus/
+    volumes:
+      - ./monitoring/prometheus.yml:/etc/prometheus/prometheus.yml:ro
+      - taxify_prometheus_data:/prometheus
+    ports:
+      - "9090:9090"
+
+  # Datasource is pre-provisioned (monitoring/grafana-datasource.yml) so Prometheus shows
+  # up ready to use - only the dashboards themselves need building in the UI.
+  grafana:
+    image: grafana/grafana:11.4.0
+    container_name: taxify-grafana
+    restart: unless-stopped
+    depends_on:
+      - prometheus
+    environment:
+      GF_SECURITY_ADMIN_PASSWORD: ${GRAFANA_ADMIN_PASSWORD:-admin}
+      # nginx proxies this at /grafana/ (see taxify-front/nginx.conf), stripping the
+      # prefix before forwarding - these two make Grafana generate its own asset/redirect
+      # URLs assuming that same prefix, instead of breaking under it.
+      GF_SERVER_ROOT_URL: ${GRAFANA_ROOT_URL:-http://localhost:8080/grafana/}
+      GF_SERVER_SERVE_FROM_SUB_PATH: "true"
+    volumes:
+      - taxify_grafana_data:/var/lib/grafana
+      - ./monitoring/grafana-datasource.yml:/etc/grafana/provisioning/datasources/prometheus.yml:ro
+    ports:
+      - "3000:3000"
+
 volumes:
   taxify_mysql_data:
   taxify_fiscal_xml:
+  taxify_prometheus_data:
+  taxify_grafana_data:

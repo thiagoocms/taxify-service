@@ -12,9 +12,6 @@ public class SiegProperties {
     private String clientSecret;
     private String tokenUrl;
     private int maxRequestsPerMinute = 2;
-    private int maxTakePerRequest = 100;
-    private String xmlStoragePath = "./data/fiscal-xml";
-
     public String getBaseUrl() {
         return baseUrl;
     }
@@ -53,21 +50,5 @@ public class SiegProperties {
 
     public void setMaxRequestsPerMinute(int maxRequestsPerMinute) {
         this.maxRequestsPerMinute = maxRequestsPerMinute;
-    }
-
-    public int getMaxTakePerRequest() {
-        return maxTakePerRequest;
-    }
-
-    public void setMaxTakePerRequest(int maxTakePerRequest) {
-        this.maxTakePerRequest = maxTakePerRequest;
-    }
-
-    public String getXmlStoragePath() {
-        return xmlStoragePath;
-    }
-
-    public void setXmlStoragePath(String xmlStoragePath) {
-        this.xmlStoragePath = xmlStoragePath;
     }
 }

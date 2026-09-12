@@ -29,10 +29,6 @@ public class SiegTokenService {
 
     private volatile CachedToken cachedToken;
 
-    // @Lazy: sieg.token-url is blank whenever OAuth isn't configured, which makes Feign's
-    // FeignClientFactoryBean fall back to load-balanced target resolution and fail eagerly
-    // at context startup with "No Feign Client for loadBalancing defined". Deferring
-    // resolution until isConfigured() actually lets a call through avoids that.
     public SiegTokenService(@Lazy SiegTokenFeignClient tokenClient, SiegProperties properties, MessageService messageService) {
         this.tokenClient = tokenClient;
         this.properties = properties;
@@ -40,7 +36,7 @@ public class SiegTokenService {
     }
 
     public boolean isConfigured() {
-        return notBlank(properties.getClientId()) && notBlank(properties.getClientSecret()) && notBlank(properties.getTokenUrl());
+        return notBlank(properties.getClientId()) && notBlank(properties.getClientSecret()) && notBlank(properties.getBaseUrl());
     }
 
     public synchronized String getAccessToken() {

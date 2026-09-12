@@ -25,7 +25,7 @@ public class SiegFeignClientConfig {
                 template.header(HttpHeaders.AUTHORIZATION, "Bearer ".concat(tokenService.getAccessToken()));
                 log.info("SIEG OAuth configured");
             } else {
-                log.warn("SIEG OAuth not configured (clientId/clientSecret/tokenUrl blank) - "
+                log.warn("SIEG OAuth not configured (clientId/clientSecret/url blank) - "
                         + "calling baixar-xmls with X-API-Key only, no Authorization header");
             }
         };

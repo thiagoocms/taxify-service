@@ -39,7 +39,7 @@ jwt:
     public: classpath:app.pub
 sieg:
   base-url: https://api.sieg.com
-  client-id: ${SIEG_CLIENT_ID}ó
+  client-id: ${SIEG_CLIENT_ID}
   client-secret: ${SIEG_CLIENT_SECRET}
   max-requests-per-minute: 2
 fiscal-xml:
@@ -67,3 +67,16 @@ feign:
       siegTokenClient:
         connect-timeout: 15000
         read-timeout: 30000
+
+# Actuator on the same port as the app - only /actuator/health and /actuator/prometheus
+# are exposed (see "include" below), and SecurityConfig explicitly permitAlls just those
+# two paths. No env/beans/etc endpoints are exposed, so nothing sensitive leaks even
+# though this port is published to the host alongside the rest of the API.
+management:
+  endpoints:
+    web:
+      exposure:
+        include: health,prometheus
+  metrics:
+    tags:
+      application: ${spring.application.name}
