@@ -9,6 +9,7 @@ import br.com.cshub.taxify.exception.BadRequestException;
 import br.com.cshub.taxify.integration.sieg.FiscalXmlFileStorage;
 import br.com.cshub.taxify.integration.sieg.FiscalXmlMetadataParser;
 import br.com.cshub.taxify.integration.fiscalxml.FiscalXmlPackageExtractor;
+import br.com.cshub.taxify.integration.fiscalxml.FiscalXmlSyncProperties;
 import br.com.cshub.taxify.integration.sieg.SiegClient;
 import br.com.cshub.taxify.integration.sieg.SiegProperties;
 import br.com.cshub.taxify.repository.CompanyRepository;
@@ -80,8 +81,11 @@ class SiegXmlIntegrationServiceImportTest {
         SiegProperties properties = new SiegProperties();
         properties.setXmlStoragePath(tempDir.toString());
 
+        FiscalXmlSyncProperties syncProperties = new FiscalXmlSyncProperties();
+        syncProperties.setStoragePath(tempDir.toString());
+
         service = new FiscalXmlIntegrationService(siegClient, new FiscalXmlMetadataParser(),
-                new FiscalXmlFileStorage(properties, messageService), new FiscalXmlPackageExtractor(),
+                new FiscalXmlFileStorage(syncProperties, messageService), new FiscalXmlPackageExtractor(),
                 xmlDocumentRepository, syncControlRepository, companyValidation, messageService, properties);
     }
 

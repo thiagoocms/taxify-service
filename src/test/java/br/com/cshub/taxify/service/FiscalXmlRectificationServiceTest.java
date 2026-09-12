@@ -13,8 +13,8 @@ import br.com.cshub.taxify.dto.fiscalrule.FiscalXmlRectificationResultDTO;
 import br.com.cshub.taxify.enumerated.InvoiceAuditStatus;
 import br.com.cshub.taxify.exception.BadRequestException;
 import br.com.cshub.taxify.exception.ResourceNotFoundException;
+import br.com.cshub.taxify.integration.fiscalxml.FiscalXmlSyncProperties;
 import br.com.cshub.taxify.integration.sieg.FiscalXmlFileStorage;
-import br.com.cshub.taxify.integration.sieg.SiegProperties;
 import br.com.cshub.taxify.repository.FiscalXmlDocumentRepository;
 import br.com.cshub.taxify.repository.InvoiceAuditLogRepository;
 import br.com.cshub.taxify.repository.ProductFiscalRuleRepository;
@@ -86,8 +86,8 @@ class FiscalXmlRectificationServiceTest {
 
     @BeforeEach
     void setUp() throws IOException {
-        SiegProperties properties = new SiegProperties();
-        properties.setXmlStoragePath(tempDir.toString());
+        FiscalXmlSyncProperties properties = new FiscalXmlSyncProperties();
+        properties.setStoragePath(tempDir.toString());
         FiscalXmlFileStorage fileStorage = new FiscalXmlFileStorage(properties, messageService);
         service = new FiscalXmlRectificationService(documentRepository, ruleRepository, auditLogRepository,
                 fileStorage, currentUserService, messageService, tenantAccessService);

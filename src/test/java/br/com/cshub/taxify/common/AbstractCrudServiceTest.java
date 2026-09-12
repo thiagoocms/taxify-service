@@ -1,10 +1,12 @@
 package br.com.cshub.taxify.common;
 
+import br.com.cshub.taxify.domain.AbstractAuditingEntity;
 import br.com.cshub.taxify.exception.ResourceNotFoundException;
 import br.com.cshub.taxify.search.AbstractsSpecification;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.extension.ExtendWith;
+import org.mockito.ArgumentCaptor;
 import org.mockito.InOrder;
 import org.mockito.Mock;
 import org.mockito.junit.jupiter.MockitoExtension;
@@ -19,7 +21,9 @@ import java.util.Optional;
 
 import static org.assertj.core.api.Assertions.assertThat;
 import static org.assertj.core.api.Assertions.assertThatThrownBy;
+import static org.mockito.ArgumentMatchers.any;
 import static org.mockito.ArgumentMatchers.anyList;
+import static org.mockito.ArgumentMatchers.eq;
 import static org.mockito.Mockito.inOrder;
 import static org.mockito.Mockito.verify;
 import static org.mockito.Mockito.verifyNoInteractions;
@@ -28,19 +32,31 @@ import static org.mockito.Mockito.when;
 @ExtendWith(MockitoExtension.class)
 class AbstractCrudServiceTest {
 
-    private static class RecordingMapper extends AbstractMapper<String, String> {
+    private static class Widget extends AbstractAuditingEntity {
+        private final String value;
+
+        Widget(String value) {
+            this.value = value;
+        }
+
+        String getValue() {
+            return value;
+        }
+    }
+
+    private static class RecordingMapper extends AbstractMapper<Widget, String> {
         @Override
-        protected String toEntity(String source) {
-            return "entity-" + source;
+        protected Widget toEntity(String source) {
+            return new Widget("entity-" + source);
         }
 
         @Override
-        protected String toModel(String source) {
-            return "model-" + source;
+        protected String toModel(Widget source) {
+            return "model-" + source.getValue();
         }
 
         @Override
-        public void merge(String source, String target) {
+        public void merge(Widget source, Widget target) {
         }
     }
 
@@ -50,23 +66,23 @@ class AbstractCrudServiceTest {
     }
 
     @Mock
-    private AbstractJpaRepository<String, Long> repository;
+    private AbstractJpaRepository<Widget, Long> repository;
 
     @Mock
-    private AbstractCrudValidation<String, Long> validation;
+    private AbstractCrudValidation<Widget, Long> validation;
 
     @Mock
-    private AbstractsSpecification<String> specification;
+    private AbstractsSpecification<Widget> specification;
 
     @Mock
     private MessageService messageService;
 
     @Mock
-    private Specification<String> builtSpecification;
+    private Specification<Widget> builtSpecification;
 
     private final RecordingMapper mapper = new RecordingMapper();
 
-    private AbstractCrudService<String, Long, String, TestFilter> service;
+    private AbstractCrudService<Widget, Long, String, TestFilter> service;
 
     @BeforeEach
     void setUp() {
@@ -77,7 +93,7 @@ class AbstractCrudServiceTest {
     @Test
     void findAllWithoutFilterUsesPlainPageableLookup() {
         Pageable pageable = PageRequest.of(0, 10);
-        when(repository.findAll(pageable)).thenReturn(new PageImpl<>(List.of("a")));
+        when(repository.findAll(pageable)).thenReturn(new PageImpl<>(List.of(new Widget("a"))));
 
         Page<String> result = service.findAll(pageable);
 
@@ -88,7 +104,7 @@ class AbstractCrudServiceTest {
     void findAllWithFilterBuildsCriteriaAndDelegatesToSpecification() {
         Pageable pageable = PageRequest.of(0, 10);
         when(specification.listAllByCriteria(anyList())).thenReturn(builtSpecification);
-        when(repository.findAll(builtSpecification, pageable)).thenReturn(new PageImpl<>(List.of("b")));
+        when(repository.findAll(builtSpecification, pageable)).thenReturn(new PageImpl<>(List.of(new Widget("b"))));
 
         Page<String> result = service.findAll(pageable, new TestFilter("acme", null));
 
@@ -98,7 +114,7 @@ class AbstractCrudServiceTest {
     @Test
     void findAllWithNullFilterFallsBackToPlainPageableLookup() {
         Pageable pageable = PageRequest.of(0, 10);
-        when(repository.findAll(pageable)).thenReturn(new PageImpl<>(List.of("c")));
+        when(repository.findAll(pageable)).thenReturn(new PageImpl<>(List.of(new Widget("c"))));
 
         Page<String> result = service.findAll(pageable, null);
 
@@ -112,43 +128,48 @@ class AbstractCrudServiceTest {
         String result = service.create("dto");
 
         assertThat(result).isEqualTo("model-entity-dto");
-        verify(repository).save("entity-dto");
+        ArgumentCaptor<Widget> saved = ArgumentCaptor.forClass(Widget.class);
+        verify(repository).save(saved.capture());
+        assertThat(saved.getValue().getValue()).isEqualTo("entity-dto");
         InOrder order = inOrder(validation);
-        order.verify(validation).checkOwnerFieldsToCreate("entity-dto");
-        order.verify(validation).checkMandatoryFields("entity-dto");
-        order.verify(validation).checkRelations("entity-dto");
-        order.verify(validation).checkValidationsExtras("entity-dto");
+        order.verify(validation).checkOwnerFieldsToCreate(saved.getValue());
+        order.verify(validation).checkMandatoryFields(saved.getValue());
+        order.verify(validation).checkRelations(saved.getValue());
+        order.verify(validation).checkValidationsExtras(saved.getValue());
     }
 
     @Test
     void createSkipsValidationEntirelyWhenNoneIsConfigured() {
-        AbstractCrudService<String, Long, String, TestFilter> noValidationService =
+        AbstractCrudService<Widget, Long, String, TestFilter> noValidationService =
                 new AbstractCrudService<>(repository, mapper, messageService, specification) {
                 };
 
         String result = noValidationService.create("dto");
 
         assertThat(result).isEqualTo("model-entity-dto");
-        verify(repository).save("entity-dto");
+        ArgumentCaptor<Widget> saved = ArgumentCaptor.forClass(Widget.class);
+        verify(repository).save(saved.capture());
+        assertThat(saved.getValue().getValue()).isEqualTo("entity-dto");
         verifyNoInteractions(validation);
     }
 
     @Test
     void updateResolvesConsistencyBeforeRunningRemainingChecks() {
-        when(validation.checkUpdateConsistence(1L, "entity-dto")).thenReturn("consistent");
+        Widget consistent = new Widget("consistent");
+        when(validation.checkUpdateConsistence(eq(1L), any())).thenReturn(consistent);
 
         String result = service.update(1L, "dto");
 
         assertThat(result).isEqualTo("model-consistent");
-        verify(repository).save("consistent");
-        verify(validation).checkMandatoryFields("consistent");
-        verify(validation).checkRelations("consistent");
-        verify(validation).checkValidationsExtras("consistent");
+        verify(repository).save(consistent);
+        verify(validation).checkMandatoryFields(consistent);
+        verify(validation).checkRelations(consistent);
+        verify(validation).checkValidationsExtras(consistent);
     }
 
     @Test
     void findByIdReturnsMappedModelWhenEntityExists() {
-        when(repository.findFirstByIdAndDeletedIsFalse(1L)).thenReturn(Optional.of("entity"));
+        when(repository.findFirstByIdAndDeletedIsFalse(1L)).thenReturn(Optional.of(new Widget("entity")));
 
         assertThat(service.findById(1L)).isEqualTo("model-entity");
     }
@@ -164,12 +185,14 @@ class AbstractCrudServiceTest {
     }
 
     @Test
-    void deleteRemovesTheResolvedEntity() {
-        when(repository.findFirstByIdAndDeletedIsFalse(1L)).thenReturn(Optional.of("entity"));
+    void deleteSoftDeletesTheResolvedEntityInsteadOfRemovingIt() {
+        Widget entity = new Widget("entity");
+        when(repository.findFirstByIdAndDeletedIsFalse(1L)).thenReturn(Optional.of(entity));
 
         service.delete(1L);
 
-        verify(repository).delete("entity");
+        assertThat(entity.isDeleted()).isTrue();
+        verify(repository).save(entity);
     }
 
     @Test
