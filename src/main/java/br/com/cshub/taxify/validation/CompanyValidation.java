@@ -1,7 +1,9 @@
 package br.com.cshub.taxify.validation;
 
 import br.com.cshub.taxify.common.AbstractCrudValidation;
+import br.com.cshub.taxify.common.CurrentUserService;
 import br.com.cshub.taxify.common.MessageService;
+import br.com.cshub.taxify.common.TenantAccessService;
 import br.com.cshub.taxify.domain.company.Company;
 import br.com.cshub.taxify.exception.BadRequestException;
 import br.com.cshub.taxify.mapper.CompanyMapper;
@@ -18,20 +20,39 @@ public class CompanyValidation extends AbstractCrudValidation<Company, UUID> {
     private final CompanyMapper mapper;
     private final CompanyRepository repository;
     private final DocumentValidation documentValidation;
+    private final TenantAccessService tenantAccessService;
+    private final CurrentUserService currentUserService;
 
     @Autowired
-    public CompanyValidation(CompanyMapper mapper, CompanyRepository repository, MessageService messageService, DocumentValidation documentValidation) {
+    public CompanyValidation(CompanyMapper mapper, CompanyRepository repository, MessageService messageService, DocumentValidation documentValidation,
+                              TenantAccessService tenantAccessService, CurrentUserService currentUserService) {
         super(repository, messageService);
         this.documentValidation = documentValidation;
+        this.tenantAccessService = tenantAccessService;
+        this.currentUserService = currentUserService;
         setMessageNotFound("error.Company.not.found");
         this.mapper = mapper;
         this.repository = repository;
+    }
+
+    /**
+     * Every write path that references a Company (Subscription, ProductFiscalRule,
+     * InvoiceAuditLog, UserCompany) and the fiscal XML integration resolve their Company
+     * relation through this method - centralizing the tenant check here protects all of
+     * them without touching each one individually.
+     */
+    @Override
+    public Company checkExist(UUID id) {
+        Company company = super.checkExist(id);
+        tenantAccessService.assertSameFirm(company.getAccountingFirm().getId());
+        return company;
     }
 
     @Override
     protected void checkOwnerFieldsToCreate(Company entity) {
         entity.setId(null);
         entity.setDeleted(false);
+        currentUserService.getCurrentUser().ifPresent(user -> entity.setAccountingFirm(user.getAccountingFirm()));
     }
 
     @Override

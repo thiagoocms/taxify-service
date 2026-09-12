@@ -1,6 +1,8 @@
 package br.com.cshub.taxify.validation;
 
 import br.com.cshub.taxify.common.MessageService;
+import br.com.cshub.taxify.common.TenantAccessService;
+import br.com.cshub.taxify.domain.accountingfirm.AccountingFirm;
 import br.com.cshub.taxify.domain.company.Company;
 import br.com.cshub.taxify.domain.plan.Plan;
 import br.com.cshub.taxify.domain.subscription.Subscription;
@@ -37,12 +39,14 @@ class SubscriptionValidationTest {
     private CompanyValidation companyValidation;
     @Mock
     private PlanValidation planValidation;
+    @Mock
+    private TenantAccessService tenantAccessService;
 
     private SubscriptionValidation validation;
 
     @BeforeEach
     void setUp() {
-        validation = new SubscriptionValidation(mapper, repository, messageService, companyValidation, planValidation);
+        validation = new SubscriptionValidation(mapper, repository, messageService, companyValidation, planValidation, tenantAccessService);
     }
 
     private Subscription subscription(UUID companyId, LocalDate start, LocalDate end) {
@@ -80,6 +84,9 @@ class SubscriptionValidationTest {
         UUID id = UUID.randomUUID();
         Subscription toUpdate = new Subscription(id);
         Subscription persisted = new Subscription(id);
+        Company company = new Company(UUID.randomUUID());
+        company.setAccountingFirm(new AccountingFirm(UUID.randomUUID()));
+        persisted.setCompany(company);
         when(repository.findFirstByIdAndDeletedIsFalse(id)).thenReturn(Optional.of(persisted));
 
         Subscription result = validation.checkUpdateConsistence(id, toUpdate);

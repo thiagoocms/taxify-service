@@ -2,6 +2,7 @@ package br.com.cshub.taxify.validation;
 
 import br.com.cshub.taxify.common.AbstractCrudValidation;
 import br.com.cshub.taxify.common.MessageService;
+import br.com.cshub.taxify.common.TenantAccessService;
 import br.com.cshub.taxify.domain.fiscalrule.ProductFiscalRule;
 import br.com.cshub.taxify.exception.BadRequestException;
 import br.com.cshub.taxify.exception.ConflictException;
@@ -19,15 +20,24 @@ public class ProductFiscalRuleValidation extends AbstractCrudValidation<ProductF
     private final ProductFiscalRuleMapper mapper;
     private final ProductFiscalRuleRepository repository;
     private final CompanyValidation companyValidation;
+    private final TenantAccessService tenantAccessService;
 
     @Autowired
     public ProductFiscalRuleValidation(ProductFiscalRuleMapper mapper, ProductFiscalRuleRepository repository,
-                                        MessageService messageService, CompanyValidation companyValidation) {
+                                        MessageService messageService, CompanyValidation companyValidation, TenantAccessService tenantAccessService) {
         super(repository, messageService);
         setMessageNotFound("error.productFiscalRule.not.found");
         this.mapper = mapper;
         this.repository = repository;
         this.companyValidation = companyValidation;
+        this.tenantAccessService = tenantAccessService;
+    }
+
+    @Override
+    public ProductFiscalRule checkExist(UUID id) {
+        ProductFiscalRule rule = super.checkExist(id);
+        tenantAccessService.assertSameFirm(rule.getCompany().getAccountingFirm().getId());
+        return rule;
     }
 
     @Override

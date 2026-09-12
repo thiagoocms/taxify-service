@@ -2,6 +2,8 @@ package br.com.cshub.taxify.service;
 
 import br.com.cshub.taxify.common.CurrentUserService;
 import br.com.cshub.taxify.common.MessageService;
+import br.com.cshub.taxify.common.TenantAccessService;
+import br.com.cshub.taxify.domain.accountingfirm.AccountingFirm;
 import br.com.cshub.taxify.domain.company.Company;
 import br.com.cshub.taxify.domain.fiscalrule.ProductFiscalRule;
 import br.com.cshub.taxify.domain.invoice.InvoiceAuditLog;
@@ -71,6 +73,8 @@ class FiscalXmlRectificationServiceTest {
     private CurrentUserService currentUserService;
     @Mock
     private MessageService messageService;
+    @Mock
+    private TenantAccessService tenantAccessService;
 
     private FiscalXmlRectificationService service;
     private UUID documentId;
@@ -86,7 +90,7 @@ class FiscalXmlRectificationServiceTest {
         properties.setXmlStoragePath(tempDir.toString());
         FiscalXmlFileStorage fileStorage = new FiscalXmlFileStorage(properties, messageService);
         service = new FiscalXmlRectificationService(documentRepository, ruleRepository, auditLogRepository,
-                fileStorage, currentUserService, messageService);
+                fileStorage, currentUserService, messageService, tenantAccessService);
 
         documentId = UUID.randomUUID();
         companyId = UUID.randomUUID();
@@ -101,7 +105,9 @@ class FiscalXmlRectificationServiceTest {
     private FiscalXmlDocument document() {
         FiscalXmlDocument document = new FiscalXmlDocument();
         document.setId(documentId);
-        document.setCompany(new Company(companyId));
+        Company company = new Company(companyId);
+        company.setAccountingFirm(new AccountingFirm(UUID.randomUUID()));
+        document.setCompany(company);
         document.setAccessKey("35240112345678000199550010000000011000000010");
         document.setXmlFilePath(originalFile.toString());
         return document;

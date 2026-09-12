@@ -2,6 +2,7 @@ package br.com.cshub.taxify.validation;
 
 import br.com.cshub.taxify.common.AbstractCrudValidation;
 import br.com.cshub.taxify.common.MessageService;
+import br.com.cshub.taxify.common.TenantAccessService;
 import br.com.cshub.taxify.domain.user_company.UserCompany;
 import br.com.cshub.taxify.domain.user_company.UserCompanyId;
 import br.com.cshub.taxify.exception.BadRequestException;
@@ -18,14 +19,23 @@ public class UserCompanyValidation extends AbstractCrudValidation<UserCompany, U
     private final UserCompanyMapper mapper;
     private final UserValidation userValidation;
     private final CompanyValidation companyValidation;
+    private final TenantAccessService tenantAccessService;
 
     @Autowired
-    public UserCompanyValidation(UserCompanyMapper mapper, UserCompanyRepository repository, MessageService messageService, UserValidation userValidation, CompanyValidation companyValidation) {
+    public UserCompanyValidation(UserCompanyMapper mapper, UserCompanyRepository repository, MessageService messageService, UserValidation userValidation, CompanyValidation companyValidation, TenantAccessService tenantAccessService) {
         super(repository, messageService);
         this.userValidation = userValidation;
         this.companyValidation = companyValidation;
+        this.tenantAccessService = tenantAccessService;
         setMessageNotFound("error.Company.not.found");
         this.mapper = mapper;
+    }
+
+    @Override
+    public UserCompany checkExist(UserCompanyId id) {
+        UserCompany userCompany = super.checkExist(id);
+        tenantAccessService.assertSameFirm(userCompany.getCompany().getAccountingFirm().getId());
+        return userCompany;
     }
 
     @Override

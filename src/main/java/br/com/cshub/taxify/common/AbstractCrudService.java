@@ -5,6 +5,7 @@ import br.com.cshub.taxify.search.AbstractsSpecification;
 import br.com.cshub.taxify.search.SearchCriteriaUtil;
 import org.springframework.data.domain.Page;
 import org.springframework.data.domain.Pageable;
+import org.springframework.data.jpa.domain.Specification;
 import org.springframework.transaction.annotation.Transactional;
 
 import java.io.Serializable;
@@ -45,14 +46,33 @@ public abstract class AbstractCrudService<E, ID extends Serializable, M, F> impl
 
     @Transactional(readOnly = true)
     public Page<M> findAll(Pageable pageable, F filter) {
-        Page<E> page = null;
+        Specification<E> spec = null;
         if (specification != null && filter != null) {
             var criteria = SearchCriteriaUtil.buildCriteria(filter);
-            page = this.repository.findAll(specification.listAllByCriteria(criteria), pageable);
-        } else {
-            page = this.repository.findAll(pageable);
+            spec = specification.listAllByCriteria(criteria);
         }
+        spec = restrictQuery(spec);
+        Page<E> page = spec != null
+                ? this.repository.findAll(spec, pageable)
+                : this.repository.findAll(pageable);
         return mapper.toModels(page);
+    }
+
+    /**
+     * Extension point: subclasses whose entity belongs to an AccountingFirm (directly or
+     * via a "company" association) override this to restrict the query to the current
+     * user's own firm - see TenantAccessService. No-op by default.
+     */
+    protected Specification<E> restrictQuery(Specification<E> spec) {
+        return spec;
+    }
+
+    /**
+     * Extension point: subclasses override this to assert the current user may access a
+     * single entity fetched by id (findCheckById/findById/update/delete) - see
+     * TenantAccessService. No-op by default.
+     */
+    protected void checkAccess(E entity) {
     }
 
     @Transactional
@@ -90,7 +110,9 @@ public abstract class AbstractCrudService<E, ID extends Serializable, M, F> impl
     @Transactional(readOnly = true)
     protected E findCheckById(ID id) {
         var entityOpt = repository.findFirstByIdAndDeletedIsFalse(id);
-        return entityOpt.orElseThrow(() -> new ResourceNotFoundException(messageService.getMessage(messageNotFound)));
+        var entity = entityOpt.orElseThrow(() -> new ResourceNotFoundException(messageService.getMessage(messageNotFound)));
+        checkAccess(entity);
+        return entity;
     }
 
     @Transactional

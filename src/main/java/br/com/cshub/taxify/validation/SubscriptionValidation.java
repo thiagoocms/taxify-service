@@ -2,6 +2,7 @@ package br.com.cshub.taxify.validation;
 
 import br.com.cshub.taxify.common.AbstractCrudValidation;
 import br.com.cshub.taxify.common.MessageService;
+import br.com.cshub.taxify.common.TenantAccessService;
 import br.com.cshub.taxify.domain.subscription.Subscription;
 import br.com.cshub.taxify.exception.BadRequestException;
 import br.com.cshub.taxify.exception.ConflictException;
@@ -20,16 +21,25 @@ public class SubscriptionValidation extends AbstractCrudValidation<Subscription,
     private final SubscriptionRepository repository;
     private final CompanyValidation companyValidation;
     private final PlanValidation planValidation;
+    private final TenantAccessService tenantAccessService;
 
     @Autowired
     public SubscriptionValidation(SubscriptionMapper mapper, SubscriptionRepository repository, MessageService messageService,
-                                   CompanyValidation companyValidation, PlanValidation planValidation) {
+                                   CompanyValidation companyValidation, PlanValidation planValidation, TenantAccessService tenantAccessService) {
         super(repository, messageService);
         setMessageNotFound("error.subscription.not.found");
         this.mapper = mapper;
         this.repository = repository;
         this.companyValidation = companyValidation;
         this.planValidation = planValidation;
+        this.tenantAccessService = tenantAccessService;
+    }
+
+    @Override
+    public Subscription checkExist(UUID id) {
+        Subscription subscription = super.checkExist(id);
+        tenantAccessService.assertSameFirm(subscription.getCompany().getAccountingFirm().getId());
+        return subscription;
     }
 
     @Override

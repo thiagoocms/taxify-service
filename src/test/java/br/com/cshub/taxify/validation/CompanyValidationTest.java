@@ -1,6 +1,9 @@
 package br.com.cshub.taxify.validation;
 
+import br.com.cshub.taxify.common.CurrentUserService;
 import br.com.cshub.taxify.common.MessageService;
+import br.com.cshub.taxify.common.TenantAccessService;
+import br.com.cshub.taxify.domain.accountingfirm.AccountingFirm;
 import br.com.cshub.taxify.domain.company.Company;
 import br.com.cshub.taxify.domain.document.Document;
 import br.com.cshub.taxify.enumerated.DocumentTypeEnum;
@@ -18,6 +21,7 @@ import java.util.UUID;
 
 import static org.assertj.core.api.Assertions.assertThat;
 import static org.assertj.core.api.Assertions.assertThatThrownBy;
+import static org.mockito.Mockito.lenient;
 import static org.mockito.Mockito.verify;
 import static org.mockito.Mockito.when;
 
@@ -32,12 +36,17 @@ class CompanyValidationTest {
     private MessageService messageService;
     @Mock
     private DocumentValidation documentValidation;
+    @Mock
+    private TenantAccessService tenantAccessService;
+    @Mock
+    private CurrentUserService currentUserService;
 
     private CompanyValidation validation;
 
     @BeforeEach
     void setUp() {
-        validation = new CompanyValidation(mapper, repository, messageService, documentValidation);
+        lenient().when(currentUserService.getCurrentUser()).thenReturn(Optional.empty());
+        validation = new CompanyValidation(mapper, repository, messageService, documentValidation, tenantAccessService, currentUserService);
     }
 
     @Test
@@ -84,6 +93,7 @@ class CompanyValidationTest {
         UUID id = UUID.randomUUID();
         Company toUpdate = new Company(id);
         Company persisted = new Company(id);
+        persisted.setAccountingFirm(new AccountingFirm(UUID.randomUUID()));
         when(repository.findFirstByIdAndDeletedIsFalse(id)).thenReturn(Optional.of(persisted));
 
         Company result = validation.checkUpdateConsistence(id, toUpdate);

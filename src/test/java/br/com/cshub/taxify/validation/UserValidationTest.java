@@ -1,12 +1,16 @@
 package br.com.cshub.taxify.validation;
 
+import br.com.cshub.taxify.common.CurrentUserService;
 import br.com.cshub.taxify.common.MessageService;
+import br.com.cshub.taxify.common.TenantAccessService;
+import br.com.cshub.taxify.domain.accountingfirm.AccountingFirm;
 import br.com.cshub.taxify.domain.document.Document;
 import br.com.cshub.taxify.domain.user.User;
 import br.com.cshub.taxify.enumerated.DocumentTypeEnum;
 import br.com.cshub.taxify.exception.BadRequestException;
 import br.com.cshub.taxify.exception.ConflictException;
 import br.com.cshub.taxify.mapper.UserMapper;
+import br.com.cshub.taxify.repository.AccountingFirmRepository;
 import br.com.cshub.taxify.repository.UserRepository;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
@@ -20,6 +24,7 @@ import java.util.UUID;
 
 import static org.assertj.core.api.Assertions.assertThat;
 import static org.assertj.core.api.Assertions.assertThatThrownBy;
+import static org.mockito.Mockito.lenient;
 import static org.mockito.Mockito.verify;
 import static org.mockito.Mockito.when;
 
@@ -36,12 +41,19 @@ class UserValidationTest {
     private DocumentValidation documentValidation;
     @Mock
     private PasswordEncoder passwordEncoder;
+    @Mock
+    private CurrentUserService currentUserService;
+    @Mock
+    private AccountingFirmRepository accountingFirmRepository;
+    @Mock
+    private TenantAccessService tenantAccessService;
 
     private UserValidation validation;
 
     @BeforeEach
     void setUp() {
-        validation = new UserValidation(mapper, repository, messageService, documentValidation, passwordEncoder);
+        lenient().when(currentUserService.getCurrentUser()).thenReturn(Optional.empty());
+        validation = new UserValidation(mapper, repository, messageService, documentValidation, passwordEncoder, currentUserService, accountingFirmRepository, tenantAccessService);
     }
 
     @Test
@@ -73,6 +85,7 @@ class UserValidationTest {
         UUID id = UUID.randomUUID();
         User toUpdate = new User(id);
         User persisted = new User(id);
+        persisted.setAccountingFirm(new AccountingFirm(UUID.randomUUID()));
         when(repository.findFirstByIdAndDeletedIsFalse(id)).thenReturn(Optional.of(persisted));
 
         User result = validation.checkUpdateConsistence(id, toUpdate);

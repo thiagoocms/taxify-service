@@ -1,6 +1,7 @@
 package br.com.cshub.taxify.service;
 
 import br.com.cshub.taxify.common.MessageService;
+import br.com.cshub.taxify.domain.accountingfirm.AccountingFirm;
 import br.com.cshub.taxify.domain.company.Company;
 import br.com.cshub.taxify.domain.document.Document;
 import br.com.cshub.taxify.domain.xml.FiscalXmlSyncControl;
@@ -63,6 +64,9 @@ class FiscalXmlIntegrationServiceSyncTest {
         companyId = UUID.randomUUID();
         Company company = new Company(companyId);
         company.setDocument(new Document("11594485000105", DocumentTypeEnum.CNPJ));
+        AccountingFirm firm = new AccountingFirm(UUID.randomUUID());
+        firm.setSiegApiKey("test-api-key");
+        company.setAccountingFirm(firm);
         lenient().when(companyValidation.checkExist(companyId)).thenReturn(company);
         lenient().when(messageService.getMessage(any())).thenReturn("error");
         lenient().when(syncControlRepository.findByCompany_Id(companyId)).thenReturn(Optional.empty());
@@ -77,40 +81,40 @@ class FiscalXmlIntegrationServiceSyncTest {
 
     @Test
     void skipsBaixarXmlsWhenSiegReportsZeroPendingNfe() {
-        when(siegClient.contarXmlsNfe(any(SiegBaixarXmlsRequest.class))).thenReturn(0);
+        when(siegClient.contarXmlsNfe(any(SiegBaixarXmlsRequest.class), any())).thenReturn(0);
 
         XmlDownloadResultDTO result = service.syncFromSieg(filter());
 
-        verify(siegClient, never()).baixarXmls(any());
+        verify(siegClient, never()).baixarXmls(any(), any());
         assertThat(result.totalPersistedNew()).isZero();
         assertThat(result.xmls()).isEmpty();
     }
 
     @Test
     void callsBaixarXmlsWhenSiegReportsPendingNfe() {
-        when(siegClient.contarXmlsNfe(any(SiegBaixarXmlsRequest.class))).thenReturn(3);
-        when(siegClient.baixarXmls(any())).thenReturn(List.of());
+        when(siegClient.contarXmlsNfe(any(SiegBaixarXmlsRequest.class), any())).thenReturn(3);
+        when(siegClient.baixarXmls(any(), any())).thenReturn(List.of());
 
         service.syncFromSieg(filter());
 
-        verify(siegClient).baixarXmls(any());
+        verify(siegClient).baixarXmls(any(), any());
     }
 
     @Test
     void stillCallsBaixarXmlsWhenTheCountCheckItselfFails() {
-        when(siegClient.contarXmlsNfe(any(SiegBaixarXmlsRequest.class))).thenThrow(new RuntimeException("boom"));
-        when(siegClient.baixarXmls(any())).thenReturn(List.of());
+        when(siegClient.contarXmlsNfe(any(SiegBaixarXmlsRequest.class), any())).thenThrow(new RuntimeException("boom"));
+        when(siegClient.baixarXmls(any(), any())).thenReturn(List.of());
 
         service.syncFromSieg(filter());
 
-        verify(siegClient).baixarXmls(any());
+        verify(siegClient).baixarXmls(any(), any());
         verify(syncControlRepository, never()).save(any());
     }
 
     @Test
     void updatesSyncControlWithSiegTotalAndActualPersistedCountWhenCountSucceeds() {
-        when(siegClient.contarXmlsNfe(any(SiegBaixarXmlsRequest.class))).thenReturn(200);
-        when(siegClient.baixarXmls(any())).thenReturn(List.of());
+        when(siegClient.contarXmlsNfe(any(SiegBaixarXmlsRequest.class), any())).thenReturn(200);
+        when(siegClient.baixarXmls(any(), any())).thenReturn(List.of());
         when(xmlDocumentRepository.countByCompany_IdAndIssueDateBetween(eq(companyId), any(), any())).thenReturn(100L);
 
         LocalDate inicio = LocalDate.of(2026, 9, 10);
@@ -130,8 +134,8 @@ class FiscalXmlIntegrationServiceSyncTest {
 
     @Test
     void totalImportadoIsScopedToTheSyncWindowNotTheCompanysLifetimeTotal() {
-        when(siegClient.contarXmlsNfe(any(SiegBaixarXmlsRequest.class))).thenReturn(30);
-        when(siegClient.baixarXmls(any())).thenReturn(List.of());
+        when(siegClient.contarXmlsNfe(any(SiegBaixarXmlsRequest.class), any())).thenReturn(30);
+        when(siegClient.baixarXmls(any(), any())).thenReturn(List.of());
         when(xmlDocumentRepository.countByCompany_IdAndIssueDateBetween(eq(companyId), any(), any())).thenReturn(30L);
         // Lifetime total across every month ever imported, deliberately much bigger than
         // the window-scoped count above - if updateSyncControl ever regresses back to
@@ -147,13 +151,13 @@ class FiscalXmlIntegrationServiceSyncTest {
 
     @Test
     void skipsTheCountCheckAndGoesStraightToDownloadWhenSkipCountCheckIsTrue() {
-        when(siegClient.baixarXmls(any())).thenReturn(List.of());
+        when(siegClient.baixarXmls(any(), any())).thenReturn(List.of());
         when(xmlDocumentRepository.countByCompany_IdAndIssueDateBetween(eq(companyId), any(), any())).thenReturn(50L);
 
         service.syncFromSieg(filter(), true);
 
-        verify(siegClient, never()).contarXmlsNfe(any());
-        verify(siegClient).baixarXmls(any());
+        verify(siegClient, never()).contarXmlsNfe(any(), any());
+        verify(siegClient).baixarXmls(any(), any());
     }
 
     @Test
@@ -162,7 +166,7 @@ class FiscalXmlIntegrationServiceSyncTest {
         existing.setId(UUID.randomUUID());
         existing.setTotalSieg(200);
         when(syncControlRepository.findByCompany_Id(companyId)).thenReturn(Optional.of(existing));
-        when(siegClient.baixarXmls(any())).thenReturn(List.of());
+        when(siegClient.baixarXmls(any(), any())).thenReturn(List.of());
         when(xmlDocumentRepository.countByCompany_IdAndIssueDateBetween(eq(companyId), any(), any())).thenReturn(120L);
 
         service.syncFromSieg(filter(), true);
@@ -180,7 +184,7 @@ class FiscalXmlIntegrationServiceSyncTest {
         FiscalXmlSyncControl existing = new FiscalXmlSyncControl();
         existing.setId(UUID.randomUUID());
         when(syncControlRepository.findByCompany_Id(companyId)).thenReturn(Optional.of(existing));
-        when(siegClient.contarXmlsNfe(any(SiegBaixarXmlsRequest.class))).thenReturn(0);
+        when(siegClient.contarXmlsNfe(any(SiegBaixarXmlsRequest.class), any())).thenReturn(0);
 
         service.syncFromSieg(filter());
 

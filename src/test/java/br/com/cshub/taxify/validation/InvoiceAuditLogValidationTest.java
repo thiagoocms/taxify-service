@@ -1,6 +1,8 @@
 package br.com.cshub.taxify.validation;
 
 import br.com.cshub.taxify.common.MessageService;
+import br.com.cshub.taxify.common.TenantAccessService;
+import br.com.cshub.taxify.domain.accountingfirm.AccountingFirm;
 import br.com.cshub.taxify.domain.company.Company;
 import br.com.cshub.taxify.domain.invoice.InvoiceAuditLog;
 import br.com.cshub.taxify.domain.user.User;
@@ -34,12 +36,14 @@ class InvoiceAuditLogValidationTest {
     private UserValidation userValidation;
     @Mock
     private CompanyValidation companyValidation;
+    @Mock
+    private TenantAccessService tenantAccessService;
 
     private InvoiceAuditLogValidation validation;
 
     @BeforeEach
     void setUp() {
-        validation = new InvoiceAuditLogValidation(mapper, repository, messageService, userValidation, companyValidation);
+        validation = new InvoiceAuditLogValidation(mapper, repository, messageService, userValidation, companyValidation, tenantAccessService);
     }
 
     @Test
@@ -69,6 +73,9 @@ class InvoiceAuditLogValidationTest {
         toUpdate.setId(id);
         InvoiceAuditLog persisted = new InvoiceAuditLog();
         persisted.setId(id);
+        Company company = new Company(UUID.randomUUID());
+        company.setAccountingFirm(new AccountingFirm(UUID.randomUUID()));
+        persisted.setCompany(company);
         when(repository.findFirstByIdAndDeletedIsFalse(id)).thenReturn(Optional.of(persisted));
 
         InvoiceAuditLog result = validation.checkUpdateConsistence(id, toUpdate);

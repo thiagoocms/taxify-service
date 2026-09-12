@@ -1,5 +1,6 @@
 package br.com.cshub.taxify.service;
 
+import br.com.cshub.taxify.common.TenantAccessService;
 import br.com.cshub.taxify.domain.company.Company;
 import br.com.cshub.taxify.domain.xml.FiscalXmlSyncControl;
 import br.com.cshub.taxify.dto.fiscalxml.FiscalXmlSyncControlDTO;
@@ -13,9 +14,11 @@ import org.mockito.junit.jupiter.MockitoExtension;
 import java.time.LocalDate;
 import java.time.LocalDateTime;
 import java.util.List;
+import java.util.Optional;
 import java.util.UUID;
 
 import static org.assertj.core.api.Assertions.assertThat;
+import static org.mockito.Mockito.lenient;
 import static org.mockito.Mockito.when;
 
 @ExtendWith(MockitoExtension.class)
@@ -23,12 +26,15 @@ class FiscalXmlSyncControlServiceTest {
 
     @Mock
     private FiscalXmlSyncControlRepository repository;
+    @Mock
+    private TenantAccessService tenantAccessService;
 
     private FiscalXmlSyncControlService service;
 
     @BeforeEach
     void setUp() {
-        service = new FiscalXmlSyncControlService(repository);
+        lenient().when(tenantAccessService.getCurrentAccountingFirmId()).thenReturn(Optional.empty());
+        service = new FiscalXmlSyncControlService(repository, tenantAccessService);
     }
 
     @Test

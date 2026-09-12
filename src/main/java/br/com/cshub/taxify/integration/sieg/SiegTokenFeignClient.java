@@ -16,10 +16,10 @@ import org.springframework.web.bind.annotation.RequestHeader;
  * The URL is only resolved (and called) when {@link SiegTokenService#isConfigured()}
  * is true - see {@link SiegProperties#getTokenUrl()}.
  */
-@FeignClient(name = "siegTokenClient", url = "${sieg.token-url}")
+@FeignClient(name = "siegTokenClient", url = "${sieg.base-url}")
 public interface SiegTokenFeignClient {
 
-    @PostMapping(consumes = MediaType.APPLICATION_JSON_VALUE, produces = MediaType.APPLICATION_JSON_VALUE)
+    @PostMapping(path = "/api/v1/create-jwt", consumes = MediaType.APPLICATION_JSON_VALUE, produces = MediaType.APPLICATION_JSON_VALUE)
     String createJwt(@RequestHeader("X-Secret-Key") String secretKey, @RequestHeader("X-Client-Id") String clientId,
                       @RequestBody String emptyJsonBody);
 }

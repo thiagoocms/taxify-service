@@ -2,6 +2,7 @@ package br.com.cshub.taxify.domain.user;
 
 
 import br.com.cshub.taxify.domain.AbstractAuditingEntity;
+import br.com.cshub.taxify.domain.accountingfirm.AccountingFirm;
 import br.com.cshub.taxify.domain.document.Document;
 import br.com.cshub.taxify.domain.user_company.UserCompany;
 import br.com.cshub.taxify.enumerated.UserProfileEnum;
@@ -21,6 +22,15 @@ public class User extends AbstractAuditingEntity {
     @JdbcTypeCode(SqlTypes.VARCHAR)
     @Column(name = "id", length = 36, updatable = false, nullable = false)
     private UUID id;
+
+    /**
+     * The accounting firm this team member belongs to - a public signup (no authenticated
+     * caller) creates a brand-new firm; an authenticated caller creating a teammate joins
+     * them to their own firm instead (see UserValidation).
+     */
+    @ManyToOne(fetch = FetchType.LAZY)
+    @JoinColumn(name = "accounting_firm_id", nullable = false)
+    private AccountingFirm accountingFirm;
 
     @Column(name = "name", length = 150, nullable = false)
     private String name;
@@ -114,5 +124,13 @@ public class User extends AbstractAuditingEntity {
 
     public void setUserCompanies(List<UserCompany> userCompanies) {
         this.userCompanies = userCompanies;
+    }
+
+    public AccountingFirm getAccountingFirm() {
+        return accountingFirm;
+    }
+
+    public void setAccountingFirm(AccountingFirm accountingFirm) {
+        this.accountingFirm = accountingFirm;
     }
 }

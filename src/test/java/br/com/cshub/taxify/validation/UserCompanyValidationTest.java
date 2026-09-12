@@ -1,6 +1,8 @@
 package br.com.cshub.taxify.validation;
 
 import br.com.cshub.taxify.common.MessageService;
+import br.com.cshub.taxify.common.TenantAccessService;
+import br.com.cshub.taxify.domain.accountingfirm.AccountingFirm;
 import br.com.cshub.taxify.domain.company.Company;
 import br.com.cshub.taxify.domain.user.User;
 import br.com.cshub.taxify.domain.user_company.UserCompany;
@@ -35,12 +37,14 @@ class UserCompanyValidationTest {
     private UserValidation userValidation;
     @Mock
     private CompanyValidation companyValidation;
+    @Mock
+    private TenantAccessService tenantAccessService;
 
     private UserCompanyValidation validation;
 
     @BeforeEach
     void setUp() {
-        validation = new UserCompanyValidation(mapper, repository, messageService, userValidation, companyValidation);
+        validation = new UserCompanyValidation(mapper, repository, messageService, userValidation, companyValidation, tenantAccessService);
     }
 
     @Test
@@ -69,7 +73,9 @@ class UserCompanyValidationTest {
         UUID companyId = UUID.randomUUID();
         UserCompanyId id = new UserCompanyId(userId, companyId);
         UserCompany toUpdate = new UserCompany(new User(userId), new Company(companyId), "ADMIN");
-        UserCompany persisted = new UserCompany(new User(userId), new Company(companyId), "MEMBER");
+        Company persistedCompany = new Company(companyId);
+        persistedCompany.setAccountingFirm(new AccountingFirm(UUID.randomUUID()));
+        UserCompany persisted = new UserCompany(new User(userId), persistedCompany, "MEMBER");
         when(repository.findFirstByIdAndDeletedIsFalse(id)).thenReturn(Optional.of(persisted));
 
         UserCompany result = validation.checkUpdateConsistence(id, toUpdate);

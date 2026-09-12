@@ -1,6 +1,7 @@
 package br.com.cshub.taxify.domain.company;
 
 import br.com.cshub.taxify.domain.AbstractAuditingEntity;
+import br.com.cshub.taxify.domain.accountingfirm.AccountingFirm;
 import br.com.cshub.taxify.domain.document.Document;
 import jakarta.persistence.*;
 import org.hibernate.annotations.JdbcTypeCode;
@@ -24,6 +25,14 @@ public class Company extends AbstractAuditingEntity {
 
     @Column(name = "name", length = 150, nullable = false)
     private String name;
+
+    /**
+     * The accounting firm this client company belongs to - every query scopes on this so
+     * one firm's team never sees another firm's companies (see TenantAccessService).
+     */
+    @ManyToOne(fetch = FetchType.LAZY)
+    @JoinColumn(name = "accounting_firm_id", nullable = false)
+    private AccountingFirm accountingFirm;
 
     public Company() {
     }
@@ -54,5 +63,13 @@ public class Company extends AbstractAuditingEntity {
 
     public void setName(String name) {
         this.name = name;
+    }
+
+    public AccountingFirm getAccountingFirm() {
+        return accountingFirm;
+    }
+
+    public void setAccountingFirm(AccountingFirm accountingFirm) {
+        this.accountingFirm = accountingFirm;
     }
 }

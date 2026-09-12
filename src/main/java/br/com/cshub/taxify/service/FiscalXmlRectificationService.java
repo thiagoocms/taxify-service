@@ -2,6 +2,7 @@ package br.com.cshub.taxify.service;
 
 import br.com.cshub.taxify.common.CurrentUserService;
 import br.com.cshub.taxify.common.MessageService;
+import br.com.cshub.taxify.common.TenantAccessService;
 import br.com.cshub.taxify.domain.fiscalrule.ProductFiscalRule;
 import br.com.cshub.taxify.domain.invoice.InvoiceAuditLog;
 import br.com.cshub.taxify.domain.xml.FiscalXmlDocument;
@@ -76,22 +77,25 @@ public class FiscalXmlRectificationService {
     private final FiscalXmlFileStorage fileStorage;
     private final CurrentUserService currentUserService;
     private final MessageService messageService;
+    private final TenantAccessService tenantAccessService;
 
     public FiscalXmlRectificationService(FiscalXmlDocumentRepository documentRepository, ProductFiscalRuleRepository ruleRepository,
                                           InvoiceAuditLogRepository auditLogRepository, FiscalXmlFileStorage fileStorage,
-                                          CurrentUserService currentUserService, MessageService messageService) {
+                                          CurrentUserService currentUserService, MessageService messageService, TenantAccessService tenantAccessService) {
         this.documentRepository = documentRepository;
         this.ruleRepository = ruleRepository;
         this.auditLogRepository = auditLogRepository;
         this.fileStorage = fileStorage;
         this.currentUserService = currentUserService;
         this.messageService = messageService;
+        this.tenantAccessService = tenantAccessService;
     }
 
     @Transactional
     public FiscalXmlRectificationResultDTO rectify(UUID documentId) {
         FiscalXmlDocument document = documentRepository.findFirstByIdAndDeletedIsFalse(documentId)
                 .orElseThrow(() -> new ResourceNotFoundException(messageService.getMessage("error.entity.not.found")));
+        tenantAccessService.assertSameFirm(document.getCompany().getAccountingFirm().getId());
 
         byte[] originalBytes = readOriginal(document.getXmlFilePath());
         Document dom = parse(originalBytes);

@@ -38,7 +38,8 @@ public class TokenService {
                 .subject(auth.getUsername())
                 .claim("authorities", authorities)
                 .claim("userId", auth.getId())
-                .claim("profile", auth.getProfile().name());
+                .claim("profile", auth.getProfile().name())
+                .claim("tenantId", auth.getAccountingFirm().getId());
 
 
         return encoder.encode(

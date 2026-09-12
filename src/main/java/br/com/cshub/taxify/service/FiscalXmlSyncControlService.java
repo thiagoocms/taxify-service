@@ -1,5 +1,6 @@
 package br.com.cshub.taxify.service;
 
+import br.com.cshub.taxify.common.TenantAccessService;
 import br.com.cshub.taxify.domain.xml.FiscalXmlSyncControl;
 import br.com.cshub.taxify.dto.fiscalxml.FiscalXmlSyncControlDTO;
 import br.com.cshub.taxify.repository.FiscalXmlSyncControlRepository;
@@ -16,14 +17,20 @@ import java.util.List;
 public class FiscalXmlSyncControlService {
 
     private final FiscalXmlSyncControlRepository repository;
+    private final TenantAccessService tenantAccessService;
 
-    public FiscalXmlSyncControlService(FiscalXmlSyncControlRepository repository) {
+    public FiscalXmlSyncControlService(FiscalXmlSyncControlRepository repository, TenantAccessService tenantAccessService) {
         this.repository = repository;
+        this.tenantAccessService = tenantAccessService;
     }
 
     @Transactional(readOnly = true)
     public List<FiscalXmlSyncControlDTO> findAll() {
-        return repository.findAll().stream().map(this::toDTO).toList();
+        var firmId = tenantAccessService.getCurrentAccountingFirmId();
+        return repository.findAll().stream()
+                .filter(control -> firmId.isEmpty() || firmId.get().equals(control.getCompany().getAccountingFirm().getId()))
+                .map(this::toDTO)
+                .toList();
     }
 
     private FiscalXmlSyncControlDTO toDTO(FiscalXmlSyncControl control) {

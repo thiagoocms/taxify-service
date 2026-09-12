@@ -106,22 +106,24 @@ public class FiscalXmlIntegrationService {
                 onlyDigits(company.getDocument().getNumber())
         );
 
+        String apiKey = company.getAccountingFirm().getSiegApiKey();
+
         if (skipCountCheck) {
             log.info("Skipping contar-xmls for company {} - already known pending from a previous check", company.getId());
-            List<byte[]> xmlContents = siegClient.baixarXmls(request);
+            List<byte[]> xmlContents = siegClient.baixarXmls(request, apiKey);
             XmlDownloadResultDTO result = persistAll(company, xmlContents);
             updateSyncControl(company, filter.dataEmissaoInicio(), filter.dataEmissaoFim(), null);
             return result;
         }
 
-        int totalSieg = countPendingNfe(company, request);
+        int totalSieg = countPendingNfe(company, request, apiKey);
 
         XmlDownloadResultDTO result;
         if (totalSieg == 0) {
             log.info("SIEG reports 0 pending NFe for company {} in this window, skipping baixar-xmls", company.getId());
             result = new XmlDownloadResultDTO(0, 0, 0, 0, 0, List.of(), List.of());
         } else {
-            List<byte[]> xmlContents = siegClient.baixarXmls(request);
+            List<byte[]> xmlContents = siegClient.baixarXmls(request, apiKey);
             result = persistAll(company, xmlContents);
         }
 
@@ -132,9 +134,9 @@ public class FiscalXmlIntegrationService {
         return result;
     }
 
-    private int countPendingNfe(Company company, SiegBaixarXmlsRequest request) {
+    private int countPendingNfe(Company company, SiegBaixarXmlsRequest request, String apiKey) {
         try {
-            return siegClient.contarXmlsNfe(request);
+            return siegClient.contarXmlsNfe(request, apiKey);
         } catch (Exception e) {
             log.warn("Could not count pending SIEG NFe for company {} - proceeding with baixar-xmls anyway", company.getId(), e);
             return -1;

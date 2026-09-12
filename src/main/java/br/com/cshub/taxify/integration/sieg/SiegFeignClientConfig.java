@@ -18,19 +18,16 @@ public class SiegFeignClientConfig {
     private static final Logger log = LoggerFactory.getLogger(SiegFeignClientConfig.class);
 
     @Bean
-    public RequestInterceptor siegRequestInterceptor(SiegProperties properties, SiegTokenService tokenService,
-                                                       SiegRateLimiter rateLimiter) {
+    public RequestInterceptor siegRequestInterceptor(SiegTokenService tokenService, SiegRateLimiter rateLimiter) {
         return template -> {
             rateLimiter.acquire();
-            template.header("X-API-Key", properties.getApiKey());
             if (tokenService.isConfigured()) {
                 template.header(HttpHeaders.AUTHORIZATION, "Bearer ".concat(tokenService.getAccessToken()));
+                log.info("SIEG OAuth configured");
             } else {
                 log.warn("SIEG OAuth not configured (clientId/clientSecret/tokenUrl blank) - "
                         + "calling baixar-xmls with X-API-Key only, no Authorization header");
             }
-
-            log.info("SIEG OAuth configured");
         };
     }
 }

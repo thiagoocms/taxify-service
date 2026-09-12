@@ -24,6 +24,8 @@ import org.springframework.security.oauth2.jwt.JwtDecoder;
 import org.springframework.security.oauth2.jwt.JwtEncoder;
 import org.springframework.security.oauth2.jwt.NimbusJwtDecoder;
 import org.springframework.security.oauth2.jwt.NimbusJwtEncoder;
+import org.springframework.security.oauth2.server.resource.authentication.JwtAuthenticationConverter;
+import org.springframework.security.oauth2.server.resource.authentication.JwtGrantedAuthoritiesConverter;
 import org.springframework.security.web.SecurityFilterChain;
 
 import java.security.interfaces.RSAPrivateKey;
@@ -40,20 +42,61 @@ public class SecurityConfig {
 
     @Bean
     SecurityFilterChain filterChain(HttpSecurity http) throws Exception {
+        String base = AppConstants.API + AppConstants.V1;
         http.csrf(AbstractHttpConfigurer::disable)
                 .sessionManagement(session -> session.sessionCreationPolicy(SessionCreationPolicy.STATELESS))
                 .authorizeHttpRequests(
                         auth -> auth
-                                .requestMatchers(HttpMethod.POST, AppConstants.API + AppConstants.V1 + "/auth").permitAll()
-                                .requestMatchers(HttpMethod.POST, AppConstants.API + AppConstants.V1 + "/users").permitAll()
+                                .requestMatchers(HttpMethod.POST, base + "/auth").permitAll()
+                                .requestMatchers(HttpMethod.POST, base + "/users").permitAll()
                                     .requestMatchers("/v3/api-docs/**", "/swagger-ui.html", "/swagger-ui/**").permitAll()
+                                // Manipulação (criar/editar/excluir) de empresas, usuários (e seus
+                                // vínculos com empresas), planos, assinaturas e regras fiscais é
+                                // restrita a ADMIN - leitura (GET) continua liberada pra qualquer
+                                // perfil autenticado (a restrição por escritório já é aplicada em
+                                // TenantAccessService, independente de profile).
+                                .requestMatchers(HttpMethod.POST, base + "/companies").hasAuthority("ADMIN")
+                                .requestMatchers(HttpMethod.PUT, base + "/companies/**").hasAuthority("ADMIN")
+                                .requestMatchers(HttpMethod.DELETE, base + "/companies/**").hasAuthority("ADMIN")
+                                .requestMatchers(HttpMethod.POST, base + "/users/*/companies").hasAuthority("ADMIN")
+                                .requestMatchers(HttpMethod.PUT, base + "/users/**").hasAuthority("ADMIN")
+                                .requestMatchers(HttpMethod.DELETE, base + "/users/**").hasAuthority("ADMIN")
+                                .requestMatchers(HttpMethod.POST, base + "/plans").hasAuthority("ADMIN")
+                                .requestMatchers(HttpMethod.PUT, base + "/plans/**").hasAuthority("ADMIN")
+                                .requestMatchers(HttpMethod.DELETE, base + "/plans/**").hasAuthority("ADMIN")
+                                .requestMatchers(HttpMethod.POST, base + "/subscriptions").hasAuthority("ADMIN")
+                                .requestMatchers(HttpMethod.PUT, base + "/subscriptions/**").hasAuthority("ADMIN")
+                                .requestMatchers(HttpMethod.DELETE, base + "/subscriptions/**").hasAuthority("ADMIN")
+                                .requestMatchers(HttpMethod.POST, base + "/product-fiscal-rules").hasAuthority("ADMIN")
+                                .requestMatchers(HttpMethod.PUT, base + "/product-fiscal-rules/**").hasAuthority("ADMIN")
+                                .requestMatchers(HttpMethod.DELETE, base + "/product-fiscal-rules/**").hasAuthority("ADMIN")
+                                .requestMatchers(HttpMethod.POST, base + "/accounting-firms").hasAuthority("ADMIN")
+                                .requestMatchers(HttpMethod.PUT, base + "/accounting-firms/**").hasAuthority("ADMIN")
+                                .requestMatchers(HttpMethod.DELETE, base + "/accounting-firms/**").hasAuthority("ADMIN")
                                 .anyRequest().authenticated()
                 )
                 .httpBasic(Customizer.withDefaults())
                 .oauth2ResourceServer(
                         conf -> conf.jwt(
-                                jwt -> jwt.decoder(jwtDecoder())));
+                                jwt -> jwt.decoder(jwtDecoder())
+                                        .jwtAuthenticationConverter(jwtAuthenticationConverter())));
         return http.build();
+    }
+
+    /**
+     * TokenService puts the user's authorities in a plain "authorities" claim (see
+     * Auth#getAuthorities), not the "scope"/"scp" claim Spring Security's default
+     * JwtGrantedAuthoritiesConverter looks for - without this, every token would
+     * authenticate with zero authorities and every hasAuthority(...) check would 403.
+     */
+    private JwtAuthenticationConverter jwtAuthenticationConverter() {
+        JwtGrantedAuthoritiesConverter authoritiesConverter = new JwtGrantedAuthoritiesConverter();
+        authoritiesConverter.setAuthoritiesClaimName("authorities");
+        authoritiesConverter.setAuthorityPrefix("");
+
+        JwtAuthenticationConverter converter = new JwtAuthenticationConverter();
+        converter.setJwtGrantedAuthoritiesConverter(authoritiesConverter);
+        return converter;
     }
 
     @Bean

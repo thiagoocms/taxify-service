@@ -22,14 +22,12 @@ public class SiegClient {
 
     private final SiegFeignClient feignClient;
     private final FiscalXmlPackageExtractor packageExtractor;
-    private final SiegProperties properties;
     private final MessageService messageService;
 
     public SiegClient(SiegFeignClient feignClient, FiscalXmlPackageExtractor packageExtractor,
-                       SiegProperties properties, MessageService messageService) {
+                       MessageService messageService) {
         this.feignClient = feignClient;
         this.packageExtractor = packageExtractor;
-        this.properties = properties;
         this.messageService = messageService;
     }
 
@@ -39,14 +37,16 @@ public class SiegClient {
      * company with nothing pending doesn't spend a rate-limited download call for
      * nothing. NFCe/CTe/CFe/NFSe counts also come back but aren't used here since this
      * integration only handles NFe (TIPO_XML_NFE) today.
+     *
+     * @param apiKey the calling AccountingFirm's own SIEG "X-API-Key" (see AccountingFirm.siegApiKey)
      */
-    public int contarXmlsNfe(SiegBaixarXmlsRequest request) {
-        if (properties.getApiKey() == null || properties.getApiKey().isBlank()) {
+    public int contarXmlsNfe(SiegBaixarXmlsRequest request, String apiKey) {
+        if (apiKey == null || apiKey.isBlank()) {
             throw new SiegIntegrationException(messageService.getMessage("error.sieg.api.key.missing"));
         }
 
         try {
-            SiegContarXmlsResponse response = feignClient.contarXmls(request);
+            SiegContarXmlsResponse response = feignClient.contarXmls(apiKey, request);
             if (response == null || !response.isSuccess() || response.data() == null) {
                 throw new SiegIntegrationException(messageService.getMessage("error.sieg.integration.failed"));
             }
@@ -57,12 +57,15 @@ public class SiegClient {
         }
     }
 
-    public List<byte[]> baixarXmls(SiegBaixarXmlsRequest request) {
-        if (properties.getApiKey() == null || properties.getApiKey().isBlank()) {
+    /**
+     * @param apiKey the calling AccountingFirm's own SIEG "X-API-Key" (see AccountingFirm.siegApiKey)
+     */
+    public List<byte[]> baixarXmls(SiegBaixarXmlsRequest request, String apiKey) {
+        if (apiKey == null || apiKey.isBlank()) {
             throw new SiegIntegrationException(messageService.getMessage("error.sieg.api.key.missing"));
         }
 
-        try (Response response = feignClient.baixarXmls(request)) {
+        try (Response response = feignClient.baixarXmls(apiKey, request)) {
             byte[] body = readBody(response);
             if (response.status() >= 400) {
                 log.warn("SIEG baixar-xmls returned HTTP {}: {}", response.status(), errorSnippet(body));

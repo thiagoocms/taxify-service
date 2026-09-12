@@ -8,7 +8,6 @@ import org.springframework.stereotype.Component;
 public class SiegProperties {
 
     private String baseUrl = "https://api.sieg.com";
-    private String apiKey;
     private String clientId;
     private String clientSecret;
     private String tokenUrl;
@@ -22,14 +21,6 @@ public class SiegProperties {
 
     public void setBaseUrl(String baseUrl) {
         this.baseUrl = baseUrl;
-    }
-
-    public String getApiKey() {
-        return apiKey;
-    }
-
-    public void setApiKey(String apiKey) {
-        this.apiKey = apiKey;
     }
 
     public String getClientId() {

@@ -1,12 +1,12 @@
 package br.com.cshub.taxify.domain.auth;
 
-import br.com.cshub.taxify.domain.company.CompanyAuthority;
 import br.com.cshub.taxify.domain.user.User;
 import org.springframework.security.core.GrantedAuthority;
+import org.springframework.security.core.authority.SimpleGrantedAuthority;
 import org.springframework.security.core.userdetails.UserDetails;
 
 import java.util.Collection;
-import java.util.stream.Collectors;
+import java.util.List;
 
 public class Auth extends User implements UserDetails {
 
@@ -22,14 +22,13 @@ public class Auth extends User implements UserDetails {
         this.setEmail(user.getEmail());
         this.setProfile(user.getProfile());
         this.setDeleted(user.isDeleted());
+        this.setAccountingFirm(user.getAccountingFirm());
         this.setUserCompanies(user.getUserCompanies());
     }
 
     @Override
     public Collection<? extends GrantedAuthority> getAuthorities() {
-        return this.getUserCompanies().stream()
-                .map(uc -> new CompanyAuthority(uc.getCompany(), uc.getRole()))
-                .collect(Collectors.toSet());
+        return List.of(new SimpleGrantedAuthority(this.getProfile().toString()));
     }
 
     @Override

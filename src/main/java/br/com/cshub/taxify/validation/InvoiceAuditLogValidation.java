@@ -2,6 +2,7 @@ package br.com.cshub.taxify.validation;
 
 import br.com.cshub.taxify.common.AbstractCrudValidation;
 import br.com.cshub.taxify.common.MessageService;
+import br.com.cshub.taxify.common.TenantAccessService;
 import br.com.cshub.taxify.domain.invoice.InvoiceAuditLog;
 import br.com.cshub.taxify.exception.BadRequestException;
 import br.com.cshub.taxify.mapper.InvoiceAuditLogMapper;
@@ -18,14 +19,23 @@ public class InvoiceAuditLogValidation extends AbstractCrudValidation<InvoiceAud
     private final InvoiceAuditLogMapper mapper;
     private final UserValidation userValidation;
     private final CompanyValidation companyValidation;
+    private final TenantAccessService tenantAccessService;
 
     @Autowired
-    public InvoiceAuditLogValidation(InvoiceAuditLogMapper mapper, InvoiceAuditLogRepository repository, MessageService messageService, UserValidation userValidation, CompanyValidation companyValidation) {
+    public InvoiceAuditLogValidation(InvoiceAuditLogMapper mapper, InvoiceAuditLogRepository repository, MessageService messageService, UserValidation userValidation, CompanyValidation companyValidation, TenantAccessService tenantAccessService) {
         super(repository, messageService);
         this.userValidation = userValidation;
         this.companyValidation = companyValidation;
+        this.tenantAccessService = tenantAccessService;
         setMessageNotFound("error.invoice.audit.log.not.found");
         this.mapper = mapper;
+    }
+
+    @Override
+    public InvoiceAuditLog checkExist(UUID id) {
+        InvoiceAuditLog log = super.checkExist(id);
+        tenantAccessService.assertSameFirm(log.getCompany().getAccountingFirm().getId());
+        return log;
     }
 
     @Override
