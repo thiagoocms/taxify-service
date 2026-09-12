@@ -73,7 +73,6 @@ class FiscalXmlIntegrationServiceSyncTest {
         lenient().when(syncControlRepository.findByCompany_Id(companyId)).thenReturn(Optional.empty());
 
         SiegProperties properties = new SiegProperties();
-        properties.setXmlStoragePath(tempDir.toString());
 
         FiscalXmlSyncProperties syncProperties = new FiscalXmlSyncProperties();
         syncProperties.setStoragePath(tempDir.toString());

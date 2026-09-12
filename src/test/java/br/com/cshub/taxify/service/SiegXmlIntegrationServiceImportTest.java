@@ -79,7 +79,6 @@ class SiegXmlIntegrationServiceImportTest {
         lenient().when(messageService.getMessage(any())).thenReturn("error");
 
         SiegProperties properties = new SiegProperties();
-        properties.setXmlStoragePath(tempDir.toString());
 
         FiscalXmlSyncProperties syncProperties = new FiscalXmlSyncProperties();
         syncProperties.setStoragePath(tempDir.toString());

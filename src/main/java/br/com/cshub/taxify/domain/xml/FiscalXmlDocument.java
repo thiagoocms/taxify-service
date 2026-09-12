@@ -12,12 +12,6 @@ import java.util.ArrayList;
 import java.util.List;
 import java.util.UUID;
 
-/**
- * Stores the values extracted from a fiscal XML (identification/issuer/recipient/totals
- * header plus line items) - not the XML markup itself, which is written to disk by
- * {@link br.com.cshub.taxify.integration.sieg.FiscalXmlFileStorage} and only referenced
- * here via {@link #xmlFilePath}.
- */
 @Entity
 @Table(name = "fiscal_xml_documents", uniqueConstraints = @UniqueConstraint(columnNames = "access_key"))
 public class FiscalXmlDocument extends AbstractAuditingEntity {
@@ -50,15 +44,11 @@ public class FiscalXmlDocument extends AbstractAuditingEntity {
     @Column(name = "xml_file_path", length = 1000, nullable = false)
     private String xmlFilePath;
 
-    /**
-     * Path of the latest rectified copy (see {@link br.com.cshub.taxify.service.FiscalXmlRectificationService}),
-     * null until the first successful rectification. {@link #xmlFilePath} above is never
-     * touched or replaced - this only points at the newest correction alongside it, so
-     * consumers that want the corrected version (e.g. export) know where to look instead
-     * of scanning the filesystem for the latest "-retificado-*" file.
-     */
     @Column(name = "rectified_file_path", length = 1000)
     private String rectifiedFilePath;
+
+    @Column(name = "last_rectification_checked_at")
+    private LocalDateTime lastRectificationCheckedAt;
 
     @Column(name = "source_system", length = 20, nullable = false)
     private String sourceSystem = "SIEG";
@@ -270,6 +260,14 @@ public class FiscalXmlDocument extends AbstractAuditingEntity {
 
     public void setRectifiedFilePath(String rectifiedFilePath) {
         this.rectifiedFilePath = rectifiedFilePath;
+    }
+
+    public LocalDateTime getLastRectificationCheckedAt() {
+        return lastRectificationCheckedAt;
+    }
+
+    public void setLastRectificationCheckedAt(LocalDateTime lastRectificationCheckedAt) {
+        this.lastRectificationCheckedAt = lastRectificationCheckedAt;
     }
 
     public String getSourceSystem() {

@@ -9,6 +9,7 @@ import br.com.cshub.taxify.enumerated.DocumentTypeEnum;
 import br.com.cshub.taxify.integration.fiscalxml.FiscalXmlRectificationProperties;
 import br.com.cshub.taxify.repository.FiscalXmlDocumentRepository;
 import br.com.cshub.taxify.repository.FiscalXmlSyncControlRepository;
+import br.com.cshub.taxify.repository.ProductFiscalRuleRepository;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.extension.ExtendWith;
@@ -16,10 +17,12 @@ import org.mockito.Mock;
 import org.mockito.junit.jupiter.MockitoExtension;
 
 import java.util.List;
+import java.util.Optional;
 import java.util.UUID;
 
 import static org.mockito.ArgumentMatchers.any;
 import static org.mockito.ArgumentMatchers.eq;
+import static org.mockito.Mockito.lenient;
 import static org.mockito.Mockito.verify;
 import static org.mockito.Mockito.verifyNoInteractions;
 import static org.mockito.Mockito.when;
@@ -32,6 +35,8 @@ class FiscalXmlRectificationSchedulerTest {
     @Mock
     private FiscalXmlDocumentRepository documentRepository;
     @Mock
+    private ProductFiscalRuleRepository ruleRepository;
+    @Mock
     private FiscalXmlRectificationService rectificationService;
 
     private FiscalXmlRectificationProperties properties;
@@ -40,7 +45,8 @@ class FiscalXmlRectificationSchedulerTest {
     @BeforeEach
     void setUp() {
         properties = new FiscalXmlRectificationProperties();
-        scheduler = new FiscalXmlRectificationScheduler(syncControlRepository, documentRepository, rectificationService, properties);
+        scheduler = new FiscalXmlRectificationScheduler(syncControlRepository, documentRepository, ruleRepository, rectificationService, properties);
+        lenient().when(ruleRepository.findMaxLastModifiedDateByCompanyId(any())).thenReturn(Optional.empty());
     }
 
     @Test

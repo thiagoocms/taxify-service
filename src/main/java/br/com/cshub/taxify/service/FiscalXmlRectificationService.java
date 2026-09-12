@@ -117,10 +117,11 @@ public class FiscalXmlRectificationService {
                 byte[] rectifiedBytes = serialize(dom);
                 rectifiedPath = fileStorage.storeRectified(document.getCompany().getId(), document.getAccessKey(), rectifiedBytes);
                 document.setRectifiedFilePath(rectifiedPath);
-                documentRepository.save(document);
                 logRectification(document, externalInvoiceKey, notes);
             }
         }
+        document.setLastRectificationCheckedAt(LocalDateTime.now());
+        documentRepository.save(document);
 
         return new FiscalXmlRectificationResultDTO(
                 document.getId().toString(), document.getAccessKey(), document.getXmlFilePath(), rectifiedPath, corrections);

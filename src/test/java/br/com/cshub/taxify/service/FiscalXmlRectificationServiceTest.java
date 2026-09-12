@@ -138,7 +138,10 @@ class FiscalXmlRectificationServiceTest {
         assertThat(result.correcoesAplicadas()).isEmpty();
         assertThat(result.rectifiedFilePath()).isNull();
         verify(auditLogRepository, never()).save(any());
-        verify(documentRepository, never()).save(any());
+        // Still saved once, to record lastRectificationCheckedAt - see
+        // FiscalXmlRectificationScheduler, which uses that to skip documents already
+        // checked since the company's rules last changed.
+        verify(documentRepository).save(any());
     }
 
     @Test
@@ -154,7 +157,7 @@ class FiscalXmlRectificationServiceTest {
         assertThat(result.correcoesAplicadas()).isEmpty();
         assertThat(result.rectifiedFilePath()).isNull();
         verify(auditLogRepository, never()).save(any());
-        verify(documentRepository, never()).save(any());
+        verify(documentRepository).save(any());
     }
 
     @Test
@@ -235,7 +238,9 @@ class FiscalXmlRectificationServiceTest {
         assertThat(second.correcoesAplicadas()).hasSize(1);
         assertThat(second.rectifiedFilePath()).isNull();
         verify(auditLogRepository, times(1)).save(any());
-        verify(documentRepository, times(1)).save(any());
+        // Once per rectify() call (two calls here) - it's the log/rectified-file writing
+        // that's skipped on the second call, not the lastRectificationCheckedAt bookkeeping.
+        verify(documentRepository, times(2)).save(any());
     }
 
     @Test
