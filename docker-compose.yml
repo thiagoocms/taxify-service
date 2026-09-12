@@ -1,0 +1,72 @@
+services:
+  mysql:
+    image: mysql:8.4
+    container_name: taxify-mysql
+    restart: unless-stopped
+    environment:
+      MYSQL_ROOT_PASSWORD: ${MYSQL_ROOT_PASSWORD:-root}
+      MYSQL_DATABASE: ${DB_NAME:-taxify_dev}
+      MYSQL_USER: ${DB_USER:-taxify}
+      MYSQL_PASSWORD: ${DB_PASSWORD:-taxify}
+    ports:
+      - "3310:3306"
+    volumes:
+      - taxify_mysql_data:/var/lib/mysql
+    healthcheck:
+      test: ["CMD", "mysqladmin", "ping", "-h", "localhost", "-uroot", "-p${MYSQL_ROOT_PASSWORD:-root}"]
+      interval: 5s
+      timeout: 5s
+      retries: 20
+
+  backend:
+    image: thiagoocms/taxify-service:${TAG:-latest}
+    # Alternativa: buildar da fonte local em vez de puxar a imagem do Docker Hub.
+    # build:
+    #   context: .
+    #   dockerfile: Dockerfile
+    container_name: taxify-backend
+    restart: unless-stopped
+    depends_on:
+      mysql:
+        condition: service_healthy
+    environment:
+      SERVER_PORT: 5000
+      DB_HOST: mysql
+      DB_PORT: 3306
+      DB_NAME: ${DB_NAME:-taxify_dev}
+      DB_USER: ${DB_USER:-taxify}
+      DB_PASSWORD: ${DB_PASSWORD:-taxify}
+      SIEG_CLIENT_ID: ${SIEG_CLIENT_ID}
+      SIEG_CLIENT_SECRET: ${SIEG_CLIENT_SECRET}
+      FISCAL_XML_STORAGE_PATH: /data/fiscal-xml
+      FISCAL_XML_SYNC_ENABLED: true
+      FISCAL_XML_SYNC_CRON: 0 0/10 * * * *
+      FISCAL_XML_SYNC_BATCH_SIZE: 2
+      FISCAL_XML_SYNC_PROVIDER: sieg
+      FISCAL_XML_RECTIFICATION_ENABLED: true
+      FISCAL_XML_RECTIFICATION_CRON: 0 0/30 * * * *
+      FISCAL_XML_RECTIFICATION_LOOKBACK_DAYS: 50
+      FISCAL_XML_PURGE_ENABLED: true
+      FISCAL_XML_PURGE_CRON: 0 0 4 1 * *
+      FISCAL_XML_PURGE_RETENTION_MONTHS: 3
+    ports:
+      - "5000:5000"
+    volumes:
+      - taxify_fiscal_xml:/data/fiscal-xml
+
+  frontend:
+    image: thiagoocms/taxify-ui:${TAG:-latest}
+    # Alternativa: buildar da fonte local em vez de puxar a imagem do Docker Hub.
+    # build:
+    #   context: ../taxify-front
+    #   dockerfile: Dockerfile
+    container_name: taxify-frontend
+    restart: unless-stopped
+    depends_on:
+      - backend
+    ports:
+      - "8080:80"
+
+volumes:
+  taxify_mysql_data:
+  taxify_fiscal_xml:

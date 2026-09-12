@@ -34,3 +34,6 @@ build/
 
 ### SIEG fiscal XML storage (see sieg.xml-storage-path) ###
 /data/fiscal-xml/
+
+### Docker ###
+.env

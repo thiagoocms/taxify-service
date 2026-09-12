@@ -29,8 +29,9 @@ public class FiscalXmlSyncProperties {
     private String cron = "0 * * * * *";
     private String provider = "sieg";
     private int batchSize = 2;
-
     private LocalDate referenceDate;
+    private String storagePath = "./data/fiscal-xml";
+
 
     public boolean isEnabled() {
         return enabled;
@@ -70,5 +71,13 @@ public class FiscalXmlSyncProperties {
 
     public void setReferenceDate(LocalDate referenceDate) {
         this.referenceDate = referenceDate;
+    }
+
+    public String getStoragePath() {
+        return storagePath;
+    }
+
+    public void setStoragePath(String xmlStoragePath) {
+        this.storagePath = xmlStoragePath;
     }
 }

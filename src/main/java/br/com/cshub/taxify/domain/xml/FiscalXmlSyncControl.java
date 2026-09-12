@@ -30,7 +30,7 @@ public class FiscalXmlSyncControl extends AbstractAuditingEntity {
     @Column(name = "id", length = 36, updatable = false, nullable = false)
     private UUID id;
 
-    @ManyToOne(fetch = FetchType.LAZY, cascade = CascadeType.ALL)
+    @ManyToOne(fetch = FetchType.LAZY)
     @JoinColumn(name = "company_id", nullable = false)
     private Company company;
 

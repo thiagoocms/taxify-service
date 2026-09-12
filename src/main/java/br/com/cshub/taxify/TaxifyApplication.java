@@ -6,6 +6,7 @@ import org.springframework.boot.SpringApplication;
 import org.springframework.boot.autoconfigure.SpringBootApplication;
 import org.springframework.cloud.openfeign.EnableFeignClients;
 import org.springframework.core.env.Environment;
+import org.springframework.core.env.SimpleCommandLinePropertySource;
 import org.springframework.data.jpa.repository.config.EnableJpaAuditing;
 import org.springframework.scheduling.annotation.EnableScheduling;
 
@@ -23,6 +24,8 @@ public class TaxifyApplication {
 
     public static void main(String[] args) throws UnknownHostException {
         SpringApplication app = new SpringApplication(TaxifyApplication.class);
+        SimpleCommandLinePropertySource source = new SimpleCommandLinePropertySource(args);
+		addDefaultProfile(app, source);;
         Environment env = app.run(args).getEnvironment();
         log.info("""
                         Access URLs:
@@ -35,5 +38,12 @@ public class TaxifyApplication {
                 InetAddress.getLocalHost().getHostAddress(),
                 env.getProperty("server.port"), env.getProperty("server.servlet.context-path"));
     }
+
+    private static void addDefaultProfile(SpringApplication app, SimpleCommandLinePropertySource source) {
+		if (!source.containsProperty("spring.profiles.active")
+				&& !System.getenv().containsKey("SPRING_PROFILES_ACTIVE")) {
+			app.setAdditionalProfiles("default");
+		}
+	}
 
 }

@@ -3,6 +3,7 @@ package br.com.cshub.taxify.integration.sieg;
 import br.com.cshub.taxify.common.MessageService;
 import br.com.cshub.taxify.domain.xml.FiscalXmlDocument;
 import br.com.cshub.taxify.exception.SiegIntegrationException;
+import br.com.cshub.taxify.integration.fiscalxml.FiscalXmlSyncProperties;
 import org.springframework.stereotype.Component;
 
 import java.io.IOException;
@@ -18,10 +19,10 @@ import java.util.UUID;
 @Component
 public class FiscalXmlFileStorage {
 
-    private final SiegProperties properties;
+    private final FiscalXmlSyncProperties properties;
     private final MessageService messageService;
 
-    public FiscalXmlFileStorage(SiegProperties properties, MessageService messageService) {
+    public FiscalXmlFileStorage(FiscalXmlSyncProperties properties, MessageService messageService) {
         this.properties = properties;
         this.messageService = messageService;
     }
@@ -44,7 +45,7 @@ public class FiscalXmlFileStorage {
     }
 
     private String write(UUID companyId, String fileName, byte[] xmlBytes) {
-        Path directory = Path.of(properties.getXmlStoragePath(), companyId.toString());
+        Path directory = Path.of(properties.getStoragePath(), companyId.toString());
         Path file = directory.resolve(fileName);
         try {
             Files.createDirectories(directory);
