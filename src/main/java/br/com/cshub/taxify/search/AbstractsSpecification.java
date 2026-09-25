@@ -1,7 +1,9 @@
 package br.com.cshub.taxify.search;
 
 
+import br.com.cshub.taxify.domain.company.Company;
 import br.com.cshub.taxify.domain.search.SearchCriteria;
+import br.com.cshub.taxify.domain.user_company.UserCompany;
 import jakarta.persistence.criteria.*;
 import org.springframework.data.jpa.domain.Specification;
 
@@ -27,7 +29,7 @@ public abstract class AbstractsSpecification<E> implements Specification<E> {
     public Specification<E> listAllByCriteria(List<SearchCriteria> criterias) {
 
         return (root, query, builder) -> {
-            List<Predicate> predicates = addPredicates(criterias, root, builder);
+            List<Predicate> predicates = addPredicates(criterias, root, query, builder);
             buildOrderBy(query, criterias, root, builder);
             return SearchCriteriaUtil.andTogether(predicates, builder);
         };
@@ -91,27 +93,18 @@ public abstract class AbstractsSpecification<E> implements Specification<E> {
         return SearchCriteria.ORDER_ASC;
     }
 
-    private List<Predicate> addPredicates(List<SearchCriteria> criterias, Root<E> root, CriteriaBuilder builder) {
+    private List<Predicate> addPredicates(List<SearchCriteria> criterias, Root<E> root, CriteriaQuery<?> query, CriteriaBuilder builder) {
         List<Predicate> predicates = new ArrayList<>();
         for (SearchCriteria criteria : criterias) {
-            addPredicate(root, builder, predicates, criteria);
+            addPredicate(root, query, builder, predicates, criteria);
         }
         return predicates;
     }
 
-    private void addPredicate(Root<E> root, CriteriaBuilder builder, List<Predicate> predicates, SearchCriteria criteria) {
+    private void addPredicate(Root<E> root, CriteriaQuery<?> query, CriteriaBuilder builder, List<Predicate> predicates, SearchCriteria criteria) {
         String field = criteria.getKey();
         switch (field) {
-            case "userId" -> {
-                Join<Object, Object> userJoin = root.join("user", JoinType.LEFT);
-
-                predicates.add(
-                        builder.or(
-                                builder.equal(userJoin.get("id"), criteria.getValue()),
-                                builder.isNull(userJoin.get("id"))
-                        )
-                );
-            }
+            case "userId" -> addUserIdPredicate(root, query, builder, predicates, criteria);
             case "name" -> {
                 String value = criteria.getValue().toString().toLowerCase(Locale.ROOT);
 
@@ -128,6 +121,49 @@ public abstract class AbstractsSpecification<E> implements Specification<E> {
 //            predicates.add(builder.equal(root.get(criteria.getKey()), criteria.getValue()));
 //        }
         addExtrasPredicates(root, builder, predicates, criteria);
+    }
+
+
+    private void addUserIdPredicate(Root<E> root, CriteriaQuery<?> query, CriteriaBuilder builder, List<Predicate> predicates, SearchCriteria criteria) {
+        if (hasAttribute(root, "user")) {
+            Join<Object, Object> userJoin = root.join("user", JoinType.LEFT);
+            predicates.add(
+                    builder.or(
+                            builder.equal(userJoin.get("id"), criteria.getValue()),
+                            builder.isNull(userJoin.get("id"))
+                    )
+            );
+            return;
+        }
+
+        Path<Company> companyPath = resolveCompanyPath(root);
+        if (companyPath == null) {
+            return;
+        }
+
+        Subquery<Integer> subquery = query.subquery(Integer.class);
+        Root<UserCompany> userCompany = subquery.from(UserCompany.class);
+        subquery.select(builder.literal(1))
+                .where(
+                        builder.equal(userCompany.get("company"), companyPath),
+                        builder.equal(userCompany.get("user").get("id"), criteria.getValue())
+                );
+        predicates.add(builder.exists(subquery));
+    }
+
+    private boolean hasAttribute(Root<E> root, String name) {
+        return root.getModel().getAttributes().stream().anyMatch(attribute -> attribute.getName().equals(name));
+    }
+
+    @SuppressWarnings("unchecked")
+    private Path<Company> resolveCompanyPath(Root<E> root) {
+        if (root.getModel().getJavaType() == Company.class) {
+            return (Path<Company>) (Path<?>) root;
+        }
+        if (hasAttribute(root, "company")) {
+            return root.get("company");
+        }
+        return null;
     }
 
     protected abstract void addExtrasPredicates(Root<E> root, CriteriaBuilder builder, List<Predicate> predicates, SearchCriteria criteria);

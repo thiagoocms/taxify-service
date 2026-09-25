@@ -3,6 +3,7 @@ package br.com.cshub.taxify.rest;
 import br.com.cshub.taxify.constants.AppConstants;
 import br.com.cshub.taxify.dto.fiscalrule.FiscalXmlRectificationResultDTO;
 import br.com.cshub.taxify.dto.fiscalxml.FiscalXmlItemDTO;
+import br.com.cshub.taxify.dto.fiscalxml.XmlSearchFilterDTO;
 import br.com.cshub.taxify.dto.sieg.XmlDownloadFilterDTO;
 import br.com.cshub.taxify.dto.sieg.XmlDownloadResultDTO;
 import br.com.cshub.taxify.exception.BadRequestException;
@@ -10,6 +11,7 @@ import br.com.cshub.taxify.service.FiscalXmlRectificationService;
 import br.com.cshub.taxify.service.FiscalXmlIntegrationService;
 import jakarta.validation.Valid;
 import org.springframework.beans.factory.annotation.Autowired;
+import org.springframework.data.domain.Page;
 import org.springframework.http.HttpHeaders;
 import org.springframework.http.MediaType;
 import org.springframework.http.ResponseEntity;
@@ -39,7 +41,7 @@ public class FiscalXmlResource {
     }
 
     @PostMapping
-    public ResponseEntity<XmlDownloadResultDTO> buscarXmls(@Valid @RequestBody XmlDownloadFilterDTO filter) {
+    public ResponseEntity<Page<FiscalXmlItemDTO>> buscarXmls(@Valid @RequestBody XmlSearchFilterDTO filter) {
         return ResponseEntity.ok(service.searchStoredXmls(filter));
     }
 

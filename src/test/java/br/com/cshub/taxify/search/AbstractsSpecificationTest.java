@@ -1,7 +1,11 @@
 package br.com.cshub.taxify.search;
 
+import br.com.cshub.taxify.domain.company.Company;
 import br.com.cshub.taxify.domain.search.SearchCriteria;
+import br.com.cshub.taxify.domain.user_company.UserCompany;
 import jakarta.persistence.criteria.*;
+import jakarta.persistence.metamodel.Attribute;
+import jakarta.persistence.metamodel.EntityType;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.extension.ExtendWith;
@@ -11,6 +15,7 @@ import org.mockito.junit.jupiter.MockitoExtension;
 
 import java.util.ArrayList;
 import java.util.List;
+import java.util.Set;
 
 import static org.assertj.core.api.Assertions.assertThat;
 import static org.mockito.ArgumentMatchers.any;
@@ -94,7 +99,9 @@ class AbstractsSpecificationTest {
     }
 
     @Test
-    void userIdCriteriaJoinsAndAllowsNullOwner() {
+    void userIdCriteriaJoinsDirectlyWhenTheEntityHasAUserField() {
+        EntityType entityType = entityTypeWithAttributes(Object.class, "user");
+        when(root.getModel()).thenReturn(entityType);
         Join<Object, Object> join = mock(Join.class);
         Path path = mock(Path.class);
         Predicate equalsPredicate = mock(Predicate.class);
@@ -111,6 +118,71 @@ class AbstractsSpecificationTest {
         specification.listAllByCriteria(criteria).toPredicate(root, query, builder);
 
         verify(builder).or(equalsPredicate, isNullPredicate);
+    }
+
+    @Test
+    void userIdCriteriaFallsBackToAUserCompanyExistsSubqueryWhenTheEntityIsACompany() {
+        EntityType entityType = entityTypeWithAttributes(Company.class);
+        when(root.getModel()).thenReturn(entityType);
+
+        Subquery<Integer> subquery = mock(Subquery.class);
+        Root<UserCompany> userCompanyRoot = mock(Root.class);
+        Path companyPath = mock(Path.class);
+        Path userPath = mock(Path.class);
+        Path userIdPath = mock(Path.class);
+        Expression<Integer> literal = mock(Expression.class);
+        Predicate companyEquals = mock(Predicate.class);
+        Predicate userEquals = mock(Predicate.class);
+        Predicate existsPredicate = mock(Predicate.class);
+
+        when(query.subquery(Integer.class)).thenReturn(subquery);
+        when(subquery.from(UserCompany.class)).thenReturn(userCompanyRoot);
+        when(builder.literal(1)).thenReturn(literal);
+        when(subquery.select(literal)).thenReturn(subquery);
+        when(userCompanyRoot.get("company")).thenReturn(companyPath);
+        when(userCompanyRoot.get("user")).thenReturn(userPath);
+        when(userPath.get("id")).thenReturn(userIdPath);
+        when(builder.equal(companyPath, root)).thenReturn(companyEquals);
+        when(builder.equal(userIdPath, "user-1")).thenReturn(userEquals);
+        when(subquery.where(companyEquals, userEquals)).thenReturn(subquery);
+        when(builder.exists(subquery)).thenReturn(existsPredicate);
+        when(builder.and(any(Predicate[].class))).thenReturn(existsPredicate);
+
+        var criteria = List.of(new SearchCriteria("userId", "and", "user-1"));
+        specification.listAllByCriteria(criteria).toPredicate(root, query, builder);
+
+        verify(builder).exists(subquery);
+    }
+
+    @Test
+    void userIdCriteriaIsSkippedWhenTheEntityHasNeitherAUserNorACompanyField() {
+        EntityType entityType = entityTypeWithAttributes(Object.class);
+        when(root.getModel()).thenReturn(entityType);
+        Predicate emptyConjunction = mock(Predicate.class);
+        when(builder.and(any(Predicate[].class))).thenReturn(emptyConjunction);
+
+        var criteria = List.of(new SearchCriteria("userId", "and", "user-1"));
+        Predicate result = specification.listAllByCriteria(criteria).toPredicate(root, query, builder);
+
+        assertThat(result).isEqualTo(emptyConjunction);
+        verify(root, never()).join(eq("user"), any());
+        verify(query, never()).subquery(any(Class.class));
+    }
+
+    @SuppressWarnings({"unchecked", "rawtypes"})
+    private EntityType entityTypeWithAttributes(Class<?> javaType, String... attributeNames) {
+        EntityType entityType = mock(EntityType.class);
+        Set<Attribute> attributes = new java.util.HashSet<>();
+        for (String name : attributeNames) {
+            Attribute attribute = mock(Attribute.class);
+            when(attribute.getName()).thenReturn(name);
+            attributes.add(attribute);
+        }
+        when(entityType.getAttributes()).thenReturn(attributes);
+        // Only reached when there's no "user" attribute (resolveCompanyPath) - lenient so
+        // the has-a-user-field test (which never gets there) doesn't fail on it as unused.
+        lenient().when(entityType.getJavaType()).thenReturn(javaType);
+        return entityType;
     }
 
     @Test
