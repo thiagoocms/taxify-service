@@ -4,6 +4,8 @@ import br.com.cshub.taxify.common.AbstractJpaRepository;
 import br.com.cshub.taxify.domain.xml.FiscalXmlDocument;
 import org.springframework.data.domain.Page;
 import org.springframework.data.domain.Pageable;
+import org.springframework.data.jpa.repository.Query;
+import org.springframework.data.repository.query.Param;
 import org.springframework.stereotype.Repository;
 
 import java.time.LocalDateTime;
@@ -22,8 +24,15 @@ public interface FiscalXmlDocumentRepository extends AbstractJpaRepository<Fisca
     List<FiscalXmlDocument> findByCompany_IdAndIssueDateBetweenOrderByIssueDateDesc(
             UUID companyId, LocalDateTime issueDateFrom, LocalDateTime issueDateTo);
 
-    Page<FiscalXmlDocument> findByCompany_IdAndIssueDateBetween(
-            UUID companyId, LocalDateTime issueDateFrom, LocalDateTime issueDateTo, Pageable pageable);
-
     List<FiscalXmlDocument> findByIssueDateBeforeAndDeletedIsFalse(LocalDateTime cutoff);
+
+    /** {@code numero} null = no number filter. */
+    @Query("select d from FiscalXmlDocument d where d.company.id = :companyId"
+            + " and d.issueDate between :issueDateFrom and :issueDateTo"
+            + " and (:numero is null or d.numero = :numero)")
+    Page<FiscalXmlDocument> search(@Param("companyId") UUID companyId,
+                                   @Param("issueDateFrom") LocalDateTime issueDateFrom,
+                                   @Param("issueDateTo") LocalDateTime issueDateTo,
+                                   @Param("numero") String numero,
+                                   Pageable pageable);
 }

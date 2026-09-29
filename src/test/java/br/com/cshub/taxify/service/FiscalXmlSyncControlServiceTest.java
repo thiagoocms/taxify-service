@@ -34,6 +34,7 @@ class FiscalXmlSyncControlServiceTest {
     @BeforeEach
     void setUp() {
         lenient().when(tenantAccessService.getCurrentAccountingFirmId()).thenReturn(Optional.empty());
+        lenient().when(tenantAccessService.canAccessCompany(org.mockito.ArgumentMatchers.any())).thenReturn(true);
         service = new FiscalXmlSyncControlService(repository, tenantAccessService);
     }
 

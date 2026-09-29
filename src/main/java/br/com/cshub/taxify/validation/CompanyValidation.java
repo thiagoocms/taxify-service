@@ -44,7 +44,7 @@ public class CompanyValidation extends AbstractCrudValidation<Company, UUID> {
     @Override
     public Company checkExist(UUID id) {
         Company company = super.checkExist(id);
-        tenantAccessService.assertSameFirm(company.getAccountingFirm().getId());
+        tenantAccessService.assertCompanyAccess(company);
         return company;
     }
 

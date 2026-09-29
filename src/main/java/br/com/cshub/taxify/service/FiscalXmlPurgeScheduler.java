@@ -24,7 +24,7 @@ import java.util.List;
  * extracted field on it, stays in the database untouched - reporting and the sync
  * control table keep working for purged notes; only re-reading or exporting the raw XML
  * stops being possible once its file is gone (the existing "file missing" handling in
- * {@link FiscalXmlIntegrationService#searchStoredXmls} and {@code #exportXmls}/{@code
+ * {@link FiscalXmlQueryService#findDetail} and {@code FiscalXmlIntegrationService#exportXmls}/{@code
  * #exportXmlsZip} already skips-and-logs rather than failing, so this doesn't need any
  * special-casing there). Deleting an already-purged file is a safe no-op, so this can run
  * repeatedly without needing to track what it already purged.

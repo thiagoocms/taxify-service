@@ -29,6 +29,7 @@ public class FiscalXmlSyncControlService {
         var firmId = tenantAccessService.getCurrentAccountingFirmId();
         return repository.findAll().stream()
                 .filter(control -> firmId.isEmpty() || firmId.get().equals(control.getCompany().getAccountingFirm().getId()))
+                .filter(control -> tenantAccessService.canAccessCompany(control.getCompany().getId()))
                 .map(this::toDTO)
                 .toList();
     }

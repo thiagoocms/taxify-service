@@ -2,11 +2,15 @@ package br.com.cshub.taxify.rest;
 
 import br.com.cshub.taxify.constants.AppConstants;
 import br.com.cshub.taxify.dto.fiscalrule.FiscalXmlRectificationResultDTO;
+import br.com.cshub.taxify.dto.fiscalxml.FiscalXmlDetailDTO;
 import br.com.cshub.taxify.dto.fiscalxml.FiscalXmlItemDTO;
+import br.com.cshub.taxify.dto.fiscalxml.FiscalXmlProdutoDTO;
+import br.com.cshub.taxify.dto.fiscalxml.FiscalXmlSummaryDTO;
 import br.com.cshub.taxify.dto.fiscalxml.XmlSearchFilterDTO;
 import br.com.cshub.taxify.dto.sieg.XmlDownloadFilterDTO;
 import br.com.cshub.taxify.dto.sieg.XmlDownloadResultDTO;
 import br.com.cshub.taxify.exception.BadRequestException;
+import br.com.cshub.taxify.service.FiscalXmlQueryService;
 import br.com.cshub.taxify.service.FiscalXmlRectificationService;
 import br.com.cshub.taxify.service.FiscalXmlIntegrationService;
 import jakarta.validation.Valid;
@@ -15,6 +19,7 @@ import org.springframework.data.domain.Page;
 import org.springframework.http.HttpHeaders;
 import org.springframework.http.MediaType;
 import org.springframework.http.ResponseEntity;
+import org.springframework.web.bind.annotation.GetMapping;
 import org.springframework.web.bind.annotation.PathVariable;
 import org.springframework.web.bind.annotation.PostMapping;
 import org.springframework.web.bind.annotation.RequestBody;
@@ -33,16 +38,45 @@ public class FiscalXmlResource {
 
     private final FiscalXmlIntegrationService service;
     private final FiscalXmlRectificationService rectificationService;
+    private final FiscalXmlQueryService queryService;
 
     @Autowired
-    public FiscalXmlResource(FiscalXmlIntegrationService service, FiscalXmlRectificationService rectificationService) {
+    public FiscalXmlResource(FiscalXmlIntegrationService service, FiscalXmlRectificationService rectificationService,
+                             FiscalXmlQueryService queryService) {
         this.service = service;
         this.rectificationService = rectificationService;
+        this.queryService = queryService;
     }
 
+    /** List rows only (DB columns, no XML file read) - see FiscalXmlQueryService#search. */
     @PostMapping
-    public ResponseEntity<Page<FiscalXmlItemDTO>> buscarXmls(@Valid @RequestBody XmlSearchFilterDTO filter) {
-        return ResponseEntity.ok(service.searchStoredXmls(filter));
+    public ResponseEntity<Page<FiscalXmlSummaryDTO>> buscarXmls(@Valid @RequestBody XmlSearchFilterDTO filter) {
+        return ResponseEntity.ok(queryService.search(filter));
+    }
+
+    /** Header of one note (identification, parties, totals) - no items, no raw XML. */
+    @GetMapping("/{documentId}")
+    public ResponseEntity<FiscalXmlDetailDTO> buscarDetalhe(@PathVariable UUID documentId) {
+        return ResponseEntity.ok(queryService.findDetail(documentId));
+    }
+
+    @GetMapping("/{documentId}/produtos")
+    public ResponseEntity<List<FiscalXmlProdutoDTO>> buscarProdutos(@PathVariable UUID documentId) {
+        return ResponseEntity.ok(queryService.findProdutos(documentId));
+    }
+
+    /**
+     * Raw XML file of one note. {@code retificado=true} serves the rectified version when
+     * there is one (falls back to the original otherwise).
+     */
+    @GetMapping(value = "/{documentId}/xml", produces = MediaType.APPLICATION_XML_VALUE)
+    public ResponseEntity<byte[]> baixarXml(@PathVariable UUID documentId,
+                                            @RequestParam(defaultValue = "false") boolean retificado) {
+        FiscalXmlQueryService.StoredXml xml = queryService.findXml(documentId, retificado);
+        return ResponseEntity.ok()
+                .header(HttpHeaders.CONTENT_DISPOSITION, "attachment; filename=\"" + xml.fileName() + "\"")
+                .contentType(MediaType.APPLICATION_XML)
+                .body(xml.content());
     }
 
     /**

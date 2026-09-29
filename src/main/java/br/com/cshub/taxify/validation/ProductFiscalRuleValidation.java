@@ -36,7 +36,7 @@ public class ProductFiscalRuleValidation extends AbstractCrudValidation<ProductF
     @Override
     public ProductFiscalRule checkExist(UUID id) {
         ProductFiscalRule rule = super.checkExist(id);
-        tenantAccessService.assertSameFirm(rule.getCompany().getAccountingFirm().getId());
+        tenantAccessService.assertCompanyAccess(rule.getCompany());
         return rule;
     }
 

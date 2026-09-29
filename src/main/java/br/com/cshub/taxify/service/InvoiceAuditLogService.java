@@ -31,7 +31,7 @@ public class InvoiceAuditLogService extends AbstractCrudService<InvoiceAuditLog,
 
     @Override
     protected void checkAccess(InvoiceAuditLog entity) {
-        tenantAccessService.assertSameFirm(entity.getCompany().getAccountingFirm().getId());
+        tenantAccessService.assertCompanyAccess(entity.getCompany());
     }
 
     @Override
@@ -42,6 +42,7 @@ public class InvoiceAuditLogService extends AbstractCrudService<InvoiceAuditLog,
         }
         Specification<InvoiceAuditLog> restriction = (root, query, builder) ->
                 builder.equal(root.join("company", JoinType.LEFT).get("accountingFirm").get("id"), firmId.get());
-        return spec == null ? restriction : spec.and(restriction);
+        spec = spec == null ? restriction : spec.and(restriction);
+        return tenantAccessService.restrictToUserCompanies(spec, root -> root.get("company"));
     }
 }

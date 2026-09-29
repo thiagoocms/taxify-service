@@ -34,7 +34,7 @@ public class UserCompanyValidation extends AbstractCrudValidation<UserCompany, U
     @Override
     public UserCompany checkExist(UserCompanyId id) {
         UserCompany userCompany = super.checkExist(id);
-        tenantAccessService.assertSameFirm(userCompany.getCompany().getAccountingFirm().getId());
+        tenantAccessService.assertCompanyAccess(userCompany.getCompany());
         return userCompany;
     }
 

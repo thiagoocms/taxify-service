@@ -5,7 +5,6 @@ import br.com.cshub.taxify.domain.company.Company;
 import br.com.cshub.taxify.domain.xml.FiscalXmlDocument;
 import br.com.cshub.taxify.domain.xml.FiscalXmlDocumentItem;
 import br.com.cshub.taxify.domain.xml.FiscalXmlSyncControl;
-import br.com.cshub.taxify.dto.PageRequestDTO;
 import br.com.cshub.taxify.dto.fiscalxml.*;
 import br.com.cshub.taxify.dto.sieg.XmlDownloadFilterDTO;
 import br.com.cshub.taxify.dto.sieg.XmlDownloadResultDTO;
@@ -18,10 +17,6 @@ import br.com.cshub.taxify.repository.FiscalXmlSyncControlRepository;
 import br.com.cshub.taxify.validation.CompanyValidation;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
-import org.springframework.data.domain.Page;
-import org.springframework.data.domain.PageImpl;
-import org.springframework.data.domain.Pageable;
-import org.springframework.data.domain.Sort;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 
@@ -72,7 +67,7 @@ public class FiscalXmlIntegrationService {
     /**
      * Calls SIEG's baixar-xmls and persists whatever comes back. Used only by
      * {@link SiegXmlSyncScheduler} now - the search endpoint reads from the database
-     * instead, see {@link #searchStoredXmls(XmlSearchFilterDTO)}.
+     * instead, see {@link FiscalXmlQueryService#search(XmlSearchFilterDTO)}.
      *
      * <p>Checks contar-xmls first and skips the download entirely when it reports zero
      * pending NFe, so a company with nothing new doesn't spend a rate-limited
@@ -240,40 +235,7 @@ public class FiscalXmlIntegrationService {
     }
 
     /**
-     * Backs the search endpoint: queries {@link FiscalXmlDocument}s already synced into
-     * the database for the company/period, and for each one re-reads and re-parses the
-     * XML file on disk (via {@link #xmlDocumentRepository}'s stored {@code xmlFilePath})
-     * to build the full response - no live SIEG call. Paginated at the database level, so
-     * only the requested page's files are read from disk; a file that can't be read is
-     * skipped (logged), so a page may come back with fewer items than its size.
-     */
-    @Transactional(readOnly = true)
-    public Page<FiscalXmlItemDTO> searchStoredXmls(XmlSearchFilterDTO filter) {
-        Company company = findCompanyWithCnpj(filter.companyId());
-        Pageable pageable = PageRequestDTO.toPageable(filter.pagination(), "issueDate", Sort.Direction.DESC);
-
-        LocalDateTime from = filter.dataEmissaoInicio() != null ? filter.dataEmissaoInicio().atStartOfDay() : LocalDateTime.MIN;
-        LocalDateTime to = filter.dataEmissaoFim() != null ? filter.dataEmissaoFim().atTime(LocalTime.MAX) : LocalDateTime.MAX;
-
-        Page<FiscalXmlDocument> documents = xmlDocumentRepository
-                .findByCompany_IdAndIssueDateBetween(company.getId(), from, to, pageable);
-
-        List<FiscalXmlItemDTO> xmls = new ArrayList<>();
-        for (FiscalXmlDocument document : documents) {
-            try {
-                byte[] xmlBytes = Files.readAllBytes(Path.of(document.getXmlFilePath()));
-                FiscalXmlMetadata metadata = metadataParser.parse(xmlBytes);
-                xmls.add(toItemDTO(metadata, new String(xmlBytes, StandardCharsets.UTF_8)));
-            } catch (IOException e) {
-                log.warn("Could not read stored XML file '{}' for document {}", document.getXmlFilePath(), document.getId(), e);
-            }
-        }
-
-        return new PageImpl<>(xmls, documents.getPageable(), documents.getTotalElements());
-    }
-
-    /**
-     * Same company/period lookup as {@link #searchStoredXmls}, but serves each note's
+     * Same company/period lookup as {@link FiscalXmlQueryService#search}, but serves each note's
      * rectified version ({@link FiscalXmlDocument#getRectifiedFilePath()}) instead of the
      * original whenever one exists - so an exported nota reflects the corrected CFOP/NCM
      * a {@link FiscalXmlRectificationService} run applied, not what SEFAZ originally

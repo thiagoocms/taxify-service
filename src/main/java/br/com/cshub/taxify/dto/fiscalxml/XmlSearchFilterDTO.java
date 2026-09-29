@@ -16,6 +16,8 @@ public record XmlSearchFilterDTO(
         String companyId,
         LocalDate dataEmissaoInicio,
         LocalDate dataEmissaoFim,
+        /** Optional exact match on the note number (nNF); blank means "any". */
+        String numero,
         @Valid
         PageRequestDTO pagination
 ) {

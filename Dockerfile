@@ -6,6 +6,8 @@ COPY mvnw pom.xml ./
 RUN chmod +x mvnw && ./mvnw -B -q dependency:go-offline
 
 COPY src/ src/
+# application-default.yaml is for local runs only - keep it out of the image
+RUN rm -f src/main/resources/application-default.yaml
 RUN ./mvnw -B -q clean package -Dmaven.test.skip=true
 
 FROM eclipse-temurin:25-jre AS runtime

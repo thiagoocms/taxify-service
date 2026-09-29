@@ -33,7 +33,7 @@ public class ProductFiscalRuleService extends AbstractCrudService<ProductFiscalR
 
     @Override
     protected void checkAccess(ProductFiscalRule entity) {
-        tenantAccessService.assertSameFirm(entity.getCompany().getAccountingFirm().getId());
+        tenantAccessService.assertCompanyAccess(entity.getCompany());
     }
 
     @Override
@@ -44,6 +44,7 @@ public class ProductFiscalRuleService extends AbstractCrudService<ProductFiscalR
         }
         Specification<ProductFiscalRule> restriction = (root, query, builder) ->
                 builder.equal(root.join("company", JoinType.LEFT).get("accountingFirm").get("id"), firmId.get());
-        return spec == null ? restriction : spec.and(restriction);
+        spec = spec == null ? restriction : spec.and(restriction);
+        return tenantAccessService.restrictToUserCompanies(spec, root -> root.get("company"));
     }
 }

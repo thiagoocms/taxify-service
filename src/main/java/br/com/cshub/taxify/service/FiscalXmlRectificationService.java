@@ -95,7 +95,7 @@ public class FiscalXmlRectificationService {
     public FiscalXmlRectificationResultDTO rectify(UUID documentId) {
         FiscalXmlDocument document = documentRepository.findFirstByIdAndDeletedIsFalse(documentId)
                 .orElseThrow(() -> new ResourceNotFoundException(messageService.getMessage("error.entity.not.found")));
-        tenantAccessService.assertSameFirm(document.getCompany().getAccountingFirm().getId());
+        tenantAccessService.assertCompanyAccess(document.getCompany());
 
         byte[] originalBytes = readOriginal(document.getXmlFilePath());
         Document dom = parse(originalBytes);

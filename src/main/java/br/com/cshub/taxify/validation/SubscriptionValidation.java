@@ -38,7 +38,7 @@ public class SubscriptionValidation extends AbstractCrudValidation<Subscription,
     @Override
     public Subscription checkExist(UUID id) {
         Subscription subscription = super.checkExist(id);
-        tenantAccessService.assertSameFirm(subscription.getCompany().getAccountingFirm().getId());
+        tenantAccessService.assertCompanyAccess(subscription.getCompany());
         return subscription;
     }
 

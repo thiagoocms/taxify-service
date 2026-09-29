@@ -34,7 +34,7 @@ public class InvoiceAuditLogValidation extends AbstractCrudValidation<InvoiceAud
     @Override
     public InvoiceAuditLog checkExist(UUID id) {
         InvoiceAuditLog log = super.checkExist(id);
-        tenantAccessService.assertSameFirm(log.getCompany().getAccountingFirm().getId());
+        tenantAccessService.assertCompanyAccess(log.getCompany());
         return log;
     }
 

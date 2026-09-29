@@ -31,7 +31,7 @@ public class CompanyService extends AbstractCrudService<Company, UUID, CompanyDT
 
     @Override
     protected void checkAccess(Company entity) {
-        tenantAccessService.assertSameFirm(entity.getAccountingFirm().getId());
+        tenantAccessService.assertCompanyAccess(entity);
     }
 
     @Override
@@ -41,6 +41,7 @@ public class CompanyService extends AbstractCrudService<Company, UUID, CompanyDT
             return spec;
         }
         Specification<Company> restriction = (root, query, builder) -> builder.equal(root.get("accountingFirm").get("id"), firmId.get());
-        return spec == null ? restriction : spec.and(restriction);
+        spec = spec == null ? restriction : spec.and(restriction);
+        return tenantAccessService.restrictToUserCompanies(spec, root -> root);
     }
 }
