@@ -1,6 +1,7 @@
 package br.com.cshub.taxify.dto.fiscalxml;
 
 import br.com.cshub.taxify.dto.PageRequestDTO;
+import br.com.cshub.taxify.enumerated.FiscalXmlDirection;
 import jakarta.validation.Valid;
 import jakarta.validation.constraints.NotBlank;
 
@@ -18,6 +19,8 @@ public record XmlSearchFilterDTO(
         LocalDate dataEmissaoFim,
         /** Optional exact match on the note number (nNF); blank means "any". */
         String numero,
+        /** Optional: ENTRADA or SAIDA; null means both. */
+        FiscalXmlDirection direcao,
         @Valid
         PageRequestDTO pagination
 ) {

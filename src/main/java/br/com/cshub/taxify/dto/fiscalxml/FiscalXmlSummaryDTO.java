@@ -1,5 +1,7 @@
 package br.com.cshub.taxify.dto.fiscalxml;
 
+import br.com.cshub.taxify.enumerated.FiscalXmlDirection;
+
 import java.math.BigDecimal;
 import java.time.LocalDateTime;
 import java.util.UUID;
@@ -14,6 +16,7 @@ public record FiscalXmlSummaryDTO(
         UUID id,
         String accessKey,
         String documentType,
+        FiscalXmlDirection direcao,
         LocalDateTime issueDate,
         String modelo,
         String serie,

@@ -82,7 +82,7 @@ public class FiscalXmlQueryService {
         String numero = filter.numero() == null ? "" : filter.numero().replaceAll("\\D", "").replaceFirst("^0+(?=\\d)", "");
 
         Page<FiscalXmlDocument> documents = documentRepository
-                .search(company.getId(), from, to, numero.isEmpty() ? null : numero, pageable);
+                .search(company.getId(), from, to, numero.isEmpty() ? null : numero, filter.direcao(), pageable);
 
         Map<UUID, Long> itemCounts = new HashMap<>();
         if (documents.hasContent()) {
@@ -119,6 +119,7 @@ public class FiscalXmlQueryService {
                 document.getCompany().getId(),
                 metadata.accessKey(),
                 metadata.documentType(),
+                document.getDirecao(),
                 metadata.issuerCnpj(),
                 metadata.recipientCnpj(),
                 metadata.issueDate(),
@@ -198,7 +199,7 @@ public class FiscalXmlQueryService {
                 d.getValorIpi(), d.getValorPis(), d.getValorCofins(), d.getValorOutrasDespesas(),
                 d.getValorTotalNota(), d.getValorAproximadoTributos());
 
-        return new FiscalXmlDetailDTO(d.getId(), d.getCompany().getId(), d.getAccessKey(), d.getDocumentType(),
+        return new FiscalXmlDetailDTO(d.getId(), d.getCompany().getId(), d.getAccessKey(), d.getDocumentType(), d.getDirecao(),
                 d.getIssuerCnpj(), d.getRecipientCnpj(), d.getIssueDate(), d.getRectifiedFilePath() != null,
                 itemRepository.countByDocument_Id(d.getId()), identificacao, emitente, destinatario, totais);
     }
@@ -208,6 +209,7 @@ public class FiscalXmlQueryService {
                 document.getId(),
                 document.getAccessKey(),
                 document.getDocumentType(),
+                document.getDirecao(),
                 document.getIssueDate(),
                 document.getModelo(),
                 document.getSerie(),

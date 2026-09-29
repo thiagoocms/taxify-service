@@ -34,7 +34,7 @@ public class SiegFiscalXmlProvider implements FiscalXmlProvider {
                 request.dataEmissaoFim(),
                 50,
                 request.alreadyImportedCount(),
-                null
+                request.direcao()
         );
 
         XmlDownloadResultDTO result = integrationService.syncFromSieg(filter, request.knownPending());

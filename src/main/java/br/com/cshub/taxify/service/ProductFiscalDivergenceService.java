@@ -1,6 +1,7 @@
 package br.com.cshub.taxify.service;
 
 import br.com.cshub.taxify.common.MessageService;
+import br.com.cshub.taxify.enumerated.FiscalXmlDirection;
 import br.com.cshub.taxify.domain.fiscalrule.ProductFiscalRule;
 import br.com.cshub.taxify.domain.xml.FiscalXmlDocument;
 import br.com.cshub.taxify.domain.xml.FiscalXmlDocumentItem;
@@ -54,7 +55,10 @@ public class ProductFiscalDivergenceService {
 
         List<ProductFiscalDivergenceDTO> divergences = new ArrayList<>();
         for (FiscalXmlDocumentItem item : items) {
-            if (item.getCodigo() == null) {
+            // Product fiscal rules describe how the company books what it receives -
+            // notes it issued (SAIDA) aren't checked against them.
+            if (item.getCodigo() == null
+                    || (item.getDocument() != null && item.getDocument().getDirecao() == FiscalXmlDirection.SAIDA)) {
                 continue;
             }
             ruleRepository.findFirstByCompany_IdAndCodigoProdutoAndDeletedIsFalse(id, item.getCodigo())

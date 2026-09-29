@@ -3,7 +3,11 @@ package br.com.cshub.taxify.integration.fiscalxml;
 import org.springframework.boot.context.properties.ConfigurationProperties;
 import org.springframework.stereotype.Component;
 
+import br.com.cshub.taxify.enumerated.FiscalXmlDirection;
+
 import java.time.LocalDate;
+import java.util.EnumSet;
+import java.util.Set;
 
 /**
  * Provider-agnostic settings for {@link br.com.cshub.taxify.service.FiscalXmlSyncScheduler}.
@@ -31,7 +35,21 @@ public class FiscalXmlSyncProperties {
     private int batchSize = 2;
     private LocalDate referenceDate;
     private String storagePath = "./data/fiscal-xml";
+    /**
+     * Which sides get synced. Each direction is a separate provider query (and a separate
+     * control row), so enabling SAIDA roughly doubles the requests per company against the
+     * provider's account-wide rate limit - the round-robin just takes twice as long to
+     * cycle through everyone.
+     */
+    private Set<FiscalXmlDirection> directions = EnumSet.of(FiscalXmlDirection.ENTRADA, FiscalXmlDirection.SAIDA);
 
+    public Set<FiscalXmlDirection> getDirections() {
+        return directions;
+    }
+
+    public void setDirections(Set<FiscalXmlDirection> directions) {
+        this.directions = directions;
+    }
 
     public boolean isEnabled() {
         return enabled;

@@ -3,6 +3,7 @@ package br.com.cshub.taxify.service;
 import br.com.cshub.taxify.domain.company.Company;
 import br.com.cshub.taxify.domain.subscription.Subscription;
 import br.com.cshub.taxify.domain.xml.FiscalXmlSyncControl;
+import br.com.cshub.taxify.enumerated.FiscalXmlDirection;
 import br.com.cshub.taxify.enumerated.PlanServiceEnum;
 import br.com.cshub.taxify.integration.fiscalxml.FiscalXmlProvider;
 import br.com.cshub.taxify.integration.fiscalxml.FiscalXmlSyncProperties;
@@ -105,7 +106,10 @@ public class FiscalXmlSyncScheduler {
 
         LocalDate today = properties.getReferenceDate() != null ? properties.getReferenceDate() : LocalDate.now();
 
+        // Each (company, direction) pair is its own slot in the round-robin - with ENTRADA
+        // and SAIDA both enabled, a full cycle over every company takes twice the ticks.
         List<FiscalXmlSyncControl> controls = syncControlRepository.findAllWithCompany().stream()
+                .filter(control -> properties.getDirections().contains(control.getDirecao()))
                 .filter(control -> hasFiscalXmlImportEntitlement(control.getCompany(), today))
                 .toList();
         if (controls.isEmpty()) {
@@ -113,14 +117,14 @@ public class FiscalXmlSyncScheduler {
         }
 
         List<FiscalXmlSyncControl> batch = nextBatch(controls, properties.getBatchSize());
-        log.info("Starting scheduled fiscal XML sync (provider={}): {} of {} entitled companies this tick",
+        log.info("Starting scheduled fiscal XML sync (provider={}): {} of {} entitled company/direction slots this tick",
                 properties.getProvider(), batch.size(), controls.size());
 
         for (FiscalXmlSyncControl control : batch) {
             try {
                 syncCompany(provider, control, today);
             } catch (Exception e) {
-                log.warn("Scheduled fiscal XML sync failed for company {}", control.getCompany().getId(), e);
+                log.warn("Scheduled fiscal XML sync failed for company {} ({})", control.getCompany().getId(), control.getDirecao(), e);
             }
         }
     }
@@ -153,11 +157,18 @@ public class FiscalXmlSyncScheduler {
             return;
         }
 
-        Set<UUID> withControl = new HashSet<>(syncControlRepository.findAllCompanyIds());
+        Set<String> withControl = new HashSet<>();
+        for (FiscalXmlSyncControl existing : syncControlRepository.findAllControls()) {
+            withControl.add(slotKey(existing.getCompany().getId(), existing.getDirecao()));
+        }
         for (Company company : companies) {
-            if (!withControl.contains(company.getId())) {
+            for (FiscalXmlDirection direcao : properties.getDirections()) {
+                if (withControl.contains(slotKey(company.getId(), direcao))) {
+                    continue;
+                }
                 FiscalXmlSyncControl control = new FiscalXmlSyncControl();
                 control.setCompany(company);
+                control.setDirecao(direcao);
                 control.setDeleted(false);
                 control.setTotalSieg(0);
                 control.setTotalImportado(0);
@@ -165,6 +176,10 @@ public class FiscalXmlSyncScheduler {
                 syncControlRepository.save(control);
             }
         }
+    }
+
+    private static String slotKey(UUID companyId, FiscalXmlDirection direcao) {
+        return companyId + ":" + direcao;
     }
 
     /**
@@ -211,9 +226,9 @@ public class FiscalXmlSyncScheduler {
                 && control.getTotalSieg() > 0 && control.getTotalImportado() < control.getTotalSieg();
 
         FiscalXmlSyncResult result = provider.sync(
-                new FiscalXmlSyncRequest(company.getId(), start, today, alreadyImportedCount, knownPending));
-        log.info("Fiscal XML sync for company {}: {} new, {} duplicated, {} parse errors",
-                company.getId(), result.persistedNew(), result.duplicated(), result.parseErrors());
+                new FiscalXmlSyncRequest(company.getId(), control.getDirecao(), start, today, alreadyImportedCount, knownPending));
+        log.info("Fiscal XML sync for company {} ({}): {} new, {} duplicated, {} parse errors",
+                company.getId(), control.getDirecao(), result.persistedNew(), result.duplicated(), result.parseErrors());
     }
 
     /**

@@ -52,6 +52,7 @@ fiscal-xml:
     cron: ${FISCAL_XML_SYNC_CRON}
     batch-size: ${FISCAL_XML_SYNC_BATCH_SIZE}
     provider: ${FISCAL_XML_SYNC_PROVIDER}
+    directions: ${FISCAL_XML_SYNC_DIRECTIONS:ENTRADA,SAIDA}
     storage-path: ${FISCAL_XML_STORAGE_PATH}
   rectification:
     enabled: ${FISCAL_XML_RECTIFICATION_ENABLED}

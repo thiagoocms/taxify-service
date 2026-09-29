@@ -38,6 +38,7 @@ public class FiscalXmlSyncControlService {
         return new FiscalXmlSyncControlDTO(
                 control.getCompany().getId().toString(),
                 control.getCompany().getName(),
+                control.getDirecao(),
                 control.getDataEmissaoInicio(),
                 control.getDataEmissaoFim(),
                 control.getTotalSieg(),

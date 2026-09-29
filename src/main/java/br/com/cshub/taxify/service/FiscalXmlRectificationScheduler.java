@@ -5,6 +5,7 @@ import br.com.cshub.taxify.domain.xml.FiscalXmlDocument;
 import br.com.cshub.taxify.domain.xml.FiscalXmlSyncControl;
 import br.com.cshub.taxify.dto.fiscalrule.FiscalXmlRectificationResultDTO;
 import br.com.cshub.taxify.enumerated.DocumentTypeEnum;
+import br.com.cshub.taxify.enumerated.FiscalXmlDirection;
 import br.com.cshub.taxify.integration.fiscalxml.FiscalXmlRectificationProperties;
 import br.com.cshub.taxify.repository.FiscalXmlDocumentRepository;
 import br.com.cshub.taxify.repository.FiscalXmlSyncControlRepository;
@@ -45,7 +46,10 @@ public class FiscalXmlRectificationScheduler {
             return;
         }
 
+        // Rectification rewrites CFOP/NCM of notes the company received - only the ENTRADA
+        // control row says whether those are fully synced.
         List<FiscalXmlSyncControl> fullySynced = syncControlRepository.findAllWithCompany().stream()
+                .filter(control -> control.getDirecao() == FiscalXmlDirection.ENTRADA)
                 .filter(this::isFullySynced)
                 .toList();
         log.info("Starting scheduled fiscal XML rectification for {} fully-synced companies", fullySynced.size());
@@ -73,6 +77,7 @@ public class FiscalXmlRectificationScheduler {
 
         LocalDateTime rulesUpdatedAt = ruleRepository.findMaxLastModifiedDateByCompanyId(company.getId()).orElse(null);
         List<FiscalXmlDocument> needsCheck = documents.stream()
+                .filter(document -> document.getDirecao() == FiscalXmlDirection.ENTRADA)
                 .filter(document -> needsRectificationCheck(document, rulesUpdatedAt))
                 .toList();
 

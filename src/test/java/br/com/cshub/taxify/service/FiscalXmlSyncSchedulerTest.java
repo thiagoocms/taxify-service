@@ -6,6 +6,7 @@ import br.com.cshub.taxify.domain.plan.Plan;
 import br.com.cshub.taxify.domain.subscription.Subscription;
 import br.com.cshub.taxify.domain.xml.FiscalXmlSyncControl;
 import br.com.cshub.taxify.enumerated.DocumentTypeEnum;
+import br.com.cshub.taxify.enumerated.FiscalXmlDirection;
 import br.com.cshub.taxify.enumerated.PlanServiceEnum;
 import br.com.cshub.taxify.integration.fiscalxml.FiscalXmlProvider;
 import br.com.cshub.taxify.integration.fiscalxml.FiscalXmlSyncProperties;
@@ -23,6 +24,7 @@ import org.mockito.junit.jupiter.MockitoExtension;
 
 import java.time.LocalDate;
 import java.time.LocalDateTime;
+import java.util.EnumSet;
 import java.util.List;
 import java.util.Map;
 import java.util.Optional;
@@ -64,6 +66,9 @@ class FiscalXmlSyncSchedulerTest {
     void setUp() {
         properties = new FiscalXmlSyncProperties();
         properties.setBatchSize(2);
+        // Existing scenarios predate SAIDA - keep them on ENTRADA only; the direction-specific
+        // tests below turn SAIDA on themselves.
+        properties.setDirections(EnumSet.of(FiscalXmlDirection.ENTRADA));
         scheduler = new FiscalXmlSyncScheduler(companyRepository, syncControlRepository, subscriptionRepository,
                 Map.of("sieg", provider), properties);
 
@@ -103,7 +108,7 @@ class FiscalXmlSyncSchedulerTest {
     @Test
     void seedsAZeroedControlRowForACompanyThatHasNeverBeenSynced() {
         when(companyRepository.findAll()).thenReturn(List.of(companyA));
-        when(syncControlRepository.findAllCompanyIds()).thenReturn(List.of());
+        when(syncControlRepository.findAllControls()).thenReturn(List.of());
         when(syncControlRepository.findAllWithCompany()).thenReturn(List.of());
 
         scheduler.syncAllCompanies();
@@ -120,7 +125,7 @@ class FiscalXmlSyncSchedulerTest {
     @Test
     void doesNotReseedACompanyThatAlreadyHasAControlRow() {
         when(companyRepository.findAll()).thenReturn(List.of(companyA));
-        when(syncControlRepository.findAllCompanyIds()).thenReturn(List.of(companyA.getId()));
+        when(syncControlRepository.findAllControls()).thenReturn(List.of(controlFor(companyA, 0)));
         when(syncControlRepository.findAllWithCompany()).thenReturn(List.of(controlFor(companyA, 0)));
         when(provider.sync(any())).thenReturn(new FiscalXmlSyncResult(0, 0, 0));
 
@@ -132,7 +137,7 @@ class FiscalXmlSyncSchedulerTest {
     @Test
     void usesTotalImportadoFromTheControlRowAsTheAlreadyImportedCount() {
         when(companyRepository.findAll()).thenReturn(List.of(companyA));
-        when(syncControlRepository.findAllCompanyIds()).thenReturn(List.of(companyA.getId()));
+        when(syncControlRepository.findAllControls()).thenReturn(List.of(controlFor(companyA, 0)));
         when(syncControlRepository.findAllWithCompany()).thenReturn(List.of(controlFor(companyA, 150)));
         when(provider.sync(any())).thenReturn(new FiscalXmlSyncResult(0, 0, 0));
 
@@ -147,7 +152,7 @@ class FiscalXmlSyncSchedulerTest {
     void usesTheConfiguredReferenceDateInsteadOfTodayWhenSet() {
         properties.setReferenceDate(LocalDate.of(2026, 8, 15));
         when(companyRepository.findAll()).thenReturn(List.of(companyA));
-        when(syncControlRepository.findAllCompanyIds()).thenReturn(List.of(companyA.getId()));
+        when(syncControlRepository.findAllControls()).thenReturn(List.of(controlFor(companyA, 0)));
         when(syncControlRepository.findAllWithCompany()).thenReturn(List.of(controlFor(companyA, 0)));
         when(provider.sync(any())).thenReturn(new FiscalXmlSyncResult(0, 0, 0));
 
@@ -166,7 +171,7 @@ class FiscalXmlSyncSchedulerTest {
         caughtUp.setTotalSieg(200);
         caughtUp.setUltimaVerificacaoEm(LocalDate.of(2026, 8, 15).atTime(9, 0));
         when(companyRepository.findAll()).thenReturn(List.of(companyA));
-        when(syncControlRepository.findAllCompanyIds()).thenReturn(List.of(companyA.getId()));
+        when(syncControlRepository.findAllControls()).thenReturn(List.of(controlFor(companyA, 0)));
         when(syncControlRepository.findAllWithCompany()).thenReturn(List.of(caughtUp));
 
         scheduler.syncAllCompanies();
@@ -181,7 +186,7 @@ class FiscalXmlSyncSchedulerTest {
         caughtUpYesterday.setTotalSieg(200);
         caughtUpYesterday.setUltimaVerificacaoEm(LocalDate.of(2026, 8, 14).atTime(23, 0));
         when(companyRepository.findAll()).thenReturn(List.of(companyA));
-        when(syncControlRepository.findAllCompanyIds()).thenReturn(List.of(companyA.getId()));
+        when(syncControlRepository.findAllControls()).thenReturn(List.of(controlFor(companyA, 0)));
         when(syncControlRepository.findAllWithCompany()).thenReturn(List.of(caughtUpYesterday));
         when(provider.sync(any())).thenReturn(new FiscalXmlSyncResult(0, 0, 0));
 
@@ -197,7 +202,7 @@ class FiscalXmlSyncSchedulerTest {
         neverPending.setTotalSieg(0);
         neverPending.setUltimaVerificacaoEm(LocalDate.of(2026, 8, 15).atTime(9, 0));
         when(companyRepository.findAll()).thenReturn(List.of(companyA));
-        when(syncControlRepository.findAllCompanyIds()).thenReturn(List.of(companyA.getId()));
+        when(syncControlRepository.findAllControls()).thenReturn(List.of(controlFor(companyA, 0)));
         when(syncControlRepository.findAllWithCompany()).thenReturn(List.of(neverPending));
         when(provider.sync(any())).thenReturn(new FiscalXmlSyncResult(0, 0, 0));
 
@@ -211,7 +216,7 @@ class FiscalXmlSyncSchedulerTest {
         FiscalXmlSyncControl pending = controlFor(companyA, 100);
         pending.setTotalSieg(200);
         when(companyRepository.findAll()).thenReturn(List.of(companyA));
-        when(syncControlRepository.findAllCompanyIds()).thenReturn(List.of(companyA.getId()));
+        when(syncControlRepository.findAllControls()).thenReturn(List.of(controlFor(companyA, 0)));
         when(syncControlRepository.findAllWithCompany()).thenReturn(List.of(pending));
         when(provider.sync(any())).thenReturn(new FiscalXmlSyncResult(0, 0, 0));
 
@@ -225,7 +230,7 @@ class FiscalXmlSyncSchedulerTest {
     @Test
     void doesNotMarkKnownPendingWhenTotalSiegHasNeverBeenChecked() {
         when(companyRepository.findAll()).thenReturn(List.of(companyA));
-        when(syncControlRepository.findAllCompanyIds()).thenReturn(List.of(companyA.getId()));
+        when(syncControlRepository.findAllControls()).thenReturn(List.of(controlFor(companyA, 0)));
         when(syncControlRepository.findAllWithCompany()).thenReturn(List.of(controlFor(companyA, 0)));
         when(provider.sync(any())).thenReturn(new FiscalXmlSyncResult(0, 0, 0));
 
@@ -239,7 +244,7 @@ class FiscalXmlSyncSchedulerTest {
     @Test
     void excludesACompanyWithNoActiveSubscriptionFromTheBatch() {
         when(companyRepository.findAll()).thenReturn(List.of(companyA));
-        when(syncControlRepository.findAllCompanyIds()).thenReturn(List.of(companyA.getId()));
+        when(syncControlRepository.findAllControls()).thenReturn(List.of(controlFor(companyA, 0)));
         when(syncControlRepository.findAllWithCompany()).thenReturn(List.of(controlFor(companyA, 0)));
         when(subscriptionRepository.findFirstByCompanyIdAndDeletedIsFalseAndStartDateLessThanEqualAndEndDateGreaterThanEqualOrderByStartDateDesc(
                         eq(companyA.getId()), any(), any()))
@@ -253,7 +258,7 @@ class FiscalXmlSyncSchedulerTest {
     @Test
     void excludesACompanyWhosePlanDoesNotIncludeFiscalXmlImport() {
         when(companyRepository.findAll()).thenReturn(List.of(companyA));
-        when(syncControlRepository.findAllCompanyIds()).thenReturn(List.of(companyA.getId()));
+        when(syncControlRepository.findAllControls()).thenReturn(List.of(controlFor(companyA, 0)));
         when(syncControlRepository.findAllWithCompany()).thenReturn(List.of(controlFor(companyA, 0)));
         Plan planWithoutTheService = new Plan(UUID.randomUUID());
         planWithoutTheService.setServices(Set.of(PlanServiceEnum.REPORTS));
@@ -271,7 +276,7 @@ class FiscalXmlSyncSchedulerTest {
     @Test
     void syncsACompanyWithAnActiveSubscriptionEntitledToFiscalXmlImport() {
         when(companyRepository.findAll()).thenReturn(List.of(companyA));
-        when(syncControlRepository.findAllCompanyIds()).thenReturn(List.of(companyA.getId()));
+        when(syncControlRepository.findAllControls()).thenReturn(List.of(controlFor(companyA, 0)));
         when(syncControlRepository.findAllWithCompany()).thenReturn(List.of(controlFor(companyA, 0)));
         when(provider.sync(any())).thenReturn(new FiscalXmlSyncResult(0, 0, 0));
 
@@ -283,7 +288,7 @@ class FiscalXmlSyncSchedulerTest {
     @Test
     void onlySyncsABatchOfCompaniesPerTick() {
         when(companyRepository.findAll()).thenReturn(List.of(companyA, companyB, companyC, companyD, companyE));
-        when(syncControlRepository.findAllCompanyIds()).thenReturn(allIds());
+        when(syncControlRepository.findAllControls()).thenReturn(allControls());
         when(syncControlRepository.findAllWithCompany()).thenReturn(allControls());
         when(provider.sync(any())).thenReturn(new FiscalXmlSyncResult(0, 0, 0));
 
@@ -297,7 +302,7 @@ class FiscalXmlSyncSchedulerTest {
     @Test
     void rotatesThroughAllCompaniesAcrossSuccessiveTicksAndWrapsAround() {
         when(companyRepository.findAll()).thenReturn(List.of(companyA, companyB, companyC, companyD, companyE));
-        when(syncControlRepository.findAllCompanyIds()).thenReturn(allIds());
+        when(syncControlRepository.findAllControls()).thenReturn(allControls());
         when(syncControlRepository.findAllWithCompany()).thenReturn(allControls());
         when(provider.sync(any())).thenReturn(new FiscalXmlSyncResult(0, 0, 0));
 
@@ -315,7 +320,7 @@ class FiscalXmlSyncSchedulerTest {
     @Test
     void oneFailingCompanyDoesNotStopTheRestOfTheBatch() {
         when(companyRepository.findAll()).thenReturn(List.of(companyA, companyB));
-        when(syncControlRepository.findAllCompanyIds()).thenReturn(List.of(companyA.getId(), companyB.getId()));
+        when(syncControlRepository.findAllControls()).thenReturn(List.of(controlFor(companyA, 0), controlFor(companyB, 0)));
         when(syncControlRepository.findAllWithCompany()).thenReturn(List.of(controlFor(companyA, 0), controlFor(companyB, 0)));
         lenient().when(provider.sync(argThatCompanyId(companyA.getId()))).thenThrow(new RuntimeException("boom"));
         lenient().when(provider.sync(argThatCompanyId(companyB.getId()))).thenReturn(new FiscalXmlSyncResult(0, 0, 0));
@@ -325,8 +330,53 @@ class FiscalXmlSyncSchedulerTest {
         verify(provider).sync(argThatCompanyId(companyB.getId()));
     }
 
-    private List<UUID> allIds() {
-        return List.of(companyA.getId(), companyB.getId(), companyC.getId(), companyD.getId(), companyE.getId());
+    @Test
+    void seedsOneControlRowPerEnabledDirection() {
+        properties.setDirections(EnumSet.of(FiscalXmlDirection.ENTRADA, FiscalXmlDirection.SAIDA));
+        when(companyRepository.findAll()).thenReturn(List.of(companyA));
+        when(syncControlRepository.findAllControls()).thenReturn(List.of(controlFor(companyA, 0)));
+        when(syncControlRepository.findAllWithCompany()).thenReturn(List.of());
+
+        scheduler.syncAllCompanies();
+
+        // ENTRADA already existed - only the missing SAIDA row is created.
+        ArgumentCaptor<FiscalXmlSyncControl> captor = ArgumentCaptor.forClass(FiscalXmlSyncControl.class);
+        verify(syncControlRepository).save(captor.capture());
+        assertThat(captor.getValue().getDirecao()).isEqualTo(FiscalXmlDirection.SAIDA);
+    }
+
+    @Test
+    void eachDirectionIsItsOwnRoundRobinSlotAndCarriesItsDirectionToTheProvider() {
+        properties.setDirections(EnumSet.of(FiscalXmlDirection.ENTRADA, FiscalXmlDirection.SAIDA));
+        FiscalXmlSyncControl entrada = controlFor(companyA, 0);
+        FiscalXmlSyncControl saida = controlFor(companyA, 7);
+        saida.setDirecao(FiscalXmlDirection.SAIDA);
+        when(companyRepository.findAll()).thenReturn(List.of(companyA));
+        when(syncControlRepository.findAllControls()).thenReturn(List.of(entrada, saida));
+        when(syncControlRepository.findAllWithCompany()).thenReturn(List.of(entrada, saida));
+        when(provider.sync(any())).thenReturn(new FiscalXmlSyncResult(0, 0, 0));
+
+        scheduler.syncAllCompanies();
+
+        ArgumentCaptor<FiscalXmlSyncRequest> captor = ArgumentCaptor.forClass(FiscalXmlSyncRequest.class);
+        verify(provider, times(2)).sync(captor.capture());
+        assertThat(captor.getAllValues()).extracting(FiscalXmlSyncRequest::direcao)
+                .containsExactly(FiscalXmlDirection.ENTRADA, FiscalXmlDirection.SAIDA);
+        // SAIDA resumes from its own totalImportado, not ENTRADA's.
+        assertThat(captor.getAllValues().get(1).alreadyImportedCount()).isEqualTo(7);
+    }
+
+    @Test
+    void aDisabledDirectionIsNotSynced() {
+        FiscalXmlSyncControl saida = controlFor(companyA, 0);
+        saida.setDirecao(FiscalXmlDirection.SAIDA);
+        when(companyRepository.findAll()).thenReturn(List.of(companyA));
+        when(syncControlRepository.findAllControls()).thenReturn(List.of(controlFor(companyA, 0), saida));
+        when(syncControlRepository.findAllWithCompany()).thenReturn(List.of(saida));
+
+        scheduler.syncAllCompanies();
+
+        verifyNoInteractions(provider);
     }
 
     private List<FiscalXmlSyncControl> allControls() {

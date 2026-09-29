@@ -1,5 +1,7 @@
 package br.com.cshub.taxify.integration.fiscalxml;
 
+import br.com.cshub.taxify.enumerated.FiscalXmlDirection;
+
 import java.time.LocalDate;
 import java.util.UUID;
 
@@ -16,9 +18,13 @@ import java.util.UUID;
  * can skip its own "how many are there" check and go straight to downloading, since the
  * answer is already known to be "yes, there's more". Saves a request against a
  * rate-limited count endpoint (e.g. SIEG's contar-xmls) for something already established.
+ *
+ * <p>{@code direcao}: notes where the company is the recipient (ENTRADA) or the issuer
+ * (SAIDA) - each is its own sync stream with its own control row.
  */
 public record FiscalXmlSyncRequest(
         UUID companyId,
+        FiscalXmlDirection direcao,
         LocalDate dataEmissaoInicio,
         LocalDate dataEmissaoFim,
         int alreadyImportedCount,

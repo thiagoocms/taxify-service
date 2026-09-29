@@ -7,6 +7,7 @@ import br.com.cshub.taxify.domain.fiscalrule.ProductFiscalRule;
 import br.com.cshub.taxify.domain.invoice.InvoiceAuditLog;
 import br.com.cshub.taxify.domain.xml.FiscalXmlDocument;
 import br.com.cshub.taxify.dto.fiscalrule.FiscalXmlRectificationResultDTO;
+import br.com.cshub.taxify.enumerated.FiscalXmlDirection;
 import br.com.cshub.taxify.enumerated.InvoiceAuditStatus;
 import br.com.cshub.taxify.exception.BadRequestException;
 import br.com.cshub.taxify.exception.ResourceNotFoundException;
@@ -96,6 +97,9 @@ public class FiscalXmlRectificationService {
         FiscalXmlDocument document = documentRepository.findFirstByIdAndDeletedIsFalse(documentId)
                 .orElseThrow(() -> new ResourceNotFoundException(messageService.getMessage("error.entity.not.found")));
         tenantAccessService.assertCompanyAccess(document.getCompany());
+        if (document.getDirecao() == FiscalXmlDirection.SAIDA) {
+            throw new BadRequestException(messageService.getMessage("error.fiscalXml.rectification.not.entrada"));
+        }
 
         byte[] originalBytes = readOriginal(document.getXmlFilePath());
         Document dom = parse(originalBytes);

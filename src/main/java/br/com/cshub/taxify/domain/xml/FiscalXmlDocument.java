@@ -2,6 +2,7 @@ package br.com.cshub.taxify.domain.xml;
 
 import br.com.cshub.taxify.domain.AbstractAuditingEntity;
 import br.com.cshub.taxify.domain.company.Company;
+import br.com.cshub.taxify.enumerated.FiscalXmlDirection;
 import jakarta.persistence.*;
 import org.hibernate.annotations.JdbcTypeCode;
 import org.hibernate.type.SqlTypes;
@@ -13,7 +14,9 @@ import java.util.List;
 import java.util.UUID;
 
 @Entity
-@Table(name = "fiscal_xml_documents", uniqueConstraints = @UniqueConstraint(columnNames = "access_key"))
+// Unique per company, not globally: when two companies of the firm trade with each other,
+// the same note (same access key) is SAIDA for one and ENTRADA for the other.
+@Table(name = "fiscal_xml_documents", uniqueConstraints = @UniqueConstraint(columnNames = {"company_id", "access_key"}))
 public class FiscalXmlDocument extends AbstractAuditingEntity {
 
     @Id
@@ -52,6 +55,10 @@ public class FiscalXmlDocument extends AbstractAuditingEntity {
 
     @Column(name = "source_system", length = 20, nullable = false)
     private String sourceSystem = "SIEG";
+
+    @Enumerated(EnumType.STRING)
+    @Column(name = "direcao", length = 10)
+    private FiscalXmlDirection direcao = FiscalXmlDirection.ENTRADA;
 
     // ide
     @Column(name = "ide_codigo_uf", length = 5)
@@ -276,6 +283,14 @@ public class FiscalXmlDocument extends AbstractAuditingEntity {
 
     public void setSourceSystem(String sourceSystem) {
         this.sourceSystem = sourceSystem;
+    }
+
+    public FiscalXmlDirection getDirecao() {
+        return direcao;
+    }
+
+    public void setDirecao(FiscalXmlDirection direcao) {
+        this.direcao = direcao;
     }
 
     public String getCodigoUf() {

@@ -8,6 +8,7 @@ import br.com.cshub.taxify.domain.xml.FiscalXmlSyncControl;
 import br.com.cshub.taxify.dto.fiscalxml.*;
 import br.com.cshub.taxify.dto.sieg.XmlDownloadFilterDTO;
 import br.com.cshub.taxify.dto.sieg.XmlDownloadResultDTO;
+import br.com.cshub.taxify.enumerated.FiscalXmlDirection;
 import br.com.cshub.taxify.exception.BadRequestException;
 import br.com.cshub.taxify.exception.SiegIntegrationException;
 import br.com.cshub.taxify.integration.fiscalxml.FiscalXmlPackageExtractor;
@@ -95,24 +96,29 @@ public class FiscalXmlIntegrationService {
     @Transactional
     public XmlDownloadResultDTO syncFromSieg(XmlDownloadFilterDTO filter, boolean skipCountCheck) {
         Company company = findCompanyWithCnpj(filter.companyId());
+        FiscalXmlDirection direcao = filter.direcaoOrDefault();
+        String cnpj = onlyDigits(company.getDocument().getNumber());
 
+        // ENTRADA: notes addressed to the company (CNPJdest). SAIDA: notes the company
+        // issued (CNPJemit). SIEG has no "either side" filter, so each is its own query -
+        // and its own count/skip, which is why the control row is per direction too.
         SiegBaixarXmlsRequest request = new SiegBaixarXmlsRequest(
                 filter.xmlType(),
                 filter.take(),
                 normalizeSkip(filter.skip()),
                 startOfDayUtc(filter.dataEmissaoInicio()),
                 endOfDayUtc(filter.dataEmissaoFim()),
-                null,
-                onlyDigits(company.getDocument().getNumber())
+                direcao == FiscalXmlDirection.SAIDA ? cnpj : null,
+                direcao == FiscalXmlDirection.ENTRADA ? cnpj : null
         );
 
         String apiKey = company.getAccountingFirm().getSiegApiKey();
 
         if (skipCountCheck) {
-            log.info("Skipping contar-xmls for company {} - already known pending from a previous check", company.getId());
+            log.info("Skipping contar-xmls for company {} ({}) - already known pending from a previous check", company.getId(), direcao);
             List<byte[]> xmlContents = siegClient.baixarXmls(request, apiKey);
             XmlDownloadResultDTO result = persistAll(company, xmlContents);
-            updateSyncControl(company, filter.dataEmissaoInicio(), filter.dataEmissaoFim(), null);
+            updateSyncControl(company, direcao, filter.dataEmissaoInicio(), filter.dataEmissaoFim(), null);
             return result;
         }
 
@@ -120,7 +126,7 @@ public class FiscalXmlIntegrationService {
 
         XmlDownloadResultDTO result;
         if (totalSieg == 0) {
-            log.info("SIEG reports 0 pending NFe for company {} in this window, skipping baixar-xmls", company.getId());
+            log.info("SIEG reports 0 pending NFe for company {} ({}) in this window, skipping baixar-xmls", company.getId(), direcao);
             result = new XmlDownloadResultDTO(0, 0, 0, 0, 0, List.of(), List.of());
         } else {
             List<byte[]> xmlContents = siegClient.baixarXmls(request, apiKey);
@@ -128,7 +134,7 @@ public class FiscalXmlIntegrationService {
         }
 
         if (totalSieg >= 0) {
-            updateSyncControl(company, filter.dataEmissaoInicio(), filter.dataEmissaoFim(), totalSieg);
+            updateSyncControl(company, direcao, filter.dataEmissaoInicio(), filter.dataEmissaoFim(), totalSieg);
         }
 
         return result;
@@ -149,11 +155,13 @@ public class FiscalXmlIntegrationService {
      * while {@code totalImportado} and {@code ultimaVerificacaoEm} still get refreshed to
      * reflect whatever baixar-xmls just persisted.
      */
-    private void updateSyncControl(Company company, LocalDate dataEmissaoInicio, LocalDate dataEmissaoFim, Integer totalSieg) {
-        FiscalXmlSyncControl control = syncControlRepository.findByCompany_Id(company.getId())
+    private void updateSyncControl(Company company, FiscalXmlDirection direcao, LocalDate dataEmissaoInicio,
+                                   LocalDate dataEmissaoFim, Integer totalSieg) {
+        FiscalXmlSyncControl control = syncControlRepository.findByCompany_IdAndDirecao(company.getId(), direcao)
                 .orElseGet(() -> {
                     FiscalXmlSyncControl created = new FiscalXmlSyncControl();
                     created.setCompany(company);
+                    created.setDirecao(direcao);
                     created.setDeleted(false);
                     return created;
                 });
@@ -165,7 +173,8 @@ public class FiscalXmlIntegrationService {
         if (totalSieg != null) {
             control.setTotalSieg(totalSieg);
         }
-        control.setTotalImportado((int) xmlDocumentRepository.countByCompany_IdAndIssueDateBetween(company.getId(), from, to));
+        // Must be counted per direction: it's fed back as SIEG's skip for this same query.
+        control.setTotalImportado((int) xmlDocumentRepository.countByCompany_IdAndDirecaoAndIssueDateBetween(company.getId(), direcao, from, to));
         control.setUltimaVerificacaoEm(LocalDateTime.now());
         syncControlRepository.save(control);
     }
@@ -208,7 +217,7 @@ public class FiscalXmlIntegrationService {
                 parseErrors++;
             }
 
-            if (metadata.accessKey() != null && xmlDocumentRepository.existsByAccessKey(metadata.accessKey())) {
+            if (metadata.accessKey() != null && xmlDocumentRepository.existsByCompany_IdAndAccessKey(company.getId(), metadata.accessKey())) {
                 duplicated++;
                 xmls.add(toItemDTO(metadata, xmlContent));
                 continue;
@@ -324,6 +333,7 @@ public class FiscalXmlIntegrationService {
         document.setRecipientCnpj(metadata.recipientCnpj());
         document.setIssueDate(metadata.issueDate());
         document.setXmlFilePath(xmlFilePath);
+        document.setDirecao(directionFor(company, metadata));
         document.setDeleted(false);
 
         applyIdentificacao(document, metadata.identificacao());
@@ -336,6 +346,17 @@ public class FiscalXmlIntegrationService {
         }
 
         return document;
+    }
+
+    /**
+     * Read from the note itself rather than from which SIEG query brought it, so a manual
+     * import (no query at all) gets classified the same way: the company issued it -> SAIDA,
+     * anything else (it's the recipient) -> ENTRADA.
+     */
+    private FiscalXmlDirection directionFor(Company company, FiscalXmlMetadata metadata) {
+        String companyCnpj = onlyDigits(company.getDocument() != null ? company.getDocument().getNumber() : null);
+        String issuer = onlyDigits(metadata.issuerCnpj());
+        return companyCnpj != null && companyCnpj.equals(issuer) ? FiscalXmlDirection.SAIDA : FiscalXmlDirection.ENTRADA;
     }
 
     private void applyIdentificacao(FiscalXmlDocument document, FiscalXmlIdentificacaoDTO ide) {

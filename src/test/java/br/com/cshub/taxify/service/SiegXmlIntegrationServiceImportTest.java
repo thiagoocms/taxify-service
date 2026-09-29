@@ -121,7 +121,7 @@ class SiegXmlIntegrationServiceImportTest {
 
     @Test
     void skipsAnAlreadyPersistedAccessKeyAsDuplicate() {
-        when(xmlDocumentRepository.existsByAccessKey("35240112345678000199550010000000011000000010")).thenReturn(true);
+        when(xmlDocumentRepository.existsByCompany_IdAndAccessKey(org.mockito.ArgumentMatchers.any(), org.mockito.ArgumentMatchers.eq("35240112345678000199550010000000011000000010"))).thenReturn(true);
 
         XmlDownloadResultDTO result = service.importManual(companyId.toString(), NFE_XML.getBytes(StandardCharsets.UTF_8));
 

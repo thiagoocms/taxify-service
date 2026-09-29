@@ -2,6 +2,7 @@ package br.com.cshub.taxify.domain.xml;
 
 import br.com.cshub.taxify.domain.AbstractAuditingEntity;
 import br.com.cshub.taxify.domain.company.Company;
+import br.com.cshub.taxify.enumerated.FiscalXmlDirection;
 import jakarta.persistence.*;
 import org.hibernate.annotations.JdbcTypeCode;
 import org.hibernate.type.SqlTypes;
@@ -19,9 +20,13 @@ import java.util.UUID;
  * {@link br.com.cshub.taxify.service.FiscalXmlIntegrationService#syncFromSieg} call -
  * not written to when the contar-xmls check itself fails, so totalSieg only ever
  * reflects a real answer from SIEG, never a guess.
+ *
+ * <p>One row per company AND {@link FiscalXmlDirection}: SIEG counts/paginates entrada
+ * (CNPJdest) and saída (CNPJemit) as two separate queries, so totalSieg, totalImportado
+ * (used as SIEG's skip) and ultimaVerificacaoEm only make sense per direction.
  */
 @Entity
-@Table(name = "fiscal_xml_sync_control", uniqueConstraints = @UniqueConstraint(columnNames = "company_id"))
+@Table(name = "fiscal_xml_sync_control", uniqueConstraints = @UniqueConstraint(columnNames = {"company_id", "direcao"}))
 public class FiscalXmlSyncControl extends AbstractAuditingEntity {
 
     @Id
@@ -33,6 +38,10 @@ public class FiscalXmlSyncControl extends AbstractAuditingEntity {
     @ManyToOne(fetch = FetchType.LAZY)
     @JoinColumn(name = "company_id", nullable = false)
     private Company company;
+
+    @Enumerated(EnumType.STRING)
+    @Column(name = "direcao", length = 10)
+    private FiscalXmlDirection direcao = FiscalXmlDirection.ENTRADA;
 
     @Column(name = "data_emissao_inicio")
     private LocalDate dataEmissaoInicio;
@@ -63,6 +72,14 @@ public class FiscalXmlSyncControl extends AbstractAuditingEntity {
 
     public void setCompany(Company company) {
         this.company = company;
+    }
+
+    public FiscalXmlDirection getDirecao() {
+        return direcao;
+    }
+
+    public void setDirecao(FiscalXmlDirection direcao) {
+        this.direcao = direcao;
     }
 
     public LocalDate getDataEmissaoInicio() {

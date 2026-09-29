@@ -1,5 +1,7 @@
 package br.com.cshub.taxify.dto.fiscalxml;
 
+import br.com.cshub.taxify.enumerated.FiscalXmlDirection;
+
 import java.time.LocalDate;
 import java.time.LocalDateTime;
 
@@ -11,6 +13,7 @@ import java.time.LocalDateTime;
 public record FiscalXmlSyncControlDTO(
         String companyId,
         String companyName,
+        FiscalXmlDirection direcao,
         LocalDate dataEmissaoInicio,
         LocalDate dataEmissaoFim,
         int totalSieg,
