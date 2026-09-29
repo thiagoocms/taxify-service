@@ -19,11 +19,11 @@ services:
       retries: 20
 
   backend:
-    #    image: thiagoocms/taxify-service:${TAG:-latest}
+    image: thiagoocms/taxify-service:${TAG:-latest}
     # Alternativa: buildar da fonte local em vez de puxar a imagem do Docker Hub.
-    build:
-      context: .
-      dockerfile: Dockerfile
+#    build:
+#      context: .
+#      dockerfile: Dockerfile
     container_name: taxify-backend
     restart: unless-stopped
     depends_on:
@@ -56,11 +56,11 @@ services:
       - taxify_fiscal_xml:/data/fiscal-xml
 
   frontend:
-#    image: thiagoocms/taxify-ui:${TAG:-latest}
+    image: thiagoocms/taxify-ui:${TAG:-latest}
     # Alternativa: buildar da fonte local em vez de puxar a imagem do Docker Hub.
-    build:
-      context: ../taxify-front
-      dockerfile: Dockerfile
+#    build:
+#      context: ../taxify-front
+#      dockerfile: Dockerfile
     container_name: taxify-frontend
     restart: unless-stopped
     depends_on:
