@@ -10,6 +10,7 @@ import br.com.cshub.taxify.dto.fiscalxml.XmlSearchFilterDTO;
 import br.com.cshub.taxify.dto.sieg.XmlDownloadFilterDTO;
 import br.com.cshub.taxify.dto.sieg.XmlDownloadResultDTO;
 import br.com.cshub.taxify.exception.BadRequestException;
+import br.com.cshub.taxify.service.DanfePdfService;
 import br.com.cshub.taxify.service.FiscalXmlQueryService;
 import br.com.cshub.taxify.service.FiscalXmlRectificationService;
 import br.com.cshub.taxify.service.FiscalXmlIntegrationService;
@@ -39,13 +40,15 @@ public class FiscalXmlResource {
     private final FiscalXmlIntegrationService service;
     private final FiscalXmlRectificationService rectificationService;
     private final FiscalXmlQueryService queryService;
+    private final DanfePdfService danfePdfService;
 
     @Autowired
     public FiscalXmlResource(FiscalXmlIntegrationService service, FiscalXmlRectificationService rectificationService,
-                             FiscalXmlQueryService queryService) {
+                             FiscalXmlQueryService queryService, DanfePdfService danfePdfService) {
         this.service = service;
         this.rectificationService = rectificationService;
         this.queryService = queryService;
+        this.danfePdfService = danfePdfService;
     }
 
     /** List rows only (DB columns, no XML file read) - see FiscalXmlQueryService#search. */
@@ -77,6 +80,16 @@ public class FiscalXmlResource {
                 .header(HttpHeaders.CONTENT_DISPOSITION, "attachment; filename=\"" + xml.fileName() + "\"")
                 .contentType(MediaType.APPLICATION_XML)
                 .body(xml.content());
+    }
+
+    /** DANFE (PDF) of one note, rendered from its stored XML - see DanfePdfService. */
+    @GetMapping(value = "/{documentId}/pdf", produces = MediaType.APPLICATION_PDF_VALUE)
+    public ResponseEntity<byte[]> baixarPdf(@PathVariable UUID documentId) {
+        DanfePdfService.DanfePdf pdf = danfePdfService.generate(documentId);
+        return ResponseEntity.ok()
+                .header(HttpHeaders.CONTENT_DISPOSITION, "inline; filename=\"" + pdf.fileName() + "\"")
+                .contentType(MediaType.APPLICATION_PDF)
+                .body(pdf.content());
     }
 
     /**
