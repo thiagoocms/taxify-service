@@ -6,11 +6,14 @@ import org.springframework.data.jpa.repository.NativeQuery;
 import org.springframework.data.repository.query.Param;
 import org.springframework.stereotype.Repository;
 
+import java.util.List;
 import java.util.UUID;
 
 @Repository
 public interface UserRepository extends AbstractJpaRepository<User, UUID> {
     User findByLoginAndDeletedIsFalse(String login);
+
+    List<User> findByAccountingFirm_IdAndDeletedIsFalse(UUID accountingFirmId);
 
     @NativeQuery(
         value = "SELECT COUNT(*) FROM users WHERE (:id IS NULL OR id <> :id) AND login = :login AND deleted = false"

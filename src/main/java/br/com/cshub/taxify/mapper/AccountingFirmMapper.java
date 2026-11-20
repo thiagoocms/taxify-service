@@ -16,6 +16,7 @@ public class AccountingFirmMapper extends AbstractMapper<AccountingFirm, Account
         entity.setId(source.id() != null ? UUID.fromString(source.id()) : null);
         entity.setName(source.name());
         entity.setSiegApiKey(source.siegApiKey());
+        entity.setAcessoriasApiToken(source.acessoriasApiToken());
         entity.setDeleted(Boolean.TRUE.equals(source.deleted()));
         return entity;
     }
@@ -26,6 +27,8 @@ public class AccountingFirmMapper extends AbstractMapper<AccountingFirm, Account
                 source.getId().toString(),
                 source.getName(),
                 source.getSiegApiKey(),
+                source.getAcessoriasApiToken(),
+                source.getAcessoriasLastSyncAt(),
                 source.isDeleted()
         );
     }
@@ -34,6 +37,7 @@ public class AccountingFirmMapper extends AbstractMapper<AccountingFirm, Account
     public void merge(AccountingFirm source, AccountingFirm target) {
         target.setName(source.getName());
         target.setSiegApiKey(source.getSiegApiKey());
+        target.setAcessoriasApiToken(source.getAcessoriasApiToken());
         target.setDeleted(source.isDeleted());
     }
 }

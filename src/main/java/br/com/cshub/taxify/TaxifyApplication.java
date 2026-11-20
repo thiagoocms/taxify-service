@@ -15,7 +15,7 @@ import java.net.UnknownHostException;
 
 @SpringBootApplication
 @EnableJpaAuditing(auditorAwareRef = "auditorAware")
-@EnableFeignClients(basePackages = "br.com.cshub.taxify.integration.sieg")
+@EnableFeignClients(basePackages = {"br.com.cshub.taxify.integration.sieg", "br.com.cshub.taxify.integration.acessorias"})
 @EnableScheduling
 public class TaxifyApplication {
 

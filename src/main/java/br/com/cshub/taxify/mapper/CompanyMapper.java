@@ -21,6 +21,15 @@ public class CompanyMapper extends AbstractMapper<Company, CompanyDTO> {
         Company entity = new Company();
         entity.setId(source.id() != null ? UUID.fromString(source.id()) : null);
         entity.setName(source.name());
+        entity.setTradeName(source.tradeName());
+        entity.setPhone(source.phone());
+        entity.setUf(source.uf());
+        entity.setTaxRegime(source.taxRegime());
+        entity.setStateRegistration(source.stateRegistration());
+        entity.setCompanyGroup(source.companyGroup());
+        entity.setActive(source.active());
+        entity.setClientSince(source.clientSince());
+        entity.setClientUntil(source.clientUntil());
         entity.setDocument(documentMapper.toEntity(source.documentType(), source.documentNumber()));
         entity.setDeleted(Boolean.TRUE.equals(source.deleted()));
         return entity;
@@ -33,6 +42,16 @@ public class CompanyMapper extends AbstractMapper<Company, CompanyDTO> {
                 source.getDocument().getNumber(),
                 source.getDocument().getType().toString(),
                 source.getName(),
+                source.getTradeName(),
+                source.getPhone(),
+                source.getUf(),
+                source.getTaxRegime(),
+                source.getStateRegistration(),
+                source.getCompanyGroup(),
+                source.getActive(),
+                source.getClientSince(),
+                source.getClientUntil(),
+                source.getAcessoriasId(),
                 source.isDeleted()
         );
     }
@@ -40,6 +59,15 @@ public class CompanyMapper extends AbstractMapper<Company, CompanyDTO> {
     @Override
     public void merge(Company source, Company target) {
         target.setName(source.getName());
+        target.setTradeName(source.getTradeName());
+        target.setPhone(source.getPhone());
+        target.setUf(source.getUf());
+        target.setTaxRegime(source.getTaxRegime());
+        target.setStateRegistration(source.getStateRegistration());
+        target.setCompanyGroup(source.getCompanyGroup());
+        target.setActive(source.getActive());
+        target.setClientSince(source.getClientSince());
+        target.setClientUntil(source.getClientUntil());
         target.setDeleted(source.isDeleted());
     }
 }

@@ -61,7 +61,7 @@ class UserMapperTest {
     }
 
     @Test
-    void mergeCopiesEditableFieldsButNotDocumentOrId() {
+    void mergeCopiesEditableFieldsButNotPasswordDocumentOrId() {
         User source = new User();
         source.setName("New Name");
         source.setEmail("new@acme.com");
@@ -74,13 +74,15 @@ class UserMapperTest {
         Document originalDocument = new Document("12345678909", DocumentTypeEnum.CPF);
         target.setDocument(originalDocument);
         target.setProfile(UserProfileEnum.USER);
+        target.setPassword("current-hash");
 
         mapper.merge(source, target);
 
         assertThat(target.getName()).isEqualTo("New Name");
         assertThat(target.getEmail()).isEqualTo("new@acme.com");
         assertThat(target.getLogin()).isEqualTo("newlogin");
-        assertThat(target.getPassword()).isEqualTo("newpass");
+        // Password is UserValidation's job on update (hashing / keeping the current one).
+        assertThat(target.getPassword()).isEqualTo("current-hash");
         assertThat(target.getProfile()).isEqualTo(UserProfileEnum.ADMIN);
         assertThat(target.isDeleted()).isTrue();
         assertThat(target.getDocument()).isEqualTo(originalDocument);

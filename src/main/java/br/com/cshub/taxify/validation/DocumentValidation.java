@@ -56,6 +56,24 @@ public class DocumentValidation extends AbstractCrudValidation<Document, UUID> {
             }
     }
 
+    /**
+     * Applies a new number/type to an already persisted document (e.g. a user's CPF fixed on
+     * edit) - no-op when nothing changed, conflict when another document already has it.
+     */
+    public Document updateNumberAndType(Document persisted, Document requested) {
+        if (Objects.isNull(requested) || Objects.isNull(requested.getNumber()) || requested.getNumber().isBlank()
+                || Objects.isNull(requested.getType())) {
+            return persisted;
+        }
+        if (requested.getNumber().equals(persisted.getNumber()) && requested.getType() == persisted.getType()) {
+            return persisted;
+        }
+        checkExistByNumberAndType(requested);
+        persisted.setNumber(requested.getNumber());
+        persisted.setType(requested.getType());
+        return repository.save(persisted);
+    }
+
     public Document saveRelation(Document entity) {
         checkOwnerFieldsToCreate(entity);
         checkMandatoryFields(entity);

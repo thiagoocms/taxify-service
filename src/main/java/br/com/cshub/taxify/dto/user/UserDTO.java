@@ -13,7 +13,8 @@ public record UserDTO(
         String documentType,
         @NotBlank
         String login,
-        @NotBlank
+        // Write-only: required on create (see UserValidation), optional on update (blank keeps
+        // the current one) and never returned by the API.
         String password,
         @NotBlank
         String email,

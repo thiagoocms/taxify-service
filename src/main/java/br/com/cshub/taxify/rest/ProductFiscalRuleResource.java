@@ -2,9 +2,11 @@ package br.com.cshub.taxify.rest;
 
 import br.com.cshub.taxify.common.AbstractCrudResource;
 import br.com.cshub.taxify.constants.AppConstants;
+import br.com.cshub.taxify.dto.fiscalrule.CompanyProductDTO;
 import br.com.cshub.taxify.dto.fiscalrule.ProductFiscalDivergenceDTO;
 import br.com.cshub.taxify.dto.fiscalrule.ProductFiscalRuleDTO;
 import br.com.cshub.taxify.dto.fiscalrule.ProductFiscalRuleFilterDTO;
+import br.com.cshub.taxify.service.CompanyProductService;
 import br.com.cshub.taxify.service.ProductFiscalDivergenceService;
 import br.com.cshub.taxify.service.ProductFiscalRuleService;
 import org.springframework.beans.factory.annotation.Autowired;
@@ -24,11 +26,24 @@ import java.util.UUID;
 public class ProductFiscalRuleResource extends AbstractCrudResource<UUID, ProductFiscalRuleDTO, ProductFiscalRuleFilterDTO> {
 
     private final ProductFiscalDivergenceService divergenceService;
+    private final CompanyProductService companyProductService;
 
     @Autowired
-    protected ProductFiscalRuleResource(ProductFiscalRuleService service, ProductFiscalDivergenceService divergenceService) {
+    protected ProductFiscalRuleResource(ProductFiscalRuleService service, ProductFiscalDivergenceService divergenceService,
+                                        CompanyProductService companyProductService) {
         super(service);
         this.divergenceService = divergenceService;
+        this.companyProductService = companyProductService;
+    }
+
+    /**
+     * The company's products (distinct codes from its stored notes) matching {@code search}
+     * by code or description - what the rule form picks the product from.
+     */
+    @GetMapping("/produtos")
+    public ResponseEntity<List<CompanyProductDTO>> produtos(@RequestParam String companyId,
+                                                            @RequestParam(required = false) String search) {
+        return ResponseEntity.ok(companyProductService.search(companyId, search));
     }
 
     /**

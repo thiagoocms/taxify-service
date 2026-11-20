@@ -5,6 +5,7 @@ import br.com.cshub.taxify.dto.ErrorDetailsDTO;
 import br.com.cshub.taxify.exception.BadRequestException;
 import br.com.cshub.taxify.exception.ConflictException;
 import br.com.cshub.taxify.exception.ResourceNotFoundException;
+import br.com.cshub.taxify.exception.AcessoriasIntegrationException;
 import br.com.cshub.taxify.exception.SiegIntegrationException;
 import br.com.cshub.taxify.exception.UnauthorizedException;
 import org.springframework.http.HttpHeaders;
@@ -55,6 +56,14 @@ public class GlobalExceptionHandler extends ResponseEntityExceptionHandler {
         ErrorDetailsDTO errorDetails = new ErrorDetailsDTO(getTime(), HttpStatus.UNAUTHORIZED.value(), exception.getMessage(),
                 webRequest.getDescription(false));
         return new ResponseEntity<>(errorDetails, new HttpHeaders(), HttpStatus.UNAUTHORIZED);
+    }
+
+    @ExceptionHandler(AcessoriasIntegrationException.class)
+    public ResponseEntity<ErrorDetailsDTO> handleAcessoriasIntegrationException(AcessoriasIntegrationException exception,
+                                                                                 WebRequest webRequest) {
+        ErrorDetailsDTO errorDetails = new ErrorDetailsDTO(getTime(), HttpStatus.BAD_GATEWAY.value(), exception.getMessage(),
+                webRequest.getDescription(false));
+        return new ResponseEntity<>(errorDetails, new HttpHeaders(), HttpStatus.BAD_GATEWAY);
     }
 
     @ExceptionHandler(SiegIntegrationException.class)

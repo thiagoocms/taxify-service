@@ -76,6 +76,7 @@ public class SecurityConfig {
                                 .requestMatchers(HttpMethod.POST, base + "/accounting-firms").hasAuthority("ADMIN")
                                 .requestMatchers(HttpMethod.PUT, base + "/accounting-firms/**").hasAuthority("ADMIN")
                                 .requestMatchers(HttpMethod.DELETE, base + "/accounting-firms/**").hasAuthority("ADMIN")
+                                .requestMatchers(base + "/integrations/acessorias/**").hasAuthority("ADMIN")
                                 .anyRequest().authenticated()
                 )
                 .httpBasic(Customizer.withDefaults())

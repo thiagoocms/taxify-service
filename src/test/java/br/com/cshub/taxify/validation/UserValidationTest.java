@@ -26,6 +26,8 @@ import static org.assertj.core.api.Assertions.assertThat;
 import static org.assertj.core.api.Assertions.assertThatThrownBy;
 import static org.mockito.Mockito.lenient;
 import static org.mockito.Mockito.verify;
+import static org.mockito.ArgumentMatchers.any;
+import static org.mockito.Mockito.never;
 import static org.mockito.Mockito.when;
 
 @ExtendWith(MockitoExtension.class)
@@ -68,6 +70,55 @@ class UserValidationTest {
         assertThat(entity.getId()).isNull();
         assertThat(entity.isDeleted()).isFalse();
         assertThat(entity.getPassword()).isEqualTo("encoded");
+    }
+
+    @Test
+    void checkOwnerFieldsToCreateRequiresAPassword() {
+        when(messageService.getMessage("error.user.password.required")).thenReturn("password required");
+        User entity = new User();
+        entity.setPassword(" ");
+
+        assertThatThrownBy(() -> validation.checkOwnerFieldsToCreate(entity))
+                .isInstanceOf(BadRequestException.class)
+                .hasMessage("password required");
+    }
+
+    @Test
+    void checkUpdateConsistenceHashesANewPasswordAndAppliesTheNewDocument() {
+        UUID id = UUID.randomUUID();
+        User toUpdate = new User(id);
+        toUpdate.setPassword("new-plain");
+        Document requested = new Document("98765432100", DocumentTypeEnum.CPF);
+        toUpdate.setDocument(requested);
+        User persisted = new User(id);
+        persisted.setPassword("old-hash");
+        persisted.setAccountingFirm(new AccountingFirm(UUID.randomUUID()));
+        Document current = new Document("12345678909", DocumentTypeEnum.CPF);
+        persisted.setDocument(current);
+        Document updated = new Document("98765432100", DocumentTypeEnum.CPF);
+        when(repository.findFirstByIdAndDeletedIsFalse(id)).thenReturn(Optional.of(persisted));
+        when(passwordEncoder.encode("new-plain")).thenReturn("new-hash");
+        when(documentValidation.updateNumberAndType(current, requested)).thenReturn(updated);
+
+        User result = validation.checkUpdateConsistence(id, toUpdate);
+
+        assertThat(result.getPassword()).isEqualTo("new-hash");
+        assertThat(result.getDocument()).isSameAs(updated);
+    }
+
+    @Test
+    void checkUpdateConsistenceKeepsTheCurrentPasswordWhenNoneIsSent() {
+        UUID id = UUID.randomUUID();
+        User toUpdate = new User(id);
+        User persisted = new User(id);
+        persisted.setPassword("old-hash");
+        persisted.setAccountingFirm(new AccountingFirm(UUID.randomUUID()));
+        when(repository.findFirstByIdAndDeletedIsFalse(id)).thenReturn(Optional.of(persisted));
+
+        User result = validation.checkUpdateConsistence(id, toUpdate);
+
+        assertThat(result.getPassword()).isEqualTo("old-hash");
+        verify(passwordEncoder, never()).encode(any());
     }
 
     @Test

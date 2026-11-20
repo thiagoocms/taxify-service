@@ -53,6 +53,9 @@ public class UserValidation extends AbstractCrudValidation<User, UUID> {
     protected void checkOwnerFieldsToCreate(User entity) {
         entity.setId(null);
         entity.setDeleted(false);
+        if (Objects.isNull(entity.getPassword()) || entity.getPassword().isBlank()) {
+            throw new BadRequestException(messageService.getMessage("error.user.password.required"));
+        }
         entity.setPassword(passwordEncoder.encode(entity.getPassword()));
 
         var currentUser = currentUserService.getCurrentUser();
@@ -92,6 +95,16 @@ public class UserValidation extends AbstractCrudValidation<User, UUID> {
         var persistedEntity = checkExist(id);
 
         mapper.merge(toUpdateEntity, persistedEntity);
+
+        // The API never returns the password, so a blank one on update means "keep the
+        // current one"; a new one is hashed here, same as on create.
+        String newPassword = toUpdateEntity.getPassword();
+        if (Objects.nonNull(newPassword) && !newPassword.isBlank()) {
+            persistedEntity.setPassword(passwordEncoder.encode(newPassword));
+        }
+
+        persistedEntity.setDocument(
+                documentValidation.updateNumberAndType(persistedEntity.getDocument(), toUpdateEntity.getDocument()));
 
         return persistedEntity;
     }

@@ -10,6 +10,7 @@ import jakarta.persistence.Table;
 import org.hibernate.annotations.JdbcTypeCode;
 import org.hibernate.type.SqlTypes;
 
+import java.time.LocalDateTime;
 import java.util.UUID;
 
 /**
@@ -38,6 +39,22 @@ public class AccountingFirm extends AbstractAuditingEntity {
      */
     @Column(name = "sieg_api_key", length = 255)
     private String siegApiKey;
+
+    /**
+     * This firm's own Acessórias API token (Acessórias > Configurações > API) - null until
+     * the firm configures it; only firms with a token take part in the company import
+     * (see AcessoriasImportService).
+     */
+    @Column(name = "acessorias_api_token", length = 255)
+    private String acessoriasApiToken;
+
+    /**
+     * When the last successful Acessórias import started - the daily sync asks Acessórias
+     * only for companies changed after this (DtLastDH), so it doesn't page through the
+     * whole client base every day. Null means "never imported": the next run is a full one.
+     */
+    @Column(name = "acessorias_last_sync_at")
+    private LocalDateTime acessoriasLastSyncAt;
 
     public AccountingFirm() {
     }
@@ -68,5 +85,21 @@ public class AccountingFirm extends AbstractAuditingEntity {
 
     public void setSiegApiKey(String siegApiKey) {
         this.siegApiKey = siegApiKey;
+    }
+
+    public String getAcessoriasApiToken() {
+        return acessoriasApiToken;
+    }
+
+    public void setAcessoriasApiToken(String acessoriasApiToken) {
+        this.acessoriasApiToken = acessoriasApiToken;
+    }
+
+    public LocalDateTime getAcessoriasLastSyncAt() {
+        return acessoriasLastSyncAt;
+    }
+
+    public void setAcessoriasLastSyncAt(LocalDateTime acessoriasLastSyncAt) {
+        this.acessoriasLastSyncAt = acessoriasLastSyncAt;
     }
 }

@@ -40,7 +40,7 @@ public class UserMapper extends AbstractMapper<User, UserDTO> {
                 source.getDocument().getNumber(),
                 source.getDocument().getType().toString(),
                 source.getLogin(),
-                source.getPassword(),
+                null, // never expose the password hash
                 source.getEmail(),
                 source.getProfile().toString(),
                 source.isDeleted()
@@ -52,7 +52,6 @@ public class UserMapper extends AbstractMapper<User, UserDTO> {
         target.setName(source.getName());
         target.setEmail(source.getEmail());
         target.setLogin(source.getLogin());
-        target.setPassword(source.getPassword());
         target.setProfile(source.getProfile());
         target.setDeleted(source.isDeleted());
     }
