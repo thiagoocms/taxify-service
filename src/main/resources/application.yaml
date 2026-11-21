@@ -51,7 +51,7 @@ sieg:
 conta-azul:
   client-id: ${CONTA_AZUL_CLIENT_ID:}
   client-secret: ${CONTA_AZUL_CLIENT_SECRET:}
-  redirect-uri: ${CONTA_AZUL_REDIRECT_URI:https://ec2-52-14-79-235.us-east-2.compute.amazonaws.com/integracoes/conta-azul/callback}
+  redirect-uri: ${CONTA_AZUL_REDIRECT_URI:http://ec2-52-14-79-235.us-east-2.compute.amazonaws.com/integracoes/conta-azul/callback}
   authorize-url: ${CONTA_AZUL_AUTHORIZE_URL:https://login.contaazul.com/#/oauth/authorize}
   token-url: ${CONTA_AZUL_TOKEN_URL:https://auth.contaazul.com/oauth2/token}
 acessorias:
