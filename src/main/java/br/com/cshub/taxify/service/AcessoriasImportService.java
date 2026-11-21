@@ -191,7 +191,8 @@ public class AcessoriasImportService {
         Company company = new Company();
         company.setDeleted(false);
         company.setAccountingFirm(firm);
-        company.setDocument(documentRepository.save(document));
+        // persisted with the company (cascade ALL) - saving it first leaves it detached, which Hibernate 7 rejects
+        company.setDocument(document);
         applyRegistrationData(company, item, active);
         return companyRepository.save(company);
     }
