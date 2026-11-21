@@ -1,7 +1,10 @@
 package br.com.cshub.taxify.dto.user;
 
+import br.com.cshub.taxify.enumerated.AccessProfile;
 import jakarta.validation.constraints.NotBlank;
 import jakarta.validation.constraints.NotNull;
+
+import java.util.Set;
 
 public record UserDTO(
         String id,
@@ -20,6 +23,8 @@ public record UserDTO(
         String email,
         @NotNull
         String profile,
+        /** Fixed access profiles (FISCAL, FINANCIAL...); only an ADMIN can set them, ignored for ADMIN users. */
+        Set<AccessProfile> accessProfiles,
         Boolean deleted
 ) {
 }

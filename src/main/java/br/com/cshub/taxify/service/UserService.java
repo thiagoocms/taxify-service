@@ -25,6 +25,7 @@ public class UserService extends AbstractCrudService<User, UUID, UserDTO, UserFi
 
 
     private final UserRepository repository;
+    private final UserValidation userValidation;
     private final TenantAccessService tenantAccessService;
 
 
@@ -33,7 +34,15 @@ public class UserService extends AbstractCrudService<User, UUID, UserDTO, UserFi
         super(repository, mapper, validation, messageService, userSpecification);
         setMessageNotFound("error.user.not.found");
         this.repository = repository;
+        this.userValidation = validation;
         this.tenantAccessService = tenantAccessService;
+    }
+
+    /** Soft delete - but never the firm's last ADMIN (see UserValidation#assertNotLastAdmin). */
+    @Override
+    public void delete(UUID id) {
+        userValidation.assertNotLastAdmin(findCheckById(id));
+        super.delete(id);
     }
 
     @Override

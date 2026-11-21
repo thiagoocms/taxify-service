@@ -39,6 +39,9 @@ public class TokenService {
                 .claim("authorities", authorities)
                 .claim("userId", auth.getId())
                 .claim("profile", auth.getProfile().name())
+                // what the front-end uses to show only the modules the user can access
+                .claim("accessProfiles", auth.getAccessProfiles().stream().map(Enum::name).sorted().toList())
+                .claim("permissions", auth.getPermissions().stream().map(Enum::name).sorted().toList())
                 .claim("tenantId", auth.getAccountingFirm().getId());
 
 

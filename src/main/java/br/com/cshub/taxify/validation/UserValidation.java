@@ -1,5 +1,6 @@
 package br.com.cshub.taxify.validation;
 
+import br.com.cshub.taxify.enumerated.UserProfileEnum;
 import br.com.cshub.taxify.common.AbstractCrudValidation;
 import br.com.cshub.taxify.common.CurrentUserService;
 import br.com.cshub.taxify.common.MessageService;
@@ -60,13 +61,40 @@ public class UserValidation extends AbstractCrudValidation<User, UUID> {
 
         var currentUser = currentUserService.getCurrentUser();
         if (currentUser.isPresent()) {
+            // Only an ADMIN gets here (SecurityConfig) - the teammate joins the admin's firm.
             entity.setAccountingFirm(currentUser.get().getAccountingFirm());
         } else {
+            // Public signup: the person creating the firm is its owner - always ADMIN, whatever
+            // the request says, so nobody signs up into elevated access by editing the payload.
             AccountingFirm firm = new AccountingFirm();
             firm.setName(entity.getName());
             firm.setDeleted(false);
             accountingFirmRepository.save(firm);
             entity.setAccountingFirm(firm);
+            entity.setProfile(UserProfileEnum.ADMIN);
+        }
+        clearProfilesOfAdmin(entity);
+    }
+
+    /**
+     * A firm must always keep at least one ADMIN - otherwise nobody could manage its users,
+     * integrations or settings anymore. Called before demoting or deleting an ADMIN.
+     */
+    public void assertNotLastAdmin(User current) {
+        if (current.getProfile() != UserProfileEnum.ADMIN) {
+            return;
+        }
+        long admins = repository.countByAccountingFirm_IdAndProfileAndDeletedIsFalse(
+                current.getAccountingFirm().getId(), UserProfileEnum.ADMIN);
+        if (admins <= 1) {
+            throw new BadRequestException(messageService.getMessage("error.user.last.admin"));
+        }
+    }
+
+    /** ADMIN is a special type that can do everything - access profiles don't apply to it. */
+    private static void clearProfilesOfAdmin(User user) {
+        if (user.getProfile() == UserProfileEnum.ADMIN) {
+            user.setAccessProfiles(null);
         }
     }
 
@@ -93,8 +121,12 @@ public class UserValidation extends AbstractCrudValidation<User, UUID> {
         }
 
         var persistedEntity = checkExist(id);
+        if (toUpdateEntity.getProfile() != UserProfileEnum.ADMIN || Boolean.TRUE.equals(toUpdateEntity.isDeleted())) {
+            assertNotLastAdmin(persistedEntity);
+        }
 
         mapper.merge(toUpdateEntity, persistedEntity);
+        clearProfilesOfAdmin(persistedEntity);
 
         // The API never returns the password, so a blank one on update means "keep the
         // current one"; a new one is hashed here, same as on create.

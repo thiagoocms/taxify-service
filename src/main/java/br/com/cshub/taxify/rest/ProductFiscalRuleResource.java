@@ -1,5 +1,7 @@
 package br.com.cshub.taxify.rest;
 
+import br.com.cshub.taxify.security.RequiresPermission;
+import br.com.cshub.taxify.enumerated.Permission;
 import br.com.cshub.taxify.common.AbstractCrudResource;
 import br.com.cshub.taxify.constants.AppConstants;
 import br.com.cshub.taxify.dto.fiscalrule.CompanyProductDTO;
@@ -21,6 +23,7 @@ import java.time.LocalDate;
 import java.util.List;
 import java.util.UUID;
 
+@RequiresPermission(value = Permission.FISCAL_RULES_VIEW, write = Permission.FISCAL_RULES_MANAGE)
 @RestController
 @RequestMapping(value = AppConstants.API + AppConstants.V1 + "/product-fiscal-rules")
 public class ProductFiscalRuleResource extends AbstractCrudResource<UUID, ProductFiscalRuleDTO, ProductFiscalRuleFilterDTO> {

@@ -5,12 +5,16 @@ import br.com.cshub.taxify.domain.AbstractAuditingEntity;
 import br.com.cshub.taxify.domain.accountingfirm.AccountingFirm;
 import br.com.cshub.taxify.domain.document.Document;
 import br.com.cshub.taxify.domain.user_company.UserCompany;
+import br.com.cshub.taxify.enumerated.AccessProfile;
+import br.com.cshub.taxify.enumerated.Permission;
 import br.com.cshub.taxify.enumerated.UserProfileEnum;
 import jakarta.persistence.*;
 import org.hibernate.annotations.JdbcTypeCode;
 import org.hibernate.type.SqlTypes;
 
+import java.util.EnumSet;
 import java.util.List;
+import java.util.Set;
 import java.util.UUID;
 
 @Entity
@@ -51,6 +55,16 @@ public class User extends AbstractAuditingEntity {
     @Enumerated(EnumType.ORDINAL)
     @Column(name = "profile", nullable = false)
     private UserProfileEnum profile;
+
+    /**
+     * Fixed access profiles (Fiscal, Financeiro...) of a non-ADMIN user - several add up; see
+     * AccessProfile#permissionsOf. Ignored for ADMIN, who can do everything.
+     */
+    @ElementCollection(fetch = FetchType.EAGER)
+    @CollectionTable(name = "user_access_profiles", joinColumns = @JoinColumn(name = "user_id"))
+    @Enumerated(EnumType.STRING)
+    @Column(name = "access_profile", length = 30, nullable = false)
+    private Set<AccessProfile> accessProfiles = EnumSet.noneOf(AccessProfile.class);
 
     @OneToMany(mappedBy = "user" )
     private List<UserCompany> userCompanies;
@@ -132,5 +146,20 @@ public class User extends AbstractAuditingEntity {
 
     public void setAccountingFirm(AccountingFirm accountingFirm) {
         this.accountingFirm = accountingFirm;
+    }
+
+    public Set<AccessProfile> getAccessProfiles() {
+        return accessProfiles;
+    }
+
+    public void setAccessProfiles(Set<AccessProfile> accessProfiles) {
+        this.accessProfiles = accessProfiles == null || accessProfiles.isEmpty()
+                ? EnumSet.noneOf(AccessProfile.class)
+                : EnumSet.copyOf(accessProfiles);
+    }
+
+    /** What this user can do - every permission for ADMIN, the union of their profiles otherwise. */
+    public Set<Permission> getPermissions() {
+        return AccessProfile.permissionsOf(profile, accessProfiles);
     }
 }

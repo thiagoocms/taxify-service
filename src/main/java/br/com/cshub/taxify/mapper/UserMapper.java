@@ -1,7 +1,6 @@
 package br.com.cshub.taxify.mapper;
 
 import br.com.cshub.taxify.common.AbstractMapper;
-import br.com.cshub.taxify.domain.document.Document;
 import br.com.cshub.taxify.domain.user.User;
 import br.com.cshub.taxify.dto.user.UserDTO;
 import br.com.cshub.taxify.enumerated.UserProfileEnum;
@@ -28,6 +27,7 @@ public class UserMapper extends AbstractMapper<User, UserDTO> {
         user.setPassword(source.password());
         user.setDocument(documentMapper.toEntity(source.documentType(), source.documentNumber()));
         user.setProfile(UserProfileEnum.valueOf(source.profile()));
+        user.setAccessProfiles(source.accessProfiles());
         user.setDeleted(Boolean.TRUE.equals(source.deleted()));
         return user;
     }
@@ -43,6 +43,7 @@ public class UserMapper extends AbstractMapper<User, UserDTO> {
                 null, // never expose the password hash
                 source.getEmail(),
                 source.getProfile().toString(),
+                source.getAccessProfiles(),
                 source.isDeleted()
         );
     }
@@ -53,6 +54,7 @@ public class UserMapper extends AbstractMapper<User, UserDTO> {
         target.setEmail(source.getEmail());
         target.setLogin(source.getLogin());
         target.setProfile(source.getProfile());
+        target.setAccessProfiles(source.getAccessProfiles());
         target.setDeleted(source.isDeleted());
     }
 }

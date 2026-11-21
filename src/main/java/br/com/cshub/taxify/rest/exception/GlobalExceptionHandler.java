@@ -1,6 +1,8 @@
 package br.com.cshub.taxify.rest.exception;
 
 
+import br.com.cshub.taxify.common.MessageService;
+import org.springframework.security.access.AccessDeniedException;
 import br.com.cshub.taxify.dto.ErrorDetailsDTO;
 import br.com.cshub.taxify.exception.BadRequestException;
 import br.com.cshub.taxify.exception.ConflictException;
@@ -26,6 +28,12 @@ import java.time.ZoneOffset;
 
 @RestControllerAdvice
 public class GlobalExceptionHandler extends ResponseEntityExceptionHandler {
+
+    private final MessageService messageService;
+
+    public GlobalExceptionHandler(MessageService messageService) {
+        this.messageService = messageService;
+    }
 
     @ExceptionHandler(ResourceNotFoundException.class)
     public ResponseEntity<ErrorDetailsDTO> handleResourceNotFoundException(ResourceNotFoundException exception,
@@ -88,6 +96,14 @@ public class GlobalExceptionHandler extends ResponseEntityExceptionHandler {
                                                                              WebRequest webRequest) {
         ErrorDetailsDTO errorDetails = new ErrorDetailsDTO(getTime(), HttpStatus.FORBIDDEN.value(), exception.getMessage(),
                 webRequest.getDescription(false));
+        return new ResponseEntity<>(errorDetails, new HttpHeaders(), HttpStatus.FORBIDDEN);
+    }
+
+    /** @RequiresPermission / @AdminOnly denied the call - 403, never the generic 500 below. */
+    @ExceptionHandler(AccessDeniedException.class)
+    public ResponseEntity<ErrorDetailsDTO> handleAccessDeniedException(AccessDeniedException exception, WebRequest webRequest) {
+        ErrorDetailsDTO errorDetails = new ErrorDetailsDTO(getTime(), HttpStatus.FORBIDDEN.value(),
+                messageService.getMessage("error.access.denied"), webRequest.getDescription(false));
         return new ResponseEntity<>(errorDetails, new HttpHeaders(), HttpStatus.FORBIDDEN);
     }
 

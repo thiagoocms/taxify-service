@@ -1,5 +1,6 @@
 package br.com.cshub.taxify.rest;
 
+import br.com.cshub.taxify.security.AdminOnly;
 import br.com.cshub.taxify.common.AbstractCrudResource;
 import br.com.cshub.taxify.constants.AppConstants;
 import br.com.cshub.taxify.domain.user_company.UserCompanyId;
@@ -10,6 +11,7 @@ import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.web.bind.annotation.RequestMapping;
 import org.springframework.web.bind.annotation.RestController;
 
+@AdminOnly(writeOnly = true)
 @RestController
 @RequestMapping(value = AppConstants.API + AppConstants.V1 + "/users/{userId}/companies")
 public class UserCompanyResource extends AbstractCrudResource<UserCompanyId, UserCompanyDTO, UserCompanyFilterDTO> {

@@ -5,6 +5,7 @@ import org.springframework.security.core.GrantedAuthority;
 import org.springframework.security.core.authority.SimpleGrantedAuthority;
 import org.springframework.security.core.userdetails.UserDetails;
 
+import java.util.ArrayList;
 import java.util.Collection;
 import java.util.List;
 
@@ -21,14 +22,19 @@ public class Auth extends User implements UserDetails {
         this.setPassword(user.getPassword());
         this.setEmail(user.getEmail());
         this.setProfile(user.getProfile());
+        this.setAccessProfiles(user.getAccessProfiles());
         this.setDeleted(user.isDeleted());
         this.setAccountingFirm(user.getAccountingFirm());
         this.setUserCompanies(user.getUserCompanies());
     }
 
     @Override
+    /** The user type (ADMIN/EMPLOYEE/USER) plus every permission - what SecurityConfig checks. */
     public Collection<? extends GrantedAuthority> getAuthorities() {
-        return List.of(new SimpleGrantedAuthority(this.getProfile().toString()));
+        List<GrantedAuthority> authorities = new ArrayList<>();
+        authorities.add(new SimpleGrantedAuthority(this.getProfile().name()));
+        this.getPermissions().forEach(permission -> authorities.add(new SimpleGrantedAuthority(permission.name())));
+        return authorities;
     }
 
     @Override

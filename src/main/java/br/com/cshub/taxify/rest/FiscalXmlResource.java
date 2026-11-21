@@ -1,5 +1,7 @@
 package br.com.cshub.taxify.rest;
 
+import br.com.cshub.taxify.security.RequiresPermission;
+import br.com.cshub.taxify.enumerated.Permission;
 import br.com.cshub.taxify.constants.AppConstants;
 import br.com.cshub.taxify.dto.fiscalrule.FiscalXmlRectificationResultDTO;
 import br.com.cshub.taxify.dto.fiscalxml.FiscalXmlDetailDTO;
@@ -33,6 +35,7 @@ import java.io.IOException;
 import java.util.List;
 import java.util.UUID;
 
+@RequiresPermission(Permission.INVOICES_VIEW)
 @RestController
 @RequestMapping(AppConstants.API + AppConstants.V1 + "/integrations/xmls")
 public class FiscalXmlResource {
@@ -98,6 +101,7 @@ public class FiscalXmlResource {
      * specific period (e.g. "agosto inteiro") can be tested on demand, without editing
      * the scheduler - that one always runs against the current month for every company.
      */
+    @RequiresPermission(Permission.INVOICES_SYNC)
     @PostMapping("/sincronizar")
     public ResponseEntity<XmlDownloadResultDTO> sincronizarComSieg(@Valid @RequestBody XmlDownloadFilterDTO filter) {
         return ResponseEntity.ok(service.syncFromSieg(filter));
@@ -109,6 +113,7 @@ public class FiscalXmlResource {
      * dedupe by access key, store the file, save the document+items) - see
      * SiegXmlIntegrationService#importManual.
      */
+    @RequiresPermission(Permission.INVOICES_SYNC)
     @PostMapping(value = "/importar", consumes = MediaType.MULTIPART_FORM_DATA_VALUE)
     public ResponseEntity<XmlDownloadResultDTO> importarManual(
             @RequestParam String companyId,
@@ -125,6 +130,7 @@ public class FiscalXmlResource {
      * products and writes the result as a new file (original untouched) - see
      * FiscalXmlRectificationService for why the digital signature isn't handled here.
      */
+    @RequiresPermission(Permission.INVOICES_RECTIFY)
     @PostMapping("/{documentId}/retificar")
     public ResponseEntity<FiscalXmlRectificationResultDTO> retificar(@PathVariable UUID documentId) {
         return ResponseEntity.ok(rectificationService.rectify(documentId));

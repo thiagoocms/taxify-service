@@ -1,5 +1,8 @@
 package br.com.cshub.taxify.rest;
 
+import br.com.cshub.taxify.security.AdminOnly;
+import br.com.cshub.taxify.security.RequiresPermission;
+import br.com.cshub.taxify.enumerated.Permission;
 import br.com.cshub.taxify.constants.AppConstants;
 import br.com.cshub.taxify.dto.billing.BillingCategoryDTO;
 import br.com.cshub.taxify.dto.billing.BillingSettingsDTO;
@@ -23,6 +26,7 @@ import java.util.List;
 import java.util.UUID;
 
 /** Contracts / fees of the current user's firm, provider-agnostic - ADMIN only, see SecurityConfig. */
+@RequiresPermission(Permission.BILLING_SYNC)
 @RestController
 @RequestMapping(AppConstants.API + AppConstants.V1 + "/billing")
 public class BillingResource {
@@ -40,6 +44,7 @@ public class BillingResource {
         return ResponseEntity.ok(billingService.getSettings());
     }
 
+    @AdminOnly
     @PutMapping("/settings")
     public ResponseEntity<BillingSettingsDTO> updateSettings(@Valid @RequestBody BillingSettingsUpdateDTO body) {
         return ResponseEntity.ok(billingService.updateSettings(body));
@@ -61,6 +66,7 @@ public class BillingResource {
         return ResponseEntity.ok(syncService.statusForCurrentFirm());
     }
 
+    @RequiresPermission(Permission.BILLING_VIEW)
     @GetMapping("/companies/{companyId}")
     public ResponseEntity<CompanyBillingDTO> companyBilling(@PathVariable UUID companyId) {
         return ResponseEntity.ok(billingService.getCompanyBilling(companyId));

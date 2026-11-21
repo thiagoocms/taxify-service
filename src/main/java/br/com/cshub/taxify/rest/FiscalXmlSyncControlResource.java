@@ -1,5 +1,7 @@
 package br.com.cshub.taxify.rest;
 
+import br.com.cshub.taxify.security.RequiresPermission;
+import br.com.cshub.taxify.enumerated.Permission;
 import br.com.cshub.taxify.constants.AppConstants;
 import br.com.cshub.taxify.dto.fiscalxml.FiscalXmlSyncControlDTO;
 import br.com.cshub.taxify.service.FiscalXmlSyncControlService;
@@ -14,6 +16,7 @@ import java.util.List;
  * Read-only: which companies are fully synced with SIEG and which still have notes
  * pending, per {@link br.com.cshub.taxify.domain.xml.FiscalXmlSyncControl}.
  */
+@RequiresPermission(Permission.INVOICES_VIEW)
 @RestController
 @RequestMapping(AppConstants.API + AppConstants.V1 + "/fiscal-xml-sync-control")
 public class FiscalXmlSyncControlResource {

@@ -1,5 +1,6 @@
 package br.com.cshub.taxify.rest;
 
+import br.com.cshub.taxify.security.AdminOnly;
 import br.com.cshub.taxify.constants.AppConstants;
 import br.com.cshub.taxify.dto.contaazul.ContaAzulAuthorizeUrlDTO;
 import br.com.cshub.taxify.dto.contaazul.ContaAzulCallbackDTO;
@@ -19,6 +20,7 @@ import org.springframework.web.bind.annotation.RestController;
  * The callback is a regular authenticated POST: Conta Azul redirects the browser to the
  * front-end, which relays code + state with the user's own session.
  */
+@AdminOnly
 @RestController
 @RequestMapping(AppConstants.API + AppConstants.V1 + "/integrations/conta-azul")
 public class ContaAzulResource {

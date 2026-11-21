@@ -1,5 +1,8 @@
 package br.com.cshub.taxify.rest;
 
+import br.com.cshub.taxify.security.AdminOnly;
+import br.com.cshub.taxify.security.RequiresPermission;
+import br.com.cshub.taxify.enumerated.Permission;
 import br.com.cshub.taxify.common.AbstractCrudResource;
 import br.com.cshub.taxify.constants.AppConstants;
 import br.com.cshub.taxify.dto.plan.PlanDTO;
@@ -11,6 +14,8 @@ import org.springframework.web.bind.annotation.RestController;
 
 import java.util.UUID;
 
+@RequiresPermission(Permission.PLANS_VIEW)
+@AdminOnly(writeOnly = true)
 @RestController
 @RequestMapping(value = AppConstants.API + AppConstants.V1 + "/plans")
 public class PlanResource extends AbstractCrudResource<UUID, PlanDTO, PlanFilterDTO> {

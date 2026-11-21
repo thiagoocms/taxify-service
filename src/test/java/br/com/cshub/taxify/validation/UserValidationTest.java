@@ -7,6 +7,8 @@ import br.com.cshub.taxify.domain.accountingfirm.AccountingFirm;
 import br.com.cshub.taxify.domain.document.Document;
 import br.com.cshub.taxify.domain.user.User;
 import br.com.cshub.taxify.enumerated.DocumentTypeEnum;
+import br.com.cshub.taxify.enumerated.UserProfileEnum;
+import br.com.cshub.taxify.enumerated.AccessProfile;
 import br.com.cshub.taxify.exception.BadRequestException;
 import br.com.cshub.taxify.exception.ConflictException;
 import br.com.cshub.taxify.mapper.UserMapper;
@@ -19,6 +21,7 @@ import org.mockito.Mock;
 import org.mockito.junit.jupiter.MockitoExtension;
 import org.springframework.security.crypto.password.PasswordEncoder;
 
+import java.util.EnumSet;
 import java.util.Optional;
 import java.util.UUID;
 
@@ -70,6 +73,76 @@ class UserValidationTest {
         assertThat(entity.getId()).isNull();
         assertThat(entity.isDeleted()).isFalse();
         assertThat(entity.getPassword()).isEqualTo("encoded");
+    }
+
+    @Test
+    void publicSignupAlwaysCreatesTheFirmOwnerAsAdminWithoutProfiles() {
+        User entity = new User();
+        entity.setPassword("plain");
+        entity.setProfile(UserProfileEnum.EMPLOYEE);
+        entity.setAccessProfiles(EnumSet.of(AccessProfile.FISCAL));
+        when(passwordEncoder.encode("plain")).thenReturn("encoded");
+
+        validation.checkOwnerFieldsToCreate(entity);
+
+        assertThat(entity.getProfile()).isEqualTo(UserProfileEnum.ADMIN);
+        assertThat(entity.getAccessProfiles()).isEmpty();
+        assertThat(entity.getAccountingFirm()).isNotNull();
+    }
+
+    @Test
+    void adminAddingATeammateKeepsTheChosenTypeAndProfiles() {
+        AccountingFirm firm = new AccountingFirm(UUID.randomUUID());
+        User admin = new User(UUID.randomUUID());
+        admin.setAccountingFirm(firm);
+        when(currentUserService.getCurrentUser()).thenReturn(Optional.of(admin));
+        when(passwordEncoder.encode("plain")).thenReturn("encoded");
+        User entity = new User();
+        entity.setPassword("plain");
+        entity.setProfile(UserProfileEnum.EMPLOYEE);
+        entity.setAccessProfiles(EnumSet.of(AccessProfile.FISCAL, AccessProfile.FINANCIAL));
+
+        validation.checkOwnerFieldsToCreate(entity);
+
+        assertThat(entity.getAccountingFirm()).isSameAs(firm);
+        assertThat(entity.getProfile()).isEqualTo(UserProfileEnum.EMPLOYEE);
+        assertThat(entity.getAccessProfiles()).containsExactlyInAnyOrder(AccessProfile.FISCAL, AccessProfile.FINANCIAL);
+    }
+
+    @Test
+    void theLastAdminCannotBeDemoted() {
+        when(messageService.getMessage("error.user.last.admin")).thenReturn("last admin");
+        UUID id = UUID.randomUUID();
+        UUID firmId = UUID.randomUUID();
+        User persisted = new User(id);
+        persisted.setProfile(UserProfileEnum.ADMIN);
+        persisted.setAccountingFirm(new AccountingFirm(firmId));
+        when(repository.findFirstByIdAndDeletedIsFalse(id)).thenReturn(Optional.of(persisted));
+        when(repository.countByAccountingFirm_IdAndProfileAndDeletedIsFalse(firmId, UserProfileEnum.ADMIN)).thenReturn(1L);
+        User toUpdate = new User(id);
+        toUpdate.setProfile(UserProfileEnum.EMPLOYEE);
+
+        assertThatThrownBy(() -> validation.checkUpdateConsistence(id, toUpdate))
+                .isInstanceOf(BadRequestException.class)
+                .hasMessage("last admin");
+        verify(mapper, never()).merge(any(), any());
+    }
+
+    @Test
+    void anAdminCanBeDemotedWhenAnotherOneRemains() {
+        UUID id = UUID.randomUUID();
+        UUID firmId = UUID.randomUUID();
+        User persisted = new User(id);
+        persisted.setProfile(UserProfileEnum.ADMIN);
+        persisted.setAccountingFirm(new AccountingFirm(firmId));
+        when(repository.findFirstByIdAndDeletedIsFalse(id)).thenReturn(Optional.of(persisted));
+        when(repository.countByAccountingFirm_IdAndProfileAndDeletedIsFalse(firmId, UserProfileEnum.ADMIN)).thenReturn(2L);
+        User toUpdate = new User(id);
+        toUpdate.setProfile(UserProfileEnum.EMPLOYEE);
+
+        validation.checkUpdateConsistence(id, toUpdate);
+
+        verify(mapper).merge(toUpdate, persisted);
     }
 
     @Test

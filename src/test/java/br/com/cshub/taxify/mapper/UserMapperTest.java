@@ -19,7 +19,7 @@ class UserMapperTest {
     @Test
     void toEntityParsesEnumsAndDelegatesDocumentCreation() {
         UUID id = UUID.randomUUID();
-        UserDTO dto = new UserDTO(id.toString(), "Jane", "12345678909", "CPF", "jane", "secret", "jane@acme.com", "ADMIN", true);
+        UserDTO dto = new UserDTO(id.toString(), "Jane", "12345678909", "CPF", "jane", "secret", "jane@acme.com", "ADMIN", null, true);
 
         User entity = mapper.toEntity(dto);
 
@@ -36,7 +36,7 @@ class UserMapperTest {
 
     @Test
     void toEntityRejectsAnUnknownProfile() {
-        UserDTO dto = new UserDTO(null, "Jane", "12345678909", "CPF", "jane", "secret", "jane@acme.com", "NOT_A_PROFILE", false);
+        UserDTO dto = new UserDTO(null, "Jane", "12345678909", "CPF", "jane", "secret", "jane@acme.com", "NOT_A_PROFILE", null, false);
 
         assertThatThrownBy(() -> mapper.toEntity(dto)).isInstanceOf(IllegalArgumentException.class);
     }

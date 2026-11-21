@@ -1,5 +1,7 @@
 package br.com.cshub.taxify.rest;
 
+import br.com.cshub.taxify.security.RequiresPermission;
+import br.com.cshub.taxify.enumerated.Permission;
 import br.com.cshub.taxify.common.AbstractCrudResource;
 import br.com.cshub.taxify.constants.AppConstants;
 import br.com.cshub.taxify.dto.subscription.SubscriptionDTO;
@@ -14,6 +16,7 @@ import org.springframework.web.bind.annotation.RestController;
 
 import java.util.UUID;
 
+@RequiresPermission(value = Permission.SUBSCRIPTIONS_VIEW, write = Permission.SUBSCRIPTIONS_MANAGE)
 @RestController
 @RequestMapping(value = AppConstants.API + AppConstants.V1 + "/subscriptions")
 public class SubscriptionResource extends AbstractCrudResource<UUID, SubscriptionDTO, SubscriptionFilterDTO> {

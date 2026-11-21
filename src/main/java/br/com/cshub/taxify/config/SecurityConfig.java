@@ -1,6 +1,7 @@
 package br.com.cshub.taxify.config;
 
 import br.com.cshub.taxify.constants.AppConstants;
+import br.com.cshub.taxify.enumerated.UserProfileEnum;
 import com.nimbusds.jose.jwk.JWK;
 import com.nimbusds.jose.jwk.JWKSet;
 import com.nimbusds.jose.jwk.RSAKey;
@@ -12,6 +13,9 @@ import org.springframework.context.annotation.Bean;
 import org.springframework.context.annotation.Configuration;
 import org.springframework.http.HttpMethod;
 import org.springframework.security.authentication.AuthenticationManager;
+import org.springframework.security.authorization.AuthenticatedAuthorizationManager;
+import org.springframework.security.authorization.AuthorityAuthorizationManager;
+import org.springframework.security.authorization.AuthorizationManagers;
 import org.springframework.security.config.Customizer;
 import org.springframework.security.config.annotation.authentication.configuration.AuthenticationConfiguration;
 import org.springframework.security.config.annotation.web.builders.HttpSecurity;
@@ -40,6 +44,9 @@ public class SecurityConfig {
     @Value("${jwt.key.private}")
     private RSAPrivateKey priv;
 
+    /** Authority of the ADMIN user type - firm administration and every permission. */
+    private static final String ADMIN = UserProfileEnum.ADMIN.name();
+
     @Bean
     SecurityFilterChain filterChain(HttpSecurity http) throws Exception {
         String base = AppConstants.API + AppConstants.V1;
@@ -48,38 +55,18 @@ public class SecurityConfig {
                 .authorizeHttpRequests(
                         auth -> auth
                                 .requestMatchers(HttpMethod.POST, base + "/auth").permitAll()
-                                .requestMatchers(HttpMethod.POST, base + "/users").permitAll()
-                                    .requestMatchers("/v3/api-docs/**", "/swagger-ui.html", "/swagger-ui/**").permitAll()
+                                // Public signup (creates a new firm, owner = ADMIN) or an ADMIN adding a
+                                // teammate - never a logged-in non-admin (that would let them create admins).
+                                .requestMatchers(HttpMethod.POST, base + "/users")
+                                .access(AuthorizationManagers.anyOf(AuthenticatedAuthorizationManager.anonymous(),
+                                        AuthorityAuthorizationManager.hasAuthority(ADMIN)))
+                                .requestMatchers("/v3/api-docs/**", "/swagger-ui.html", "/swagger-ui/**").permitAll()
                                 // Actuator health/prometheus - see application.yaml's management.endpoints
                                 // comment for why only these two are exposed.
                                 .requestMatchers("/actuator/health", "/actuator/prometheus").permitAll()
-                                // Manipulação (criar/editar/excluir) de empresas, usuários (e seus
-                                // vínculos com empresas), planos, assinaturas e regras fiscais é
-                                // restrita a ADMIN - leitura (GET) continua liberada pra qualquer
-                                // perfil autenticado (a restrição por escritório já é aplicada em
-                                // TenantAccessService, independente de profile).
-                                .requestMatchers(HttpMethod.POST, base + "/companies").hasAuthority("ADMIN")
-                                .requestMatchers(HttpMethod.PUT, base + "/companies/**").hasAuthority("ADMIN")
-                                .requestMatchers(HttpMethod.DELETE, base + "/companies/**").hasAuthority("ADMIN")
-                                .requestMatchers(HttpMethod.POST, base + "/users/*/companies").hasAuthority("ADMIN")
-                                .requestMatchers(HttpMethod.PUT, base + "/users/**").hasAuthority("ADMIN")
-                                .requestMatchers(HttpMethod.DELETE, base + "/users/**").hasAuthority("ADMIN")
-                                .requestMatchers(HttpMethod.POST, base + "/plans").hasAuthority("ADMIN")
-                                .requestMatchers(HttpMethod.PUT, base + "/plans/**").hasAuthority("ADMIN")
-                                .requestMatchers(HttpMethod.DELETE, base + "/plans/**").hasAuthority("ADMIN")
-                                .requestMatchers(HttpMethod.POST, base + "/subscriptions").hasAuthority("ADMIN")
-                                .requestMatchers(HttpMethod.PUT, base + "/subscriptions/**").hasAuthority("ADMIN")
-                                .requestMatchers(HttpMethod.DELETE, base + "/subscriptions/**").hasAuthority("ADMIN")
-                                .requestMatchers(HttpMethod.POST, base + "/product-fiscal-rules").hasAuthority("ADMIN")
-                                .requestMatchers(HttpMethod.PUT, base + "/product-fiscal-rules/**").hasAuthority("ADMIN")
-                                .requestMatchers(HttpMethod.DELETE, base + "/product-fiscal-rules/**").hasAuthority("ADMIN")
-                                .requestMatchers(HttpMethod.POST, base + "/accounting-firms").hasAuthority("ADMIN")
-                                .requestMatchers(HttpMethod.PUT, base + "/accounting-firms/**").hasAuthority("ADMIN")
-                                .requestMatchers(HttpMethod.DELETE, base + "/accounting-firms/**").hasAuthority("ADMIN")
-                                .requestMatchers(base + "/integrations/acessorias/**").hasAuthority("ADMIN")
-                                .requestMatchers(base + "/integrations/conta-azul/**").hasAuthority("ADMIN")
-                                .requestMatchers(HttpMethod.PUT, base + "/integrations/**").hasAuthority("ADMIN")
-                                .requestMatchers(base + "/billing/**").hasAuthority("ADMIN")
+                                // Everything else needs a logged-in user. What each endpoint further requires
+                                // (a permission, or ADMIN) is declared on the controller itself with
+                                // @RequiresPermission / @AdminOnly - see MethodSecurityConfig.
                                 .anyRequest().authenticated()
                 )
                 .httpBasic(Customizer.withDefaults())

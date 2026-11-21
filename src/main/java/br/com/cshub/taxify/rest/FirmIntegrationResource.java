@@ -1,5 +1,6 @@
 package br.com.cshub.taxify.rest;
 
+import br.com.cshub.taxify.security.AdminOnly;
 import br.com.cshub.taxify.constants.AppConstants;
 import br.com.cshub.taxify.dto.integration.FirmIntegrationApiKeyDTO;
 import br.com.cshub.taxify.dto.integration.FirmIntegrationStatusDTO;
@@ -21,6 +22,7 @@ import java.util.List;
  * GET is open to the firm's users (the screens use it to know what's available); writing is
  * ADMIN only, see SecurityConfig.
  */
+@AdminOnly(writeOnly = true)
 @RestController
 @RequestMapping(AppConstants.API + AppConstants.V1 + "/integrations")
 public class FirmIntegrationResource {

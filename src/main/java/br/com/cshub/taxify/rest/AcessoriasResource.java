@@ -1,5 +1,6 @@
 package br.com.cshub.taxify.rest;
 
+import br.com.cshub.taxify.security.AdminOnly;
 import br.com.cshub.taxify.constants.AppConstants;
 import br.com.cshub.taxify.dto.acessorias.AcessoriasImportResultDTO;
 import br.com.cshub.taxify.dto.acessorias.AcessoriasUserSummaryDTO;
@@ -18,6 +19,7 @@ import java.util.List;
  * Acessórias integration for the current user's firm: imports its companies (and links
  * their responsáveis) and lists its users - ADMIN only, see SecurityConfig.
  */
+@AdminOnly
 @RestController
 @RequestMapping(AppConstants.API + AppConstants.V1 + "/integrations/acessorias")
 public class AcessoriasResource {

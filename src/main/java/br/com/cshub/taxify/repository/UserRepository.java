@@ -1,5 +1,6 @@
 package br.com.cshub.taxify.repository;
 
+import br.com.cshub.taxify.enumerated.UserProfileEnum;
 import br.com.cshub.taxify.common.AbstractJpaRepository;
 import br.com.cshub.taxify.domain.user.User;
 import org.springframework.data.jpa.repository.NativeQuery;
@@ -14,6 +15,8 @@ public interface UserRepository extends AbstractJpaRepository<User, UUID> {
     User findByLoginAndDeletedIsFalse(String login);
 
     List<User> findByAccountingFirm_IdAndDeletedIsFalse(UUID accountingFirmId);
+
+    long countByAccountingFirm_IdAndProfileAndDeletedIsFalse(UUID accountingFirmId, UserProfileEnum profile);
 
     @NativeQuery(
         value = "SELECT COUNT(*) FROM users WHERE (:id IS NULL OR id <> :id) AND login = :login AND deleted = false"
