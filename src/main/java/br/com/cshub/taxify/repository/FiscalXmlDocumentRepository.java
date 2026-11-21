@@ -1,5 +1,6 @@
 package br.com.cshub.taxify.repository;
 
+import java.util.Optional;
 import br.com.cshub.taxify.enumerated.FiscalDirection;
 import br.com.cshub.taxify.common.AbstractJpaRepository;
 import br.com.cshub.taxify.domain.xml.FiscalXmlDocument;
@@ -16,7 +17,11 @@ import java.util.UUID;
 @Repository
 public interface FiscalXmlDocumentRepository extends AbstractJpaRepository<FiscalXmlDocument, UUID> {
 
-    boolean existsByAccessKey(String accessKey);
+    String CANCELED = "br.com.cshub.taxify.enumerated.FiscalDocumentStatus.CANCELED";
+
+    boolean existsByCompany_IdAndAccessKey(UUID companyId, String accessKey);
+
+    Optional<FiscalXmlDocument> findFirstByCompany_IdAndAccessKey(UUID companyId, String accessKey);
 
     long countByCompany_Id(UUID companyId);
 
@@ -56,12 +61,18 @@ public interface FiscalXmlDocumentRepository extends AbstractJpaRepository<Fisca
                                    Pageable pageable);
 
     /**
-     * Period totals per direction (count, value and main taxes) - the cards above the list.
-     * Row: direction, count, total, ICMS, ICMS-ST, IPI, PIS, COFINS.
+     * Period totals per direction - canceled notes don't count in the sums, only in their own
+     * count. Row: direction, count, total, ICMS, ICMS-ST, IPI, PIS, COFINS, canceled count.
      */
-    @Query("select d.direction, count(d), coalesce(sum(d.valorTotalNota), 0), coalesce(sum(d.valorIcms), 0),"
-            + " coalesce(sum(d.valorIcmsSt), 0), coalesce(sum(d.valorIpi), 0), coalesce(sum(d.valorPis), 0),"
-            + " coalesce(sum(d.valorCofins), 0)"
+    @Query("select d.direction,"
+            + " sum(case when d.status = " + CANCELED + " then 0 else 1 end),"
+            + " coalesce(sum(case when d.status = " + CANCELED + " then 0 else d.valorTotalNota end), 0),"
+            + " coalesce(sum(case when d.status = " + CANCELED + " then 0 else d.valorIcms end), 0),"
+            + " coalesce(sum(case when d.status = " + CANCELED + " then 0 else d.valorIcmsSt end), 0),"
+            + " coalesce(sum(case when d.status = " + CANCELED + " then 0 else d.valorIpi end), 0),"
+            + " coalesce(sum(case when d.status = " + CANCELED + " then 0 else d.valorPis end), 0),"
+            + " coalesce(sum(case when d.status = " + CANCELED + " then 0 else d.valorCofins end), 0),"
+            + " sum(case when d.status = " + CANCELED + " then 1 else 0 end)"
             + " from FiscalXmlDocument d where d.company.id = :companyId and d.deleted = false"
             + " and d.issueDate between :issueDateFrom and :issueDateTo"
             + " group by d.direction")

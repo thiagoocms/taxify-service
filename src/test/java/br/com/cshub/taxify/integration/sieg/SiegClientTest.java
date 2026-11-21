@@ -159,6 +159,6 @@ class SiegClientTest {
     }
 
     private SiegBaixarXmlsRequest sampleRequest() {
-        return new SiegBaixarXmlsRequest(1, 50, 0, null, null, "12345678000199", null);
+        return new SiegBaixarXmlsRequest(1, 50, 0, null, null, "12345678000199", null, true);
     }
 }

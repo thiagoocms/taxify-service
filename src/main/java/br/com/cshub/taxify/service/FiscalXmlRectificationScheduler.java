@@ -73,7 +73,7 @@ public class FiscalXmlRectificationScheduler {
 
         LocalDateTime rulesUpdatedAt = ruleRepository.findMaxLastModifiedDateByCompanyId(company.getId()).orElse(null);
         List<FiscalXmlDocument> needsCheck = documents.stream()
-                .filter(document -> !document.isOwnIssue())
+                .filter(document -> !document.isOwnIssue() && !document.isCanceled())
                 .filter(document -> needsRectificationCheck(document, rulesUpdatedAt))
                 .toList();
 

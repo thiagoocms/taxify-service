@@ -63,6 +63,13 @@ public class FiscalXmlSyncControl extends AbstractAuditingEntity {
     @Column(name = "issued_checked_at")
     private LocalDateTime issuedCheckedAt;
 
+    /** Last day the recent notes' events (cancelamentos...) were re-read, per side - see FiscalXmlSyncScheduler. */
+    @Column(name = "received_events_checked_on")
+    private LocalDate receivedEventsCheckedOn;
+
+    @Column(name = "issued_events_checked_on")
+    private LocalDate issuedEventsCheckedOn;
+
     public UUID getId() {
         return id;
     }
@@ -141,5 +148,21 @@ public class FiscalXmlSyncControl extends AbstractAuditingEntity {
 
     public void setIssuedCheckedAt(LocalDateTime issuedCheckedAt) {
         this.issuedCheckedAt = issuedCheckedAt;
+    }
+
+    public LocalDate getReceivedEventsCheckedOn() {
+        return receivedEventsCheckedOn;
+    }
+
+    public void setReceivedEventsCheckedOn(LocalDate receivedEventsCheckedOn) {
+        this.receivedEventsCheckedOn = receivedEventsCheckedOn;
+    }
+
+    public LocalDate getIssuedEventsCheckedOn() {
+        return issuedEventsCheckedOn;
+    }
+
+    public void setIssuedEventsCheckedOn(LocalDate issuedEventsCheckedOn) {
+        this.issuedEventsCheckedOn = issuedEventsCheckedOn;
     }
 }

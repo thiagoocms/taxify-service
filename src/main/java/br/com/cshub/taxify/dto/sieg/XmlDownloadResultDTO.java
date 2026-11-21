@@ -11,6 +11,8 @@ public record XmlDownloadResultDTO(
         int totalDuplicatedSkipped,
         int totalParseErrors,
         List<String> persistedAccessKeys,
-        List<FiscalXmlItemDTO> xmls
+        List<FiscalXmlItemDTO> xmls,
+        /** New SEFAZ events stored (cancelamentos, cartas de correção...) - they come mixed with the notes. */
+        int totalEventsRecorded
 ) {
 }

@@ -1,5 +1,6 @@
 package br.com.cshub.taxify.domain.xml;
 
+import br.com.cshub.taxify.enumerated.FiscalDocumentStatus;
 import br.com.cshub.taxify.enumerated.FiscalDirection;
 import br.com.cshub.taxify.domain.AbstractAuditingEntity;
 import br.com.cshub.taxify.domain.company.Company;
@@ -14,7 +15,13 @@ import java.util.List;
 import java.util.UUID;
 
 @Entity
-@Table(name = "fiscal_xml_documents", uniqueConstraints = @UniqueConstraint(columnNames = "access_key"))
+/*
+ * Unique per company, not globally: a note between two clients of the same firm is the
+ * issuer's exit AND the recipient's entry - each company keeps its own row (see
+ * FiscalXmlDocumentKeyMigration for the move away from the old access_key-only constraint).
+ */
+@Table(name = "fiscal_xml_documents",
+        uniqueConstraints = @UniqueConstraint(name = "uk_fiscal_xml_document_company_key", columnNames = {"company_id", "access_key"}))
 public class FiscalXmlDocument extends AbstractAuditingEntity {
 
     @Id
@@ -65,6 +72,14 @@ public class FiscalXmlDocument extends AbstractAuditingEntity {
     /** The company itself issued this note - can't be rectified, and is synced from SIEG's "CNPJemit" side. */
     @Column(name = "own_issue")
     private Boolean ownIssue;
+
+    /** AUTHORIZED unless a registered cancellation event arrived (null = AUTHORIZED, rows from before events). */
+    @Enumerated(EnumType.STRING)
+    @Column(name = "status", length = 12)
+    private FiscalDocumentStatus status;
+
+    @Column(name = "canceled_at")
+    private LocalDateTime canceledAt;
 
     // ide
     @Column(name = "ide_codigo_uf", length = 5)
@@ -821,5 +836,25 @@ public class FiscalXmlDocument extends AbstractAuditingEntity {
 
     public void setOwnIssue(Boolean ownIssue) {
         this.ownIssue = ownIssue;
+    }
+
+    public FiscalDocumentStatus getStatus() {
+        return status == null ? FiscalDocumentStatus.AUTHORIZED : status;
+    }
+
+    public void setStatus(FiscalDocumentStatus status) {
+        this.status = status;
+    }
+
+    public boolean isCanceled() {
+        return getStatus() == FiscalDocumentStatus.CANCELED;
+    }
+
+    public LocalDateTime getCanceledAt() {
+        return canceledAt;
+    }
+
+    public void setCanceledAt(LocalDateTime canceledAt) {
+        this.canceledAt = canceledAt;
     }
 }

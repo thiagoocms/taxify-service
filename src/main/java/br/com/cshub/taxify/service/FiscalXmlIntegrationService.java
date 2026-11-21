@@ -1,5 +1,8 @@
 package br.com.cshub.taxify.service;
 
+import java.util.Optional;
+import br.com.cshub.taxify.integration.fiscalxml.FiscalEventParser;
+import br.com.cshub.taxify.integration.fiscalxml.FiscalEventData;
 import br.com.cshub.taxify.integration.fiscalxml.FiscalXmlSide;
 import br.com.cshub.taxify.common.DocumentNumbers;
 import br.com.cshub.taxify.enumerated.IntegrationType;
@@ -41,6 +44,11 @@ import java.util.zip.ZipOutputStream;
 public class FiscalXmlIntegrationService {
 
     private static final Logger log = LoggerFactory.getLogger(FiscalXmlIntegrationService.class);
+    private static final int TIPO_XML_NFE = 1;
+    /** SIEG's maximum notes per baixar-xmls page. */
+    private static final int PAGE_SIZE = 50;
+    /** A few days of notes is at most a few pages for any company - this just bounds a runaway loop. */
+    private static final int EVENT_SWEEP_MAX_PAGES = 20;
 
     private final SiegClient siegClient;
     private final FiscalXmlMetadataParser metadataParser;
@@ -52,13 +60,18 @@ public class FiscalXmlIntegrationService {
     private final MessageService messageService;
     private final SiegProperties properties;
     private final FirmIntegrationService firmIntegrationService;
+    private final FiscalEventParser eventParser;
+    private final FiscalXmlEventService eventService;
 
     public FiscalXmlIntegrationService(SiegClient siegClient, FiscalXmlMetadataParser metadataParser,
                                        FiscalXmlFileStorage fileStorage, FiscalXmlPackageExtractor packageExtractor,
                                        FiscalXmlDocumentRepository xmlDocumentRepository, FiscalXmlSyncControlRepository syncControlRepository,
                                        CompanyValidation companyValidation, MessageService messageService, SiegProperties properties,
-                                       FirmIntegrationService firmIntegrationService) {
+                                       FirmIntegrationService firmIntegrationService, FiscalEventParser eventParser,
+                                       FiscalXmlEventService eventService) {
         this.firmIntegrationService = firmIntegrationService;
+        this.eventParser = eventParser;
+        this.eventService = eventService;
         this.siegClient = siegClient;
         this.metadataParser = metadataParser;
         this.fileStorage = fileStorage;
@@ -123,7 +136,8 @@ public class FiscalXmlIntegrationService {
                 startOfDayUtc(filter.dataEmissaoInicio()),
                 endOfDayUtc(filter.dataEmissaoFim()),
                 side == FiscalXmlSide.ISSUED ? cnpj : null,
-                side == FiscalXmlSide.RECEIVED ? cnpj : null
+                side == FiscalXmlSide.RECEIVED ? cnpj : null,
+                true
         );
 
         String apiKey = firmIntegrationService.getApiKey(company.getAccountingFirm().getId(), IntegrationType.SIEG);
@@ -141,7 +155,7 @@ public class FiscalXmlIntegrationService {
         XmlDownloadResultDTO result;
         if (totalSieg == 0) {
             log.info("SIEG reports 0 pending NFe for company {} ({}) in this window, skipping baixar-xmls", company.getId(), side);
-            result = new XmlDownloadResultDTO(0, 0, 0, 0, 0, List.of(), List.of());
+            result = new XmlDownloadResultDTO(0, 0, 0, 0, 0, List.of(), List.of(), 0);
         } else {
             List<byte[]> xmlContents = siegClient.baixarXmls(request, apiKey);
             result = persistAll(company, xmlContents);
@@ -161,12 +175,15 @@ public class FiscalXmlIntegrationService {
         xmls.addAll(b.xmls());
         return new XmlDownloadResultDTO(a.totalItemsFromSieg() + b.totalItemsFromSieg(), a.totalXmlsCounted() + b.totalXmlsCounted(),
                 a.totalPersistedNew() + b.totalPersistedNew(), a.totalDuplicatedSkipped() + b.totalDuplicatedSkipped(),
-                a.totalParseErrors() + b.totalParseErrors(), keys, xmls);
+                a.totalParseErrors() + b.totalParseErrors(), keys, xmls, a.totalEventsRecorded() + b.totalEventsRecorded());
     }
 
     private int countPendingNfe(Company company, SiegBaixarXmlsRequest request, String apiKey) {
         try {
-            return siegClient.contarXmlsNfe(request, apiKey);
+            // counted without BaixarEventos: the count must be notes only, comparable with what's stored
+            SiegBaixarXmlsRequest countRequest = new SiegBaixarXmlsRequest(request.tipoXml(), request.take(), request.skip(),
+                    request.dataEmissaoInicio(), request.dataEmissaoFim(), request.cnpjEmit(), request.cnpjDest(), null);
+            return siegClient.contarXmlsNfe(countRequest, apiKey);
         } catch (Exception e) {
             log.warn("Could not count pending SIEG NFe for company {} - proceeding with baixar-xmls anyway", company.getId(), e);
             return -1;
@@ -235,14 +252,30 @@ public class FiscalXmlIntegrationService {
         return persistAll(company, xmlContents);
     }
 
+    /**
+     * Stores what a provider page (or a manual upload) brought: SEFAZ events go to
+     * FiscalXmlEventService, notes are persisted once per company - the same note may
+     * legitimately belong to two clients of the firm (one's exit, the other's entry).
+     */
     private XmlDownloadResultDTO persistAll(Company company, List<byte[]> xmlContents) {
         int persistedNew = 0;
         int duplicated = 0;
         int parseErrors = 0;
+        int events = 0;
+        int notes = 0;
         List<String> persistedKeys = new ArrayList<>();
         List<FiscalXmlItemDTO> xmls = new ArrayList<>();
 
         for (byte[] xmlBytes : xmlContents) {
+            Optional<FiscalEventData> event = eventParser.parse(xmlBytes);
+            if (event.isPresent()) {
+                if (eventService.record(company, event.get())) {
+                    events++;
+                }
+                continue;
+            }
+            notes++;
+
             FiscalXmlMetadata metadata = metadataParser.parse(xmlBytes);
             String xmlContent = new String(xmlBytes, StandardCharsets.UTF_8);
 
@@ -250,14 +283,15 @@ public class FiscalXmlIntegrationService {
                 parseErrors++;
             }
 
-            if (metadata.accessKey() != null && xmlDocumentRepository.existsByAccessKey(metadata.accessKey())) {
+            if (metadata.accessKey() != null && xmlDocumentRepository.existsByCompany_IdAndAccessKey(company.getId(), metadata.accessKey())) {
                 duplicated++;
                 xmls.add(toItemDTO(metadata, xmlContent));
                 continue;
             }
 
             String xmlFilePath = fileStorage.store(company.getId(), metadata.accessKey(), xmlBytes);
-            xmlDocumentRepository.save(toDocument(metadata, company, xmlFilePath));
+            FiscalXmlDocument document = xmlDocumentRepository.save(toDocument(metadata, company, xmlFilePath));
+            eventService.linkPendingEvents(document);
             persistedNew++;
             if (metadata.accessKey() != null) {
                 persistedKeys.add(metadata.accessKey());
@@ -267,13 +301,44 @@ public class FiscalXmlIntegrationService {
 
         return new XmlDownloadResultDTO(
                 xmlContents.size(),
-                xmlContents.size(),
+                notes,
                 persistedNew,
                 duplicated,
                 parseErrors,
                 persistedKeys,
-                xmls
+                xmls,
+                events
         );
+    }
+
+    /**
+     * Re-reads the notes of a recent window with their events, so a cancellation that
+     * happened after the note was imported is still caught (a note can be canceled up to
+     * 24h after authorization, the regular sync has usually imported it by then). Pages from
+     * the start; known notes come back as duplicates and cost nothing but the request. Never
+     * touches the sync bookkeeping - the monthly counts stay comparable.
+     *
+     * @return new events stored
+     */
+    @Transactional
+    public int refreshRecentEvents(UUID companyId, FiscalXmlSide side, LocalDate from, LocalDate to) {
+        Company company = findCompanyWithCnpj(companyId.toString());
+        String cnpj = DocumentNumbers.onlyDigits(company.getDocument().getNumber());
+        String apiKey = firmIntegrationService.getApiKey(company.getAccountingFirm().getId(), IntegrationType.SIEG);
+        int events = 0;
+        for (int page = 0; page < EVENT_SWEEP_MAX_PAGES; page++) {
+            SiegBaixarXmlsRequest request = new SiegBaixarXmlsRequest(TIPO_XML_NFE, PAGE_SIZE, page * PAGE_SIZE,
+                    startOfDayUtc(from), endOfDayUtc(to),
+                    side == FiscalXmlSide.ISSUED ? cnpj : null,
+                    side == FiscalXmlSide.RECEIVED ? cnpj : null,
+                    true);
+            XmlDownloadResultDTO result = persistAll(company, siegClient.baixarXmls(request, apiKey));
+            events += result.totalEventsRecorded();
+            if (result.totalXmlsCounted() < PAGE_SIZE) {
+                break;
+            }
+        }
+        return events;
     }
 
     /**

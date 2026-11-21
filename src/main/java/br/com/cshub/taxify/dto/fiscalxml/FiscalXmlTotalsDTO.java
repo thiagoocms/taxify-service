@@ -12,11 +12,13 @@ public record FiscalXmlTotalsDTO(DirectionTotals inbound, DirectionTotals outbou
             BigDecimal icmsSt,
             BigDecimal ipi,
             BigDecimal pis,
-            BigDecimal cofins
+            BigDecimal cofins,
+            /** Canceled notes of the period - listed, but left out of every sum above. */
+            long canceledCount
     ) {
         public static DirectionTotals empty() {
             return new DirectionTotals(0, BigDecimal.ZERO, BigDecimal.ZERO, BigDecimal.ZERO, BigDecimal.ZERO,
-                    BigDecimal.ZERO, BigDecimal.ZERO);
+                    BigDecimal.ZERO, BigDecimal.ZERO, 0);
         }
     }
 }

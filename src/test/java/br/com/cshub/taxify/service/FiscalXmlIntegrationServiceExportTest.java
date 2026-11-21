@@ -1,5 +1,6 @@
 package br.com.cshub.taxify.service;
 
+import br.com.cshub.taxify.integration.fiscalxml.FiscalEventParser;
 import br.com.cshub.taxify.common.MessageService;
 import br.com.cshub.taxify.domain.company.Company;
 import br.com.cshub.taxify.domain.document.Document;
@@ -90,6 +91,8 @@ class FiscalXmlIntegrationServiceExportTest {
     @Mock
     private MessageService messageService;
     @Mock
+    private FiscalXmlEventService eventService;
+    @Mock
     private FirmIntegrationService firmIntegrationService;
 
     private FiscalXmlIntegrationService service;
@@ -110,7 +113,8 @@ class FiscalXmlIntegrationServiceExportTest {
 
         service = new FiscalXmlIntegrationService(siegClient, new FiscalXmlMetadataParser(),
                 new FiscalXmlFileStorage(properties, messageService), new FiscalXmlPackageExtractor(),
-                xmlDocumentRepository, syncControlRepository, companyValidation, messageService, new SiegProperties(), firmIntegrationService);
+                xmlDocumentRepository, syncControlRepository, companyValidation, messageService, new SiegProperties(), firmIntegrationService,
+                new FiscalEventParser(), eventService);
     }
 
     @Test

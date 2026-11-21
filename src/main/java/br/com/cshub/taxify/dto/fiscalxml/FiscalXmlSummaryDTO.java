@@ -1,5 +1,6 @@
 package br.com.cshub.taxify.dto.fiscalxml;
 
+import br.com.cshub.taxify.enumerated.FiscalDocumentStatus;
 import br.com.cshub.taxify.enumerated.FiscalDirection;
 import java.math.BigDecimal;
 import java.time.LocalDateTime;
@@ -32,6 +33,7 @@ public record FiscalXmlSummaryDTO(
         boolean retificada,
         FiscalDirection direction,
         /** Issued by the company itself (can't be rectified). */
-        boolean ownIssue
+        boolean ownIssue,
+        FiscalDocumentStatus status
 ) {
 }

@@ -1,5 +1,6 @@
 package br.com.cshub.taxify.rest;
 
+import br.com.cshub.taxify.dto.fiscalxml.FiscalXmlEventDTO;
 import br.com.cshub.taxify.dto.fiscalxml.FiscalXmlTotalsDTO;
 import br.com.cshub.taxify.security.RequiresPermission;
 import br.com.cshub.taxify.enumerated.Permission;
@@ -71,6 +72,12 @@ public class FiscalXmlResource {
     @GetMapping("/{documentId}")
     public ResponseEntity<FiscalXmlDetailDTO> buscarDetalhe(@PathVariable UUID documentId) {
         return ResponseEntity.ok(queryService.findDetail(documentId));
+    }
+
+    /** SEFAZ events of the note (cancelamento, carta de correção, manifestação). */
+    @GetMapping("/{documentId}/eventos")
+    public ResponseEntity<List<FiscalXmlEventDTO>> buscarEventos(@PathVariable UUID documentId) {
+        return ResponseEntity.ok(queryService.findEvents(documentId));
     }
 
     @GetMapping("/{documentId}/produtos")

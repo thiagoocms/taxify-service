@@ -96,6 +96,9 @@ public class FiscalXmlRectificationService {
         FiscalXmlDocument document = documentRepository.findFirstByIdAndDeletedIsFalse(documentId)
                 .orElseThrow(() -> new ResourceNotFoundException(messageService.getMessage("error.entity.not.found")));
         tenantAccessService.assertCompanyAccess(document.getCompany());
+        if (document.isCanceled()) {
+            throw new BadRequestException(messageService.getMessage("error.fiscalXml.rectification.canceled"));
+        }
         if (document.isOwnIssue()) {
             // An authorized note the company issued can't be rewritten - that's a carta de correção.
             throw new BadRequestException(messageService.getMessage("error.fiscalXml.rectification.own.issue"));

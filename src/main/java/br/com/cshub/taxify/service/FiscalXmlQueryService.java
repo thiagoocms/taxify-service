@@ -1,5 +1,6 @@
 package br.com.cshub.taxify.service;
 
+import br.com.cshub.taxify.dto.fiscalxml.FiscalXmlEventDTO;
 import java.util.Locale;
 import java.math.BigDecimal;
 import br.com.cshub.taxify.enumerated.FiscalDirection;
@@ -56,6 +57,8 @@ public class FiscalXmlQueryService {
 
     private static final Logger log = LoggerFactory.getLogger(FiscalXmlQueryService.class);
 
+    private final FiscalXmlEventService eventService;
+
     private final FiscalXmlDocumentRepository documentRepository;
     private final FiscalXmlDocumentItemRepository itemRepository;
     private final FiscalXmlMetadataParser metadataParser;
@@ -65,7 +68,9 @@ public class FiscalXmlQueryService {
 
     public FiscalXmlQueryService(FiscalXmlDocumentRepository documentRepository, FiscalXmlDocumentItemRepository itemRepository,
                                  FiscalXmlMetadataParser metadataParser, CompanyValidation companyValidation,
-                                 TenantAccessService tenantAccessService, MessageService messageService) {
+                                 TenantAccessService tenantAccessService, MessageService messageService,
+                                 FiscalXmlEventService eventService) {
+        this.eventService = eventService;
         this.documentRepository = documentRepository;
         this.itemRepository = itemRepository;
         this.metadataParser = metadataParser;
@@ -85,8 +90,8 @@ public class FiscalXmlQueryService {
         FiscalXmlTotalsDTO.DirectionTotals outbound = FiscalXmlTotalsDTO.DirectionTotals.empty();
         for (Object[] row : documentRepository.totalsByDirection(company.getId(), from, to)) {
             FiscalXmlTotalsDTO.DirectionTotals totals = new FiscalXmlTotalsDTO.DirectionTotals(((Number) row[1]).longValue(),
-                    (BigDecimal) row[2], (BigDecimal) row[3], (BigDecimal) row[4], (BigDecimal) row[5], (BigDecimal) row[6],
-                    (BigDecimal) row[7]);
+                    decimal(row[2]), decimal(row[3]), decimal(row[4]), decimal(row[5]), decimal(row[6]), decimal(row[7]),
+                    ((Number) row[8]).longValue());
             if (row[0] == FiscalDirection.OUTBOUND) {
                 outbound = totals;
             } else {
@@ -94,6 +99,20 @@ public class FiscalXmlQueryService {
             }
         }
         return new FiscalXmlTotalsDTO(inbound, outbound);
+    }
+
+    /** SUM over a CASE comes back as BigDecimal or Long/Integer depending on the dialect. */
+    private static BigDecimal decimal(Object value) {
+        if (value instanceof BigDecimal decimal) {
+            return decimal;
+        }
+        return value == null ? BigDecimal.ZERO : new BigDecimal(value.toString());
+    }
+
+    /** The note's SEFAZ events (cancelamento, carta de correção...) - same access check as the note. */
+    @Transactional(readOnly = true)
+    public List<FiscalXmlEventDTO> findEvents(UUID documentId) {
+        return eventService.eventsOf(findDocument(documentId).getId());
     }
 
     /** "acme" → "%acme%"; "11.594.485/0001-05" → "%11594485000105%" (documents are stored as digits). */
@@ -165,7 +184,9 @@ public class FiscalXmlQueryService {
                 metadata.destinatario(),
                 metadata.totais(),
                 document.getDirection(),
-                document.isOwnIssue()
+                document.isOwnIssue(),
+                document.getStatus(),
+                document.getCanceledAt()
         );
     }
 
@@ -239,7 +260,7 @@ public class FiscalXmlQueryService {
         return new FiscalXmlDetailDTO(d.getId(), d.getCompany().getId(), d.getAccessKey(), d.getDocumentType(),
                 d.getIssuerCnpj(), d.getRecipientCnpj(), d.getIssueDate(), d.getRectifiedFilePath() != null,
                 itemRepository.countByDocument_Id(d.getId()), identificacao, emitente, destinatario, totais,
-                d.getDirection(), d.isOwnIssue());
+                d.getDirection(), d.isOwnIssue(), d.getStatus(), d.getCanceledAt());
     }
 
     private FiscalXmlSummaryDTO toSummary(FiscalXmlDocument document, long quantidadeItens) {
@@ -263,7 +284,8 @@ public class FiscalXmlQueryService {
                 quantidadeItens,
                 document.getRectifiedFilePath() != null,
                 document.getDirection(),
-                document.isOwnIssue()
+                document.isOwnIssue(),
+                document.getStatus()
         );
     }
 

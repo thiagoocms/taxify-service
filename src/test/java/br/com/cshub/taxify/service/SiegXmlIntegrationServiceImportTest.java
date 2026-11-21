@@ -1,5 +1,7 @@
 package br.com.cshub.taxify.service;
 
+import br.com.cshub.taxify.integration.fiscalxml.FiscalEventData;
+import br.com.cshub.taxify.integration.fiscalxml.FiscalEventParser;
 import br.com.cshub.taxify.common.MessageService;
 import br.com.cshub.taxify.domain.company.Company;
 import br.com.cshub.taxify.domain.document.Document;
@@ -35,6 +37,7 @@ import static org.assertj.core.api.Assertions.assertThat;
 import static org.assertj.core.api.Assertions.assertThatThrownBy;
 import static org.mockito.ArgumentMatchers.any;
 import static org.mockito.Mockito.lenient;
+import static org.mockito.Mockito.verify;
 import static org.mockito.Mockito.when;
 
 @ExtendWith(MockitoExtension.class)
@@ -64,6 +67,8 @@ class SiegXmlIntegrationServiceImportTest {
     @Mock
     private MessageService messageService;
     @Mock
+    private FiscalXmlEventService eventService;
+    @Mock
     private FirmIntegrationService firmIntegrationService;
 
     private FiscalXmlIntegrationService service;
@@ -87,7 +92,8 @@ class SiegXmlIntegrationServiceImportTest {
 
         service = new FiscalXmlIntegrationService(siegClient, new FiscalXmlMetadataParser(),
                 new FiscalXmlFileStorage(syncProperties, messageService), new FiscalXmlPackageExtractor(),
-                xmlDocumentRepository, syncControlRepository, companyValidation, messageService, properties, firmIntegrationService);
+                xmlDocumentRepository, syncControlRepository, companyValidation, messageService, properties, firmIntegrationService,
+                new FiscalEventParser(), eventService);
     }
 
     @Test
@@ -122,8 +128,22 @@ class SiegXmlIntegrationServiceImportTest {
     }
 
     @Test
+    void eventXmlsGoToTheEventServiceAndAreNotCountedAsNotesOrErrors() {
+        String cancellation = br.com.cshub.taxify.integration.fiscalxml.FiscalEventParserTest.procEvento(
+                "110111", "<descEvento>Cancelamento</descEvento><xJust>Erro</xJust>", "135");
+        when(eventService.record(any(), any())).thenReturn(true);
+
+        XmlDownloadResultDTO result = service.importManual(companyId.toString(), cancellation.getBytes(StandardCharsets.UTF_8));
+
+        assertThat(result.totalEventsRecorded()).isEqualTo(1);
+        assertThat(result.totalPersistedNew()).isZero();
+        assertThat(result.totalParseErrors()).isZero();
+        verify(eventService).record(any(), org.mockito.ArgumentMatchers.<FiscalEventData>argThat(FiscalEventData::isCancellation));
+    }
+
+    @Test
     void skipsAnAlreadyPersistedAccessKeyAsDuplicate() {
-        when(xmlDocumentRepository.existsByAccessKey("35240112345678000199550010000000011000000010")).thenReturn(true);
+        when(xmlDocumentRepository.existsByCompany_IdAndAccessKey(companyId, "35240112345678000199550010000000011000000010")).thenReturn(true);
 
         XmlDownloadResultDTO result = service.importManual(companyId.toString(), NFE_XML.getBytes(StandardCharsets.UTF_8));
 

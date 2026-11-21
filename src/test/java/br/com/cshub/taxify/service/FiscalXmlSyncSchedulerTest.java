@@ -184,6 +184,25 @@ class FiscalXmlSyncSchedulerTest {
     }
 
     @Test
+    void sweepsRecentEventsOncePerDayPerSide() {
+        properties.setReferenceDate(LocalDate.of(2026, 8, 15));
+        FiscalXmlSyncControl control = controlFor(companyA, 0);
+        control.setId(UUID.randomUUID());
+        control.setReceivedEventsCheckedOn(LocalDate.of(2026, 8, 14));
+        control.setIssuedEventsCheckedOn(LocalDate.of(2026, 8, 15));
+        when(companyRepository.findAll()).thenReturn(List.of(companyA));
+        when(syncControlRepository.findAllCompanyIds()).thenReturn(List.of(companyA.getId()));
+        when(syncControlRepository.findAllWithCompany()).thenReturn(List.of(control));
+        when(provider.sync(any())).thenReturn(new FiscalXmlSyncResult(0, 0, 0));
+
+        scheduler.syncAllCompanies();
+
+        verify(provider).refreshEvents(companyA.getId(), FiscalXmlSide.RECEIVED, LocalDate.of(2026, 8, 13), LocalDate.of(2026, 8, 15));
+        verify(provider, never()).refreshEvents(any(), org.mockito.ArgumentMatchers.eq(FiscalXmlSide.ISSUED), any(), any());
+        verify(syncControlRepository).markReceivedEventsChecked(control.getId(), LocalDate.of(2026, 8, 15));
+    }
+
+    @Test
     void skipsTheProviderCallWhenAlreadyFullyImportedForToday() {
         properties.setReferenceDate(LocalDate.of(2026, 8, 15));
         FiscalXmlSyncControl caughtUp = controlFor(companyA, 200);
@@ -192,6 +211,8 @@ class FiscalXmlSyncSchedulerTest {
         caughtUp.setIssuedTotalSieg(40);
         caughtUp.setIssuedTotalImported(40);
         caughtUp.setIssuedCheckedAt(LocalDate.of(2026, 8, 15).atTime(9, 0));
+        caughtUp.setReceivedEventsCheckedOn(LocalDate.of(2026, 8, 15));
+        caughtUp.setIssuedEventsCheckedOn(LocalDate.of(2026, 8, 15));
         when(companyRepository.findAll()).thenReturn(List.of(companyA));
         when(syncControlRepository.findAllCompanyIds()).thenReturn(List.of(companyA.getId()));
         when(syncControlRepository.findAllWithCompany()).thenReturn(List.of(caughtUp));

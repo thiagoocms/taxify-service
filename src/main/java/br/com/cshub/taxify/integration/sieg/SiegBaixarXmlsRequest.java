@@ -7,7 +7,7 @@ import java.time.Instant;
 
 /**
  * Request body for {@code POST /api/v1/baixar-xmls}, per SIEG's "Sistemas Externos"
- * contract at integracoes.sieg.com/sistema-externo/docs/baixarxmls-v-1-0-0.
+ * contract at integracoes.sieg.com/sistema-externo/docs/baixar-xmls-2.
  */
 @JsonInclude(JsonInclude.Include.NON_NULL)
 public record SiegBaixarXmlsRequest(
@@ -17,6 +17,8 @@ public record SiegBaixarXmlsRequest(
         @JsonProperty("DataEmissaoInicio") Instant dataEmissaoInicio,
         @JsonProperty("DataEmissaoFim") Instant dataEmissaoFim,
         @JsonProperty("CNPJemit") String cnpjEmit,
-        @JsonProperty("CNPJdest") String cnpjDest
+        @JsonProperty("CNPJdest") String cnpjDest,
+        /** true = each page also brings the notes' events (cancelamento, CC-e, manifestação), beyond the 50 notes. */
+        @JsonProperty("BaixarEventos") Boolean baixarEventos
 ) {
 }

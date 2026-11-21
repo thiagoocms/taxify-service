@@ -1,5 +1,8 @@
 package br.com.cshub.taxify.integration.sieg;
 
+import java.util.UUID;
+import java.time.LocalDate;
+import br.com.cshub.taxify.integration.fiscalxml.FiscalXmlSide;
 import br.com.cshub.taxify.dto.sieg.XmlDownloadFilterDTO;
 import br.com.cshub.taxify.dto.sieg.XmlDownloadResultDTO;
 import br.com.cshub.taxify.integration.fiscalxml.FiscalXmlProvider;
@@ -40,5 +43,10 @@ public class SiegFiscalXmlProvider implements FiscalXmlProvider {
 
         XmlDownloadResultDTO result = integrationService.syncFromSieg(filter, request.knownPending());
         return new FiscalXmlSyncResult(result.totalPersistedNew(), result.totalDuplicatedSkipped(), result.totalParseErrors());
+    }
+
+    @Override
+    public int refreshEvents(UUID companyId, FiscalXmlSide side, LocalDate from, LocalDate to) {
+        return integrationService.refreshRecentEvents(companyId, side, from, to);
     }
 }

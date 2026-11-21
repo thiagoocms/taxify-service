@@ -71,6 +71,8 @@ import java.util.concurrent.atomic.AtomicInteger;
 public class FiscalXmlSyncScheduler {
 
     private static final Logger log = LoggerFactory.getLogger(FiscalXmlSyncScheduler.class);
+    /** Today plus the 2 previous days: covers the 24h cancellation window with margin for late uploads. */
+    static final int EVENT_LOOKBACK_DAYS = 2;
 
     private final CompanyRepository companyRepository;
     private final FiscalXmlSyncControlRepository syncControlRepository;
@@ -192,6 +194,34 @@ public class FiscalXmlSyncScheduler {
     private void syncCompany(FiscalXmlProvider provider, FiscalXmlSyncControl control, LocalDate today) {
         for (FiscalXmlSide side : FiscalXmlSide.values()) {
             syncSide(provider, control, side, today);
+            refreshEventsOncePerDay(provider, control, side, today);
+        }
+    }
+
+    /**
+     * A note can be canceled up to 24h after authorization - usually after the regular sync
+     * already imported it. Once a day per side, the last {@link #EVENT_LOOKBACK_DAYS} days of
+     * notes are re-read with their events so those cancellations are caught too.
+     */
+    private void refreshEventsOncePerDay(FiscalXmlProvider provider, FiscalXmlSyncControl control, FiscalXmlSide side, LocalDate today) {
+        LocalDate lastChecked = side == FiscalXmlSide.ISSUED ? control.getIssuedEventsCheckedOn() : control.getReceivedEventsCheckedOn();
+        if (today.equals(lastChecked)) {
+            return;
+        }
+        UUID companyId = control.getCompany().getId();
+        try {
+            int events = provider.refreshEvents(companyId, side, today.minusDays(EVENT_LOOKBACK_DAYS), today);
+            if (side == FiscalXmlSide.ISSUED) {
+                syncControlRepository.markIssuedEventsChecked(control.getId(), today);
+            } else {
+                syncControlRepository.markReceivedEventsChecked(control.getId(), today);
+            }
+            if (events > 0) {
+                log.info("Event sweep for company {} ({}): {} new events", companyId, side, events);
+            }
+        } catch (Exception e) {
+            // not marked - the next tick tries again
+            log.warn("Event sweep failed for company {} ({})", companyId, side, e);
         }
     }
 
