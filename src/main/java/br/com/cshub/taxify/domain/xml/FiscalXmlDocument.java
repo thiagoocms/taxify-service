@@ -1,5 +1,6 @@
 package br.com.cshub.taxify.domain.xml;
 
+import br.com.cshub.taxify.enumerated.FiscalDirection;
 import br.com.cshub.taxify.domain.AbstractAuditingEntity;
 import br.com.cshub.taxify.domain.company.Company;
 import jakarta.persistence.*;
@@ -52,6 +53,18 @@ public class FiscalXmlDocument extends AbstractAuditingEntity {
 
     @Column(name = "source_system", length = 20, nullable = false)
     private String sourceSystem = "SIEG";
+
+    /**
+     * Entry or exit for the owning company (see FiscalDirection) - set on import; null only
+     * for rows older than this column until FiscalDirectionBackfill fills them on startup.
+     */
+    @Enumerated(EnumType.STRING)
+    @Column(name = "direction", length = 10)
+    private FiscalDirection direction;
+
+    /** The company itself issued this note - can't be rectified, and is synced from SIEG's "CNPJemit" side. */
+    @Column(name = "own_issue")
+    private Boolean ownIssue;
 
     // ide
     @Column(name = "ide_codigo_uf", length = 5)
@@ -788,5 +801,25 @@ public class FiscalXmlDocument extends AbstractAuditingEntity {
 
     public void setItens(List<FiscalXmlDocumentItem> itens) {
         this.itens = itens;
+    }
+
+    public FiscalDirection getDirection() {
+        return direction;
+    }
+
+    public void setDirection(FiscalDirection direction) {
+        this.direction = direction;
+    }
+
+    public Boolean getOwnIssue() {
+        return ownIssue;
+    }
+
+    public boolean isOwnIssue() {
+        return Boolean.TRUE.equals(ownIssue);
+    }
+
+    public void setOwnIssue(Boolean ownIssue) {
+        this.ownIssue = ownIssue;
     }
 }

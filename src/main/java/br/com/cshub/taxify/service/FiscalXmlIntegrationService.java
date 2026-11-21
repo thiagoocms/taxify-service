@@ -1,5 +1,6 @@
 package br.com.cshub.taxify.service;
 
+import br.com.cshub.taxify.integration.fiscalxml.FiscalXmlSide;
 import br.com.cshub.taxify.common.DocumentNumbers;
 import br.com.cshub.taxify.enumerated.IntegrationType;
 import br.com.cshub.taxify.common.MessageService;
@@ -100,24 +101,38 @@ public class FiscalXmlIntegrationService {
     @Transactional
     public XmlDownloadResultDTO syncFromSieg(XmlDownloadFilterDTO filter, boolean skipCountCheck) {
         Company company = findCompanyWithCnpj(filter.companyId());
+        if (filter.side() != null) {
+            return syncSide(company, filter, filter.side(), skipCountCheck);
+        }
+        // Manual "sincronizar" without a side: both, received first - each is counted apart.
+        XmlDownloadResultDTO received = syncSide(company, filter, FiscalXmlSide.RECEIVED, skipCountCheck);
+        XmlDownloadResultDTO issued = syncSide(company, filter, FiscalXmlSide.ISSUED, skipCountCheck);
+        return merge(received, issued);
+    }
 
+    /**
+     * One side of the company: RECEIVED asks SIEG for notes where it's the recipient
+     * ("CNPJdest"), ISSUED where it's the issuer ("CNPJemit").
+     */
+    private XmlDownloadResultDTO syncSide(Company company, XmlDownloadFilterDTO filter, FiscalXmlSide side, boolean skipCountCheck) {
+        String cnpj = DocumentNumbers.onlyDigits(company.getDocument().getNumber());
         SiegBaixarXmlsRequest request = new SiegBaixarXmlsRequest(
                 filter.xmlType(),
                 filter.take(),
                 normalizeSkip(filter.skip()),
                 startOfDayUtc(filter.dataEmissaoInicio()),
                 endOfDayUtc(filter.dataEmissaoFim()),
-                null,
-                DocumentNumbers.onlyDigits(company.getDocument().getNumber())
+                side == FiscalXmlSide.ISSUED ? cnpj : null,
+                side == FiscalXmlSide.RECEIVED ? cnpj : null
         );
 
         String apiKey = firmIntegrationService.getApiKey(company.getAccountingFirm().getId(), IntegrationType.SIEG);
 
         if (skipCountCheck) {
-            log.info("Skipping contar-xmls for company {} - already known pending from a previous check", company.getId());
+            log.info("Skipping contar-xmls for company {} ({}) - already known pending from a previous check", company.getId(), side);
             List<byte[]> xmlContents = siegClient.baixarXmls(request, apiKey);
             XmlDownloadResultDTO result = persistAll(company, xmlContents);
-            updateSyncControl(company, filter.dataEmissaoInicio(), filter.dataEmissaoFim(), null);
+            updateSyncControl(company, side, filter.dataEmissaoInicio(), filter.dataEmissaoFim(), null);
             return result;
         }
 
@@ -125,7 +140,7 @@ public class FiscalXmlIntegrationService {
 
         XmlDownloadResultDTO result;
         if (totalSieg == 0) {
-            log.info("SIEG reports 0 pending NFe for company {} in this window, skipping baixar-xmls", company.getId());
+            log.info("SIEG reports 0 pending NFe for company {} ({}) in this window, skipping baixar-xmls", company.getId(), side);
             result = new XmlDownloadResultDTO(0, 0, 0, 0, 0, List.of(), List.of());
         } else {
             List<byte[]> xmlContents = siegClient.baixarXmls(request, apiKey);
@@ -133,10 +148,20 @@ public class FiscalXmlIntegrationService {
         }
 
         if (totalSieg >= 0) {
-            updateSyncControl(company, filter.dataEmissaoInicio(), filter.dataEmissaoFim(), totalSieg);
+            updateSyncControl(company, side, filter.dataEmissaoInicio(), filter.dataEmissaoFim(), totalSieg);
         }
 
         return result;
+    }
+
+    private static XmlDownloadResultDTO merge(XmlDownloadResultDTO a, XmlDownloadResultDTO b) {
+        List<String> keys = new ArrayList<>(a.persistedAccessKeys());
+        keys.addAll(b.persistedAccessKeys());
+        List<FiscalXmlItemDTO> xmls = new ArrayList<>(a.xmls());
+        xmls.addAll(b.xmls());
+        return new XmlDownloadResultDTO(a.totalItemsFromSieg() + b.totalItemsFromSieg(), a.totalXmlsCounted() + b.totalXmlsCounted(),
+                a.totalPersistedNew() + b.totalPersistedNew(), a.totalDuplicatedSkipped() + b.totalDuplicatedSkipped(),
+                a.totalParseErrors() + b.totalParseErrors(), keys, xmls);
     }
 
     private int countPendingNfe(Company company, SiegBaixarXmlsRequest request, String apiKey) {
@@ -154,24 +179,36 @@ public class FiscalXmlIntegrationService {
      * while {@code totalImportado} and {@code ultimaVerificacaoEm} still get refreshed to
      * reflect whatever baixar-xmls just persisted.
      */
-    private void updateSyncControl(Company company, LocalDate dataEmissaoInicio, LocalDate dataEmissaoFim, Integer totalSieg) {
+    private void updateSyncControl(Company company, FiscalXmlSide side, LocalDate dataEmissaoInicio, LocalDate dataEmissaoFim,
+                                   Integer totalSieg) {
         FiscalXmlSyncControl control = syncControlRepository.findByCompany_Id(company.getId())
                 .orElseGet(() -> {
                     FiscalXmlSyncControl created = new FiscalXmlSyncControl();
                     created.setCompany(company);
                     created.setDeleted(false);
+                    created.setUltimaVerificacaoEm(LocalDateTime.now());
                     return created;
                 });
         LocalDateTime from = dataEmissaoInicio != null ? dataEmissaoInicio.atStartOfDay() : LocalDateTime.MIN;
         LocalDateTime to = dataEmissaoFim != null ? dataEmissaoFim.atTime(LocalTime.MAX) : LocalDateTime.MAX;
 
+        int imported = (int) xmlDocumentRepository.countByCompany_IdAndOwnIssueAndIssueDateBetween(
+                company.getId(), side.ownIssue(), from, to);
         control.setDataEmissaoInicio(dataEmissaoInicio);
         control.setDataEmissaoFim(dataEmissaoFim);
-        if (totalSieg != null) {
-            control.setTotalSieg(totalSieg);
+        if (side == FiscalXmlSide.ISSUED) {
+            if (totalSieg != null) {
+                control.setIssuedTotalSieg(totalSieg);
+            }
+            control.setIssuedTotalImported(imported);
+            control.setIssuedCheckedAt(LocalDateTime.now());
+        } else {
+            if (totalSieg != null) {
+                control.setTotalSieg(totalSieg);
+            }
+            control.setTotalImportado(imported);
+            control.setUltimaVerificacaoEm(LocalDateTime.now());
         }
-        control.setTotalImportado((int) xmlDocumentRepository.countByCompany_IdAndIssueDateBetween(company.getId(), from, to));
-        control.setUltimaVerificacaoEm(LocalDateTime.now());
         syncControlRepository.save(control);
     }
 
@@ -330,6 +367,11 @@ public class FiscalXmlIntegrationService {
         document.setIssueDate(metadata.issueDate());
         document.setXmlFilePath(xmlFilePath);
         document.setDeleted(false);
+        String issuerCpf = metadata.emitente() == null ? null : metadata.emitente().cpf();
+        String tipoOperacao = metadata.identificacao() == null ? null : metadata.identificacao().tipoOperacao();
+        boolean ownIssue = FiscalDirections.isOwnIssue(company.getDocument().getNumber(), metadata.issuerCnpj(), issuerCpf);
+        document.setOwnIssue(ownIssue);
+        document.setDirection(FiscalDirections.directionOf(ownIssue, tipoOperacao));
 
         applyIdentificacao(document, metadata.identificacao());
         applyEmitente(document, metadata.emitente());

@@ -1,5 +1,6 @@
 package br.com.cshub.taxify.service;
 
+import br.com.cshub.taxify.integration.fiscalxml.FiscalXmlSide;
 import br.com.cshub.taxify.domain.company.Company;
 import br.com.cshub.taxify.domain.subscription.Subscription;
 import br.com.cshub.taxify.domain.xml.FiscalXmlSyncControl;
@@ -187,50 +188,55 @@ public class FiscalXmlSyncScheduler {
         return batch;
     }
 
+    /** Received notes first (what most fiscal work starts from), then the company's own. */
     private void syncCompany(FiscalXmlProvider provider, FiscalXmlSyncControl control, LocalDate today) {
-        Company company = control.getCompany();
+        for (FiscalXmlSide side : FiscalXmlSide.values()) {
+            syncSide(provider, control, side, today);
+        }
+    }
 
-        if (isAlreadyUpToDateToday(control, today)) {
-            log.info("Company {} already fully synced for {} ({} of {} imported) - skipping, no request spent",
-                    company.getId(), today, control.getTotalImportado(), control.getTotalSieg());
+    private void syncSide(FiscalXmlProvider provider, FiscalXmlSyncControl control, FiscalXmlSide side, LocalDate today) {
+        Company company = control.getCompany();
+        SideState state = SideState.of(control, side);
+
+        if (state.isUpToDate(today)) {
+            log.info("Company {} {} side already fully synced for {} ({} of {} imported) - skipping, no request spent",
+                    company.getId(), side, today, state.imported(), state.totalSieg());
             return;
         }
 
-        LocalDate start = today.withDayOfMonth(1);
+        // The totals refer to whichever window was last checked - once the calendar month rolls
+        // over that's last month's, so reusing them as this month's skip (or to claim "known
+        // pending") would be wrong. A never-checked side is treated the same: nothing to carry.
+        boolean sameMonthAsLastCheck = state.checkedAt() != null
+                && YearMonth.from(state.checkedAt()).equals(YearMonth.from(today));
+        int alreadyImportedCount = sameMonthAsLastCheck ? state.imported() : 0;
+        boolean knownPending = sameMonthAsLastCheck && state.totalSieg() > 0 && state.imported() < state.totalSieg();
 
-        // totalImportado/totalSieg on the control row refer to whichever window was last
-        // checked - once the calendar month rolls over, that window is last month's, so
-        // reusing its totalImportado as this month's skip (or its totalSieg to claim
-        // "known pending") would be wrong. Null-safe: a never-checked control (no
-        // ultimaVerificacaoEm yet) is treated the same as "different month" - nothing
-        // reliable to carry forward.
-        boolean sameMonthAsLastCheck = control.getUltimaVerificacaoEm() != null
-                && YearMonth.from(control.getUltimaVerificacaoEm()).equals(YearMonth.from(today));
-        int alreadyImportedCount = sameMonthAsLastCheck ? control.getTotalImportado() : 0;
-        boolean knownPending = sameMonthAsLastCheck
-                && control.getTotalSieg() > 0 && control.getTotalImportado() < control.getTotalSieg();
-
-        FiscalXmlSyncResult result = provider.sync(
-                new FiscalXmlSyncRequest(company.getId(), start, today, alreadyImportedCount, knownPending));
-        log.info("Fiscal XML sync for company {}: {} new, {} duplicated, {} parse errors",
-                company.getId(), result.persistedNew(), result.duplicated(), result.parseErrors());
+        FiscalXmlSyncResult result = provider.sync(new FiscalXmlSyncRequest(
+                company.getId(), today.withDayOfMonth(1), today, alreadyImportedCount, knownPending, side));
+        log.info("Fiscal XML sync for company {} ({}): {} new, {} duplicated, {} parse errors",
+                company.getId(), side, result.persistedNew(), result.duplicated(), result.parseErrors());
     }
 
-    /**
-     * Once {@code totalImportado} catches up to {@code totalSieg} on a given day, there's
-     * nothing new to find by asking again the same day - so this skips the request
-     * entirely rather than spending part of the provider's rate limit (SIEG: 2/min,
-     * account-wide) confirming what's already known. {@code totalSieg == 0} never counts
-     * as "up to date" here: that's "never successfully checked yet" as much as it is "no
-     * pending notes", so it's always worth a real check. The next calendar day this stops
-     * matching (new {@code today}), so the following tick checks again - new notes for
-     * the new day, or ones issued for a past day but reported by SIEG only later, aren't
-     * missed.
-     */
-    private boolean isAlreadyUpToDateToday(FiscalXmlSyncControl control, LocalDate today) {
-        return control.getTotalSieg() > 0
-                && control.getTotalImportado() >= control.getTotalSieg()
-                && control.getUltimaVerificacaoEm() != null
-                && control.getUltimaVerificacaoEm().toLocalDate().isEqual(today);
+    /** One side's bookkeeping, read from its own columns on the control row (null = never checked). */
+    record SideState(int totalSieg, int imported, LocalDateTime checkedAt) {
+
+        static SideState of(FiscalXmlSyncControl control, FiscalXmlSide side) {
+            if (side == FiscalXmlSide.ISSUED) {
+                return new SideState(valueOf(control.getIssuedTotalSieg()), valueOf(control.getIssuedTotalImported()),
+                        control.getIssuedCheckedAt());
+            }
+            return new SideState(control.getTotalSieg(), control.getTotalImportado(), control.getUltimaVerificacaoEm());
+        }
+
+        /** Everything the provider reported is already imported, checked today - no request needed. */
+        boolean isUpToDate(LocalDate today) {
+            return totalSieg > 0 && imported >= totalSieg && checkedAt != null && checkedAt.toLocalDate().isEqual(today);
+        }
+
+        private static int valueOf(Integer value) {
+            return value == null ? 0 : value;
+        }
     }
 }

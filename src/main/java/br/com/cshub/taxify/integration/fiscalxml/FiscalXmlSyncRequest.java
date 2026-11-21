@@ -22,6 +22,7 @@ public record FiscalXmlSyncRequest(
         LocalDate dataEmissaoInicio,
         LocalDate dataEmissaoFim,
         int alreadyImportedCount,
-        boolean knownPending
+        boolean knownPending,
+        FiscalXmlSide side
 ) {
 }

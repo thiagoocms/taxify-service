@@ -1,5 +1,6 @@
 package br.com.cshub.taxify.rest;
 
+import br.com.cshub.taxify.dto.fiscalxml.FiscalXmlTotalsDTO;
 import br.com.cshub.taxify.security.RequiresPermission;
 import br.com.cshub.taxify.enumerated.Permission;
 import br.com.cshub.taxify.constants.AppConstants;
@@ -58,6 +59,12 @@ public class FiscalXmlResource {
     @PostMapping
     public ResponseEntity<Page<FiscalXmlSummaryDTO>> buscarXmls(@Valid @RequestBody XmlSearchFilterDTO filter) {
         return ResponseEntity.ok(queryService.search(filter));
+    }
+
+    /** Entries and exits of the period, with the main taxes - the cards above the list. */
+    @PostMapping("/totais")
+    public ResponseEntity<FiscalXmlTotalsDTO> totais(@Valid @RequestBody XmlSearchFilterDTO filter) {
+        return ResponseEntity.ok(queryService.totals(filter));
     }
 
     /** Header of one note (identification, parties, totals) - no items, no raw XML. */

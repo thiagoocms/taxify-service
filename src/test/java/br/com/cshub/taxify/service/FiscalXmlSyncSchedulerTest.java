@@ -1,5 +1,6 @@
 package br.com.cshub.taxify.service;
 
+import br.com.cshub.taxify.integration.fiscalxml.FiscalXmlSide;
 import br.com.cshub.taxify.domain.company.Company;
 import br.com.cshub.taxify.domain.document.Document;
 import br.com.cshub.taxify.domain.plan.Plan;
@@ -36,6 +37,7 @@ import static org.mockito.Mockito.lenient;
 import static org.mockito.Mockito.never;
 import static org.mockito.Mockito.times;
 import static org.mockito.Mockito.verify;
+import static org.mockito.Mockito.atLeastOnce;
 import static org.mockito.Mockito.verifyNoInteractions;
 import static org.mockito.Mockito.when;
 
@@ -139,8 +141,8 @@ class FiscalXmlSyncSchedulerTest {
         scheduler.syncAllCompanies();
 
         ArgumentCaptor<FiscalXmlSyncRequest> captor = ArgumentCaptor.forClass(FiscalXmlSyncRequest.class);
-        verify(provider).sync(captor.capture());
-        assertThat(captor.getValue().alreadyImportedCount()).isEqualTo(150);
+        verify(provider, atLeastOnce()).sync(captor.capture());
+        assertThat(received(captor).alreadyImportedCount()).isEqualTo(150);
     }
 
     @Test
@@ -154,9 +156,31 @@ class FiscalXmlSyncSchedulerTest {
         scheduler.syncAllCompanies();
 
         ArgumentCaptor<FiscalXmlSyncRequest> captor = ArgumentCaptor.forClass(FiscalXmlSyncRequest.class);
+        verify(provider, atLeastOnce()).sync(captor.capture());
+        assertThat(received(captor).dataEmissaoInicio()).isEqualTo(LocalDate.of(2026, 8, 1));
+        assertThat(received(captor).dataEmissaoFim()).isEqualTo(LocalDate.of(2026, 8, 15));
+    }
+
+    @Test
+    void issuedSideUsesItsOwnCountersAndIsSyncedEvenWhenReceivedIsCaughtUp() {
+        properties.setReferenceDate(LocalDate.of(2026, 8, 15));
+        FiscalXmlSyncControl control = controlFor(companyA, 200);
+        control.setTotalSieg(200);
+        control.setUltimaVerificacaoEm(LocalDate.of(2026, 8, 15).atTime(9, 0));
+        control.setIssuedTotalSieg(30);
+        control.setIssuedTotalImported(12);
+        control.setIssuedCheckedAt(LocalDate.of(2026, 8, 14).atTime(9, 0));
+        when(companyRepository.findAll()).thenReturn(List.of(companyA));
+        when(syncControlRepository.findAllCompanyIds()).thenReturn(List.of(companyA.getId()));
+        when(syncControlRepository.findAllWithCompany()).thenReturn(List.of(control));
+
+        scheduler.syncAllCompanies();
+
+        ArgumentCaptor<FiscalXmlSyncRequest> captor = ArgumentCaptor.forClass(FiscalXmlSyncRequest.class);
         verify(provider).sync(captor.capture());
-        assertThat(captor.getValue().dataEmissaoInicio()).isEqualTo(LocalDate.of(2026, 8, 1));
-        assertThat(captor.getValue().dataEmissaoFim()).isEqualTo(LocalDate.of(2026, 8, 15));
+        assertThat(captor.getValue().side()).isEqualTo(FiscalXmlSide.ISSUED);
+        assertThat(captor.getValue().alreadyImportedCount()).isEqualTo(12);
+        assertThat(captor.getValue().knownPending()).isTrue();
     }
 
     @Test
@@ -165,6 +189,9 @@ class FiscalXmlSyncSchedulerTest {
         FiscalXmlSyncControl caughtUp = controlFor(companyA, 200);
         caughtUp.setTotalSieg(200);
         caughtUp.setUltimaVerificacaoEm(LocalDate.of(2026, 8, 15).atTime(9, 0));
+        caughtUp.setIssuedTotalSieg(40);
+        caughtUp.setIssuedTotalImported(40);
+        caughtUp.setIssuedCheckedAt(LocalDate.of(2026, 8, 15).atTime(9, 0));
         when(companyRepository.findAll()).thenReturn(List.of(companyA));
         when(syncControlRepository.findAllCompanyIds()).thenReturn(List.of(companyA.getId()));
         when(syncControlRepository.findAllWithCompany()).thenReturn(List.of(caughtUp));
@@ -187,7 +214,7 @@ class FiscalXmlSyncSchedulerTest {
 
         scheduler.syncAllCompanies();
 
-        verify(provider).sync(any());
+        verify(provider).sync(receivedSide());
     }
 
     @Test
@@ -203,7 +230,7 @@ class FiscalXmlSyncSchedulerTest {
 
         scheduler.syncAllCompanies();
 
-        verify(provider).sync(any());
+        verify(provider).sync(receivedSide());
     }
 
     @Test
@@ -218,8 +245,8 @@ class FiscalXmlSyncSchedulerTest {
         scheduler.syncAllCompanies();
 
         ArgumentCaptor<FiscalXmlSyncRequest> captor = ArgumentCaptor.forClass(FiscalXmlSyncRequest.class);
-        verify(provider).sync(captor.capture());
-        assertThat(captor.getValue().knownPending()).isTrue();
+        verify(provider, atLeastOnce()).sync(captor.capture());
+        assertThat(received(captor).knownPending()).isTrue();
     }
 
     @Test
@@ -232,8 +259,8 @@ class FiscalXmlSyncSchedulerTest {
         scheduler.syncAllCompanies();
 
         ArgumentCaptor<FiscalXmlSyncRequest> captor = ArgumentCaptor.forClass(FiscalXmlSyncRequest.class);
-        verify(provider).sync(captor.capture());
-        assertThat(captor.getValue().knownPending()).isFalse();
+        verify(provider, atLeastOnce()).sync(captor.capture());
+        assertThat(received(captor).knownPending()).isFalse();
     }
 
     @Test
@@ -277,7 +304,7 @@ class FiscalXmlSyncSchedulerTest {
 
         scheduler.syncAllCompanies();
 
-        verify(provider).sync(any());
+        verify(provider).sync(receivedSide());
     }
 
     @Test
@@ -289,7 +316,7 @@ class FiscalXmlSyncSchedulerTest {
 
         scheduler.syncAllCompanies();
 
-        verify(provider, times(2)).sync(any());
+        verify(provider, times(2)).sync(receivedSide());
         verify(provider).sync(argThatCompanyId(companyA.getId()));
         verify(provider).sync(argThatCompanyId(companyB.getId()));
     }
@@ -355,7 +382,17 @@ class FiscalXmlSyncSchedulerTest {
     }
 
     private FiscalXmlSyncRequest argThatCompanyId(UUID companyId) {
-        return org.mockito.ArgumentMatchers.argThat(request -> request != null && request.companyId().equals(companyId));
+        return org.mockito.ArgumentMatchers.argThat(request -> request != null && request.companyId().equals(companyId)
+                && request.side() == FiscalXmlSide.RECEIVED);
+    }
+
+    /** These tests are about the received side; the issued side runs alongside with its own counters. */
+    private FiscalXmlSyncRequest receivedSide() {
+        return org.mockito.ArgumentMatchers.argThat(request -> request != null && request.side() == FiscalXmlSide.RECEIVED);
+    }
+
+    private static FiscalXmlSyncRequest received(ArgumentCaptor<FiscalXmlSyncRequest> captor) {
+        return captor.getAllValues().stream().filter(request -> request.side() == FiscalXmlSide.RECEIVED).findFirst().orElseThrow();
     }
 
     private Company companyWithId(String id) {

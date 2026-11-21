@@ -1,5 +1,9 @@
 package br.com.cshub.taxify.service;
 
+import java.util.Locale;
+import java.math.BigDecimal;
+import br.com.cshub.taxify.enumerated.FiscalDirection;
+import br.com.cshub.taxify.dto.fiscalxml.FiscalXmlTotalsDTO;
 import br.com.cshub.taxify.common.MessageService;
 import br.com.cshub.taxify.common.TenantAccessService;
 import br.com.cshub.taxify.domain.company.Company;
@@ -70,6 +74,38 @@ public class FiscalXmlQueryService {
         this.messageService = messageService;
     }
 
+    /** Entries and exits of the period (same company/period filter as the list, other filters ignored). */
+    @Transactional(readOnly = true)
+    public FiscalXmlTotalsDTO totals(XmlSearchFilterDTO filter) {
+        Company company = companyValidation.checkExist(parseUuid(filter.companyId()));
+        LocalDateTime from = filter.dataEmissaoInicio() != null ? filter.dataEmissaoInicio().atStartOfDay() : LocalDateTime.MIN;
+        LocalDateTime to = filter.dataEmissaoFim() != null ? filter.dataEmissaoFim().atTime(LocalTime.MAX) : LocalDateTime.MAX;
+
+        FiscalXmlTotalsDTO.DirectionTotals inbound = FiscalXmlTotalsDTO.DirectionTotals.empty();
+        FiscalXmlTotalsDTO.DirectionTotals outbound = FiscalXmlTotalsDTO.DirectionTotals.empty();
+        for (Object[] row : documentRepository.totalsByDirection(company.getId(), from, to)) {
+            FiscalXmlTotalsDTO.DirectionTotals totals = new FiscalXmlTotalsDTO.DirectionTotals(((Number) row[1]).longValue(),
+                    (BigDecimal) row[2], (BigDecimal) row[3], (BigDecimal) row[4], (BigDecimal) row[5], (BigDecimal) row[6],
+                    (BigDecimal) row[7]);
+            if (row[0] == FiscalDirection.OUTBOUND) {
+                outbound = totals;
+            } else {
+                inbound = totals; // INBOUND, or a legacy row the backfill hasn't reached yet
+            }
+        }
+        return new FiscalXmlTotalsDTO(inbound, outbound);
+    }
+
+    /** "acme" → "%acme%"; "11.594.485/0001-05" → "%11594485000105%" (documents are stored as digits). */
+    static String participantPattern(String participant) {
+        if (participant == null || participant.isBlank()) {
+            return null;
+        }
+        String digits = participant.replaceAll("\\D", "");
+        boolean looksLikeDocument = !digits.isEmpty() && participant.replaceAll("[\\d./\\-\\s]", "").isEmpty();
+        return "%" + (looksLikeDocument ? digits : participant.strip().toLowerCase(Locale.ROOT)) + "%";
+    }
+
     @Transactional(readOnly = true)
     public Page<FiscalXmlSummaryDTO> search(XmlSearchFilterDTO filter) {
         Company company = companyValidation.checkExist(parseUuid(filter.companyId()));
@@ -81,8 +117,8 @@ public class FiscalXmlQueryService {
         // nNF is stored without leading zeros, so "000123" typed by the user still matches.
         String numero = filter.numero() == null ? "" : filter.numero().replaceAll("\\D", "").replaceFirst("^0+(?=\\d)", "");
 
-        Page<FiscalXmlDocument> documents = documentRepository
-                .search(company.getId(), from, to, numero.isEmpty() ? null : numero, pageable);
+        Page<FiscalXmlDocument> documents = documentRepository.search(company.getId(), from, to,
+                numero.isEmpty() ? null : numero, filter.direction(), participantPattern(filter.participant()), pageable);
 
         Map<UUID, Long> itemCounts = new HashMap<>();
         if (documents.hasContent()) {
@@ -127,7 +163,9 @@ public class FiscalXmlQueryService {
                 metadata.identificacao(),
                 metadata.emitente(),
                 metadata.destinatario(),
-                metadata.totais()
+                metadata.totais(),
+                document.getDirection(),
+                document.isOwnIssue()
         );
     }
 
@@ -200,7 +238,8 @@ public class FiscalXmlQueryService {
 
         return new FiscalXmlDetailDTO(d.getId(), d.getCompany().getId(), d.getAccessKey(), d.getDocumentType(),
                 d.getIssuerCnpj(), d.getRecipientCnpj(), d.getIssueDate(), d.getRectifiedFilePath() != null,
-                itemRepository.countByDocument_Id(d.getId()), identificacao, emitente, destinatario, totais);
+                itemRepository.countByDocument_Id(d.getId()), identificacao, emitente, destinatario, totais,
+                d.getDirection(), d.isOwnIssue());
     }
 
     private FiscalXmlSummaryDTO toSummary(FiscalXmlDocument document, long quantidadeItens) {
@@ -222,7 +261,9 @@ public class FiscalXmlQueryService {
                 document.getDestinatarioCpf(),
                 document.getValorTotalNota(),
                 quantidadeItens,
-                document.getRectifiedFilePath() != null
+                document.getRectifiedFilePath() != null,
+                document.getDirection(),
+                document.isOwnIssue()
         );
     }
 

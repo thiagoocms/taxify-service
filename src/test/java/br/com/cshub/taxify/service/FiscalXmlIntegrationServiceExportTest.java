@@ -226,6 +226,6 @@ class FiscalXmlIntegrationServiceExportTest {
     }
 
     private XmlDownloadFilterDTO filter() {
-        return new XmlDownloadFilterDTO(companyId.toString(), 1, null, null, null, null, null);
+        return new XmlDownloadFilterDTO(companyId.toString(), 1, null, null, null, null, null, null);
     }
 }

@@ -49,6 +49,20 @@ public class FiscalXmlSyncControl extends AbstractAuditingEntity {
     @Column(name = "ultima_verificacao_em", nullable = false)
     private LocalDateTime ultimaVerificacaoEm;
 
+    /*
+     * The fields above track the RECEIVED side (SIEG "CNPJdest" - notes from suppliers); these
+     * track the ISSUED side ("CNPJemit" - the company's own notes), counted and paged apart.
+     * Nullable: rows created before outbound sync existed start empty.
+     */
+    @Column(name = "issued_total_sieg")
+    private Integer issuedTotalSieg;
+
+    @Column(name = "issued_total_imported")
+    private Integer issuedTotalImported;
+
+    @Column(name = "issued_checked_at")
+    private LocalDateTime issuedCheckedAt;
+
     public UUID getId() {
         return id;
     }
@@ -103,5 +117,29 @@ public class FiscalXmlSyncControl extends AbstractAuditingEntity {
 
     public void setUltimaVerificacaoEm(LocalDateTime ultimaVerificacaoEm) {
         this.ultimaVerificacaoEm = ultimaVerificacaoEm;
+    }
+
+    public Integer getIssuedTotalSieg() {
+        return issuedTotalSieg;
+    }
+
+    public void setIssuedTotalSieg(Integer issuedTotalSieg) {
+        this.issuedTotalSieg = issuedTotalSieg;
+    }
+
+    public Integer getIssuedTotalImported() {
+        return issuedTotalImported;
+    }
+
+    public void setIssuedTotalImported(Integer issuedTotalImported) {
+        this.issuedTotalImported = issuedTotalImported;
+    }
+
+    public LocalDateTime getIssuedCheckedAt() {
+        return issuedCheckedAt;
+    }
+
+    public void setIssuedCheckedAt(LocalDateTime issuedCheckedAt) {
+        this.issuedCheckedAt = issuedCheckedAt;
     }
 }
