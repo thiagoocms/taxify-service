@@ -117,13 +117,21 @@ public class FiscalXmlRectificationService {
             String externalInvoiceKey = document.getAccessKey() != null ? document.getAccessKey() : document.getId().toString();
             String notes = buildNotes(corrections);
 
-            if (!alreadyLogged(externalInvoiceKey, notes)) {
+            // Same corrections already logged AND still in effect: nothing to do. When the rectified
+            // version was dropped meanwhile (rule removed, then added back), generate it again.
+            if (!alreadyLogged(externalInvoiceKey, notes) || document.getRectifiedFilePath() == null) {
                 markAsRectified(dom, corrections.size());
                 byte[] rectifiedBytes = serialize(dom);
                 rectifiedPath = fileStorage.storeRectified(document.getCompany().getId(), document.getAccessKey(), rectifiedBytes);
                 document.setRectifiedFilePath(rectifiedPath);
                 logRectification(document, externalInvoiceKey, notes);
             }
+        } else if (document.getRectifiedFilePath() != null) {
+            // No rule diverges any more (the rule was removed or now matches the note): exports go back
+            // to the original. The rectified file stays in storage as history; only the pointer is dropped.
+            document.setRectifiedFilePath(null);
+            String externalInvoiceKey = document.getAccessKey() != null ? document.getAccessKey() : document.getId().toString();
+            auditTrail.record(document.getCompany(), externalInvoiceKey, InvoiceAuditStatus.RECTIFICATION_REVERTED, null);
         }
         document.setLastRectificationCheckedAt(LocalDateTime.now());
         documentRepository.save(document);

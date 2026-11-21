@@ -29,10 +29,25 @@ public class InvoiceAuditTrail {
         log.setCompany(company);
         log.setExternalInvoiceKey(noteKey);
         log.setStatus(status);
-        String text = notes == null || notes.isBlank() ? status.name() : notes.strip();
+        String text = notes == null || notes.isBlank() ? defaultNote(status) : notes.strip();
         log.setNotes(text.length() > NOTES_MAX ? text.substring(0, NOTES_MAX) : text);
         log.setDeleted(false);
         currentUserService.getCurrentUser().ifPresent(log::setUser);
         return repository.save(log);
+    }
+
+    /** What the history shows when the event came without a written note. */
+    static String defaultNote(InvoiceAuditStatus status) {
+        return switch (status) {
+            case OK -> "Nota conferida";
+            case DIVERGENT -> "Conferida com divergência";
+            case REVIEW_REOPENED -> "Conferência desfeita: a nota voltou para a conferir";
+            case RECTIFIED -> "Nota retificada";
+            case RECTIFICATION_REVERTED -> "Retificação desfeita: a nota volta a usar o XML original";
+            case CANCELED -> "Nota cancelada na SEFAZ";
+            case NEEDS_RECTIFICATION -> "Precisa de retificação";
+            case PENDING_DOCUMENTATION -> "Pendente de documentação";
+            case REJECTED -> "Nota recusada";
+        };
     }
 }

@@ -91,30 +91,45 @@ class AbstractCrudServiceTest {
     }
 
     @Test
-    void findAllWithoutFilterUsesPlainPageableLookup() {
+    void findAllWithoutFilterHidesDeletedRows() {
         Pageable pageable = PageRequest.of(0, 10);
-        when(repository.findAll(pageable)).thenReturn(new PageImpl<>(List.of(new Widget("a"))));
+        when(repository.findAll(any(Specification.class), eq(pageable))).thenReturn(new PageImpl<>(List.of(new Widget("a"))));
 
         Page<String> result = service.findAll(pageable);
 
         assertThat(result.getContent()).containsExactly("model-a");
+        verify(repository).findAll(any(Specification.class), eq(pageable));
     }
 
     @Test
-    void findAllWithFilterBuildsCriteriaAndDelegatesToSpecification() {
+    void findAllWithFilterAddsNotDeletedToTheCriteria() {
         Pageable pageable = PageRequest.of(0, 10);
         when(specification.listAllByCriteria(anyList())).thenReturn(builtSpecification);
-        when(repository.findAll(builtSpecification, pageable)).thenReturn(new PageImpl<>(List.of(new Widget("b"))));
+        when(repository.findAll(any(Specification.class), eq(pageable))).thenReturn(new PageImpl<>(List.of(new Widget("b"))));
 
         Page<String> result = service.findAll(pageable, new TestFilter("acme", null));
 
         assertThat(result.getContent()).containsExactly("model-b");
+        ArgumentCaptor<Specification<Widget>> captor = ArgumentCaptor.forClass(Specification.class);
+        verify(repository).findAll(captor.capture(), eq(pageable));
+        assertThat(captor.getValue()).isNotSameAs(builtSpecification);
     }
 
     @Test
-    void findAllWithNullFilterFallsBackToPlainPageableLookup() {
+    void findAllKeepsTheCriteriaAsIsWhenTheFilterAsksForDeletedRows() {
         Pageable pageable = PageRequest.of(0, 10);
-        when(repository.findAll(pageable)).thenReturn(new PageImpl<>(List.of(new Widget("c"))));
+        when(specification.listAllByCriteria(anyList())).thenReturn(builtSpecification);
+        when(repository.findAll(builtSpecification, pageable)).thenReturn(new PageImpl<>(List.of(new Widget("d"))));
+
+        Page<String> result = service.findAll(pageable, new TestFilter("acme", true));
+
+        assertThat(result.getContent()).containsExactly("model-d");
+    }
+
+    @Test
+    void findAllWithNullFilterStillHidesDeletedRows() {
+        Pageable pageable = PageRequest.of(0, 10);
+        when(repository.findAll(any(Specification.class), eq(pageable))).thenReturn(new PageImpl<>(List.of(new Widget("c"))));
 
         Page<String> result = service.findAll(pageable, null);
 

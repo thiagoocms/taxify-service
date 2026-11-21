@@ -244,6 +244,42 @@ class FiscalXmlRectificationServiceTest {
     }
 
     @Test
+    void removingTheRuleSendsTheNoteBackToTheOriginalXml() {
+        FiscalXmlDocument document = document();
+        document.setRectifiedFilePath("rectified/old.xml");
+        when(documentRepository.findFirstByIdAndDeletedIsFalse(documentId)).thenReturn(Optional.of(document));
+        when(ruleRepository.findFirstByCompany_IdAndCodigoProdutoAndDeletedIsFalse(companyId, "P001")).thenReturn(Optional.empty());
+
+        FiscalXmlRectificationResultDTO result = service.rectify(documentId);
+
+        assertThat(result.correcoesAplicadas()).isEmpty();
+        assertThat(document.getRectifiedFilePath()).isNull();
+        ArgumentCaptor<InvoiceAuditLog> logCaptor = ArgumentCaptor.forClass(InvoiceAuditLog.class);
+        verify(auditLogRepository).save(logCaptor.capture());
+        assertThat(logCaptor.getValue().getStatus()).isEqualTo(InvoiceAuditStatus.RECTIFICATION_REVERTED);
+        assertThat(logCaptor.getValue().getNotes()).contains("XML original");
+    }
+
+    @Test
+    void addingTheSameRuleBackAfterARevertRectifiesAgain() {
+        FiscalXmlDocument document = document();
+        when(documentRepository.findFirstByIdAndDeletedIsFalse(documentId)).thenReturn(Optional.of(document));
+        ProductFiscalRule rule = new ProductFiscalRule(UUID.randomUUID());
+        rule.setCodigoProduto("P001");
+        rule.setCfopCorreto("5102");
+        when(ruleRepository.findFirstByCompany_IdAndCodigoProdutoAndDeletedIsFalse(companyId, "P001")).thenReturn(Optional.of(rule));
+        InvoiceAuditLog previous = new InvoiceAuditLog();
+        previous.setNotes("Retificacao automatica: Item P001: CFOP 5405 -> 5102");
+        when(auditLogRepository.findFirstByExternalInvoiceKeyAndStatusAndDeletedIsFalseOrderByCreatedDateDesc(
+                document.getAccessKey(), InvoiceAuditStatus.RECTIFIED)).thenReturn(Optional.of(previous));
+
+        FiscalXmlRectificationResultDTO result = service.rectify(documentId);
+
+        assertThat(result.rectifiedFilePath()).isNotNull();
+        assertThat(document.getRectifiedFilePath()).isEqualTo(result.rectifiedFilePath());
+    }
+
+    @Test
     void alsoCorrectsNcmWhenTheRulePinsOne() throws IOException {
         when(documentRepository.findFirstByIdAndDeletedIsFalse(documentId)).thenReturn(Optional.of(document()));
         ProductFiscalRule rule = new ProductFiscalRule(UUID.randomUUID());

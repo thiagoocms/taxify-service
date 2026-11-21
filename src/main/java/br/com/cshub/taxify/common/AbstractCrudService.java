@@ -41,21 +41,26 @@ public abstract class AbstractCrudService<E extends AbstractAuditingEntity, ID e
 
     @Transactional(readOnly = true)
     public Page<M> findAll(Pageable pageable) {
-        var page = repository.findAll(pageable);
+        var page = repository.findAll(notDeleted(), pageable);
         return mapper.toModels(page);
     }
 
+    /**
+     * Lists hide soft-deleted rows unless the filter asks for them explicitly (an
+     * {@code active} field, which SearchCriteriaUtil turns into a {@code deleted} criterion).
+     * Before this, a deleted row kept showing in its list (e.g. a removed fiscal rule).
+     */
     @Transactional(readOnly = true)
     public Page<M> findAll(Pageable pageable, F filter) {
-        Specification<E> spec = null;
+        Specification<E> spec = notDeleted();
         if (specification != null && filter != null) {
             var criteria = SearchCriteriaUtil.buildCriteria(filter);
-            spec = specification.listAllByCriteria(criteria);
+            Specification<E> byCriteria = specification.listAllByCriteria(criteria);
+            boolean asksForDeleted = criteria.stream().anyMatch(item -> "deleted".equals(item.getKey()));
+            spec = asksForDeleted ? byCriteria : Specification.allOf(byCriteria, notDeleted());
         }
         spec = restrictQuery(spec);
-        Page<E> page = spec != null
-                ? this.repository.findAll(spec, pageable)
-                : this.repository.findAll(pageable);
+        Page<E> page = this.repository.findAll(spec, pageable);
         return mapper.toModels(page);
     }
 
@@ -66,6 +71,10 @@ public abstract class AbstractCrudService<E extends AbstractAuditingEntity, ID e
      */
     protected Specification<E> restrictQuery(Specification<E> spec) {
         return spec;
+    }
+
+    protected static <T extends AbstractAuditingEntity> Specification<T> notDeleted() {
+        return (root, query, builder) -> builder.isFalse(root.get("deleted"));
     }
 
     /**
