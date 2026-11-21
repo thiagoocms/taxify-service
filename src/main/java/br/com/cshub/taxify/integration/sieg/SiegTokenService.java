@@ -1,5 +1,6 @@
 package br.com.cshub.taxify.integration.sieg;
 
+import org.springframework.util.StringUtils;
 import br.com.cshub.taxify.common.MessageService;
 import br.com.cshub.taxify.exception.SiegIntegrationException;
 import feign.FeignException;
@@ -36,7 +37,7 @@ public class SiegTokenService {
     }
 
     public boolean isConfigured() {
-        return notBlank(properties.getClientId()) && notBlank(properties.getClientSecret()) && notBlank(properties.getBaseUrl());
+        return StringUtils.hasText(properties.getClientId()) && StringUtils.hasText(properties.getClientSecret()) && StringUtils.hasText(properties.getBaseUrl());
     }
 
     public synchronized String getAccessToken() {
@@ -65,10 +66,6 @@ public class SiegTokenService {
         } catch (FeignException e) {
             throw new SiegIntegrationException(messageService.getMessage("error.sieg.oauth.failed"), e);
         }
-    }
-
-    private boolean notBlank(String value) {
-        return value != null && !value.isBlank();
     }
 
     // Depending on which Spring HttpMessageConverter wins for a String return type,

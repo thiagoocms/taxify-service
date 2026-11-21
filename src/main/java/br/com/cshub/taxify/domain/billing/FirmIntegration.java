@@ -1,8 +1,10 @@
 package br.com.cshub.taxify.domain.billing;
 
+import org.springframework.util.StringUtils;
 import br.com.cshub.taxify.domain.AbstractAuditingEntity;
 import br.com.cshub.taxify.domain.accountingfirm.AccountingFirm;
 import br.com.cshub.taxify.enumerated.IntegrationType;
+import br.com.cshub.taxify.enumerated.SyncStatus;
 import jakarta.persistence.Column;
 import jakarta.persistence.Entity;
 import jakarta.persistence.EnumType;
@@ -14,11 +16,14 @@ import jakarta.persistence.Id;
 import jakarta.persistence.JoinColumn;
 import jakarta.persistence.ManyToOne;
 import jakarta.persistence.Table;
+import org.hibernate.annotations.DynamicUpdate;
 import org.hibernate.annotations.JdbcTypeCode;
 import org.hibernate.type.SqlTypes;
 import jakarta.persistence.UniqueConstraint;
 
 import java.time.LocalDateTime;
+import java.util.Arrays;
+import java.util.List;
 import java.util.UUID;
 
 /**
@@ -27,10 +32,18 @@ import java.util.UUID;
  * reads its credentials from here (see FirmIntegrationService), so adding one doesn't mean
  * adding columns to AccountingFirm.
  */
+/*
+ * DynamicUpdate: tokens, sync bookkeeping and the job columns are written from different
+ * threads (a job refreshing its token while the runner reports progress) - only the columns
+ * actually changed go in each UPDATE, so one write doesn't put back another's stale value.
+ */
+@DynamicUpdate
 @Entity
 @Table(name = "firm_integrations",
         uniqueConstraints = @UniqueConstraint(name = "uk_firm_integration_type", columnNames = {"accounting_firm_id", "type"}))
 public class FirmIntegration extends AbstractAuditingEntity {
+
+    private static final String CATEGORY_SEPARATOR = ",";
 
     @Id
     @GeneratedValue(strategy = GenerationType.UUID)
@@ -77,6 +90,36 @@ public class FirmIntegration extends AbstractAuditingEntity {
     @Column(name = "last_sync_at")
     private LocalDateTime lastSyncAt;
 
+    // ---- background job (IntegrationJobRunner): persisted so it survives the request that
+    // started it, is visible to every instance, and doubles as the "already running" lock.
+
+    @Enumerated(EnumType.STRING)
+    @Column(name = "sync_status", length = 20)
+    private SyncStatus syncStatus;
+
+    @Column(name = "sync_started_at")
+    private LocalDateTime syncStartedAt;
+
+    @Column(name = "sync_finished_at")
+    private LocalDateTime syncFinishedAt;
+
+    /** Refreshed while the job runs - a RUNNING job without a recent heartbeat died (restart) and may be taken over. */
+    @Column(name = "sync_heartbeat_at")
+    private LocalDateTime syncHeartbeatAt;
+
+    @Column(name = "sync_processed")
+    private Integer syncProcessed;
+
+    @Column(name = "sync_total")
+    private Integer syncTotal;
+
+    /** Last job's result, as JSON (each integration has its own result type). */
+    @Column(name = "sync_result", columnDefinition = "TEXT")
+    private String syncResult;
+
+    @Column(name = "sync_error", length = 1000)
+    private String syncError;
+
     public FirmIntegration() {
     }
 
@@ -85,14 +128,27 @@ public class FirmIntegration extends AbstractAuditingEntity {
         this.type = type;
     }
 
-    /** Has credentials: an API key, or OAuth tokens from a completed authorization. */
-    public boolean isConfigured() {
-        return notBlank(apiKey) || notBlank(refreshToken) || notBlank(accessToken);
+    /** {@link #feeCategoryIds} as a list - empty means "every receivable of the customer". */
+    public List<String> getFeeCategoryIdList() {
+        if (!StringUtils.hasText(feeCategoryIds)) {
+            return List.of();
+        }
+        return Arrays.stream(feeCategoryIds.split(CATEGORY_SEPARATOR))
+                .map(String::strip)
+                .filter(StringUtils::hasText)
+                .toList();
     }
 
-    private static boolean notBlank(String value) {
-        return value != null && !value.isBlank();
+    public void setFeeCategoryIdList(List<String> ids) {
+        List<String> clean = ids == null ? List.of() : ids.stream().filter(StringUtils::hasText).map(String::strip).distinct().toList();
+        this.feeCategoryIds = clean.isEmpty() ? null : String.join(CATEGORY_SEPARATOR, clean);
     }
+
+    /** Has credentials: an API key, or OAuth tokens from a completed authorization. */
+    public boolean isConfigured() {
+        return StringUtils.hasText(apiKey) || StringUtils.hasText(refreshToken) || StringUtils.hasText(accessToken);
+    }
+
 
     public UUID getId() {
         return id;
@@ -188,5 +244,69 @@ public class FirmIntegration extends AbstractAuditingEntity {
 
     public void setLastSyncAt(LocalDateTime lastSyncAt) {
         this.lastSyncAt = lastSyncAt;
+    }
+
+    public SyncStatus getSyncStatus() {
+        return syncStatus;
+    }
+
+    public void setSyncStatus(SyncStatus syncStatus) {
+        this.syncStatus = syncStatus;
+    }
+
+    public LocalDateTime getSyncStartedAt() {
+        return syncStartedAt;
+    }
+
+    public void setSyncStartedAt(LocalDateTime syncStartedAt) {
+        this.syncStartedAt = syncStartedAt;
+    }
+
+    public LocalDateTime getSyncFinishedAt() {
+        return syncFinishedAt;
+    }
+
+    public void setSyncFinishedAt(LocalDateTime syncFinishedAt) {
+        this.syncFinishedAt = syncFinishedAt;
+    }
+
+    public LocalDateTime getSyncHeartbeatAt() {
+        return syncHeartbeatAt;
+    }
+
+    public void setSyncHeartbeatAt(LocalDateTime syncHeartbeatAt) {
+        this.syncHeartbeatAt = syncHeartbeatAt;
+    }
+
+    public Integer getSyncProcessed() {
+        return syncProcessed;
+    }
+
+    public void setSyncProcessed(Integer syncProcessed) {
+        this.syncProcessed = syncProcessed;
+    }
+
+    public Integer getSyncTotal() {
+        return syncTotal;
+    }
+
+    public void setSyncTotal(Integer syncTotal) {
+        this.syncTotal = syncTotal;
+    }
+
+    public String getSyncResult() {
+        return syncResult;
+    }
+
+    public void setSyncResult(String syncResult) {
+        this.syncResult = syncResult;
+    }
+
+    public String getSyncError() {
+        return syncError;
+    }
+
+    public void setSyncError(String syncError) {
+        this.syncError = syncError;
     }
 }

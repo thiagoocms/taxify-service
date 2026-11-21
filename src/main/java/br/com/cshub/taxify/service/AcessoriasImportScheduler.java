@@ -12,8 +12,8 @@ import org.springframework.stereotype.Component;
 /**
  * Daily incremental Acessórias import for every firm that configured a token: only
  * companies changed since that firm's last import are fetched (see
- * {@link AcessoriasImportService#importFirm}). One firm failing (bad token, API down)
- * doesn't stop the others.
+ * {@link AcessoriasImportService#importFirm}). Each firm runs as a background job (a few at
+ * a time, never two for the same firm); one failing (bad token, API down) doesn't stop the others.
  */
 @Component
 public class AcessoriasImportScheduler {
@@ -40,9 +40,9 @@ public class AcessoriasImportScheduler {
         for (FirmIntegration integration : firmIntegrationService.findConfigured(IntegrationType.ACESSORIAS)) {
             AccountingFirm firm = integration.getAccountingFirm();
             try {
-                importService.importFirm(firm, true);
+                importService.start(firm, true);
             } catch (Exception e) {
-                log.warn("Scheduled Acessórias import failed for firm {}", firm.getId(), e);
+                log.warn("Scheduled Acessórias import not started for firm {}: {}", firm.getId(), e.getMessage());
             }
         }
     }

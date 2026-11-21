@@ -1,5 +1,6 @@
 package br.com.cshub.taxify.service;
 
+import br.com.cshub.taxify.common.DocumentNumbers;
 import br.com.cshub.taxify.enumerated.IntegrationType;
 import br.com.cshub.taxify.common.MessageService;
 import br.com.cshub.taxify.domain.company.Company;
@@ -107,7 +108,7 @@ public class FiscalXmlIntegrationService {
                 startOfDayUtc(filter.dataEmissaoInicio()),
                 endOfDayUtc(filter.dataEmissaoFim()),
                 null,
-                onlyDigits(company.getDocument().getNumber())
+                DocumentNumbers.onlyDigits(company.getDocument().getNumber())
         );
 
         String apiKey = firmIntegrationService.getApiKey(company.getAccountingFirm().getId(), IntegrationType.SIEG);
@@ -500,10 +501,6 @@ public class FiscalXmlIntegrationService {
 
     private Integer normalizeSkip(Integer skip) {
         return (skip == null || skip < 0) ? 0 : skip;
-    }
-
-    private String onlyDigits(String value) {
-        return value == null ? null : value.replaceAll("\\D", "");
     }
 
     private Instant startOfDayUtc(LocalDate date) {

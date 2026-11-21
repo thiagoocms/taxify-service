@@ -62,6 +62,53 @@ class ContaAzulBillingProviderTest {
     }
 
     @Test
+    void dueRangeLongerThan365DaysIsSplitIntoWindowsThatFit() {
+        LocalDate from = LocalDate.of(2025, 10, 1);
+        LocalDate to = LocalDate.of(2027, 2, 20);
+
+        List<LocalDate[]> windows = ContaAzulBillingProvider.dueWindows(from, to);
+
+        assertThat(windows).hasSize(2);
+        assertThat(windows.getFirst()[0]).isEqualTo(from);
+        assertThat(windows.getLast()[1]).isEqualTo(to);
+        for (int i = 0; i < windows.size(); i++) {
+            LocalDate[] window = windows.get(i);
+            long days = java.time.temporal.ChronoUnit.DAYS.between(window[0], window[1]) + 1;
+            assertThat(days).isBetween(1L, (long) ContaAzulBillingProvider.MAX_DUE_RANGE_DAYS);
+            if (i > 0) {
+                assertThat(window[0]).isEqualTo(windows.get(i - 1)[1].plusDays(1));
+            }
+        }
+        assertThat(ContaAzulBillingProvider.dueWindows(from, from)).hasSize(1);
+    }
+
+    @Test
+    void listChargesQueriesEachWindowAndDedupes() {
+        when(client.searchContasAReceber(eq(firm.getId()), org.mockito.ArgumentMatchers.anyList(), org.mockito.ArgumentMatchers.any(),
+                anyString(), anyString(), org.mockito.ArgumentMatchers.isNull()))
+                .thenReturn(List.of(new ContaAzulApiClient.ContaAReceber("r1", "Honorários", "2026-01-10", null, null, "EM_ABERTO",
+                        BigDecimal.TEN, BigDecimal.TEN, BigDecimal.ZERO, List.of(), new ContaAzulApiClient.Ref("c1", "Cliente"))));
+
+        List<ExternalCharge> charges = provider.listCharges(firm, new br.com.cshub.taxify.integration.billing.ChargeQuery(
+                List.of("c1"), List.of(), LocalDate.of(2025, 10, 1), LocalDate.of(2027, 2, 20), null));
+
+        org.mockito.Mockito.verify(client, org.mockito.Mockito.times(2)).searchContasAReceber(eq(firm.getId()),
+                org.mockito.ArgumentMatchers.anyList(), org.mockito.ArgumentMatchers.any(), anyString(), anyString(),
+                org.mockito.ArgumentMatchers.isNull());
+        assertThat(charges).hasSize(1);
+    }
+
+    @Test
+    void retryDelayHonorsRetryAfterAndBacksOffOtherwise() {
+        assertThat(ContaAzulApiClient.retryDelay("5", 1)).isEqualTo(java.time.Duration.ofSeconds(5));
+        assertThat(ContaAzulApiClient.retryDelay("999", 1)).isEqualTo(java.time.Duration.ofSeconds(30));
+        assertThat(ContaAzulApiClient.retryDelay(null, 1)).isEqualTo(java.time.Duration.ofSeconds(2));
+        assertThat(ContaAzulApiClient.retryDelay(null, 3)).isEqualTo(java.time.Duration.ofSeconds(8));
+        assertThat(ContaAzulApiClient.retryDelay("Wed, 21 Oct 2026 07:28:00 GMT", 2)).isEqualTo(java.time.Duration.ofSeconds(4));
+        assertThat(ContaAzulApiClient.retryDelay(null, 10)).isEqualTo(java.time.Duration.ofSeconds(30));
+    }
+
+    @Test
     void receivableBecomesCharge() {
         ExternalCharge charge = ContaAzulBillingProvider.toCharge(new ContaAzulApiClient.ContaAReceber(
                 "r1", "Honorários", "2026-11-10", "2026-11-01", "X", "RECEBIDO_PARCIAL",

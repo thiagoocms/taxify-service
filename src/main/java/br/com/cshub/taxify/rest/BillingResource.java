@@ -6,6 +6,7 @@ import br.com.cshub.taxify.dto.billing.BillingSettingsDTO;
 import br.com.cshub.taxify.dto.billing.BillingSettingsUpdateDTO;
 import br.com.cshub.taxify.dto.billing.BillingSyncResultDTO;
 import br.com.cshub.taxify.dto.billing.CompanyBillingDTO;
+import br.com.cshub.taxify.dto.integration.SyncJobStatusDTO;
 import br.com.cshub.taxify.service.BillingService;
 import br.com.cshub.taxify.service.BillingSyncService;
 import jakarta.validation.Valid;
@@ -49,9 +50,15 @@ public class BillingResource {
         return ResponseEntity.ok(billingService.listCategories());
     }
 
+    /** Starts the sync in the background - 202 with the job status; poll {@code GET /billing/sync}. */
     @PostMapping("/sync")
-    public ResponseEntity<BillingSyncResultDTO> sync() {
-        return ResponseEntity.ok(syncService.syncCurrentFirm());
+    public ResponseEntity<SyncJobStatusDTO<BillingSyncResultDTO>> startSync() {
+        return ResponseEntity.accepted().body(syncService.startForCurrentFirm());
+    }
+
+    @GetMapping("/sync")
+    public ResponseEntity<SyncJobStatusDTO<BillingSyncResultDTO>> syncStatus() {
+        return ResponseEntity.ok(syncService.statusForCurrentFirm());
     }
 
     @GetMapping("/companies/{companyId}")

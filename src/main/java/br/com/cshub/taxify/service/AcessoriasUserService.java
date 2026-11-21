@@ -1,15 +1,12 @@
 package br.com.cshub.taxify.service;
 
-import br.com.cshub.taxify.common.CurrentUserService;
-import br.com.cshub.taxify.common.MessageService;
+import br.com.cshub.taxify.common.CurrentFirmService;
 import br.com.cshub.taxify.domain.accountingfirm.AccountingFirm;
 import br.com.cshub.taxify.domain.user.User;
 import br.com.cshub.taxify.dto.acessorias.AcessoriasUserSummaryDTO;
-import br.com.cshub.taxify.exception.ResourceNotFoundException;
 import br.com.cshub.taxify.integration.acessorias.AcessoriasClient;
 import br.com.cshub.taxify.integration.acessorias.AcessoriasUserDTO;
 import br.com.cshub.taxify.enumerated.IntegrationType;
-import br.com.cshub.taxify.repository.AccountingFirmRepository;
 import br.com.cshub.taxify.repository.UserRepository;
 import org.springframework.stereotype.Service;
 
@@ -31,29 +28,21 @@ public class AcessoriasUserService {
     private static final String ACTIVE_STATUS = "Ativo";
 
     private final AcessoriasClient acessoriasClient;
-    private final AccountingFirmRepository accountingFirmRepository;
-    private final FirmIntegrationService firmIntegrationService;
     private final UserRepository userRepository;
-    private final CurrentUserService currentUserService;
-    private final MessageService messageService;
+    private final CurrentFirmService currentFirmService;
+    private final FirmIntegrationService firmIntegrationService;
 
-    public AcessoriasUserService(AcessoriasClient acessoriasClient, AccountingFirmRepository accountingFirmRepository,
-                                 UserRepository userRepository, CurrentUserService currentUserService, MessageService messageService,
-                                 FirmIntegrationService firmIntegrationService) {
-        this.firmIntegrationService = firmIntegrationService;
+    public AcessoriasUserService(AcessoriasClient acessoriasClient, UserRepository userRepository,
+                                 CurrentFirmService currentFirmService, FirmIntegrationService firmIntegrationService) {
         this.acessoriasClient = acessoriasClient;
-        this.accountingFirmRepository = accountingFirmRepository;
         this.userRepository = userRepository;
-        this.currentUserService = currentUserService;
-        this.messageService = messageService;
+        this.currentFirmService = currentFirmService;
+        this.firmIntegrationService = firmIntegrationService;
     }
 
     /** Active users first, then by name. */
     public List<AcessoriasUserSummaryDTO> listForCurrentFirm() {
-        AccountingFirm firm = currentUserService.getCurrentUser()
-                .map(user -> user.getAccountingFirm().getId())
-                .flatMap(accountingFirmRepository::findById)
-                .orElseThrow(() -> new ResourceNotFoundException(messageService.getMessage("error.accountingFirm.not.found")));
+        AccountingFirm firm = currentFirmService.require();
 
         Map<String, User> taxifyUsersByEmail = new HashMap<>();
         for (User user : userRepository.findByAccountingFirm_IdAndDeletedIsFalse(firm.getId())) {

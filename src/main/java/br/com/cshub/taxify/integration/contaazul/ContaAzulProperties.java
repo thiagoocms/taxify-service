@@ -1,5 +1,6 @@
 package br.com.cshub.taxify.integration.contaazul;
 
+import org.springframework.util.StringUtils;
 import org.springframework.boot.context.properties.ConfigurationProperties;
 import org.springframework.stereotype.Component;
 
@@ -26,16 +27,13 @@ public class ContaAzulProperties {
     private String apiBaseUrl = "https://api-v2.contaazul.com";
 
     public boolean isConfigured() {
-        return notBlank(clientId) && notBlank(clientSecret) && notBlank(redirectUri);
+        return StringUtils.hasText(clientId) && StringUtils.hasText(clientSecret) && StringUtils.hasText(redirectUri);
     }
 
-    /** Spaces or a stray  from a .env edited on Windows would break the Basic auth / redirect match. */
+    /** Spaces or a stray 
+ from a .env edited on Windows would break the Basic auth / redirect match. */
     private static String trim(String value) {
         return value == null ? null : value.strip();
-    }
-
-    private static boolean notBlank(String value) {
-        return value != null && !value.isBlank();
     }
 
     public String getClientId() {
@@ -68,7 +66,7 @@ public class ContaAzulProperties {
 
     /** Blank (e.g. an empty env var from docker-compose) keeps the default instead of wiping it. */
     public void setAuthorizeUrl(String authorizeUrl) {
-        if (notBlank(authorizeUrl)) {
+        if (StringUtils.hasText(authorizeUrl)) {
             this.authorizeUrl = authorizeUrl;
         }
     }
@@ -79,7 +77,7 @@ public class ContaAzulProperties {
 
     /** Blank (e.g. an empty env var from docker-compose) keeps the default instead of wiping it. */
     public void setTokenUrl(String tokenUrl) {
-        if (notBlank(tokenUrl)) {
+        if (StringUtils.hasText(tokenUrl)) {
             this.tokenUrl = tokenUrl;
         }
     }
@@ -90,7 +88,7 @@ public class ContaAzulProperties {
 
     /** Blank (e.g. an empty env var from docker-compose) keeps the default instead of wiping it. */
     public void setScope(String scope) {
-        if (notBlank(scope)) {
+        if (StringUtils.hasText(scope)) {
             this.scope = scope;
         }
     }
@@ -101,7 +99,7 @@ public class ContaAzulProperties {
 
     /** Blank (e.g. an empty env var from docker-compose) keeps the default instead of wiping it. */
     public void setApiBaseUrl(String apiBaseUrl) {
-        if (notBlank(apiBaseUrl)) {
+        if (StringUtils.hasText(apiBaseUrl)) {
             this.apiBaseUrl = apiBaseUrl;
         }
     }

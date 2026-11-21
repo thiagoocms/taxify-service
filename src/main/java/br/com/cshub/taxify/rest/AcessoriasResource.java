@@ -3,6 +3,7 @@ package br.com.cshub.taxify.rest;
 import br.com.cshub.taxify.constants.AppConstants;
 import br.com.cshub.taxify.dto.acessorias.AcessoriasImportResultDTO;
 import br.com.cshub.taxify.dto.acessorias.AcessoriasUserSummaryDTO;
+import br.com.cshub.taxify.dto.integration.SyncJobStatusDTO;
 import br.com.cshub.taxify.service.AcessoriasImportService;
 import br.com.cshub.taxify.service.AcessoriasUserService;
 import org.springframework.http.ResponseEntity;
@@ -29,9 +30,15 @@ public class AcessoriasResource {
         this.userService = userService;
     }
 
+    /** Starts the company import in the background - 202 with the job status; poll {@code GET /import}. */
     @PostMapping("/import")
-    public ResponseEntity<AcessoriasImportResultDTO> importCompanies() {
-        return ResponseEntity.ok(importService.importForCurrentFirm());
+    public ResponseEntity<SyncJobStatusDTO<AcessoriasImportResultDTO>> startImport() {
+        return ResponseEntity.accepted().body(importService.startForCurrentFirm());
+    }
+
+    @GetMapping("/import")
+    public ResponseEntity<SyncJobStatusDTO<AcessoriasImportResultDTO>> importStatus() {
+        return ResponseEntity.ok(importService.statusForCurrentFirm());
     }
 
     @GetMapping("/users")

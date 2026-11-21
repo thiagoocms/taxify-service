@@ -1,7 +1,9 @@
 package br.com.cshub.taxify.service;
 
+import br.com.cshub.taxify.service.job.SyncProgress;
+import br.com.cshub.taxify.service.job.IntegrationJobRunner;
+import br.com.cshub.taxify.common.CurrentFirmService;
 import br.com.cshub.taxify.enumerated.IntegrationType;
-import br.com.cshub.taxify.common.CurrentUserService;
 import br.com.cshub.taxify.common.MessageService;
 import br.com.cshub.taxify.domain.accountingfirm.AccountingFirm;
 import br.com.cshub.taxify.domain.company.Company;
@@ -12,7 +14,6 @@ import br.com.cshub.taxify.dto.acessorias.AcessoriasImportResultDTO;
 import br.com.cshub.taxify.enumerated.DocumentTypeEnum;
 import br.com.cshub.taxify.integration.acessorias.AcessoriasClient;
 import br.com.cshub.taxify.integration.acessorias.AcessoriasCompanyDTO;
-import br.com.cshub.taxify.repository.AccountingFirmRepository;
 import br.com.cshub.taxify.repository.CompanyRepository;
 import br.com.cshub.taxify.repository.DocumentRepository;
 import br.com.cshub.taxify.repository.UserCompanyRepository;
@@ -43,22 +44,22 @@ import static org.mockito.Mockito.when;
 class AcessoriasImportServiceTest {
 
     @Mock private AcessoriasClient acessoriasClient;
-    @Mock private AccountingFirmRepository accountingFirmRepository;
     @Mock private CompanyRepository companyRepository;
     @Mock private DocumentRepository documentRepository;
     @Mock private UserRepository userRepository;
     @Mock private UserCompanyRepository userCompanyRepository;
-    @Mock private CurrentUserService currentUserService;
+    @Mock private CurrentFirmService currentFirmService;
     @Mock private MessageService messageService;
     @Mock private FirmIntegrationService firmIntegrationService;
+    @Mock private IntegrationJobRunner jobRunner;
 
     private AcessoriasImportService service;
     private AccountingFirm firm;
 
     @BeforeEach
     void setUp() {
-        service = new AcessoriasImportService(acessoriasClient, accountingFirmRepository, companyRepository, documentRepository,
-                userRepository, userCompanyRepository, currentUserService, messageService, firmIntegrationService);
+        service = new AcessoriasImportService(acessoriasClient, companyRepository, documentRepository, userRepository,
+                userCompanyRepository, currentFirmService, firmIntegrationService, jobRunner, messageService);
         firm = new AccountingFirm(UUID.randomUUID());
         lenient().when(firmIntegrationService.getApiKey(firm.getId(), IntegrationType.ACESSORIAS)).thenReturn("token");
         lenient().when(messageService.getMessage(anyString())).thenAnswer(invocation -> invocation.getArgument(0));
@@ -83,7 +84,7 @@ class AcessoriasImportServiceTest {
                 List.of(department("Fiscal", "FISCAL@escritorio.com"), department("Contábil", "fiscal@escritorio.com"),
                         department("Pessoal", "ninguem@escritorio.com"), department("CS", "")))));
 
-        AcessoriasImportResultDTO result = service.importFirm(firm, false);
+        AcessoriasImportResultDTO result = service.importFirm(firm, false, SyncProgress.NONE);
 
         assertThat(result.created()).isEqualTo(1);
         ArgumentCaptor<Company> companyCaptor = ArgumentCaptor.forClass(Company.class);
@@ -121,7 +122,7 @@ class AcessoriasImportServiceTest {
         when(acessoriasClient.listCompanies("token", null)).thenReturn(List.of(company("38217129000129", "Inativa",
                 List.of(department("Fiscal", "fiscal@escritorio.com")))));
 
-        AcessoriasImportResultDTO result = service.importFirm(firm, false);
+        AcessoriasImportResultDTO result = service.importFirm(firm, false, SyncProgress.NONE);
 
         assertThat(result.updated()).isEqualTo(1);
         assertThat(existing.getName()).isEqualTo("ACME LTDA");
@@ -137,8 +138,8 @@ class AcessoriasImportServiceTest {
         when(companyRepository.findByAccountingFirm_Id(firm.getId())).thenReturn(List.of(existing));
         when(acessoriasClient.listCompanies("token", null)).thenReturn(List.of(company("38217129000129", "Ativa", List.of())));
 
-        service.importFirm(firm, false);
-        AcessoriasImportResultDTO second = service.importFirm(firm, false);
+        service.importFirm(firm, false, SyncProgress.NONE);
+        AcessoriasImportResultDTO second = service.importFirm(firm, false, SyncProgress.NONE);
 
         assertThat(second.unchanged()).isEqualTo(1);
         assertThat(second.updated()).isZero();
@@ -156,7 +157,7 @@ class AcessoriasImportServiceTest {
                 company("11111111000111", "Ativa", List.of()),
                 company("123456789012", "Ativa", List.of())));
 
-        AcessoriasImportResultDTO result = service.importFirm(firm, false);
+        AcessoriasImportResultDTO result = service.importFirm(firm, false, SyncProgress.NONE);
 
         assertThat(result.created()).isZero();
         assertThat(result.skipped()).hasSize(4);
@@ -169,7 +170,7 @@ class AcessoriasImportServiceTest {
         when(firmIntegrationService.getLastSyncAt(firm.getId(), IntegrationType.ACESSORIAS)).thenReturn(lastSync);
         when(acessoriasClient.listCompanies("token", lastSync)).thenReturn(List.of());
 
-        service.importFirm(firm, true);
+        service.importFirm(firm, true, SyncProgress.NONE);
 
         verify(acessoriasClient).listCompanies("token", lastSync);
         verify(acessoriasClient, never()).listCompanies(eq("token"), isNull());

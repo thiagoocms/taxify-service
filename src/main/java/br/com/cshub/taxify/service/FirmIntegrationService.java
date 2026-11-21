@@ -1,18 +1,16 @@
 package br.com.cshub.taxify.service;
 
-import br.com.cshub.taxify.common.CurrentUserService;
+import br.com.cshub.taxify.common.CurrentFirmService;
 import br.com.cshub.taxify.common.MessageService;
-import br.com.cshub.taxify.domain.accountingfirm.AccountingFirm;
 import br.com.cshub.taxify.domain.billing.FirmIntegration;
 import br.com.cshub.taxify.dto.integration.FirmIntegrationStatusDTO;
 import br.com.cshub.taxify.enumerated.IntegrationType;
 import br.com.cshub.taxify.exception.BadRequestException;
-import br.com.cshub.taxify.exception.ResourceNotFoundException;
-import br.com.cshub.taxify.repository.AccountingFirmRepository;
 import br.com.cshub.taxify.repository.FirmIntegrationRepository;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Propagation;
 import org.springframework.transaction.annotation.Transactional;
+import org.springframework.util.StringUtils;
 
 import java.time.LocalDateTime;
 import java.util.Arrays;
@@ -36,18 +34,22 @@ public class FirmIntegrationService {
     /** Integrations configured by pasting an API key; the rest (Conta Azul) connect via OAuth. */
     public static final Set<IntegrationType> API_KEY_TYPES = EnumSet.of(IntegrationType.SIEG, IntegrationType.ACESSORIAS);
 
+    private static final String MASK = "••••";
+    private static final int MASK_MIN_LENGTH = 8;
+    private static final int MASK_VISIBLE_CHARS = 4;
+
     private final FirmIntegrationRepository repository;
-    private final AccountingFirmRepository accountingFirmRepository;
-    private final CurrentUserService currentUserService;
+    private final CurrentFirmService currentFirmService;
     private final MessageService messageService;
 
-    public FirmIntegrationService(FirmIntegrationRepository repository, AccountingFirmRepository accountingFirmRepository,
-                                  CurrentUserService currentUserService, MessageService messageService) {
+    public FirmIntegrationService(FirmIntegrationRepository repository, CurrentFirmService currentFirmService,
+                                  MessageService messageService) {
         this.repository = repository;
-        this.accountingFirmRepository = accountingFirmRepository;
-        this.currentUserService = currentUserService;
+        this.currentFirmService = currentFirmService;
         this.messageService = messageService;
     }
+
+    // ------------------------------------------------------------ by firm id (services, schedulers)
 
     @Transactional(readOnly = true)
     public Optional<FirmIntegration> find(UUID accountingFirmId, IntegrationType type) {
@@ -57,7 +59,7 @@ public class FirmIntegrationService {
     /** API key of a key-based integration, or null when the firm hasn't configured it. */
     @Transactional(readOnly = true)
     public String getApiKey(UUID accountingFirmId, IntegrationType type) {
-        return find(accountingFirmId, type).map(FirmIntegration::getApiKey).filter(key -> !key.isBlank()).orElse(null);
+        return find(accountingFirmId, type).map(FirmIntegration::getApiKey).filter(StringUtils::hasText).orElse(null);
     }
 
     @Transactional(readOnly = true)
@@ -86,11 +88,8 @@ public class FirmIntegrationService {
 
     @Transactional
     public FirmIntegration getOrCreate(UUID accountingFirmId, IntegrationType type) {
-        return find(accountingFirmId, type).orElseGet(() -> {
-            AccountingFirm firm = accountingFirmRepository.findById(accountingFirmId)
-                    .orElseThrow(() -> new ResourceNotFoundException(messageService.getMessage("error.accountingFirm.not.found")));
-            return repository.save(new FirmIntegration(firm, type));
-        });
+        return find(accountingFirmId, type)
+                .orElseGet(() -> repository.save(new FirmIntegration(currentFirmService.require(accountingFirmId), type)));
     }
 
     @Transactional
@@ -100,17 +99,12 @@ public class FirmIntegrationService {
 
     // ------------------------------------------------------------ current user's firm (REST)
 
-    public UUID currentFirmId() {
-        return currentUserService.getCurrentUser()
-                .map(user -> user.getAccountingFirm().getId())
-                .orElseThrow(() -> new ResourceNotFoundException(messageService.getMessage("error.accountingFirm.not.found")));
-    }
-
     /** One status per integration type, configured or not, so the screen can list them all. */
     @Transactional(readOnly = true)
     public List<FirmIntegrationStatusDTO> listForCurrentFirm() {
-        Map<IntegrationType, FirmIntegration> byType = repository.findByAccountingFirm_IdAndDeletedIsFalse(currentFirmId()).stream()
-                .collect(Collectors.toMap(FirmIntegration::getType, Function.identity(), (a, b) -> a));
+        Map<IntegrationType, FirmIntegration> byType = repository.findByAccountingFirm_IdAndDeletedIsFalse(currentFirmService.requireId())
+                .stream()
+                .collect(Collectors.toMap(FirmIntegration::getType, Function.identity(), (first, duplicate) -> first));
         return Arrays.stream(IntegrationType.values())
                 .map(type -> toStatus(type, byType.get(type)))
                 .toList();
@@ -122,8 +116,8 @@ public class FirmIntegrationService {
         if (!API_KEY_TYPES.contains(type)) {
             throw new BadRequestException(messageService.getMessage("error.integration.api.key.not.supported"));
         }
-        FirmIntegration integration = getOrCreate(currentFirmId(), type);
-        integration.setApiKey(apiKey == null || apiKey.isBlank() ? null : apiKey.strip());
+        FirmIntegration integration = getOrCreate(currentFirmService.requireId(), type);
+        integration.setApiKey(StringUtils.hasText(apiKey) ? apiKey.strip() : null);
         return toStatus(type, repository.save(integration));
     }
 
@@ -136,12 +130,12 @@ public class FirmIntegrationService {
                 maskKey(integration.getApiKey()), integration.getConnectedAt(), integration.getLastSyncAt());
     }
 
-    /** "••••1234" - enough to recognize which key is set without exposing it. */
+    /** "••••1234" - enough to recognize which key is set without exposing it (short keys show nothing). */
     static String maskKey(String key) {
-        if (key == null || key.isBlank()) {
+        if (!StringUtils.hasText(key)) {
             return null;
         }
         String trimmed = key.strip();
-        return "••••" + (trimmed.length() > 8 ? trimmed.substring(trimmed.length() - 4) : "");
+        return trimmed.length() > MASK_MIN_LENGTH ? MASK + trimmed.substring(trimmed.length() - MASK_VISIBLE_CHARS) : MASK;
     }
 }

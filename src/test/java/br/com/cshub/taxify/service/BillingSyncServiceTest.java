@@ -1,5 +1,8 @@
 package br.com.cshub.taxify.service;
 
+import br.com.cshub.taxify.service.job.SyncProgress;
+import br.com.cshub.taxify.service.job.IntegrationJobRunner;
+import br.com.cshub.taxify.common.CurrentFirmService;
 import br.com.cshub.taxify.common.MessageService;
 import br.com.cshub.taxify.domain.accountingfirm.AccountingFirm;
 import br.com.cshub.taxify.domain.billing.BillingCharge;
@@ -21,7 +24,6 @@ import br.com.cshub.taxify.integration.billing.ChargeQuery;
 import br.com.cshub.taxify.integration.billing.ExternalCharge;
 import br.com.cshub.taxify.integration.billing.ExternalContract;
 import br.com.cshub.taxify.integration.billing.ExternalCustomer;
-import br.com.cshub.taxify.repository.AccountingFirmRepository;
 import br.com.cshub.taxify.repository.BillingChargeRepository;
 import br.com.cshub.taxify.repository.CompanyRepository;
 import br.com.cshub.taxify.repository.ExternalLinkRepository;
@@ -57,7 +59,8 @@ class BillingSyncServiceTest {
 
     @Mock private BillingProvider provider;
     @Mock private FirmIntegrationService firmIntegrationService;
-    @Mock private AccountingFirmRepository accountingFirmRepository;
+    @Mock private CurrentFirmService currentFirmService;
+    @Mock private IntegrationJobRunner jobRunner;
     @Mock private CompanyRepository companyRepository;
     @Mock private ExternalLinkRepository linkRepository;
     @Mock private SubscriptionRepository subscriptionRepository;
@@ -74,8 +77,8 @@ class BillingSyncServiceTest {
     void setUp() {
         when(provider.type()).thenReturn(BillingProviderType.CONTA_AZUL);
         when(provider.isConnected(any())).thenReturn(true);
-        service = new BillingSyncService(new BillingProviderRegistry(List.of(provider)), firmIntegrationService,
-                accountingFirmRepository, companyRepository, linkRepository, subscriptionRepository, chargeRepository, messageService);
+        service = new BillingSyncService(new BillingProviderRegistry(List.of(provider), messageService), currentFirmService,
+                firmIntegrationService, jobRunner, companyRepository, linkRepository, subscriptionRepository, chargeRepository, messageService);
 
         firm = new AccountingFirm(UUID.randomUUID());
         firm.setBillingProvider(BillingProviderType.CONTA_AZUL);
@@ -116,7 +119,7 @@ class BillingSyncServiceTest {
         when(chargeRepository.findFirstByCompany_IdAndSourceAndStatusNotInAndDueDateLessThanEqualAndDeletedIsFalseOrderByDueDateDesc(
                 eq(linkedCompany.getId()), eq(BillingProviderType.CONTA_AZUL), any(), any())).thenReturn(Optional.of(latest));
 
-        BillingSyncResultDTO result = service.syncFirm(firm, false);
+        BillingSyncResultDTO result = service.syncFirm(firm, false, SyncProgress.NONE);
 
         assertThat(result.newlyLinked()).isEqualTo(1);
         assertThat(result.unmatched()).containsExactly("Cliente B");
@@ -147,7 +150,7 @@ class BillingSyncServiceTest {
                 new ExternalContract("new", "2", "cust-a", SubscriptionStatus.ACTIVE, LocalDate.of(2025, 6, 1), null, null, null, null)));
         when(provider.listCharges(eq(firm), any(ChargeQuery.class))).thenReturn(List.of());
 
-        BillingSyncResultDTO result = service.syncFirm(firm, false);
+        BillingSyncResultDTO result = service.syncFirm(firm, false, SyncProgress.NONE);
 
         assertThat(subscription.getExternalContractId()).isEqualTo("new");
         assertThat(subscription.getSyncWarning()).isEqualTo("billing.sync.warning.multiple.contracts");
@@ -158,7 +161,7 @@ class BillingSyncServiceTest {
     void manualFirmHasNothingToSync() {
         firm.setBillingProvider(BillingProviderType.MANUAL);
 
-        assertThatThrownBy(() -> service.syncFirm(firm, false)).isInstanceOf(BadRequestException.class);
+        assertThatThrownBy(() -> service.syncFirm(firm, false, SyncProgress.NONE)).isInstanceOf(BadRequestException.class);
         verify(provider, never()).listCharges(any(), any());
     }
 

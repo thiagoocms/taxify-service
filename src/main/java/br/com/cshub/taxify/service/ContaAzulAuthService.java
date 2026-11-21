@@ -1,5 +1,6 @@
 package br.com.cshub.taxify.service;
 
+import br.com.cshub.taxify.common.CurrentFirmService;
 import br.com.cshub.taxify.common.MessageService;
 import br.com.cshub.taxify.domain.billing.FirmIntegration;
 import br.com.cshub.taxify.dto.contaazul.ContaAzulAuthorizeUrlDTO;
@@ -46,15 +47,18 @@ public class ContaAzulAuthService {
     private final ContaAzulProperties properties;
     private final ContaAzulOAuthClient oauthClient;
     private final FirmIntegrationService firmIntegrationService;
+    private final CurrentFirmService currentFirmService;
     private final MessageService messageService;
     private final SecureRandom random = new SecureRandom();
     private final Map<UUID, Object> refreshLocks = new ConcurrentHashMap<>();
 
     public ContaAzulAuthService(ContaAzulProperties properties, ContaAzulOAuthClient oauthClient,
-                                FirmIntegrationService firmIntegrationService, MessageService messageService) {
+                                FirmIntegrationService firmIntegrationService, CurrentFirmService currentFirmService,
+                                MessageService messageService) {
         this.properties = properties;
         this.oauthClient = oauthClient;
         this.firmIntegrationService = firmIntegrationService;
+        this.currentFirmService = currentFirmService;
         this.messageService = messageService;
     }
 
@@ -105,14 +109,14 @@ public class ContaAzulAuthService {
 
     @Transactional(readOnly = true)
     public ContaAzulConnectionStatusDTO status() {
-        return firmIntegrationService.find(firmIntegrationService.currentFirmId(), IntegrationType.CONTA_AZUL)
+        return firmIntegrationService.find(currentFirmService.requireId(), IntegrationType.CONTA_AZUL)
                 .map(this::toStatus)
                 .orElseGet(() -> new ContaAzulConnectionStatusDTO(properties.isConfigured(), false, null));
     }
 
     @Transactional
     public void disconnect() {
-        firmIntegrationService.find(firmIntegrationService.currentFirmId(), IntegrationType.CONTA_AZUL).ifPresent(integration -> {
+        firmIntegrationService.find(currentFirmService.requireId(), IntegrationType.CONTA_AZUL).ifPresent(integration -> {
             integration.setAccessToken(null);
             integration.setRefreshToken(null);
             integration.setTokenExpiresAt(null);
@@ -170,7 +174,7 @@ public class ContaAzulAuthService {
     }
 
     private FirmIntegration currentIntegration() {
-        return firmIntegrationService.getOrCreate(firmIntegrationService.currentFirmId(), IntegrationType.CONTA_AZUL);
+        return firmIntegrationService.getOrCreate(currentFirmService.requireId(), IntegrationType.CONTA_AZUL);
     }
 
     private void assertConfigured() {

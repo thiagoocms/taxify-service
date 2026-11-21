@@ -1,5 +1,6 @@
 package br.com.cshub.taxify.service;
 
+import br.com.cshub.taxify.common.DocumentNumbers;
 import br.com.cshub.taxify.dto.fiscalxml.FiscalXmlDestinatarioDTO;
 import br.com.cshub.taxify.dto.fiscalxml.FiscalXmlDetailDTO;
 import br.com.cshub.taxify.dto.fiscalxml.FiscalXmlEmitenteDTO;
@@ -26,6 +27,7 @@ import com.lowagie.text.pdf.PdfPTable;
 import com.lowagie.text.pdf.PdfPageEventHelper;
 import com.lowagie.text.pdf.PdfWriter;
 import org.springframework.stereotype.Service;
+import org.springframework.util.StringUtils;
 
 import java.awt.Color;
 import java.io.ByteArrayOutputStream;
@@ -72,7 +74,7 @@ public class DanfePdfService {
     public DanfePdf generate(UUID documentId) {
         FiscalXmlDetailDTO detail = queryService.findDetail(documentId);
         List<FiscalXmlProdutoDTO> produtos = queryService.findProdutos(documentId);
-        String baseName = notBlank(detail.accessKey()) ? detail.accessKey() : detail.id().toString();
+        String baseName = StringUtils.hasText(detail.accessKey()) ? detail.accessKey() : detail.id().toString();
         return new DanfePdf(baseName + ".pdf", render(detail, produtos));
     }
 
@@ -118,7 +120,7 @@ public class DanfePdfService {
             FiscalXmlEnderecoDTO e = emit.endereco();
             issuer.addElement(new Paragraph(join(", ", e.logradouro(), e.numero(), e.complemento()), VALUE));
             issuer.addElement(new Paragraph(join(" - ", e.bairro(), formatCep(e.cep())), VALUE));
-            issuer.addElement(new Paragraph(join(" / ", e.municipio(), e.uf()) + (notBlank(e.telefone()) ? "  Fone: " + e.telefone() : ""), VALUE));
+            issuer.addElement(new Paragraph(join(" / ", e.municipio(), e.uf()) + (StringUtils.hasText(e.telefone()) ? "  Fone: " + e.telefone() : ""), VALUE));
         }
         table.addCell(issuer);
 
@@ -144,7 +146,7 @@ public class DanfePdfService {
         PdfPCell key = new PdfPCell();
         key.setBorderWidth(0.5f);
         key.setPadding(4);
-        if (notBlank(detail.accessKey())) {
+        if (StringUtils.hasText(detail.accessKey())) {
             Barcode128 barcode = new Barcode128();
             barcode.setCodeType(Barcode128.CODE_C);
             barcode.setCode(detail.accessKey());
@@ -176,8 +178,8 @@ public class DanfePdfService {
         row.addCell(field("INSCRIÇÃO ESTADUAL", emit == null ? null : emit.inscricaoEstadual()));
         row.addCell(field("INSC. ESTADUAL DO SUBST. TRIB.", emit == null ? null : emit.inscricaoEstadualSubstitutoTributario()));
         row.addCell(field("INSCRIÇÃO MUNICIPAL", emit == null ? null : emit.inscricaoMunicipal()));
-        row.addCell(field(emit != null && notBlank(emit.cpf()) && !notBlank(emit.cnpj()) ? "CPF" : "CNPJ",
-                formatDocument(emit != null ? firstNotBlank(emit.cnpj(), emit.cpf()) : detail.issuerCnpj())));
+        row.addCell(field(emit != null && StringUtils.hasText(emit.cpf()) && !StringUtils.hasText(emit.cnpj()) ? "CPF" : "CNPJ",
+                DocumentNumbers.format(emit != null ? firstNotBlank(emit.cnpj(), emit.cpf()) : detail.issuerCnpj())));
         PdfPCell wrapper = new PdfPCell(row);
         wrapper.setBorder(Rectangle.NO_BORDER);
         wrapper.setPadding(0);
@@ -193,9 +195,9 @@ public class DanfePdfService {
 
         PdfPTable table = table(new float[]{52, 18, 15, 15});
         table.addCell(field("NOME / RAZÃO SOCIAL", dest == null ? null : dest.nome()));
-        table.addCell(field(dest != null && notBlank(dest.cpf()) && !notBlank(dest.cnpj()) ? "CPF" : "CNPJ / CPF",
-                dest == null ? formatDocument(detail.recipientCnpj())
-                        : firstNotBlank(formatDocument(firstNotBlank(dest.cnpj(), dest.cpf())), dest.idEstrangeiro())));
+        table.addCell(field(dest != null && StringUtils.hasText(dest.cpf()) && !StringUtils.hasText(dest.cnpj()) ? "CPF" : "CNPJ / CPF",
+                dest == null ? DocumentNumbers.format(detail.recipientCnpj())
+                        : firstNotBlank(DocumentNumbers.format(firstNotBlank(dest.cnpj(), dest.cpf())), dest.idEstrangeiro())));
         table.addCell(field("DATA DA EMISSÃO", emissao == null ? null : emissao.format(DATE)));
         table.addCell(field("DATA SAÍDA/ENTRADA", ide == null || ide.dataSaidaEntrada() == null ? null : ide.dataSaidaEntrada().format(DATE)));
 
@@ -321,7 +323,7 @@ public class DanfePdfService {
         cell.setPaddingBottom(3);
         Paragraph l = new Paragraph(label, LABEL);
         cell.addElement(l);
-        Paragraph v = new Paragraph(notBlank(value) ? value : " ", new Font(VALUE));
+        Paragraph v = new Paragraph(StringUtils.hasText(value) ? value : " ", new Font(VALUE));
         cell.addElement(v);
         return cell;
     }
@@ -374,7 +376,7 @@ public class DanfePdfService {
     }
 
     private static String formatNumero(String numero) {
-        if (!notBlank(numero) || !numero.chars().allMatch(Character::isDigit)) {
+        if (!StringUtils.hasText(numero) || !numero.chars().allMatch(Character::isDigit)) {
             return safe(numero);
         }
         String padded = "0".repeat(Math.max(0, 9 - numero.length())) + numero;
@@ -382,28 +384,14 @@ public class DanfePdfService {
     }
 
     static String formatAccessKey(String key) {
-        if (!notBlank(key)) {
+        if (!StringUtils.hasText(key)) {
             return "";
         }
         return key.replaceAll("(.{4})(?!$)", "$1 ");
     }
 
-    static String formatDocument(String doc) {
-        if (!notBlank(doc)) {
-            return null;
-        }
-        String d = doc.replaceAll("\\D", "");
-        if (d.length() == 14) {
-            return d.replaceFirst("(\\d{2})(\\d{3})(\\d{3})(\\d{4})(\\d{2})", "$1.$2.$3/$4-$5");
-        }
-        if (d.length() == 11) {
-            return d.replaceFirst("(\\d{3})(\\d{3})(\\d{3})(\\d{2})", "$1.$2.$3-$4");
-        }
-        return doc;
-    }
-
     private static String formatCep(String cep) {
-        if (!notBlank(cep)) {
+        if (!StringUtils.hasText(cep)) {
             return null;
         }
         String d = cep.replaceAll("\\D", "");
@@ -424,7 +412,7 @@ public class DanfePdfService {
     private static String join(String separator, String... parts) {
         StringBuilder sb = new StringBuilder();
         for (String part : parts) {
-            if (notBlank(part)) {
+            if (StringUtils.hasText(part)) {
                 if (!sb.isEmpty()) {
                     sb.append(separator);
                 }
@@ -435,11 +423,7 @@ public class DanfePdfService {
     }
 
     private static String firstNotBlank(String a, String b) {
-        return notBlank(a) ? a : b;
-    }
-
-    private static boolean notBlank(String s) {
-        return s != null && !s.isBlank();
+        return StringUtils.hasText(a) ? a : b;
     }
 
     private static String safe(String s) {

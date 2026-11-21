@@ -1,5 +1,6 @@
 package br.com.cshub.taxify.service;
 
+import br.com.cshub.taxify.common.DocumentNumbers;
 import br.com.cshub.taxify.dto.fiscalxml.FiscalXmlDestinatarioDTO;
 import br.com.cshub.taxify.dto.fiscalxml.FiscalXmlDetailDTO;
 import br.com.cshub.taxify.dto.fiscalxml.FiscalXmlEmitenteDTO;
@@ -83,8 +84,8 @@ class DanfePdfServiceTest {
     @Test
     void formatsKeyDocumentAndMoney() {
         assertThat(DanfePdfService.formatAccessKey("12345678")).isEqualTo("1234 5678");
-        assertThat(DanfePdfService.formatDocument("12345678000199")).isEqualTo("12.345.678/0001-99");
-        assertThat(DanfePdfService.formatDocument("12345678901")).isEqualTo("123.456.789-01");
+        assertThat(DocumentNumbers.format("12345678000199")).isEqualTo("12.345.678/0001-99");
+        assertThat(DocumentNumbers.format("12345678901")).isEqualTo("123.456.789-01");
         assertThat(DanfePdfService.formatMoney(new BigDecimal("1234.5"))).isEqualTo("1.234,50");
     }
 }

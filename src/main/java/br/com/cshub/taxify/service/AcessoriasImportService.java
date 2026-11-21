@@ -1,6 +1,7 @@
 package br.com.cshub.taxify.service;
 
-import br.com.cshub.taxify.common.CurrentUserService;
+import br.com.cshub.taxify.common.DocumentNumbers;
+import br.com.cshub.taxify.common.CurrentFirmService;
 import br.com.cshub.taxify.common.MessageService;
 import br.com.cshub.taxify.domain.accountingfirm.AccountingFirm;
 import br.com.cshub.taxify.domain.company.Company;
@@ -9,17 +10,17 @@ import br.com.cshub.taxify.domain.user.User;
 import br.com.cshub.taxify.domain.user_company.UserCompany;
 import br.com.cshub.taxify.domain.user_company.UserCompanyId;
 import br.com.cshub.taxify.dto.acessorias.AcessoriasImportResultDTO;
+import br.com.cshub.taxify.dto.integration.SyncJobStatusDTO;
 import br.com.cshub.taxify.enumerated.DocumentTypeEnum;
-import br.com.cshub.taxify.exception.ConflictException;
-import br.com.cshub.taxify.exception.ResourceNotFoundException;
 import br.com.cshub.taxify.integration.acessorias.AcessoriasClient;
 import br.com.cshub.taxify.integration.acessorias.AcessoriasCompanyDTO;
 import br.com.cshub.taxify.enumerated.IntegrationType;
-import br.com.cshub.taxify.repository.AccountingFirmRepository;
 import br.com.cshub.taxify.repository.CompanyRepository;
 import br.com.cshub.taxify.repository.DocumentRepository;
 import br.com.cshub.taxify.repository.UserCompanyRepository;
 import br.com.cshub.taxify.repository.UserRepository;
+import br.com.cshub.taxify.service.job.IntegrationJobRunner;
+import br.com.cshub.taxify.service.job.SyncProgress;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 import org.springframework.stereotype.Service;
@@ -36,8 +37,6 @@ import java.util.Locale;
 import java.util.Map;
 import java.util.Objects;
 import java.util.Set;
-import java.util.UUID;
-import java.util.concurrent.ConcurrentHashMap;
 import java.util.function.Consumer;
 import java.util.stream.Collectors;
 
@@ -65,80 +64,84 @@ public class AcessoriasImportService {
     private static final int ROLE_MAX = 50;
 
     private final AcessoriasClient acessoriasClient;
-    private final AccountingFirmRepository accountingFirmRepository;
-    private final FirmIntegrationService firmIntegrationService;
     private final CompanyRepository companyRepository;
     private final DocumentRepository documentRepository;
     private final UserRepository userRepository;
     private final UserCompanyRepository userCompanyRepository;
-    private final CurrentUserService currentUserService;
+    private final CurrentFirmService currentFirmService;
+    private final FirmIntegrationService firmIntegrationService;
+    private final IntegrationJobRunner jobRunner;
     private final MessageService messageService;
-    /** Firms with an import running right now - the manual button and the daily run must not overlap. */
-    private final Set<UUID> running = ConcurrentHashMap.newKeySet();
 
-    public AcessoriasImportService(AcessoriasClient acessoriasClient, AccountingFirmRepository accountingFirmRepository,
-                                   CompanyRepository companyRepository, DocumentRepository documentRepository,
-                                   UserRepository userRepository, UserCompanyRepository userCompanyRepository,
-                                   CurrentUserService currentUserService, MessageService messageService,
-                                   FirmIntegrationService firmIntegrationService) {
-        this.firmIntegrationService = firmIntegrationService;
+    public AcessoriasImportService(AcessoriasClient acessoriasClient, CompanyRepository companyRepository,
+                                   DocumentRepository documentRepository, UserRepository userRepository,
+                                   UserCompanyRepository userCompanyRepository, CurrentFirmService currentFirmService,
+                                   FirmIntegrationService firmIntegrationService, IntegrationJobRunner jobRunner,
+                                   MessageService messageService) {
         this.acessoriasClient = acessoriasClient;
-        this.accountingFirmRepository = accountingFirmRepository;
         this.companyRepository = companyRepository;
         this.documentRepository = documentRepository;
         this.userRepository = userRepository;
         this.userCompanyRepository = userCompanyRepository;
-        this.currentUserService = currentUserService;
+        this.currentFirmService = currentFirmService;
+        this.firmIntegrationService = firmIntegrationService;
+        this.jobRunner = jobRunner;
         this.messageService = messageService;
     }
 
-    /** Full import (every company in Acessórias) for the current user's firm - the "Importar do Acessórias" button. */
-    public AcessoriasImportResultDTO importForCurrentFirm() {
-        UUID firmId = currentUserService.getCurrentUser()
-                .map(user -> user.getAccountingFirm().getId())
-                .orElseThrow(() -> new ResourceNotFoundException(messageService.getMessage("error.accountingFirm.not.found")));
-        AccountingFirm firm = accountingFirmRepository.findById(firmId)
-                .orElseThrow(() -> new ResourceNotFoundException(messageService.getMessage("error.accountingFirm.not.found")));
-        return importFirm(firm, false);
+    // ------------------------------------------------------------------ background job
+
+    /** "Importar do Acessórias": full import in the background - returns RUNNING right away. */
+    public SyncJobStatusDTO<AcessoriasImportResultDTO> startForCurrentFirm() {
+        return start(currentFirmService.require(), false);
     }
 
+    /** Starts the import as a background job; the job runner prevents overlapping runs per firm. */
+    public SyncJobStatusDTO<AcessoriasImportResultDTO> start(AccountingFirm firm, boolean incremental) {
+        return jobRunner.start(firm.getId(), IntegrationType.ACESSORIAS, AcessoriasImportResultDTO.class,
+                progress -> importFirm(firm, incremental, progress));
+    }
+
+    public SyncJobStatusDTO<AcessoriasImportResultDTO> statusForCurrentFirm() {
+        return jobRunner.status(currentFirmService.requireId(), IntegrationType.ACESSORIAS, AcessoriasImportResultDTO.class);
+    }
+
+    // ------------------------------------------------------------------ the import itself
+
     /**
+     * Synchronous run - what the job executes.
+     *
      * @param incremental only companies changed in Acessórias since the firm's last import
      *                    (a firm never imported before still gets a full run)
      */
-    public AcessoriasImportResultDTO importFirm(AccountingFirm firm, boolean incremental) {
-        if (!running.add(firm.getId())) {
-            throw new ConflictException(messageService.getMessage("error.acessorias.import.running"));
-        }
-        try {
-            LocalDateTime startedAt = LocalDateTime.now();
-            LocalDateTime changedAfter = incremental ? firmIntegrationService.getLastSyncAt(firm.getId(), IntegrationType.ACESSORIAS) : null;
-            String apiToken = firmIntegrationService.getApiKey(firm.getId(), IntegrationType.ACESSORIAS);
-            List<AcessoriasCompanyDTO> source = acessoriasClient.listCompanies(apiToken, changedAfter);
+    public AcessoriasImportResultDTO importFirm(AccountingFirm firm, boolean incremental, SyncProgress progress) {
+        LocalDateTime startedAt = LocalDateTime.now();
+        LocalDateTime changedAfter = incremental ? firmIntegrationService.getLastSyncAt(firm.getId(), IntegrationType.ACESSORIAS) : null;
+        String apiToken = firmIntegrationService.getApiKey(firm.getId(), IntegrationType.ACESSORIAS);
+        List<AcessoriasCompanyDTO> source = acessoriasClient.listCompanies(apiToken, changedAfter);
+        progress.total(source.size());
 
-            ImportRun run = new ImportRun(firm, source.size());
-            for (AcessoriasCompanyDTO item : source) {
-                try {
-                    importCompany(run, item);
-                } catch (Exception e) {
-                    log.warn("Acessórias import failed for company {} of firm {}", item.identificador(), firm.getId(), e);
-                    run.errors.add(item.identificador() + ": " + e.getMessage());
-                }
+        ImportRun run = new ImportRun(firm, source.size());
+        for (AcessoriasCompanyDTO item : source) {
+            try {
+                importCompany(run, item);
+            } catch (Exception e) {
+                log.warn("Acessórias import failed for company {} of firm {}", item.identificador(), firm.getId(), e);
+                run.errors.add(item.identificador() + ": " + e.getMessage());
             }
-
-            firmIntegrationService.markSynced(firm.getId(), IntegrationType.ACESSORIAS, startedAt);
-
-            log.info("Acessórias import for firm {}: {} received, {} created, {} updated, {} unchanged, {} links, {} skipped, {} errors",
-                    firm.getId(), run.received, run.created, run.updated, run.unchanged, run.linksCreated,
-                    run.skipped.size(), run.errors.size());
-            return run.toResult();
-        } finally {
-            running.remove(firm.getId());
+            progress.advance();
         }
+
+        firmIntegrationService.markSynced(firm.getId(), IntegrationType.ACESSORIAS, startedAt);
+
+        log.info("Acessórias import for firm {}: {} received, {} created, {} updated, {} unchanged, {} links, {} skipped, {} errors",
+                firm.getId(), run.received, run.created, run.updated, run.unchanged, run.linksCreated,
+                run.skipped.size(), run.errors.size());
+        return run.toResult();
     }
 
     private void importCompany(ImportRun run, AcessoriasCompanyDTO item) {
-        String digits = onlyDigits(item.identificador());
+        String digits = DocumentNumbers.onlyDigits(item.identificador());
         DocumentTypeEnum type = documentType(digits);
         if (type == null) {
             run.skipped.add(label(item) + ": " + messageService.getMessage("acessorias.import.skipped.identifier"));
@@ -290,10 +293,6 @@ public class AcessoriasImportService {
         return name == null ? item.identificador() : item.identificador() + " - " + name;
     }
 
-    private static String onlyDigits(String value) {
-        return value == null ? null : value.replaceAll("\\D", "");
-    }
-
     private static String trim(String value) {
         if (value == null) {
             return null;
@@ -339,7 +338,7 @@ public class AcessoriasImportService {
             this.received = received;
             for (Company company : companyRepository.findByAccountingFirm_Id(firm.getId())) {
                 if (company.getDocument() != null) {
-                    companiesByDocument.putIfAbsent(onlyDigits(company.getDocument().getNumber()), company);
+                    companiesByDocument.putIfAbsent(DocumentNumbers.onlyDigits(company.getDocument().getNumber()), company);
                 }
             }
             for (User user : userRepository.findByAccountingFirm_IdAndDeletedIsFalse(firm.getId())) {

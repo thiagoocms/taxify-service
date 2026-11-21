@@ -1,13 +1,13 @@
 package br.com.cshub.taxify.integration.contaazul;
 
 import br.com.cshub.taxify.common.MessageService;
+import br.com.cshub.taxify.common.RestClients;
 import br.com.cshub.taxify.exception.ContaAzulIntegrationException;
 import com.fasterxml.jackson.annotation.JsonIgnoreProperties;
 import com.fasterxml.jackson.annotation.JsonProperty;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 import org.springframework.http.MediaType;
-import org.springframework.http.client.SimpleClientHttpRequestFactory;
 import org.springframework.stereotype.Component;
 import org.springframework.util.LinkedMultiValueMap;
 import org.springframework.util.MultiValueMap;
@@ -29,6 +29,8 @@ import java.util.Base64;
 public class ContaAzulOAuthClient {
 
     private static final Logger log = LoggerFactory.getLogger(ContaAzulOAuthClient.class);
+    private static final Duration CONNECT_TIMEOUT = Duration.ofSeconds(15);
+    private static final Duration READ_TIMEOUT = Duration.ofSeconds(30);
 
     private final ContaAzulProperties properties;
     private final MessageService messageService;
@@ -37,10 +39,7 @@ public class ContaAzulOAuthClient {
     public ContaAzulOAuthClient(ContaAzulProperties properties, MessageService messageService) {
         this.properties = properties;
         this.messageService = messageService;
-        SimpleClientHttpRequestFactory requestFactory = new SimpleClientHttpRequestFactory();
-        requestFactory.setConnectTimeout(Duration.ofSeconds(15));
-        requestFactory.setReadTimeout(Duration.ofSeconds(30));
-        this.restClient = RestClient.builder().requestFactory(requestFactory).build();
+        this.restClient = RestClients.withTimeouts(CONNECT_TIMEOUT, READ_TIMEOUT);
     }
 
     @JsonIgnoreProperties(ignoreUnknown = true)

@@ -11,7 +11,8 @@ import org.springframework.stereotype.Component;
 
 /**
  * Daily incremental billing sync for every firm that chose an integrated provider (the
- * APIs have no webhooks, so polling it is). One firm failing doesn't stop the others.
+ * APIs have no webhooks, so polling it is). Each firm becomes a background job - the job
+ * pool runs a few firms at a time, and a firm whose sync is already running is skipped.
  */
 @Component
 public class BillingSyncScheduler {
@@ -39,9 +40,9 @@ public class BillingSyncScheduler {
                 continue;
             }
             try {
-                syncService.syncFirm(firm, true);
+                syncService.start(firm, true);
             } catch (Exception e) {
-                log.warn("Scheduled billing sync failed for firm {}", firm.getId(), e);
+                log.warn("Scheduled billing sync not started for firm {}: {}", firm.getId(), e.getMessage());
             }
         }
     }

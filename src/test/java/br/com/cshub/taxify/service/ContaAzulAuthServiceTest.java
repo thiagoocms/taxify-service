@@ -1,5 +1,6 @@
 package br.com.cshub.taxify.service;
 
+import br.com.cshub.taxify.common.CurrentFirmService;
 import br.com.cshub.taxify.common.MessageService;
 import br.com.cshub.taxify.domain.accountingfirm.AccountingFirm;
 import br.com.cshub.taxify.domain.billing.FirmIntegration;
@@ -38,6 +39,8 @@ class ContaAzulAuthServiceTest {
     @Mock
     private FirmIntegrationService firmIntegrationService;
     @Mock
+    private CurrentFirmService currentFirmService;
+    @Mock
     private MessageService messageService;
 
     private ContaAzulProperties properties;
@@ -54,13 +57,13 @@ class ContaAzulAuthServiceTest {
 
         firmId = UUID.randomUUID();
         integration = new FirmIntegration(new AccountingFirm(firmId), IntegrationType.CONTA_AZUL);
-        when(firmIntegrationService.currentFirmId()).thenReturn(firmId);
+        when(currentFirmService.requireId()).thenReturn(firmId);
         when(firmIntegrationService.getOrCreate(firmId, IntegrationType.CONTA_AZUL)).thenReturn(integration);
         when(firmIntegrationService.find(firmId, IntegrationType.CONTA_AZUL)).thenReturn(Optional.of(integration));
         when(firmIntegrationService.save(any(FirmIntegration.class))).thenAnswer(inv -> inv.getArgument(0));
         when(messageService.getMessage(anyString())).thenAnswer(inv -> inv.getArgument(0));
 
-        service = new ContaAzulAuthService(properties, oauthClient, firmIntegrationService, messageService);
+        service = new ContaAzulAuthService(properties, oauthClient, firmIntegrationService, currentFirmService, messageService);
     }
 
     @Test

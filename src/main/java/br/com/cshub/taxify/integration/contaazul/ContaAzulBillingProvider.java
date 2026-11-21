@@ -1,5 +1,6 @@
 package br.com.cshub.taxify.integration.contaazul;
 
+import br.com.cshub.taxify.common.DocumentNumbers;
 import br.com.cshub.taxify.domain.accountingfirm.AccountingFirm;
 import br.com.cshub.taxify.enumerated.BillingProviderType;
 import br.com.cshub.taxify.enumerated.ChargeStatus;
@@ -12,12 +13,15 @@ import br.com.cshub.taxify.integration.billing.ExternalContract;
 import br.com.cshub.taxify.integration.billing.ExternalCustomer;
 import br.com.cshub.taxify.service.ContaAzulAuthService;
 import org.springframework.stereotype.Component;
+import org.springframework.util.StringUtils;
 
 import java.time.LocalDate;
 import java.time.format.DateTimeFormatter;
 import java.time.format.DateTimeParseException;
 import java.util.ArrayList;
+import java.util.LinkedHashMap;
 import java.util.List;
+import java.util.Map;
 import java.util.Optional;
 
 /**
@@ -35,6 +39,8 @@ public class ContaAzulBillingProvider implements BillingProvider {
     private static final String CONTRACTS_FROM = "2000-01-01";
     /** ids_clientes is a query array - batch it so the URL stays reasonable. */
     private static final int CUSTOMER_BATCH = 40;
+    /** Longest due-date range the receivables search accepts (start and end days included). */
+    static final int MAX_DUE_RANGE_DAYS = 365;
     private static final DateTimeFormatter CHANGED_SINCE = DateTimeFormatter.ofPattern("yyyy-MM-dd'T'HH:mm:ss");
 
     private final ContaAzulApiClient client;
@@ -57,14 +63,14 @@ public class ContaAzulBillingProvider implements BillingProvider {
 
     @Override
     public Optional<ExternalCustomer> findCustomerByDocument(AccountingFirm firm, String document) {
-        String digits = document == null ? "" : document.replaceAll("\\D", "");
-        if (digits.isEmpty()) {
+        String digits = DocumentNumbers.onlyDigits(document);
+        if (!StringUtils.hasText(digits)) {
             return Optional.empty();
         }
         // Conta Azul may store the document with or without the mask - try both.
-        for (String candidate : List.of(digits, formatDocument(digits))) {
+        for (String candidate : List.of(digits, DocumentNumbers.format(digits))) {
             Optional<ExternalCustomer> found = client.findPessoasByDocument(firm.getId(), candidate).stream()
-                    .filter(pessoa -> pessoa.documento() != null && pessoa.documento().replaceAll("\\D", "").equals(digits))
+                    .filter(pessoa -> digits.equals(DocumentNumbers.onlyDigits(pessoa.documento())))
                     .findFirst()
                     .map(pessoa -> new ExternalCustomer(pessoa.id(), pessoa.nome(), digits));
             if (found.isPresent()) {
@@ -93,19 +99,41 @@ public class ContaAzulBillingProvider implements BillingProvider {
 
     @Override
     public List<ExternalCharge> listCharges(AccountingFirm firm, ChargeQuery query) {
-        List<ExternalCharge> charges = new ArrayList<>();
+        Map<String, ExternalCharge> charges = new LinkedHashMap<>();
         String changedSince = query.changedSince() == null ? null : query.changedSince().format(CHANGED_SINCE);
         List<String> customers = query.customerIds() == null ? List.of() : query.customerIds();
-        for (int i = 0; i < Math.max(customers.size(), 1); i += CUSTOMER_BATCH) {
-            List<String> batch = customers.isEmpty() ? List.of() : customers.subList(i, Math.min(i + CUSTOMER_BATCH, customers.size()));
-            client.searchContasAReceber(firm.getId(), batch, query.categoryIds(),
-                            query.dueFrom().toString(), query.dueTo().toString(), changedSince)
-                    .stream()
-                    .filter(conta -> conta.id() != null && parseDate(conta.dataVencimento()) != null)
-                    .map(ContaAzulBillingProvider::toCharge)
-                    .forEach(charges::add);
+        for (LocalDate[] window : dueWindows(query.dueFrom(), query.dueTo())) {
+            for (int i = 0; i < Math.max(customers.size(), 1); i += CUSTOMER_BATCH) {
+                List<String> batch = customers.isEmpty() ? List.of() : customers.subList(i, Math.min(i + CUSTOMER_BATCH, customers.size()));
+                client.searchContasAReceber(firm.getId(), batch, query.categoryIds(),
+                                window[0].toString(), window[1].toString(), changedSince)
+                        .stream()
+                        .filter(conta -> conta.id() != null && parseDate(conta.dataVencimento()) != null)
+                        .map(ContaAzulBillingProvider::toCharge)
+                        // windows don't overlap, but dedupe by id anyway in case the API's bounds are inclusive on both ends
+                        .forEach(charge -> charges.put(charge.id(), charge));
+            }
         }
-        return charges;
+        return new ArrayList<>(charges.values());
+    }
+
+    /**
+     * Conta Azul rejects a due-date range longer than 365 days ("O intervalo de data de
+     * vencimento excede o limite máximo permitido de 365 dias") - split the requested one
+     * into consecutive, non-overlapping windows that fit.
+     */
+    static List<LocalDate[]> dueWindows(LocalDate from, LocalDate to) {
+        List<LocalDate[]> windows = new ArrayList<>();
+        LocalDate start = from;
+        while (!start.isAfter(to)) {
+            LocalDate end = start.plusDays(MAX_DUE_RANGE_DAYS - 1);
+            if (end.isAfter(to)) {
+                end = to;
+            }
+            windows.add(new LocalDate[]{start, end});
+            start = end.plusDays(1);
+        }
+        return windows;
     }
 
     @Override
@@ -153,15 +181,5 @@ public class ContaAzulBillingProvider implements BillingProvider {
         } catch (DateTimeParseException e) {
             return null;
         }
-    }
-
-    private static String formatDocument(String digits) {
-        if (digits.length() == 14) {
-            return digits.replaceFirst("(\\d{2})(\\d{3})(\\d{3})(\\d{4})(\\d{2})", "$1.$2.$3/$4-$5");
-        }
-        if (digits.length() == 11) {
-            return digits.replaceFirst("(\\d{3})(\\d{3})(\\d{3})(\\d{2})", "$1.$2.$3-$4");
-        }
-        return digits;
     }
 }
