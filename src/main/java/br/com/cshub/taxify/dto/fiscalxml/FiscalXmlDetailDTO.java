@@ -1,5 +1,6 @@
 package br.com.cshub.taxify.dto.fiscalxml;
 
+import br.com.cshub.taxify.enumerated.ReviewStatus;
 import br.com.cshub.taxify.enumerated.FiscalDocumentStatus;
 import br.com.cshub.taxify.enumerated.FiscalDirection;
 import java.time.LocalDateTime;
@@ -27,6 +28,10 @@ public record FiscalXmlDetailDTO(
         FiscalDirection direction,
         boolean ownIssue,
         FiscalDocumentStatus status,
-        LocalDateTime canceledAt
+        LocalDateTime canceledAt,
+        ReviewStatus reviewStatus,
+        LocalDateTime reviewedAt,
+        String reviewedBy,
+        String reviewNote
 ) {
 }

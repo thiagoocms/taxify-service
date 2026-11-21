@@ -45,7 +45,7 @@ class DanfePdfServiceTest {
                 new FiscalXmlTotaisDTO(new BigDecimal("1000"), new BigDecimal("180"), null, null, null, null, null,
                         new BigDecimal("1000"), null, null, null, null, null, null, null, null,
                         new BigDecimal("1000"), new BigDecimal("300.50")),
-                FiscalDirection.OUTBOUND, true, FiscalDocumentStatus.AUTHORIZED, null);
+                FiscalDirection.OUTBOUND, true, FiscalDocumentStatus.AUTHORIZED, null, null, null, null, null);
     }
 
     private static List<FiscalXmlProdutoDTO> produtos(int n) {
@@ -77,7 +77,7 @@ class DanfePdfServiceTest {
     void rendersHomologacaoAndMissingSectionsWithoutFailing() {
         FiscalXmlDetailDTO base = detail("2");
         FiscalXmlDetailDTO sparse = new FiscalXmlDetailDTO(base.id(), base.companyId(), null, "NFE", null, null, null,
-                true, 0, null, null, null, null, null, false, null, null);
+                true, 0, null, null, null, null, null, false, null, null, null, null, null, null);
         DanfePdfService service = new DanfePdfService(mock(FiscalXmlQueryService.class));
 
         assertThat(service.render(base, List.of())).isNotEmpty();

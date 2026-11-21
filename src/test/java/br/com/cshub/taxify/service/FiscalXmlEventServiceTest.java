@@ -32,7 +32,8 @@ class FiscalXmlEventServiceTest {
 
     private final FiscalXmlEventRepository eventRepository = mock(FiscalXmlEventRepository.class);
     private final FiscalXmlDocumentRepository documentRepository = mock(FiscalXmlDocumentRepository.class);
-    private final FiscalXmlEventService service = new FiscalXmlEventService(eventRepository, documentRepository);
+    private final InvoiceAuditTrail auditTrail = mock(InvoiceAuditTrail.class);
+    private final FiscalXmlEventService service = new FiscalXmlEventService(eventRepository, documentRepository, auditTrail);
     private final Company company = new Company(UUID.randomUUID());
 
     private static FiscalEventData cancellation(boolean registered) {
@@ -55,6 +56,7 @@ class FiscalXmlEventServiceTest {
 
         assertThat(note.getStatus()).isEqualTo(FiscalDocumentStatus.CANCELED);
         assertThat(note.getCanceledAt()).isEqualTo(AT);
+        verify(auditTrail).record(company, KEY, br.com.cshub.taxify.enumerated.InvoiceAuditStatus.CANCELED, "Cancelada na SEFAZ: Erro");
         ArgumentCaptor<FiscalXmlEvent> saved = ArgumentCaptor.forClass(FiscalXmlEvent.class);
         verify(eventRepository).save(saved.capture());
         assertThat(saved.getValue().getDocument()).isSameAs(note);

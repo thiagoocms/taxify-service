@@ -18,7 +18,9 @@ import java.util.Set;
 import java.util.UUID;
 
 @Entity
-@Table(name = "users")
+@Table(name = "users",
+        uniqueConstraints = @UniqueConstraint(name = "uk_users_login", columnNames = "login"),
+        indexes = @Index(name = "idx_users_email", columnList = "email"))
 public class User extends AbstractAuditingEntity {
 
     @Id
@@ -52,8 +54,9 @@ public class User extends AbstractAuditingEntity {
     @Column(name = "email", length = 300, nullable = false)
     private String email;
 
-    @Enumerated(EnumType.ORDINAL)
-    @Column(name = "profile", nullable = false)
+    @Enumerated(EnumType.STRING)
+    @JdbcTypeCode(SqlTypes.VARCHAR)
+    @Column(name = "profile", length = 20, nullable = false)
     private UserProfileEnum profile;
 
     /**
@@ -63,6 +66,7 @@ public class User extends AbstractAuditingEntity {
     @ElementCollection(fetch = FetchType.EAGER)
     @CollectionTable(name = "user_access_profiles", joinColumns = @JoinColumn(name = "user_id"))
     @Enumerated(EnumType.STRING)
+    @JdbcTypeCode(SqlTypes.VARCHAR)
     @Column(name = "access_profile", length = 30, nullable = false)
     private Set<AccessProfile> accessProfiles = EnumSet.noneOf(AccessProfile.class);
 

@@ -90,7 +90,7 @@ class FiscalXmlRectificationServiceTest {
         properties.setStoragePath(tempDir.toString());
         FiscalXmlFileStorage fileStorage = new FiscalXmlFileStorage(properties, messageService);
         service = new FiscalXmlRectificationService(documentRepository, ruleRepository, auditLogRepository,
-                fileStorage, currentUserService, messageService, tenantAccessService);
+                fileStorage, messageService, tenantAccessService, new InvoiceAuditTrail(auditLogRepository, currentUserService));
 
         documentId = UUID.randomUUID();
         companyId = UUID.randomUUID();

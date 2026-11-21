@@ -1,5 +1,6 @@
 package br.com.cshub.taxify.dto.fiscalxml;
 
+import br.com.cshub.taxify.enumerated.ReviewStatus;
 import br.com.cshub.taxify.enumerated.FiscalDirection;
 import br.com.cshub.taxify.dto.PageRequestDTO;
 import jakarta.validation.Valid;
@@ -23,6 +24,8 @@ public record XmlSearchFilterDTO(
         FiscalDirection direction,
         /** Piece of the other party's name, or digits of its CNPJ/CPF; blank = any. */
         String participant,
+        /** Conferência status; null = any. */
+        ReviewStatus reviewStatus,
         @Valid
         PageRequestDTO pagination
 ) {

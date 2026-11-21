@@ -22,12 +22,25 @@ spring:
   output:
     ansi:
       enabled: ALWAYS
+  # Schema owned by Flyway: one Java migration per table (db.migration.V<n>__<Table>), each
+  # creating its table or completing what an existing one lacks. Databases created before
+  # Flyway are baselined at 0, so every migration runs on them too.
+  flyway:
+    enabled: true
+    locations: classpath:db/migration
+    baseline-on-migrate: true
+    baseline-version: 0
   jpa:
     open-in-view: true
     hibernate:
-      ddl-auto: update
+      # Transition: Hibernate still adds what an old database may lack after the migrations.
+      # Switch to "validate" once every environment has run Flyway (JPA_DDL_AUTO=validate).
+      ddl-auto: ${JPA_DDL_AUTO:update}
     properties:
       hibernate:
+        # unique keys are Flyway's - Hibernate's default drops and recreates them on every start
+        schema_update:
+          unique_constraint_strategy: SKIP
         enable_lazy_load_no_trans: true
 
   servlet:

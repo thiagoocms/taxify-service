@@ -1,5 +1,6 @@
 package br.com.cshub.taxify.service;
 
+import br.com.cshub.taxify.domain.company.StateRegistration;
 import br.com.cshub.taxify.common.DocumentNumbers;
 import br.com.cshub.taxify.common.CurrentFirmService;
 import br.com.cshub.taxify.common.MessageService;
@@ -64,6 +65,7 @@ public class AcessoriasImportService {
     private static final int ROLE_MAX = 50;
 
     private final AcessoriasClient acessoriasClient;
+    private final CompanyTaxRegimeService taxRegimeService;
     private final CompanyRepository companyRepository;
     private final DocumentRepository documentRepository;
     private final UserRepository userRepository;
@@ -77,7 +79,8 @@ public class AcessoriasImportService {
                                    DocumentRepository documentRepository, UserRepository userRepository,
                                    UserCompanyRepository userCompanyRepository, CurrentFirmService currentFirmService,
                                    FirmIntegrationService firmIntegrationService, IntegrationJobRunner jobRunner,
-                                   MessageService messageService) {
+                                   MessageService messageService, CompanyTaxRegimeService taxRegimeService) {
+        this.taxRegimeService = taxRegimeService;
         this.acessoriasClient = acessoriasClient;
         this.companyRepository = companyRepository;
         this.documentRepository = documentRepository;
@@ -176,6 +179,8 @@ public class AcessoriasImportService {
             run.unchanged++;
         }
 
+        // a regime change seen in Acessórias starts a period this month
+        taxRegimeService.recordChange(company, null);
         linkResponsibles(run, company, item);
     }
 
@@ -200,7 +205,7 @@ public class AcessoriasImportService {
         changed |= set(company.getPhone(), truncate(trim(item.telefone()), 30), company::setPhone);
         changed |= set(company.getUf(), truncate(upper(item.uf()), 2), company::setUf);
         changed |= set(company.getTaxRegime(), truncate(trim(item.regime()), 100), company::applyTaxRegimeLabel);
-        changed |= set(company.getStateRegistration(), truncate(stateRegistrations(item), 255), company::setStateRegistration);
+        changed |= setStateRegistrations(company, item);
         changed |= set(company.getCompanyGroup(), truncate(trim(item.grupoDeEmpresas()), 100), company::setCompanyGroup);
         changed |= set(company.getActive(), active, company::setActive);
         changed |= set(company.getClientSince(), parseDate(item.clienteDesde()), company::setClientSince);
@@ -264,15 +269,18 @@ public class AcessoriasImportService {
         };
     }
 
-    private static String stateRegistrations(AcessoriasCompanyDTO item) {
-        if (item.inscricoesEstaduais() == null || item.inscricoesEstaduais().isEmpty()) {
-            return null;
+    private static boolean setStateRegistrations(Company company, AcessoriasCompanyDTO item) {
+        java.util.List<StateRegistration> registrations = item.inscricoesEstaduais() == null ? java.util.List.of()
+                : item.inscricoesEstaduais().stream()
+                .map(ie -> StateRegistration.of(ie.uf(), ie.ie()))
+                .filter(java.util.Objects::nonNull)
+                .toList();
+        String text = StateRegistration.format(registrations);
+        if (java.util.Objects.equals(text, company.getStateRegistration())) {
+            return false;
         }
-        String joined = item.inscricoesEstaduais().stream()
-                .filter(registration -> trim(registration.ie()) != null)
-                .map(registration -> registration.ie().trim() + (trim(registration.uf()) != null ? "/" + registration.uf().trim() : ""))
-                .collect(Collectors.joining("; "));
-        return joined.isEmpty() ? null : joined;
+        company.setStateRegistration(text);
+        return true;
     }
 
     /** {@code yyyy-MM-dd}; Acessórias' "0000-00-00" (and anything unparseable) means not set. */

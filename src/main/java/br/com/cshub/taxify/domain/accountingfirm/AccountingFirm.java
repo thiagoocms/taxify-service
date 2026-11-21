@@ -42,6 +42,7 @@ public class AccountingFirm extends AbstractAuditingEntity {
 
     /** Where this firm's contracts and fee charges come from - see BillingProvider. Null = MANUAL. */
     @Enumerated(EnumType.STRING)
+    @JdbcTypeCode(SqlTypes.VARCHAR)
     @Column(name = "billing_provider", length = 30)
     private BillingProviderType billingProvider;
 

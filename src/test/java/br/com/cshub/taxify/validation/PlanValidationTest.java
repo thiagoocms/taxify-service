@@ -33,7 +33,9 @@ class PlanValidationTest {
 
     @BeforeEach
     void setUp() {
-        validation = new PlanValidation(mapper, repository, messageService);
+        validation = new PlanValidation(mapper, repository, messageService,
+                org.mockito.Mockito.mock(br.com.cshub.taxify.common.TenantAccessService.class),
+                org.mockito.Mockito.mock(br.com.cshub.taxify.common.CurrentUserService.class));
     }
 
     @Test

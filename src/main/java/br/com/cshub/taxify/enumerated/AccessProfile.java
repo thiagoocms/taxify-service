@@ -5,6 +5,7 @@ import java.util.Collections;
 import java.util.EnumSet;
 import java.util.Set;
 
+import static br.com.cshub.taxify.enumerated.Permission.BILLING_MANAGE;
 import static br.com.cshub.taxify.enumerated.Permission.BILLING_SYNC;
 import static br.com.cshub.taxify.enumerated.Permission.BILLING_VIEW;
 import static br.com.cshub.taxify.enumerated.Permission.COMPANIES_VIEW;
@@ -17,6 +18,7 @@ import static br.com.cshub.taxify.enumerated.Permission.INVOICES_VIEW;
 import static br.com.cshub.taxify.enumerated.Permission.PLANS_VIEW;
 import static br.com.cshub.taxify.enumerated.Permission.SUBSCRIPTIONS_MANAGE;
 import static br.com.cshub.taxify.enumerated.Permission.SUBSCRIPTIONS_VIEW;
+import static br.com.cshub.taxify.enumerated.Permission.TAX_ASSESSMENT_CLOSE;
 import static br.com.cshub.taxify.enumerated.Permission.TAX_ASSESSMENT_VIEW;
 
 /**
@@ -28,13 +30,13 @@ public enum AccessProfile {
 
     /** Notas, SIEG, auditoria, retificação e regras fiscais. */
     FISCAL(EnumSet.of(COMPANIES_VIEW, INVOICES_VIEW, INVOICES_SYNC, INVOICES_RECTIFY, INVOICES_AUDIT,
-            FISCAL_RULES_VIEW, FISCAL_RULES_MANAGE, TAX_ASSESSMENT_VIEW)),
+            FISCAL_RULES_VIEW, FISCAL_RULES_MANAGE, TAX_ASSESSMENT_VIEW, TAX_ASSESSMENT_CLOSE)),
 
     /** Contábil: consulta notas e regras fiscais das empresas. */
     ACCOUNTING(EnumSet.of(COMPANIES_VIEW, INVOICES_VIEW, FISCAL_RULES_VIEW, TAX_ASSESSMENT_VIEW)),
 
     /** Planos, assinaturas, contratos, honorários e cobranças. */
-    FINANCIAL(EnumSet.of(COMPANIES_VIEW, PLANS_VIEW, SUBSCRIPTIONS_VIEW, SUBSCRIPTIONS_MANAGE, BILLING_VIEW, BILLING_SYNC)),
+    FINANCIAL(EnumSet.of(COMPANIES_VIEW, PLANS_VIEW, SUBSCRIPTIONS_VIEW, SUBSCRIPTIONS_MANAGE, BILLING_VIEW, BILLING_SYNC, BILLING_MANAGE)),
 
     /** Departamento pessoal - por enquanto só a carteira de empresas; ganha permissões com os módulos de DP. */
     PAYROLL(EnumSet.of(COMPANIES_VIEW)),

@@ -1,5 +1,7 @@
 package br.com.cshub.taxify.validation;
 
+import br.com.cshub.taxify.common.CurrentUserService;
+import br.com.cshub.taxify.common.TenantAccessService;
 import br.com.cshub.taxify.common.AbstractCrudValidation;
 import br.com.cshub.taxify.common.MessageService;
 import br.com.cshub.taxify.domain.plan.Plan;
@@ -16,18 +18,32 @@ import java.util.UUID;
 public class PlanValidation extends AbstractCrudValidation<Plan, UUID> {
 
     private final PlanMapper mapper;
+    private final TenantAccessService tenantAccessService;
+    private final CurrentUserService currentUserService;
 
     @Autowired
-    public PlanValidation(PlanMapper mapper, PlanRepository repository, MessageService messageService) {
+    public PlanValidation(PlanMapper mapper, PlanRepository repository, MessageService messageService,
+                          TenantAccessService tenantAccessService, CurrentUserService currentUserService) {
         super(repository, messageService);
         setMessageNotFound("error.plan.not.found");
         this.mapper = mapper;
+        this.tenantAccessService = tenantAccessService;
+        this.currentUserService = currentUserService;
+    }
+
+    /** Another firm's plan answers as not found - also when a subscription points to it. */
+    @Override
+    public Plan checkExist(UUID id) {
+        Plan plan = super.checkExist(id);
+        tenantAccessService.assertSameFirm(plan.getAccountingFirm() == null ? null : plan.getAccountingFirm().getId());
+        return plan;
     }
 
     @Override
     protected void checkOwnerFieldsToCreate(Plan entity) {
         entity.setId(null);
         entity.setDeleted(false);
+        currentUserService.getCurrentUser().ifPresent(user -> entity.setAccountingFirm(user.getAccountingFirm()));
     }
 
     @Override

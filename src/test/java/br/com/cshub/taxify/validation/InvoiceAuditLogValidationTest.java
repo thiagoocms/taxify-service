@@ -43,7 +43,8 @@ class InvoiceAuditLogValidationTest {
 
     @BeforeEach
     void setUp() {
-        validation = new InvoiceAuditLogValidation(mapper, repository, messageService, userValidation, companyValidation, tenantAccessService);
+        validation = new InvoiceAuditLogValidation(mapper, repository, messageService, userValidation, companyValidation, tenantAccessService,
+                org.mockito.Mockito.mock(br.com.cshub.taxify.common.CurrentUserService.class));
     }
 
     @Test

@@ -1,5 +1,6 @@
 package br.com.cshub.taxify.validation;
 
+import br.com.cshub.taxify.common.CurrentUserService;
 import br.com.cshub.taxify.common.AbstractCrudValidation;
 import br.com.cshub.taxify.common.MessageService;
 import br.com.cshub.taxify.common.TenantAccessService;
@@ -20,10 +21,12 @@ public class InvoiceAuditLogValidation extends AbstractCrudValidation<InvoiceAud
     private final UserValidation userValidation;
     private final CompanyValidation companyValidation;
     private final TenantAccessService tenantAccessService;
+    private final CurrentUserService currentUserService;
 
     @Autowired
-    public InvoiceAuditLogValidation(InvoiceAuditLogMapper mapper, InvoiceAuditLogRepository repository, MessageService messageService, UserValidation userValidation, CompanyValidation companyValidation, TenantAccessService tenantAccessService) {
+    public InvoiceAuditLogValidation(InvoiceAuditLogMapper mapper, InvoiceAuditLogRepository repository, MessageService messageService, UserValidation userValidation, CompanyValidation companyValidation, TenantAccessService tenantAccessService, CurrentUserService currentUserService) {
         super(repository, messageService);
+        this.currentUserService = currentUserService;
         this.userValidation = userValidation;
         this.companyValidation = companyValidation;
         this.tenantAccessService = tenantAccessService;
@@ -40,7 +43,10 @@ public class InvoiceAuditLogValidation extends AbstractCrudValidation<InvoiceAud
 
     @Override
     protected void checkOwnerFieldsToCreate(InvoiceAuditLog entity) {
+        entity.setId(null);
         entity.setDeleted(false);
+        // the author is whoever is logged in - never what the request says
+        entity.setUser(currentUserService.getCurrentUser().orElse(null));
     }
 
     @Override
@@ -62,7 +68,6 @@ public class InvoiceAuditLogValidation extends AbstractCrudValidation<InvoiceAud
 
     @Override
     public InvoiceAuditLog checkRelations(InvoiceAuditLog toPersistEntity) {
-        checkUser(toPersistEntity);
         checkCompany(toPersistEntity);
         return toPersistEntity;
     }

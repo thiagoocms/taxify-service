@@ -21,8 +21,9 @@ public class Document extends AbstractAuditingEntity {
     @Column(name = "number", length = 50, nullable = false)
     private String number;
 
-    @Enumerated(EnumType.ORDINAL)
-    @Column(name = "type", nullable = false)
+    @Enumerated(EnumType.STRING)
+    @JdbcTypeCode(SqlTypes.VARCHAR)
+    @Column(name = "type", length = 10, nullable = false)
     private DocumentTypeEnum type;
 
     public Document() {

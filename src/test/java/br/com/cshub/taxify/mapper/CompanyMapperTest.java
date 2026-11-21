@@ -17,7 +17,7 @@ class CompanyMapperTest {
     @Test
     void toEntityParsesIdAndBuildsDocumentFromRawFields() {
         UUID id = UUID.randomUUID();
-        CompanyDTO dto = new CompanyDTO(id.toString(), "12345678000199", "CNPJ", "Acme", null, null, null, null, null, null, null, null, null, null, null, null, null, true);
+        CompanyDTO dto = new CompanyDTO(id.toString(), "12345678000199", "CNPJ", "Acme", null, null, null, null, null, null, null, null, null, null, null, null, null, null, null, null, null, null, null, null, null, null, null, null, null, null, true);
 
         Company entity = mapper.toEntity(dto);
 
@@ -30,7 +30,7 @@ class CompanyMapperTest {
 
     @Test
     void toEntityLeavesIdNullWhenDtoIdIsNull() {
-        CompanyDTO dto = new CompanyDTO(null, "12345678000199", "CNPJ", "Acme", null, null, null, null, null, null, null, null, null, null, null, null, null, null);
+        CompanyDTO dto = new CompanyDTO(null, "12345678000199", "CNPJ", "Acme", null, null, null, null, null, null, null, null, null, null, null, null, null, null, null, null, null, null, null, null, null, null, null, null, null, null, null);
 
         Company entity = mapper.toEntity(dto);
 

@@ -1,6 +1,5 @@
 package br.com.cshub.taxify.service;
 
-import br.com.cshub.taxify.common.CurrentUserService;
 import br.com.cshub.taxify.common.MessageService;
 import br.com.cshub.taxify.common.TenantAccessService;
 import br.com.cshub.taxify.domain.fiscalrule.ProductFiscalRule;
@@ -74,19 +73,20 @@ public class FiscalXmlRectificationService {
     private final FiscalXmlDocumentRepository documentRepository;
     private final ProductFiscalRuleRepository ruleRepository;
     private final InvoiceAuditLogRepository auditLogRepository;
+    private final InvoiceAuditTrail auditTrail;
     private final FiscalXmlFileStorage fileStorage;
-    private final CurrentUserService currentUserService;
     private final MessageService messageService;
     private final TenantAccessService tenantAccessService;
 
     public FiscalXmlRectificationService(FiscalXmlDocumentRepository documentRepository, ProductFiscalRuleRepository ruleRepository,
                                           InvoiceAuditLogRepository auditLogRepository, FiscalXmlFileStorage fileStorage,
-                                          CurrentUserService currentUserService, MessageService messageService, TenantAccessService tenantAccessService) {
+                                          MessageService messageService, TenantAccessService tenantAccessService,
+                                          InvoiceAuditTrail auditTrail) {
+        this.auditTrail = auditTrail;
         this.documentRepository = documentRepository;
         this.ruleRepository = ruleRepository;
         this.auditLogRepository = auditLogRepository;
         this.fileStorage = fileStorage;
-        this.currentUserService = currentUserService;
         this.messageService = messageService;
         this.tenantAccessService = tenantAccessService;
     }
@@ -143,14 +143,7 @@ public class FiscalXmlRectificationService {
     }
 
     private void logRectification(FiscalXmlDocument document, String externalInvoiceKey, String notes) {
-        InvoiceAuditLog log = new InvoiceAuditLog();
-        log.setExternalInvoiceKey(externalInvoiceKey);
-        log.setCompany(document.getCompany());
-        log.setStatus(InvoiceAuditStatus.RECTIFIED);
-        log.setNotes(notes);
-        log.setDeleted(false);
-        currentUserService.getCurrentUser().ifPresent(log::setUser);
-        auditLogRepository.save(log);
+        auditTrail.record(document.getCompany(), externalInvoiceKey, InvoiceAuditStatus.RECTIFIED, notes);
     }
 
     private String buildNotes(List<String> corrections) {

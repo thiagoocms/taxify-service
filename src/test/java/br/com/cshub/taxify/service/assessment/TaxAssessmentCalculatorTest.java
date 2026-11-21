@@ -1,5 +1,6 @@
 package br.com.cshub.taxify.service.assessment;
 
+import br.com.cshub.taxify.service.CompanyTaxRegimeService;
 import br.com.cshub.taxify.domain.company.Company;
 import br.com.cshub.taxify.dto.assessment.AssessmentAlertDTO;
 import br.com.cshub.taxify.dto.assessment.TaxAssessmentDTO;
@@ -48,7 +49,9 @@ class TaxAssessmentCalculatorTest {
     }
 
     private static TaxAssessmentDTO assess(Company company, Map<YearMonth, MonthRevenue> revenue, long invoices, YearMonth firstSale) {
-        return TaxAssessmentCalculator.assess(new TaxAssessmentCalculator.Input(company, OCT, revenue, invoices, firstSale, true));
+        return TaxAssessmentCalculator.assess(new TaxAssessmentCalculator.Input(company, OCT,
+                new CompanyTaxRegimeService.RegimeAt(company.getTaxRegimeType(), company.getBusinessActivity(), company.getSimplesServiceAnnex(), null),
+                revenue, invoices, firstSale, true));
     }
 
     private static TaxEstimateDTO tax(TaxAssessmentDTO result, String code) {

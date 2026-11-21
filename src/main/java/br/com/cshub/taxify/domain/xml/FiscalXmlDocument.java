@@ -1,5 +1,6 @@
 package br.com.cshub.taxify.domain.xml;
 
+import br.com.cshub.taxify.enumerated.ReviewStatus;
 import br.com.cshub.taxify.enumerated.FiscalDocumentStatus;
 import br.com.cshub.taxify.enumerated.FiscalDirection;
 import br.com.cshub.taxify.domain.AbstractAuditingEntity;
@@ -18,10 +19,14 @@ import java.util.UUID;
 /*
  * Unique per company, not globally: a note between two clients of the same firm is the
  * issuer's exit AND the recipient's entry - each company keeps its own row (see
- * FiscalXmlDocumentKeyMigration for the move away from the old access_key-only constraint).
+ * Flyway V16__FiscalXmlDocuments for the move away from the old access_key-only constraint).
  */
 @Table(name = "fiscal_xml_documents",
-        uniqueConstraints = @UniqueConstraint(name = "uk_fiscal_xml_document_company_key", columnNames = {"company_id", "access_key"}))
+        uniqueConstraints = @UniqueConstraint(name = "uk_fiscal_xml_document_company_key", columnNames = {"company_id", "access_key"}),
+        indexes = {
+                @Index(name = "idx_fxd_company_issue", columnList = "company_id, issue_date"),
+                @Index(name = "idx_fxd_company_direction_issue", columnList = "company_id, direction, issue_date")
+        })
 public class FiscalXmlDocument extends AbstractAuditingEntity {
 
     @Id
@@ -66,6 +71,7 @@ public class FiscalXmlDocument extends AbstractAuditingEntity {
      * for rows older than this column until FiscalDirectionBackfill fills them on startup.
      */
     @Enumerated(EnumType.STRING)
+    @JdbcTypeCode(SqlTypes.VARCHAR)
     @Column(name = "direction", length = 10)
     private FiscalDirection direction;
 
@@ -75,11 +81,28 @@ public class FiscalXmlDocument extends AbstractAuditingEntity {
 
     /** AUTHORIZED unless a registered cancellation event arrived (null = AUTHORIZED, rows from before events). */
     @Enumerated(EnumType.STRING)
+    @JdbcTypeCode(SqlTypes.VARCHAR)
     @Column(name = "status", length = 12)
     private FiscalDocumentStatus status;
 
     @Column(name = "canceled_at")
     private LocalDateTime canceledAt;
+
+    /** Conferência by the fiscal team; null = PENDING (see {@link #getReviewStatus()}). */
+    @Enumerated(EnumType.STRING)
+    @JdbcTypeCode(SqlTypes.VARCHAR)
+    @Column(name = "review_status", length = 12)
+    private ReviewStatus reviewStatus;
+
+    @Column(name = "reviewed_at")
+    private LocalDateTime reviewedAt;
+
+    /** Login of who reviewed. */
+    @Column(name = "reviewed_by", length = 50)
+    private String reviewedBy;
+
+    @Column(name = "review_note", length = 500)
+    private String reviewNote;
 
     // ide
     @Column(name = "ide_codigo_uf", length = 5)
@@ -856,5 +879,30 @@ public class FiscalXmlDocument extends AbstractAuditingEntity {
 
     public void setCanceledAt(LocalDateTime canceledAt) {
         this.canceledAt = canceledAt;
+    }
+
+    public ReviewStatus getReviewStatus() {
+        return reviewStatus == null ? ReviewStatus.PENDING : reviewStatus;
+    }
+
+    public LocalDateTime getReviewedAt() {
+        return reviewedAt;
+    }
+
+    public String getReviewedBy() {
+        return reviewedBy;
+    }
+
+    public String getReviewNote() {
+        return reviewNote;
+    }
+
+    /** Records the conferência; back to PENDING clears who/when. */
+    public void review(ReviewStatus status, String by, String note, LocalDateTime at) {
+        this.reviewStatus = status;
+        boolean pending = status == ReviewStatus.PENDING;
+        this.reviewedAt = pending ? null : at;
+        this.reviewedBy = pending ? null : by;
+        this.reviewNote = note == null || note.isBlank() ? null : (note.length() > 500 ? note.substring(0, 500) : note.strip());
     }
 }

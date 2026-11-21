@@ -12,10 +12,10 @@ import java.util.UUID;
 @Repository
 public interface DocumentRepository extends AbstractJpaRepository<Document, UUID> {
 
-    @NativeQuery(value = "SELECT COUNT(*) FROM documents WHERE number = :number AND type = :typeOrdinal")
-    Long countByNumberAndTypeNative(@Param("number") String number, @Param("typeOrdinal") int typeOrdinal);
+    @NativeQuery(value = "SELECT COUNT(*) FROM documents WHERE number = :number AND type = :type")
+    Long countByNumberAndTypeNative(@Param("number") String number, @Param("type") String type);
 
     default boolean existsByNumberAndTypeNative(String number, DocumentTypeEnum type) {
-        return countByNumberAndTypeNative(number, type.ordinal()) > 0;
+        return countByNumberAndTypeNative(number, type.name()) > 0;
     }
 }

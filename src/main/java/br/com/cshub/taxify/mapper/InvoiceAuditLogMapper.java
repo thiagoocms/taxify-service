@@ -34,7 +34,9 @@ public class InvoiceAuditLogMapper extends AbstractMapper<InvoiceAuditLog, Invoi
                 source.getCompany().getId().toString(),
                 source.getStatus().toString(),
                 source.getNotes(),
-                source.isDeleted()
+                source.isDeleted(),
+                source.getCreatedDate(),
+                source.getUser() != null ? source.getUser().getLogin() : null
         );
     }
 

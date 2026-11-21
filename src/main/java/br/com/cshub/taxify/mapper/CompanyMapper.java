@@ -1,5 +1,6 @@
 package br.com.cshub.taxify.mapper;
 
+import br.com.cshub.taxify.domain.company.StateRegistration;
 import br.com.cshub.taxify.common.TaxRegimes;
 import br.com.cshub.taxify.common.AbstractMapper;
 import br.com.cshub.taxify.domain.company.Company;
@@ -26,7 +27,25 @@ public class CompanyMapper extends AbstractMapper<Company, CompanyDTO> {
         entity.setPhone(source.phone());
         entity.setUf(source.uf());
         applyTaxRegime(entity, source);
-        entity.setStateRegistration(source.stateRegistration());
+        // normalized to "IE/UF; IE/UF" when it reads as such; anything else (an IE without UF) is kept as typed
+        var registrations = StateRegistration.parse(source.stateRegistration());
+        if (registrations.isEmpty()) {
+            entity.setStateRegistration(blankToNull(source.stateRegistration()));
+        } else {
+            entity.replaceStateRegistrations(registrations);
+        }
+        entity.setOpeningDate(source.openingDate());
+        entity.setEmail(blankToNull(source.email()));
+        entity.setMunicipalRegistration(blankToNull(source.municipalRegistration()));
+        entity.setMainCnae(digits(source.mainCnae()));
+        entity.setSecondaryCnaes(cnaeList(source.secondaryCnaes()));
+        entity.setAddressStreet(blankToNull(source.addressStreet()));
+        entity.setAddressNumber(blankToNull(source.addressNumber()));
+        entity.setAddressComplement(blankToNull(source.addressComplement()));
+        entity.setAddressDistrict(blankToNull(source.addressDistrict()));
+        entity.setAddressCityCode(digits(source.addressCityCode()));
+        entity.setAddressCity(blankToNull(source.addressCity()));
+        entity.setAddressZipCode(digits(source.addressZipCode()));
         entity.setCompanyGroup(source.companyGroup());
         entity.setActive(source.active());
         entity.setClientSince(source.clientSince());
@@ -34,6 +53,11 @@ public class CompanyMapper extends AbstractMapper<Company, CompanyDTO> {
         entity.setDocument(documentMapper.toEntity(source.documentType(), source.documentNumber()));
         entity.setDeleted(Boolean.TRUE.equals(source.deleted()));
         return entity;
+    }
+
+    /** Public entry point for services outside the CRUD base. */
+    public CompanyDTO toDto(Company source) {
+        return toModel(source);
     }
 
     @Override
@@ -51,6 +75,19 @@ public class CompanyMapper extends AbstractMapper<Company, CompanyDTO> {
                 source.getBusinessActivity(),
                 source.getSimplesServiceAnnex(),
                 source.getStateRegistration(),
+                source.getOpeningDate(),
+                source.getEmail(),
+                source.getMunicipalRegistration(),
+                source.getMainCnae(),
+                source.getSecondaryCnaes(),
+                source.getAddressStreet(),
+                source.getAddressNumber(),
+                source.getAddressComplement(),
+                source.getAddressDistrict(),
+                source.getAddressCityCode(),
+                source.getAddressCity(),
+                source.getAddressZipCode(),
+                null,
                 source.getCompanyGroup(),
                 source.getActive(),
                 source.getClientSince(),
@@ -71,6 +108,18 @@ public class CompanyMapper extends AbstractMapper<Company, CompanyDTO> {
         target.setBusinessActivity(source.getBusinessActivity());
         target.setSimplesServiceAnnex(source.getSimplesServiceAnnex());
         target.setStateRegistration(source.getStateRegistration());
+        target.setOpeningDate(source.getOpeningDate());
+        target.setEmail(source.getEmail());
+        target.setMunicipalRegistration(source.getMunicipalRegistration());
+        target.setMainCnae(source.getMainCnae());
+        target.setSecondaryCnaes(source.getSecondaryCnaes());
+        target.setAddressStreet(source.getAddressStreet());
+        target.setAddressNumber(source.getAddressNumber());
+        target.setAddressComplement(source.getAddressComplement());
+        target.setAddressDistrict(source.getAddressDistrict());
+        target.setAddressCityCode(source.getAddressCityCode());
+        target.setAddressCity(source.getAddressCity());
+        target.setAddressZipCode(source.getAddressZipCode());
         target.setCompanyGroup(source.getCompanyGroup());
         target.setActive(source.getActive());
         target.setClientSince(source.getClientSince());
@@ -95,6 +144,24 @@ public class CompanyMapper extends AbstractMapper<Company, CompanyDTO> {
                 && label.activity() == source.businessActivity();
         entity.setTaxRegime(labelAgrees ? source.taxRegime().strip()
                 : TaxRegimes.label(source.taxRegimeType(), source.businessActivity()));
+    }
+
+    private static String digits(String value) {
+        String digits = value == null ? "" : value.replaceAll("\\D", "");
+        return digits.isEmpty() ? null : digits;
+    }
+
+    /** "4781-4/00, 4782-2/01" → "4781400,4782201". */
+    private static String cnaeList(String value) {
+        if (value == null || value.isBlank()) {
+            return null;
+        }
+        String joined = java.util.Arrays.stream(value.split("[,;\\s]+"))
+                .map(CompanyMapper::digits)
+                .filter(java.util.Objects::nonNull)
+                .distinct()
+                .collect(java.util.stream.Collectors.joining(","));
+        return joined.isEmpty() ? null : joined;
     }
 
     private static String blankToNull(String value) {

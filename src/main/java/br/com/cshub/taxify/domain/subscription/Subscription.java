@@ -18,7 +18,10 @@ import java.time.LocalDate;
 import java.util.UUID;
 
 @Entity
-@Table(name = "subscriptions")
+@Table(name = "subscriptions", indexes = {
+        @Index(name = "idx_subscription_company_status", columnList = "company_id, status"),
+        @Index(name = "idx_subscription_external", columnList = "source, external_contract_id")
+})
 public class Subscription extends AbstractAuditingEntity {
 
     @Id
@@ -46,6 +49,7 @@ public class Subscription extends AbstractAuditingEntity {
     private BigDecimal fee;
 
     @Enumerated(EnumType.STRING)
+    @JdbcTypeCode(SqlTypes.VARCHAR)
     @Column(name = "billing_cycle", length = 20)
     private BillingCycle billingCycle;
 
@@ -54,11 +58,13 @@ public class Subscription extends AbstractAuditingEntity {
     private Integer billingDay;
 
     @Enumerated(EnumType.STRING)
+    @JdbcTypeCode(SqlTypes.VARCHAR)
     @Column(name = "status", length = 20)
     private SubscriptionStatus status;
 
     /** MANUAL (typed in Taxify) or the provider the contract below lives in. Null = MANUAL. */
     @Enumerated(EnumType.STRING)
+    @JdbcTypeCode(SqlTypes.VARCHAR)
     @Column(name = "source", length = 30)
     private BillingProviderType source;
 

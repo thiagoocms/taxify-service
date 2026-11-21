@@ -8,6 +8,7 @@ import br.com.cshub.taxify.dto.assessment.TaxAssessmentDTO;
 import br.com.cshub.taxify.dto.assessment.TaxEstimateDTO;
 import br.com.cshub.taxify.enumerated.SimplesAnnex;
 import br.com.cshub.taxify.enumerated.TaxRegime;
+import br.com.cshub.taxify.service.CompanyTaxRegimeService;
 
 import java.math.BigDecimal;
 import java.math.RoundingMode;
@@ -75,9 +76,14 @@ public final class TaxAssessmentCalculator {
         }
     }
 
-    /** What the calculator gets for one company and period. */
-    public record Input(Company company, YearMonth month, Map<YearMonth, MonthRevenue> revenueByMonth,
-                        long invoicesIssued, YearMonth firstSaleMonth, boolean withHistory) {
+    /**
+     * What the calculator gets for one company and period. {@code regime} is the one in
+     * force in the month (regime history); {@code activityStart} is the opening date when
+     * known, else the month of the first sale note.
+     */
+    public record Input(Company company, YearMonth month, CompanyTaxRegimeService.RegimeAt regime,
+                        Map<YearMonth, MonthRevenue> revenueByMonth, long invoicesIssued, YearMonth activityStart,
+                        boolean withHistory) {
     }
 
     private TaxAssessmentCalculator() {
@@ -87,7 +93,8 @@ public final class TaxAssessmentCalculator {
         Company company = input.company();
         YearMonth month = input.month();
         MonthRevenue current = revenueOf(input, month);
-        TaxRegime regime = company.getTaxRegimeType();
+        CompanyTaxRegimeService.RegimeAt regimeAt = input.regime();
+        TaxRegime regime = regimeAt == null ? null : regimeAt.regime();
 
         Rbt12 rbt12 = rbt12(input);
         BigDecimal yearToDate = BigDecimal.ZERO;
@@ -102,7 +109,7 @@ public final class TaxAssessmentCalculator {
                     "Regime tributário não informado no cadastro da empresa - sem estimativa de impostos."));
         } else {
             switch (regime) {
-                case SIMPLES_NACIONAL -> simples(company, current, rbt12, taxes, alerts);
+                case SIMPLES_NACIONAL -> simples(regimeAt.serviceAnnex(), current, rbt12, taxes, alerts);
                 case MEI -> mei(yearToDate, taxes, alerts);
                 case LUCRO_PRESUMIDO -> presumido(current, taxes);
                 case LUCRO_REAL -> real(current, taxes);
@@ -135,9 +142,9 @@ public final class TaxAssessmentCalculator {
                 company.getDocument() == null ? null : company.getDocument().getNumber(),
                 month.toString(),
                 regime,
-                company.getTaxRegime(),
-                company.getBusinessActivity(),
-                company.getSimplesServiceAnnex(),
+                regimeAt == null ? null : regimeAt.label(),
+                regimeAt == null ? null : regimeAt.activity(),
+                regimeAt == null ? null : regimeAt.serviceAnnex(),
                 toDto(month, current),
                 input.invoicesIssued(),
                 rbt12.value(),
@@ -146,7 +153,8 @@ public final class TaxAssessmentCalculator {
                 taxes,
                 money(totalTaxes),
                 alerts,
-                history
+                history,
+                null
         );
     }
 
@@ -157,13 +165,13 @@ public final class TaxAssessmentCalculator {
 
     /**
      * Revenue of the 12 months before the period. In the first months of activity (LC 123,
-     * art. 18 §2) it is the monthly average of the months so far × 12 - here, months since
-     * the first sale note; the very first month uses its own revenue × 12.
+     * art. 18 §2) it is the monthly average of the months so far × 12 - months since the
+     * opening date (or the first sale note); the very first month uses its own revenue × 12.
      */
     static Rbt12 rbt12(Input input) {
         YearMonth month = input.month();
         YearMonth windowStart = month.minusMonths(12);
-        YearMonth first = input.firstSaleMonth();
+        YearMonth first = input.activityStart();
         if (first == null || !first.isAfter(windowStart)) {
             BigDecimal sum = BigDecimal.ZERO;
             for (YearMonth m = windowStart; m.isBefore(month); m = m.plusMonths(1)) {
@@ -185,11 +193,11 @@ public final class TaxAssessmentCalculator {
 
     // ------------------------------------------------------------------ regimes
 
-    private static void simples(Company company, MonthRevenue current, Rbt12 rbt12, List<TaxEstimateDTO> taxes,
+    private static void simples(SimplesAnnex configuredServiceAnnex, MonthRevenue current, Rbt12 rbt12, List<TaxEstimateDTO> taxes,
                                 List<AssessmentAlertDTO> alerts) {
         BigDecimal base = rbt12.value().max(BigDecimal.ZERO);
         BigDecimal[] goods = current.goodsAfterReturns();
-        SimplesAnnex serviceAnnex = company.getSimplesServiceAnnex() == null ? SimplesAnnex.III : company.getSimplesServiceAnnex();
+        SimplesAnnex serviceAnnex = configuredServiceAnnex == null ? SimplesAnnex.III : configuredServiceAnnex;
         int bracket = SimplesAnnex.bracketOf(base);
         addSimples(taxes, SimplesAnnex.I, goods[0], base, bracket, "Revenda de mercadorias");
         addSimples(taxes, SimplesAnnex.II, goods[1], base, bracket, "Venda de produção própria");

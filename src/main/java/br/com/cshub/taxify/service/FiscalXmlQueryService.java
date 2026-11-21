@@ -137,7 +137,8 @@ public class FiscalXmlQueryService {
         String numero = filter.numero() == null ? "" : filter.numero().replaceAll("\\D", "").replaceFirst("^0+(?=\\d)", "");
 
         Page<FiscalXmlDocument> documents = documentRepository.search(company.getId(), from, to,
-                numero.isEmpty() ? null : numero, filter.direction(), participantPattern(filter.participant()), pageable);
+                numero.isEmpty() ? null : numero, filter.direction(), participantPattern(filter.participant()),
+                filter.reviewStatus(), pageable);
 
         Map<UUID, Long> itemCounts = new HashMap<>();
         if (documents.hasContent()) {
@@ -186,7 +187,11 @@ public class FiscalXmlQueryService {
                 document.getDirection(),
                 document.isOwnIssue(),
                 document.getStatus(),
-                document.getCanceledAt()
+                document.getCanceledAt(),
+                document.getReviewStatus(),
+                document.getReviewedAt(),
+                document.getReviewedBy(),
+                document.getReviewNote()
         );
     }
 
@@ -260,7 +265,8 @@ public class FiscalXmlQueryService {
         return new FiscalXmlDetailDTO(d.getId(), d.getCompany().getId(), d.getAccessKey(), d.getDocumentType(),
                 d.getIssuerCnpj(), d.getRecipientCnpj(), d.getIssueDate(), d.getRectifiedFilePath() != null,
                 itemRepository.countByDocument_Id(d.getId()), identificacao, emitente, destinatario, totais,
-                d.getDirection(), d.isOwnIssue(), d.getStatus(), d.getCanceledAt());
+                d.getDirection(), d.isOwnIssue(), d.getStatus(), d.getCanceledAt(),
+                d.getReviewStatus(), d.getReviewedAt(), d.getReviewedBy(), d.getReviewNote());
     }
 
     private FiscalXmlSummaryDTO toSummary(FiscalXmlDocument document, long quantidadeItens) {
@@ -285,7 +291,8 @@ public class FiscalXmlQueryService {
                 document.getRectifiedFilePath() != null,
                 document.getDirection(),
                 document.isOwnIssue(),
-                document.getStatus()
+                document.getStatus(),
+                document.getReviewStatus()
         );
     }
 

@@ -1,5 +1,6 @@
 package br.com.cshub.taxify.service;
 
+import br.com.cshub.taxify.enumerated.InvoiceAuditStatus;
 import br.com.cshub.taxify.domain.company.Company;
 import br.com.cshub.taxify.domain.xml.FiscalXmlDocument;
 import br.com.cshub.taxify.domain.xml.FiscalXmlEvent;
@@ -26,8 +27,11 @@ public class FiscalXmlEventService {
 
     private final FiscalXmlEventRepository eventRepository;
     private final FiscalXmlDocumentRepository documentRepository;
+    private final InvoiceAuditTrail auditTrail;
 
-    public FiscalXmlEventService(FiscalXmlEventRepository eventRepository, FiscalXmlDocumentRepository documentRepository) {
+    public FiscalXmlEventService(FiscalXmlEventRepository eventRepository, FiscalXmlDocumentRepository documentRepository,
+                                 InvoiceAuditTrail auditTrail) {
+        this.auditTrail = auditTrail;
         this.eventRepository = eventRepository;
         this.documentRepository = documentRepository;
     }
@@ -89,6 +93,8 @@ public class FiscalXmlEventService {
             document.setStatus(FiscalDocumentStatus.CANCELED);
             document.setCanceledAt(event.getEventAt());
             documentRepository.save(document);
+            auditTrail.record(document.getCompany(), event.getAccessKey(), InvoiceAuditStatus.CANCELED,
+                    "Cancelada na SEFAZ" + (event.getText() == null ? "" : ": " + event.getText()));
         }
     }
 

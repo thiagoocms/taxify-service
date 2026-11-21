@@ -20,7 +20,7 @@ class InvoiceAuditLogMapperTest {
     void toEntityBuildsReferenceOnlyUserAndCompanyAndParsesStatus() {
         UUID userId = UUID.randomUUID();
         UUID companyId = UUID.randomUUID();
-        InvoiceAuditLogDTO dto = new InvoiceAuditLogDTO(UUID.randomUUID().toString(), "NFE-1", userId.toString(), companyId.toString(), "OK", "all good", true);
+        InvoiceAuditLogDTO dto = new InvoiceAuditLogDTO(UUID.randomUUID().toString(), "NFE-1", userId.toString(), companyId.toString(), "OK", "all good", true, null, null);
 
         InvoiceAuditLog entity = mapper.toEntity(dto);
 
@@ -38,7 +38,7 @@ class InvoiceAuditLogMapperTest {
     // null id here and would fail its id-consistency check.
     @Test
     void toEntityCurrentlyDoesNotPropagateTheDtoId() {
-        InvoiceAuditLogDTO dto = new InvoiceAuditLogDTO(UUID.randomUUID().toString(), "NFE-1", UUID.randomUUID().toString(), UUID.randomUUID().toString(), "OK", "notes", false);
+        InvoiceAuditLogDTO dto = new InvoiceAuditLogDTO(UUID.randomUUID().toString(), "NFE-1", UUID.randomUUID().toString(), UUID.randomUUID().toString(), "OK", "notes", false, null, null);
 
         InvoiceAuditLog entity = mapper.toEntity(dto);
 
@@ -47,7 +47,7 @@ class InvoiceAuditLogMapperTest {
 
     @Test
     void toEntityRejectsAnUnknownStatus() {
-        InvoiceAuditLogDTO dto = new InvoiceAuditLogDTO(null, "NFE-1", UUID.randomUUID().toString(), UUID.randomUUID().toString(), "NOT_A_STATUS", "notes", false);
+        InvoiceAuditLogDTO dto = new InvoiceAuditLogDTO(null, "NFE-1", UUID.randomUUID().toString(), UUID.randomUUID().toString(), "NOT_A_STATUS", "notes", false, null, null);
 
         assertThatThrownBy(() -> mapper.toEntity(dto)).isInstanceOf(IllegalArgumentException.class);
     }

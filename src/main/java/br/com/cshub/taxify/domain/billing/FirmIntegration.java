@@ -56,6 +56,7 @@ public class FirmIntegration extends AbstractAuditingEntity {
     private AccountingFirm accountingFirm;
 
     @Enumerated(EnumType.STRING)
+    @JdbcTypeCode(SqlTypes.VARCHAR)
     @Column(name = "type", length = 30, nullable = false)
     private IntegrationType type;
 
@@ -94,6 +95,7 @@ public class FirmIntegration extends AbstractAuditingEntity {
     // started it, is visible to every instance, and doubles as the "already running" lock.
 
     @Enumerated(EnumType.STRING)
+    @JdbcTypeCode(SqlTypes.VARCHAR)
     @Column(name = "sync_status", length = 20)
     private SyncStatus syncStatus;
 

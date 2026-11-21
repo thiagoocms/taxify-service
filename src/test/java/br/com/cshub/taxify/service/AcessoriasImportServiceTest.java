@@ -59,7 +59,8 @@ class AcessoriasImportServiceTest {
     @BeforeEach
     void setUp() {
         service = new AcessoriasImportService(acessoriasClient, companyRepository, documentRepository, userRepository,
-                userCompanyRepository, currentFirmService, firmIntegrationService, jobRunner, messageService);
+                userCompanyRepository, currentFirmService, firmIntegrationService, jobRunner, messageService,
+                org.mockito.Mockito.mock(br.com.cshub.taxify.service.CompanyTaxRegimeService.class));
         firm = new AccountingFirm(UUID.randomUUID());
         lenient().when(firmIntegrationService.getApiKey(firm.getId(), IntegrationType.ACESSORIAS)).thenReturn("token");
         lenient().when(messageService.getMessage(anyString())).thenAnswer(invocation -> invocation.getArgument(0));

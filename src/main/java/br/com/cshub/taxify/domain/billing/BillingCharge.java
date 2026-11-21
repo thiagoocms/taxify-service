@@ -52,6 +52,7 @@ public class BillingCharge extends AbstractAuditingEntity {
     private Subscription subscription;
 
     @Enumerated(EnumType.STRING)
+    @JdbcTypeCode(SqlTypes.VARCHAR)
     @Column(name = "source", length = 30, nullable = false)
     private BillingProviderType source;
 
@@ -77,6 +78,7 @@ public class BillingCharge extends AbstractAuditingEntity {
     private BigDecimal openAmount;
 
     @Enumerated(EnumType.STRING)
+    @JdbcTypeCode(SqlTypes.VARCHAR)
     @Column(name = "status", length = 30, nullable = false)
     private ChargeStatus status;
 

@@ -31,6 +31,14 @@ public record TaxAssessmentDTO(
         BigDecimal totalTaxes,
         List<AssessmentAlertDTO> alerts,
         /** The 12 months before plus the period itself; empty on the firm-wide list. */
-        List<MonthRevenueDTO> history
+        List<MonthRevenueDTO> history,
+        /** Fechamento of the month; when CLOSED, every value above is the one frozen at closing. */
+        PeriodClosingDTO closing
 ) {
+
+    public TaxAssessmentDTO withClosing(PeriodClosingDTO closing, boolean keepHistory) {
+        return new TaxAssessmentDTO(companyId, companyName, companyDocument, month, taxRegime, taxRegimeLabel,
+                businessActivity, simplesServiceAnnex, revenue, invoicesIssued, rbt12, rbt12Proportional, yearToDate,
+                taxes, totalTaxes, alerts, keepHistory && history != null ? history : List.of(), closing);
+    }
 }

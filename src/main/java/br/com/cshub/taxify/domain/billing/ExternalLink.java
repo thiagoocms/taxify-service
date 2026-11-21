@@ -37,6 +37,7 @@ public class ExternalLink extends AbstractAuditingEntity {
     private Company company;
 
     @Enumerated(EnumType.STRING)
+    @JdbcTypeCode(SqlTypes.VARCHAR)
     @Column(name = "provider", length = 30, nullable = false)
     private BillingProviderType provider;
 

@@ -1,5 +1,6 @@
 package br.com.cshub.taxify.repository;
 
+import br.com.cshub.taxify.enumerated.ReviewStatus;
 import java.util.Collection;
 import java.util.Optional;
 import br.com.cshub.taxify.enumerated.FiscalDirection;
@@ -52,13 +53,16 @@ public interface FiscalXmlDocumentRepository extends AbstractJpaRepository<Fisca
             + " and (:participant is null"
             + "      or lower(d.emitenteNome) like :participant or lower(d.destinatarioNome) like :participant"
             + "      or d.issuerCnpj like :participant or d.recipientCnpj like :participant"
-            + "      or d.emitenteCpf like :participant or d.destinatarioCpf like :participant)")
+            + "      or d.emitenteCpf like :participant or d.destinatarioCpf like :participant)"
+            + " and (:reviewStatus is null"
+            + "      or coalesce(d.reviewStatus, br.com.cshub.taxify.enumerated.ReviewStatus.PENDING) = :reviewStatus)")
     Page<FiscalXmlDocument> search(@Param("companyId") UUID companyId,
                                    @Param("issueDateFrom") LocalDateTime issueDateFrom,
                                    @Param("issueDateTo") LocalDateTime issueDateTo,
                                    @Param("numero") String numero,
                                    @Param("direction") FiscalDirection direction,
                                    @Param("participant") String participant,
+                                   @Param("reviewStatus") ReviewStatus reviewStatus,
                                    Pageable pageable);
 
     /**
@@ -94,4 +98,19 @@ public interface FiscalXmlDocumentRepository extends AbstractJpaRepository<Fisca
             + " and d.direction = br.com.cshub.taxify.enumerated.FiscalDirection.OUTBOUND"
             + " and (d.status is null or d.status <> " + CANCELED + ") group by d.company.id")
     List<Object[]> firstOutboundByCompany(@Param("companyIds") Collection<UUID> companyIds);
+
+    /** The company's latest own-issued note - its issuer block completes the company registration. */
+    Optional<FiscalXmlDocument> findFirstByCompany_IdAndOwnIssueTrueAndDeletedIsFalseOrderByIssueDateDesc(UUID companyId);
+
+    /**
+     * Entries of the month still to be reviewed, per company - the closing checklist.
+     * Canceled notes don't need it. Row: company id, count.
+     */
+    @Query("select d.company.id, count(d) from FiscalXmlDocument d where d.company.id in :companyIds and d.deleted = false"
+            + " and d.direction = br.com.cshub.taxify.enumerated.FiscalDirection.INBOUND"
+            + " and (d.status is null or d.status <> " + CANCELED + ")"
+            + " and (d.reviewStatus is null or d.reviewStatus = br.com.cshub.taxify.enumerated.ReviewStatus.PENDING)"
+            + " and d.issueDate >= :from and d.issueDate < :to group by d.company.id")
+    List<Object[]> countPendingReviewByCompany(@Param("companyIds") Collection<UUID> companyIds,
+                                               @Param("from") LocalDateTime from, @Param("to") LocalDateTime to);
 }

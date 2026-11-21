@@ -1,5 +1,6 @@
 package br.com.cshub.taxify.domain.plan;
 
+import br.com.cshub.taxify.domain.accountingfirm.AccountingFirm;
 import java.math.BigDecimal;
 import br.com.cshub.taxify.enumerated.BillingCycle;
 import br.com.cshub.taxify.domain.AbstractAuditingEntity;
@@ -22,6 +23,11 @@ public class Plan extends AbstractAuditingEntity {
     @Column(name = "id", length = 36, updatable = false, nullable = false)
     private UUID id;
 
+    /** The firm that offers the plan - each firm has its own catalog (null only on legacy rows not yet assigned). */
+    @ManyToOne(fetch = FetchType.LAZY)
+    @JoinColumn(name = "accounting_firm_id")
+    private AccountingFirm accountingFirm;
+
     @Column(name = "name", length = 150, nullable = false)
     private String name;
 
@@ -30,8 +36,9 @@ public class Plan extends AbstractAuditingEntity {
 
     @ElementCollection(fetch = FetchType.EAGER)
     @CollectionTable(name = "plan_services", joinColumns = @JoinColumn(name = "plan_id"))
-    @Enumerated(EnumType.ORDINAL)
-    @Column(name = "service", nullable = false)
+    @Enumerated(EnumType.STRING)
+    @JdbcTypeCode(SqlTypes.VARCHAR)
+    @Column(name = "service", length = 40, nullable = false)
     private Set<PlanServiceEnum> services = new HashSet<>();
 
     /** Reference (list) price of the plan; each subscription's negotiated fee may differ. */
@@ -39,6 +46,7 @@ public class Plan extends AbstractAuditingEntity {
     private BigDecimal listPrice;
 
     @Enumerated(EnumType.STRING)
+    @JdbcTypeCode(SqlTypes.VARCHAR)
     @Column(name = "billing_cycle", length = 20)
     private BillingCycle billingCycle;
 
@@ -95,5 +103,13 @@ public class Plan extends AbstractAuditingEntity {
 
     public void setBillingCycle(BillingCycle billingCycle) {
         this.billingCycle = billingCycle;
+    }
+
+    public AccountingFirm getAccountingFirm() {
+        return accountingFirm;
+    }
+
+    public void setAccountingFirm(AccountingFirm accountingFirm) {
+        this.accountingFirm = accountingFirm;
     }
 }

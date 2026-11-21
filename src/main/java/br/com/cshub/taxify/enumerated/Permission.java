@@ -23,13 +23,17 @@ public enum Permission {
     FISCAL_RULES_MANAGE(Module.FISCAL),
     /** Apuração do período: faturamento, RBT12 e estimativa de impostos. */
     TAX_ASSESSMENT_VIEW(Module.FISCAL),
+    /** Fechar/reabrir o mês e registrar a guia. */
+    TAX_ASSESSMENT_CLOSE(Module.FISCAL),
 
     // ---- Financeiro
     PLANS_VIEW(Module.FINANCIAL),
     SUBSCRIPTIONS_VIEW(Module.FINANCIAL),
     SUBSCRIPTIONS_MANAGE(Module.FINANCIAL),
     BILLING_VIEW(Module.FINANCIAL),
-    BILLING_SYNC(Module.FINANCIAL);
+    BILLING_SYNC(Module.FINANCIAL),
+    /** Lançar/editar cobranças manuais e corrigir o vínculo da empresa com o provedor. */
+    BILLING_MANAGE(Module.FINANCIAL);
 
     public enum Module {
         REGISTRY,

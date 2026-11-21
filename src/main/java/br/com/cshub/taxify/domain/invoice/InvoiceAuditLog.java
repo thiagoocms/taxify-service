@@ -31,8 +31,9 @@ public class InvoiceAuditLog extends AbstractAuditingEntity {
     @JoinColumn(name = "company_id", nullable = false)
     private Company company;
 
-    @Enumerated(EnumType.ORDINAL)
-    @Column(name = "status", nullable = false)
+    @Enumerated(EnumType.STRING)
+    @JdbcTypeCode(SqlTypes.VARCHAR)
+    @Column(name = "status", length = 30, nullable = false)
     private InvoiceAuditStatus status;
 
     @Column(name = "notes", length = 500, nullable = false)
