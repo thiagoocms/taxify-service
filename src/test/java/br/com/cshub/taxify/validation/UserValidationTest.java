@@ -253,7 +253,7 @@ class UserValidationTest {
     void checkValidationsExtrasThrowsWhenLoginAlreadyUsedByAnotherUser() {
         User entity = new User(UUID.randomUUID());
         entity.setLogin("jane");
-        when(repository.countByLoginAndDeletedIsFalse(entity.getId(), "jane")).thenReturn(1L);
+        when(repository.existsByLoginAndDeletedIsFalseAndIdNot("jane", entity.getId())).thenReturn(true);
         when(messageService.getMessage("error.user.login.already.exists")).thenReturn("login already exists");
 
         assertThatThrownBy(() -> validation.checkValidationsExtras(entity))
@@ -265,7 +265,7 @@ class UserValidationTest {
     void checkValidationsExtrasPassesWhenLoginIsFree() {
         User entity = new User(UUID.randomUUID());
         entity.setLogin("jane");
-        when(repository.countByLoginAndDeletedIsFalse(entity.getId(), "jane")).thenReturn(0L);
+        
 
         validation.checkValidationsExtras(entity);
     }

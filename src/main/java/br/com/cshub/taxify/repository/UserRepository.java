@@ -3,8 +3,6 @@ package br.com.cshub.taxify.repository;
 import br.com.cshub.taxify.enumerated.UserProfileEnum;
 import br.com.cshub.taxify.common.AbstractJpaRepository;
 import br.com.cshub.taxify.domain.user.User;
-import org.springframework.data.jpa.repository.NativeQuery;
-import org.springframework.data.repository.query.Param;
 import org.springframework.stereotype.Repository;
 
 import java.util.List;
@@ -18,8 +16,11 @@ public interface UserRepository extends AbstractJpaRepository<User, UUID> {
 
     long countByAccountingFirm_IdAndProfileAndDeletedIsFalse(UUID accountingFirmId, UserProfileEnum profile);
 
-    @NativeQuery(
-        value = "SELECT COUNT(*) FROM users WHERE (:id IS NULL OR id <> :id) AND login = :login AND deleted = false"
-    )
-    Long countByLoginAndDeletedIsFalse(@Param("id") UUID id, @Param("login") String login);
+    /*
+     * Login in use by another active user. Derived queries, not native SQL: a UUID bound to a
+     * native query goes as 16 binary bytes, and MySQL can't compare that with the varchar id.
+     */
+    boolean existsByLoginAndDeletedIsFalse(String login);
+
+    boolean existsByLoginAndDeletedIsFalseAndIdNot(String login, UUID id);
 }

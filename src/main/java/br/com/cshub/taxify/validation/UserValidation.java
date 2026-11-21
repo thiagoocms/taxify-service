@@ -168,8 +168,10 @@ public class UserValidation extends AbstractCrudValidation<User, UUID> {
 
     @Override
     protected void checkValidationsExtras(User entity) {
-        var count = repository.countByLoginAndDeletedIsFalse(entity.getId(), entity.getLogin());
-        if (count > 0) {
+        boolean taken = entity.getId() == null
+                ? repository.existsByLoginAndDeletedIsFalse(entity.getLogin())
+                : repository.existsByLoginAndDeletedIsFalseAndIdNot(entity.getLogin(), entity.getId());
+        if (taken) {
             throw new ConflictException(messageService.getMessage("error.user.login.already.exists"));
         }
     }
