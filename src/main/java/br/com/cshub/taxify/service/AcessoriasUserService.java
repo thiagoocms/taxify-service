@@ -8,6 +8,7 @@ import br.com.cshub.taxify.dto.acessorias.AcessoriasUserSummaryDTO;
 import br.com.cshub.taxify.exception.ResourceNotFoundException;
 import br.com.cshub.taxify.integration.acessorias.AcessoriasClient;
 import br.com.cshub.taxify.integration.acessorias.AcessoriasUserDTO;
+import br.com.cshub.taxify.enumerated.IntegrationType;
 import br.com.cshub.taxify.repository.AccountingFirmRepository;
 import br.com.cshub.taxify.repository.UserRepository;
 import org.springframework.stereotype.Service;
@@ -31,12 +32,15 @@ public class AcessoriasUserService {
 
     private final AcessoriasClient acessoriasClient;
     private final AccountingFirmRepository accountingFirmRepository;
+    private final FirmIntegrationService firmIntegrationService;
     private final UserRepository userRepository;
     private final CurrentUserService currentUserService;
     private final MessageService messageService;
 
     public AcessoriasUserService(AcessoriasClient acessoriasClient, AccountingFirmRepository accountingFirmRepository,
-                                 UserRepository userRepository, CurrentUserService currentUserService, MessageService messageService) {
+                                 UserRepository userRepository, CurrentUserService currentUserService, MessageService messageService,
+                                 FirmIntegrationService firmIntegrationService) {
+        this.firmIntegrationService = firmIntegrationService;
         this.acessoriasClient = acessoriasClient;
         this.accountingFirmRepository = accountingFirmRepository;
         this.userRepository = userRepository;
@@ -58,7 +62,7 @@ public class AcessoriasUserService {
             }
         }
 
-        return acessoriasClient.listUsers(firm.getAcessoriasApiToken()).stream()
+        return acessoriasClient.listUsers(firmIntegrationService.getApiKey(firm.getId(), IntegrationType.ACESSORIAS)).stream()
                 .map(user -> toSummary(user, taxifyUsersByEmail))
                 .sorted(Comparator.comparing(AcessoriasUserSummaryDTO::active).reversed()
                         .thenComparing(summary -> summary.name() == null ? "" : summary.name(), String.CASE_INSENSITIVE_ORDER))

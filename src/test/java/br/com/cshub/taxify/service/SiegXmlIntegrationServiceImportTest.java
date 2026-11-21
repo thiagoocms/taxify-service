@@ -63,6 +63,8 @@ class SiegXmlIntegrationServiceImportTest {
     private CompanyValidation companyValidation;
     @Mock
     private MessageService messageService;
+    @Mock
+    private FirmIntegrationService firmIntegrationService;
 
     private FiscalXmlIntegrationService service;
     private UUID companyId;
@@ -85,7 +87,7 @@ class SiegXmlIntegrationServiceImportTest {
 
         service = new FiscalXmlIntegrationService(siegClient, new FiscalXmlMetadataParser(),
                 new FiscalXmlFileStorage(syncProperties, messageService), new FiscalXmlPackageExtractor(),
-                xmlDocumentRepository, syncControlRepository, companyValidation, messageService, properties);
+                xmlDocumentRepository, syncControlRepository, companyValidation, messageService, properties, firmIntegrationService);
     }
 
     @Test

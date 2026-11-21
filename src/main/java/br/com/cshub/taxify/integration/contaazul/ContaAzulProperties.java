@@ -20,12 +20,18 @@ public class ContaAzulProperties {
      */
     private String redirectUri;
     private String authorizeUrl = "https://login.contaazul.com/#/oauth/authorize";
-    private String tokenUrl = "https://auth.contaazul.com/oauth2/token";
+    /** developers.contaazul.com/changecode - also used to renew (renewingaccesstoken). */
+    private String tokenUrl = "https://api-v2.contaazul.com/oauth/token";
     private String scope = "openid profile aws.cognito.signin.user.admin";
     private String apiBaseUrl = "https://api-v2.contaazul.com";
 
     public boolean isConfigured() {
         return notBlank(clientId) && notBlank(clientSecret) && notBlank(redirectUri);
+    }
+
+    /** Spaces or a stray  from a .env edited on Windows would break the Basic auth / redirect match. */
+    private static String trim(String value) {
+        return value == null ? null : value.strip();
     }
 
     private static boolean notBlank(String value) {
@@ -37,7 +43,7 @@ public class ContaAzulProperties {
     }
 
     public void setClientId(String clientId) {
-        this.clientId = clientId;
+        this.clientId = trim(clientId);
     }
 
     public String getClientSecret() {
@@ -45,7 +51,7 @@ public class ContaAzulProperties {
     }
 
     public void setClientSecret(String clientSecret) {
-        this.clientSecret = clientSecret;
+        this.clientSecret = trim(clientSecret);
     }
 
     public String getRedirectUri() {
@@ -53,38 +59,50 @@ public class ContaAzulProperties {
     }
 
     public void setRedirectUri(String redirectUri) {
-        this.redirectUri = redirectUri;
+        this.redirectUri = trim(redirectUri);
     }
 
     public String getAuthorizeUrl() {
         return authorizeUrl;
     }
 
+    /** Blank (e.g. an empty env var from docker-compose) keeps the default instead of wiping it. */
     public void setAuthorizeUrl(String authorizeUrl) {
-        this.authorizeUrl = authorizeUrl;
+        if (notBlank(authorizeUrl)) {
+            this.authorizeUrl = authorizeUrl;
+        }
     }
 
     public String getTokenUrl() {
         return tokenUrl;
     }
 
+    /** Blank (e.g. an empty env var from docker-compose) keeps the default instead of wiping it. */
     public void setTokenUrl(String tokenUrl) {
-        this.tokenUrl = tokenUrl;
+        if (notBlank(tokenUrl)) {
+            this.tokenUrl = tokenUrl;
+        }
     }
 
     public String getScope() {
         return scope;
     }
 
+    /** Blank (e.g. an empty env var from docker-compose) keeps the default instead of wiping it. */
     public void setScope(String scope) {
-        this.scope = scope;
+        if (notBlank(scope)) {
+            this.scope = scope;
+        }
     }
 
     public String getApiBaseUrl() {
         return apiBaseUrl;
     }
 
+    /** Blank (e.g. an empty env var from docker-compose) keeps the default instead of wiping it. */
     public void setApiBaseUrl(String apiBaseUrl) {
-        this.apiBaseUrl = apiBaseUrl;
+        if (notBlank(apiBaseUrl)) {
+            this.apiBaseUrl = apiBaseUrl;
+        }
     }
 }

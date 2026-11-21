@@ -1,5 +1,6 @@
 package br.com.cshub.taxify.service;
 
+import br.com.cshub.taxify.enumerated.IntegrationType;
 import br.com.cshub.taxify.common.MessageService;
 import br.com.cshub.taxify.domain.company.Company;
 import br.com.cshub.taxify.domain.xml.FiscalXmlDocument;
@@ -48,11 +49,14 @@ public class FiscalXmlIntegrationService {
     private final CompanyValidation companyValidation;
     private final MessageService messageService;
     private final SiegProperties properties;
+    private final FirmIntegrationService firmIntegrationService;
 
     public FiscalXmlIntegrationService(SiegClient siegClient, FiscalXmlMetadataParser metadataParser,
                                        FiscalXmlFileStorage fileStorage, FiscalXmlPackageExtractor packageExtractor,
                                        FiscalXmlDocumentRepository xmlDocumentRepository, FiscalXmlSyncControlRepository syncControlRepository,
-                                       CompanyValidation companyValidation, MessageService messageService, SiegProperties properties) {
+                                       CompanyValidation companyValidation, MessageService messageService, SiegProperties properties,
+                                       FirmIntegrationService firmIntegrationService) {
+        this.firmIntegrationService = firmIntegrationService;
         this.siegClient = siegClient;
         this.metadataParser = metadataParser;
         this.fileStorage = fileStorage;
@@ -106,7 +110,7 @@ public class FiscalXmlIntegrationService {
                 onlyDigits(company.getDocument().getNumber())
         );
 
-        String apiKey = company.getAccountingFirm().getSiegApiKey();
+        String apiKey = firmIntegrationService.getApiKey(company.getAccountingFirm().getId(), IntegrationType.SIEG);
 
         if (skipCountCheck) {
             log.info("Skipping contar-xmls for company {} - already known pending from a previous check", company.getId());

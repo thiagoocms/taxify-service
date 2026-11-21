@@ -20,8 +20,9 @@ import java.time.Duration;
 import java.util.Base64;
 
 /**
- * Token endpoint of Conta Azul's OAuth2 server: exchanges the authorization code and
- * renews the access token with the refresh token. The client id/secret go as HTTP Basic,
+ * Token endpoint of Conta Azul's OAuth2 server (developers.contaazul.com/changecode and
+ * /renewingaccesstoken): exchanges the authorization code and
+ * renews the access token with the refresh token - which Conta Azul rotates on every renewal. The client id/secret go as HTTP Basic,
  * the grant as form fields - standard OAuth2 (RFC 6749 §4.1.3 / §6).
  */
 @Component
@@ -56,7 +57,6 @@ public class ContaAzulOAuthClient {
         form.add("grant_type", "authorization_code");
         form.add("code", code);
         form.add("redirect_uri", properties.getRedirectUri());
-        form.add("client_id", properties.getClientId());
         return post(form, "error.contaAzul.code.rejected");
     }
 
@@ -64,7 +64,6 @@ public class ContaAzulOAuthClient {
         MultiValueMap<String, String> form = new LinkedMultiValueMap<>();
         form.add("grant_type", "refresh_token");
         form.add("refresh_token", refreshToken);
-        form.add("client_id", properties.getClientId());
         return post(form, "error.contaAzul.refresh.rejected");
     }
 

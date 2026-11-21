@@ -39,6 +39,11 @@ class SiegTokenServiceTest {
         properties.setTokenUrl("https://sieg.example/api/v1/create-jwt");
     }
 
+    /**
+     * The JWT is requested at {@code sieg.base-url} (see SiegTokenFeignClient), so the
+     * three things that must be present are client id, client secret and base URL -
+     * {@code token-url} is not used by the call.
+     */
     @Test
     void isConfiguredIsFalseWhenAnyCredentialIsMissing() {
         assertThat(tokenService.isConfigured()).isFalse();
@@ -47,7 +52,11 @@ class SiegTokenServiceTest {
         assertThat(tokenService.isConfigured()).isFalse();
 
         properties.setClientSecret("client-secret");
+        properties.setBaseUrl(" ");
         assertThat(tokenService.isConfigured()).isFalse();
+
+        properties.setBaseUrl("https://api.sieg.com");
+        assertThat(tokenService.isConfigured()).isTrue();
     }
 
     @Test

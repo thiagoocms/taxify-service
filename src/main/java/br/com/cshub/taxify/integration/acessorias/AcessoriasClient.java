@@ -58,7 +58,7 @@ public class AcessoriasClient {
      * Every company of the firm's Acessórias account (active and inactive), with its
      * departments/responsáveis, tax regime/company group and state registrations.
      *
-     * @param apiToken     the calling AccountingFirm's own token (see AccountingFirm.acessoriasApiToken)
+     * @param apiToken     the calling AccountingFirm's own token (FirmIntegration of type ACESSORIAS)
      * @param changedAfter only companies created/changed after this; null for all of them
      */
     public List<AcessoriasCompanyDTO> listCompanies(String apiToken, LocalDateTime changedAfter) {

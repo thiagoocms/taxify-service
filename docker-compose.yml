@@ -52,12 +52,13 @@ services:
       FISCAL_XML_PURGE_RETENTION_MONTHS: 3
       ACESSORIAS_SYNC_ENABLED: true
       ACESSORIAS_SYNC_CRON: 0 0 3 * * *
+      BILLING_SYNC_ENABLED: true
+      BILLING_SYNC_CRON: 0 30 3 * * *
       CONTA_AZUL_CLIENT_ID: ${CONTA_AZUL_CLIENT_ID:-}
       CONTA_AZUL_CLIENT_SECRET: ${CONTA_AZUL_CLIENT_SECRET:-}
-      # Padrões repetidos aqui de propósito: uma variável vazia anula o padrão do application.yaml.
-      CONTA_AZUL_REDIRECT_URI: ${CONTA_AZUL_REDIRECT_URI:-http://ec2-52-14-79-235.us-east-2.compute.amazonaws.com/integracoes/conta-azul/callback}
-      CONTA_AZUL_AUTHORIZE_URL: ${CONTA_AZUL_AUTHORIZE_URL:-https://login.contaazul.com/#/oauth/authorize}
-      CONTA_AZUL_TOKEN_URL: ${CONTA_AZUL_TOKEN_URL:-https://auth.contaazul.com/oauth2/token}
+      CONTA_AZUL_REDIRECT_URI: ${CONTA_AZUL_REDIRECT_URI:-}
+      CONTA_AZUL_AUTHORIZE_URL: ${CONTA_AZUL_AUTHORIZE_URL:-}
+      CONTA_AZUL_TOKEN_URL: ${CONTA_AZUL_TOKEN_URL:-}
     ports:
       - "5000:5000"
     volumes:

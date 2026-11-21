@@ -5,7 +5,7 @@ import org.springframework.stereotype.Component;
 
 /**
  * Settings for the Acessórias company import. The API token itself is per firm
- * ({@link br.com.cshub.taxify.domain.accountingfirm.AccountingFirm#getAcessoriasApiToken()}),
+ * (the firm's FirmIntegration of type ACESSORIAS),
  * not configured here - each accounting firm has its own Acessórias account.
  */
 @Component

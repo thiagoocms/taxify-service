@@ -38,7 +38,7 @@ public class SiegClient {
      * nothing. NFCe/CTe/CFe/NFSe counts also come back but aren't used here since this
      * integration only handles NFe (TIPO_XML_NFE) today.
      *
-     * @param apiKey the calling AccountingFirm's own SIEG "X-API-Key" (see AccountingFirm.siegApiKey)
+     * @param apiKey the calling AccountingFirm's own SIEG "X-API-Key" (FirmIntegration of type SIEG)
      */
     public int contarXmlsNfe(SiegBaixarXmlsRequest request, String apiKey) {
         if (apiKey == null || apiKey.isBlank()) {
@@ -58,7 +58,7 @@ public class SiegClient {
     }
 
     /**
-     * @param apiKey the calling AccountingFirm's own SIEG "X-API-Key" (see AccountingFirm.siegApiKey)
+     * @param apiKey the calling AccountingFirm's own SIEG "X-API-Key" (FirmIntegration of type SIEG)
      */
     public List<byte[]> baixarXmls(SiegBaixarXmlsRequest request, String apiKey) {
         if (apiKey == null || apiKey.isBlank()) {

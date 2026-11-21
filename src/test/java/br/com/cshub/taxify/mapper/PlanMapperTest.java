@@ -1,5 +1,7 @@
 package br.com.cshub.taxify.mapper;
 
+import java.math.BigDecimal;
+import br.com.cshub.taxify.enumerated.BillingCycle;
 import br.com.cshub.taxify.domain.plan.Plan;
 import br.com.cshub.taxify.dto.plan.PlanDTO;
 import br.com.cshub.taxify.enumerated.PlanServiceEnum;
@@ -17,7 +19,8 @@ class PlanMapperTest {
     @Test
     void toEntityCopiesAllFieldsIncludingServices() {
         UUID id = UUID.randomUUID();
-        PlanDTO dto = new PlanDTO(id.toString(), "Pro", "Full access", Set.of(PlanServiceEnum.FISCAL_XML_IMPORT), true);
+        PlanDTO dto = new PlanDTO(id.toString(), "Pro", "Full access", Set.of(PlanServiceEnum.FISCAL_XML_IMPORT),
+                new BigDecimal("199.90"), BillingCycle.MONTHLY, true);
 
         Plan entity = mapper.toEntity(dto);
 
@@ -25,12 +28,14 @@ class PlanMapperTest {
         assertThat(entity.getName()).isEqualTo("Pro");
         assertThat(entity.getDescription()).isEqualTo("Full access");
         assertThat(entity.getServices()).containsExactly(PlanServiceEnum.FISCAL_XML_IMPORT);
+        assertThat(entity.getListPrice()).isEqualByComparingTo("199.90");
+        assertThat(entity.getBillingCycle()).isEqualTo(BillingCycle.MONTHLY);
         assertThat(entity.isDeleted()).isTrue();
     }
 
     @Test
     void toEntityDefaultsToAnEmptyServiceSetWhenNull() {
-        PlanDTO dto = new PlanDTO(null, "Basic", null, null, null);
+        PlanDTO dto = new PlanDTO(null, "Basic", null, null, null, null, null);
 
         Plan entity = mapper.toEntity(dto);
 

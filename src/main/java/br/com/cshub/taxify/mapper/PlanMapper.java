@@ -18,6 +18,8 @@ public class PlanMapper extends AbstractMapper<Plan, PlanDTO> {
         entity.setName(source.name());
         entity.setDescription(source.description());
         entity.setServices(source.services() != null ? new HashSet<>(source.services()) : new HashSet<>());
+        entity.setListPrice(source.listPrice());
+        entity.setBillingCycle(source.billingCycle());
         entity.setDeleted(Boolean.TRUE.equals(source.deleted()));
         return entity;
     }
@@ -29,6 +31,8 @@ public class PlanMapper extends AbstractMapper<Plan, PlanDTO> {
                 source.getName(),
                 source.getDescription(),
                 source.getServices(),
+                source.getListPrice(),
+                source.getBillingCycle(),
                 source.isDeleted()
         );
     }
@@ -38,6 +42,8 @@ public class PlanMapper extends AbstractMapper<Plan, PlanDTO> {
         target.setName(source.getName());
         target.setDescription(source.getDescription());
         target.setServices(source.getServices());
+        target.setListPrice(source.getListPrice());
+        target.setBillingCycle(source.getBillingCycle());
         target.setDeleted(source.isDeleted());
     }
 }

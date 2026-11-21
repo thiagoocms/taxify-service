@@ -1,5 +1,6 @@
 package br.com.cshub.taxify.service;
 
+import br.com.cshub.taxify.enumerated.IntegrationType;
 import br.com.cshub.taxify.common.CurrentUserService;
 import br.com.cshub.taxify.common.MessageService;
 import br.com.cshub.taxify.domain.accountingfirm.AccountingFirm;
@@ -49,6 +50,7 @@ class AcessoriasImportServiceTest {
     @Mock private UserCompanyRepository userCompanyRepository;
     @Mock private CurrentUserService currentUserService;
     @Mock private MessageService messageService;
+    @Mock private FirmIntegrationService firmIntegrationService;
 
     private AcessoriasImportService service;
     private AccountingFirm firm;
@@ -56,9 +58,9 @@ class AcessoriasImportServiceTest {
     @BeforeEach
     void setUp() {
         service = new AcessoriasImportService(acessoriasClient, accountingFirmRepository, companyRepository, documentRepository,
-                userRepository, userCompanyRepository, currentUserService, messageService);
+                userRepository, userCompanyRepository, currentUserService, messageService, firmIntegrationService);
         firm = new AccountingFirm(UUID.randomUUID());
-        firm.setAcessoriasApiToken("token");
+        lenient().when(firmIntegrationService.getApiKey(firm.getId(), IntegrationType.ACESSORIAS)).thenReturn("token");
         lenient().when(messageService.getMessage(anyString())).thenAnswer(invocation -> invocation.getArgument(0));
         lenient().when(companyRepository.save(any(Company.class))).thenAnswer(invocation -> {
             Company company = invocation.getArgument(0);
@@ -106,8 +108,7 @@ class AcessoriasImportServiceTest {
         assertThat(linkCaptor.getValue().getRole()).isEqualTo("Fiscal, Contábil");
         assertThat(result.linksCreated()).isEqualTo(1);
         assertThat(result.responsiblesNotFound()).containsExactly("Resp Pessoal <ninguem@escritorio.com>");
-        assertThat(firm.getAcessoriasLastSyncAt()).isNotNull();
-        verify(accountingFirmRepository).save(firm);
+        verify(firmIntegrationService).markSynced(eq(firm.getId()), eq(IntegrationType.ACESSORIAS), any(LocalDateTime.class));
     }
 
     @Test
@@ -165,14 +166,16 @@ class AcessoriasImportServiceTest {
     @Test
     void incrementalRunAsksOnlyForCompaniesChangedSinceLastImport() {
         LocalDateTime lastSync = LocalDateTime.of(2026, 11, 19, 3, 0);
-        firm.setAcessoriasLastSyncAt(lastSync);
+        when(firmIntegrationService.getLastSyncAt(firm.getId(), IntegrationType.ACESSORIAS)).thenReturn(lastSync);
         when(acessoriasClient.listCompanies("token", lastSync)).thenReturn(List.of());
 
         service.importFirm(firm, true);
 
         verify(acessoriasClient).listCompanies("token", lastSync);
         verify(acessoriasClient, never()).listCompanies(eq("token"), isNull());
-        assertThat(firm.getAcessoriasLastSyncAt()).isAfter(lastSync);
+        ArgumentCaptor<LocalDateTime> syncedAt = ArgumentCaptor.forClass(LocalDateTime.class);
+        verify(firmIntegrationService).markSynced(eq(firm.getId()), eq(IntegrationType.ACESSORIAS), syncedAt.capture());
+        assertThat(syncedAt.getValue()).isAfter(lastSync);
     }
 
     private static AcessoriasCompanyDTO company(String identificador, String status, List<AcessoriasCompanyDTO.Department> departments) {

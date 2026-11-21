@@ -53,7 +53,10 @@ conta-azul:
   client-secret: ${CONTA_AZUL_CLIENT_SECRET:}
   redirect-uri: ${CONTA_AZUL_REDIRECT_URI:http://ec2-52-14-79-235.us-east-2.compute.amazonaws.com/integracoes/conta-azul/callback}
   authorize-url: ${CONTA_AZUL_AUTHORIZE_URL:https://login.contaazul.com/#/oauth/authorize}
-  token-url: ${CONTA_AZUL_TOKEN_URL:https://auth.contaazul.com/oauth2/token}
+  token-url: ${CONTA_AZUL_TOKEN_URL:https://api-v2.contaazul.com/oauth/token}
+billing:
+  sync-enabled: ${BILLING_SYNC_ENABLED:true}
+  sync-cron: ${BILLING_SYNC_CRON:0 30 3 * * *}
 acessorias:
   base-url: https://api.acessorias.com
   sync-enabled: ${ACESSORIAS_SYNC_ENABLED:true}

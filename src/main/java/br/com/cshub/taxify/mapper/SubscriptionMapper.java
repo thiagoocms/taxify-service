@@ -20,6 +20,10 @@ public class SubscriptionMapper extends AbstractMapper<Subscription, Subscriptio
         entity.setPlan(source.planId() != null ? new Plan(UUID.fromString(source.planId())) : null);
         entity.setStartDate(source.startDate());
         entity.setEndDate(source.endDate());
+        entity.setFee(source.fee());
+        entity.setBillingCycle(source.billingCycle());
+        entity.setBillingDay(source.billingDay());
+        entity.setStatus(source.status());
         entity.setDeleted(Boolean.TRUE.equals(source.deleted()));
         return entity;
     }
@@ -32,6 +36,16 @@ public class SubscriptionMapper extends AbstractMapper<Subscription, Subscriptio
                 source.getPlan().getId().toString(),
                 source.getStartDate(),
                 source.getEndDate(),
+                source.getFee(),
+                source.getBillingCycle(),
+                source.getBillingDay(),
+                source.getStatus(),
+                source.getSource(),
+                source.getExternalContractId(),
+                source.getExternalContractNumber(),
+                source.getNextDueDate(),
+                source.getLastSyncedAt(),
+                source.getSyncWarning(),
                 source.isDeleted()
         );
     }
@@ -42,6 +56,14 @@ public class SubscriptionMapper extends AbstractMapper<Subscription, Subscriptio
         target.setPlan(source.getPlan());
         target.setStartDate(source.getStartDate());
         target.setEndDate(source.getEndDate());
+        target.setBillingCycle(source.getBillingCycle());
+        // Contract data of a synced subscription belongs to the provider - a manual edit
+        // must not overwrite it (the next sync would just put it back anyway).
+        if (!target.isSynced()) {
+            target.setFee(source.getFee());
+            target.setBillingDay(source.getBillingDay());
+            target.setStatus(source.getStatus());
+        }
         target.setDeleted(source.isDeleted());
     }
 }

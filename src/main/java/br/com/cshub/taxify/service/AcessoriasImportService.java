@@ -14,6 +14,7 @@ import br.com.cshub.taxify.exception.ConflictException;
 import br.com.cshub.taxify.exception.ResourceNotFoundException;
 import br.com.cshub.taxify.integration.acessorias.AcessoriasClient;
 import br.com.cshub.taxify.integration.acessorias.AcessoriasCompanyDTO;
+import br.com.cshub.taxify.enumerated.IntegrationType;
 import br.com.cshub.taxify.repository.AccountingFirmRepository;
 import br.com.cshub.taxify.repository.CompanyRepository;
 import br.com.cshub.taxify.repository.DocumentRepository;
@@ -65,6 +66,7 @@ public class AcessoriasImportService {
 
     private final AcessoriasClient acessoriasClient;
     private final AccountingFirmRepository accountingFirmRepository;
+    private final FirmIntegrationService firmIntegrationService;
     private final CompanyRepository companyRepository;
     private final DocumentRepository documentRepository;
     private final UserRepository userRepository;
@@ -77,7 +79,9 @@ public class AcessoriasImportService {
     public AcessoriasImportService(AcessoriasClient acessoriasClient, AccountingFirmRepository accountingFirmRepository,
                                    CompanyRepository companyRepository, DocumentRepository documentRepository,
                                    UserRepository userRepository, UserCompanyRepository userCompanyRepository,
-                                   CurrentUserService currentUserService, MessageService messageService) {
+                                   CurrentUserService currentUserService, MessageService messageService,
+                                   FirmIntegrationService firmIntegrationService) {
+        this.firmIntegrationService = firmIntegrationService;
         this.acessoriasClient = acessoriasClient;
         this.accountingFirmRepository = accountingFirmRepository;
         this.companyRepository = companyRepository;
@@ -108,8 +112,9 @@ public class AcessoriasImportService {
         }
         try {
             LocalDateTime startedAt = LocalDateTime.now();
-            LocalDateTime changedAfter = incremental ? firm.getAcessoriasLastSyncAt() : null;
-            List<AcessoriasCompanyDTO> source = acessoriasClient.listCompanies(firm.getAcessoriasApiToken(), changedAfter);
+            LocalDateTime changedAfter = incremental ? firmIntegrationService.getLastSyncAt(firm.getId(), IntegrationType.ACESSORIAS) : null;
+            String apiToken = firmIntegrationService.getApiKey(firm.getId(), IntegrationType.ACESSORIAS);
+            List<AcessoriasCompanyDTO> source = acessoriasClient.listCompanies(apiToken, changedAfter);
 
             ImportRun run = new ImportRun(firm, source.size());
             for (AcessoriasCompanyDTO item : source) {
@@ -121,8 +126,7 @@ public class AcessoriasImportService {
                 }
             }
 
-            firm.setAcessoriasLastSyncAt(startedAt);
-            accountingFirmRepository.save(firm);
+            firmIntegrationService.markSynced(firm.getId(), IntegrationType.ACESSORIAS, startedAt);
 
             log.info("Acessórias import for firm {}: {} received, {} created, {} updated, {} unchanged, {} links, {} skipped, {} errors",
                     firm.getId(), run.received, run.created, run.updated, run.unchanged, run.linksCreated,

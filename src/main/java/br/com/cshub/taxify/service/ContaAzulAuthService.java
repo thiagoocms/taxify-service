@@ -1,16 +1,14 @@
 package br.com.cshub.taxify.service;
 
-import br.com.cshub.taxify.common.CurrentUserService;
 import br.com.cshub.taxify.common.MessageService;
-import br.com.cshub.taxify.domain.accountingfirm.AccountingFirm;
+import br.com.cshub.taxify.domain.billing.FirmIntegration;
 import br.com.cshub.taxify.dto.contaazul.ContaAzulAuthorizeUrlDTO;
 import br.com.cshub.taxify.dto.contaazul.ContaAzulConnectionStatusDTO;
+import br.com.cshub.taxify.enumerated.IntegrationType;
 import br.com.cshub.taxify.exception.BadRequestException;
 import br.com.cshub.taxify.exception.ContaAzulIntegrationException;
-import br.com.cshub.taxify.exception.ResourceNotFoundException;
 import br.com.cshub.taxify.integration.contaazul.ContaAzulOAuthClient;
 import br.com.cshub.taxify.integration.contaazul.ContaAzulProperties;
-import br.com.cshub.taxify.repository.AccountingFirmRepository;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 import org.springframework.web.util.UriUtils;
@@ -25,15 +23,16 @@ import java.util.UUID;
 import java.util.concurrent.ConcurrentHashMap;
 
 /**
- * OAuth2 (authorization code) connection between an accounting firm and Conta Azul:
+ * OAuth2 (authorization code) connection between an accounting firm and Conta Azul, kept
+ * in the firm's {@link FirmIntegration} of type CONTA_AZUL:
  * <ol>
  *   <li>{@link #buildAuthorizeUrl()} - an ADMIN clicks "Conectar"; we store a random
- *   {@code state} on the firm and send the browser to Conta Azul's login.</li>
+ *   {@code state} and send the browser to Conta Azul's login.</li>
  *   <li>Conta Azul redirects back to the front-end ({@code conta-azul.redirect-uri}) with
  *   {@code code} + {@code state}, which posts them to {@link #completeAuthorization}: the
  *   state must match the one stored for the same firm (anti-CSRF) and be recent.</li>
  *   <li>{@link #getValidAccessToken(UUID)} hands the API calls a live access token,
- *   renewing it with the refresh token when it's about to expire.</li>
+ *   renewing it with the refresh token (which Conta Azul rotates every time).</li>
  * </ol>
  */
 @Service
@@ -46,33 +45,30 @@ public class ContaAzulAuthService {
 
     private final ContaAzulProperties properties;
     private final ContaAzulOAuthClient oauthClient;
-    private final AccountingFirmRepository accountingFirmRepository;
-    private final CurrentUserService currentUserService;
+    private final FirmIntegrationService firmIntegrationService;
     private final MessageService messageService;
     private final SecureRandom random = new SecureRandom();
     private final Map<UUID, Object> refreshLocks = new ConcurrentHashMap<>();
 
     public ContaAzulAuthService(ContaAzulProperties properties, ContaAzulOAuthClient oauthClient,
-                                AccountingFirmRepository accountingFirmRepository, CurrentUserService currentUserService,
-                                MessageService messageService) {
+                                FirmIntegrationService firmIntegrationService, MessageService messageService) {
         this.properties = properties;
         this.oauthClient = oauthClient;
-        this.accountingFirmRepository = accountingFirmRepository;
-        this.currentUserService = currentUserService;
+        this.firmIntegrationService = firmIntegrationService;
         this.messageService = messageService;
     }
 
     @Transactional
     public ContaAzulAuthorizeUrlDTO buildAuthorizeUrl() {
         assertConfigured();
-        AccountingFirm firm = currentFirm();
+        FirmIntegration integration = currentIntegration();
 
         byte[] bytes = new byte[24];
         random.nextBytes(bytes);
         String state = HexFormat.of().formatHex(bytes);
-        firm.setContaAzulOauthState(state);
-        firm.setContaAzulOauthStateCreatedAt(LocalDateTime.now());
-        accountingFirmRepository.save(firm);
+        integration.setOauthState(state);
+        integration.setOauthStateCreatedAt(LocalDateTime.now());
+        firmIntegrationService.save(integration);
 
         String url = properties.getAuthorizeUrl()
                 + "?response_type=code"
@@ -86,93 +82,95 @@ public class ContaAzulAuthService {
     @Transactional
     public ContaAzulConnectionStatusDTO completeAuthorization(String code, String state) {
         assertConfigured();
-        AccountingFirm firm = currentFirm();
+        FirmIntegration integration = currentIntegration();
 
-        String expected = firm.getContaAzulOauthState();
-        LocalDateTime createdAt = firm.getContaAzulOauthStateCreatedAt();
+        String expected = integration.getOauthState();
+        LocalDateTime createdAt = integration.getOauthStateCreatedAt();
         boolean stateOk = expected != null && state != null
                 && MessageDigest.isEqual(expected.getBytes(StandardCharsets.UTF_8), state.getBytes(StandardCharsets.UTF_8))
                 && createdAt != null && createdAt.isAfter(LocalDateTime.now().minusMinutes(STATE_TTL_MINUTES));
         // One-shot: whatever happens next, this state can't be replayed.
-        firm.setContaAzulOauthState(null);
-        firm.setContaAzulOauthStateCreatedAt(null);
+        integration.setOauthState(null);
+        integration.setOauthStateCreatedAt(null);
         if (!stateOk || code == null || code.isBlank()) {
-            accountingFirmRepository.save(firm);
+            firmIntegrationService.save(integration);
             throw new BadRequestException(messageService.getMessage("error.contaAzul.state.invalid"));
         }
 
-        ContaAzulOAuthClient.TokenResponse tokens = oauthClient.exchangeCode(code);
-        applyTokens(firm, tokens);
-        firm.setContaAzulConnectedAt(LocalDateTime.now());
-        accountingFirmRepository.save(firm);
-        return toStatus(firm);
+        applyTokens(integration, oauthClient.exchangeCode(code));
+        integration.setConnectedAt(LocalDateTime.now());
+        firmIntegrationService.save(integration);
+        return toStatus(integration);
     }
 
     @Transactional(readOnly = true)
     public ContaAzulConnectionStatusDTO status() {
-        return toStatus(currentFirm());
+        return firmIntegrationService.find(firmIntegrationService.currentFirmId(), IntegrationType.CONTA_AZUL)
+                .map(this::toStatus)
+                .orElseGet(() -> new ContaAzulConnectionStatusDTO(properties.isConfigured(), false, null));
     }
 
     @Transactional
     public void disconnect() {
-        AccountingFirm firm = currentFirm();
-        firm.setContaAzulAccessToken(null);
-        firm.setContaAzulRefreshToken(null);
-        firm.setContaAzulTokenExpiresAt(null);
-        firm.setContaAzulConnectedAt(null);
-        firm.setContaAzulOauthState(null);
-        firm.setContaAzulOauthStateCreatedAt(null);
-        accountingFirmRepository.save(firm);
+        firmIntegrationService.find(firmIntegrationService.currentFirmId(), IntegrationType.CONTA_AZUL).ifPresent(integration -> {
+            integration.setAccessToken(null);
+            integration.setRefreshToken(null);
+            integration.setTokenExpiresAt(null);
+            integration.setConnectedAt(null);
+            integration.setOauthState(null);
+            integration.setOauthStateCreatedAt(null);
+            firmIntegrationService.save(integration);
+        });
+    }
+
+    public boolean isConnected(UUID accountingFirmId) {
+        return firmIntegrationService.find(accountingFirmId, IntegrationType.CONTA_AZUL)
+                .map(FirmIntegration::isConfigured)
+                .orElse(false);
     }
 
     /**
      * Access token for API calls on behalf of {@code accountingFirmId} - renewed (and
-     * persisted) when it's expired or about to. Fails if the firm never connected or the
-     * refresh token was revoked, in which case an ADMIN has to connect again.
+     * persisted, with the new refresh token) when it's expired or about to. Fails if the
+     * firm never connected or the access was revoked, in which case an ADMIN must reconnect.
      */
     @Transactional
     public String getValidAccessToken(UUID accountingFirmId) {
         synchronized (refreshLocks.computeIfAbsent(accountingFirmId, id -> new Object())) {
-            AccountingFirm firm = accountingFirmRepository.findById(accountingFirmId)
-                    .orElseThrow(() -> new ResourceNotFoundException(messageService.getMessage("error.accountingFirm.not.found")));
-            if (firm.getContaAzulRefreshToken() == null && firm.getContaAzulAccessToken() == null) {
-                throw new ContaAzulIntegrationException(messageService.getMessage("error.contaAzul.not.connected"));
-            }
-            LocalDateTime expiresAt = firm.getContaAzulTokenExpiresAt();
-            boolean stillValid = firm.getContaAzulAccessToken() != null && expiresAt != null
+            FirmIntegration integration = firmIntegrationService.find(accountingFirmId, IntegrationType.CONTA_AZUL)
+                    .filter(FirmIntegration::isConfigured)
+                    .orElseThrow(() -> new ContaAzulIntegrationException(messageService.getMessage("error.contaAzul.not.connected")));
+            LocalDateTime expiresAt = integration.getTokenExpiresAt();
+            boolean stillValid = integration.getAccessToken() != null && expiresAt != null
                     && expiresAt.isAfter(LocalDateTime.now().plusSeconds(EXPIRY_MARGIN_SECONDS));
             if (stillValid) {
-                return firm.getContaAzulAccessToken();
+                return integration.getAccessToken();
             }
-            if (firm.getContaAzulRefreshToken() == null) {
+            if (integration.getRefreshToken() == null) {
                 throw new ContaAzulIntegrationException(messageService.getMessage("error.contaAzul.not.connected"));
             }
-            applyTokens(firm, oauthClient.refresh(firm.getContaAzulRefreshToken()));
-            accountingFirmRepository.save(firm);
-            return firm.getContaAzulAccessToken();
+            applyTokens(integration, oauthClient.refresh(integration.getRefreshToken()));
+            firmIntegrationService.save(integration);
+            return integration.getAccessToken();
         }
     }
 
-    private void applyTokens(AccountingFirm firm, ContaAzulOAuthClient.TokenResponse tokens) {
-        firm.setContaAzulAccessToken(tokens.accessToken());
-        // Some servers don't rotate the refresh token on renewal - keep the current one then.
+    private void applyTokens(FirmIntegration integration, ContaAzulOAuthClient.TokenResponse tokens) {
+        integration.setAccessToken(tokens.accessToken());
+        // Conta Azul rotates the refresh token on every renewal - keep the current one only if none came back.
         if (tokens.refreshToken() != null && !tokens.refreshToken().isBlank()) {
-            firm.setContaAzulRefreshToken(tokens.refreshToken());
+            integration.setRefreshToken(tokens.refreshToken());
         }
         long expiresIn = tokens.expiresIn() != null && tokens.expiresIn() > 0 ? tokens.expiresIn() : DEFAULT_EXPIRES_IN_SECONDS;
-        firm.setContaAzulTokenExpiresAt(LocalDateTime.now().plusSeconds(expiresIn));
+        integration.setTokenExpiresAt(LocalDateTime.now().plusSeconds(expiresIn));
     }
 
-    private ContaAzulConnectionStatusDTO toStatus(AccountingFirm firm) {
-        boolean connected = firm.getContaAzulRefreshToken() != null || firm.getContaAzulAccessToken() != null;
-        return new ContaAzulConnectionStatusDTO(properties.isConfigured(), connected, firm.getContaAzulConnectedAt());
+    private ContaAzulConnectionStatusDTO toStatus(FirmIntegration integration) {
+        return new ContaAzulConnectionStatusDTO(properties.isConfigured(), integration.isConfigured(), integration.getConnectedAt());
     }
 
-    private AccountingFirm currentFirm() {
-        return currentUserService.getCurrentUser()
-                .map(user -> user.getAccountingFirm().getId())
-                .flatMap(accountingFirmRepository::findById)
-                .orElseThrow(() -> new ResourceNotFoundException(messageService.getMessage("error.accountingFirm.not.found")));
+    private FirmIntegration currentIntegration() {
+        return firmIntegrationService.getOrCreate(firmIntegrationService.currentFirmId(), IntegrationType.CONTA_AZUL);
     }
 
     private void assertConfigured() {

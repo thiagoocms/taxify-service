@@ -21,7 +21,8 @@ class SubscriptionMapperTest {
         UUID planId = UUID.randomUUID();
         LocalDate start = LocalDate.of(2026, 1, 1);
         LocalDate end = LocalDate.of(2026, 12, 31);
-        SubscriptionDTO dto = new SubscriptionDTO(null, companyId.toString(), planId.toString(), start, end, false);
+        SubscriptionDTO dto = new SubscriptionDTO(null, companyId.toString(), planId.toString(), start, end,
+                null, null, null, null, null, null, null, null, null, null, false);
 
         Subscription entity = mapper.toEntity(dto);
 

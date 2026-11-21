@@ -78,6 +78,8 @@ public class SecurityConfig {
                                 .requestMatchers(HttpMethod.DELETE, base + "/accounting-firms/**").hasAuthority("ADMIN")
                                 .requestMatchers(base + "/integrations/acessorias/**").hasAuthority("ADMIN")
                                 .requestMatchers(base + "/integrations/conta-azul/**").hasAuthority("ADMIN")
+                                .requestMatchers(HttpMethod.PUT, base + "/integrations/**").hasAuthority("ADMIN")
+                                .requestMatchers(base + "/billing/**").hasAuthority("ADMIN")
                                 .anyRequest().authenticated()
                 )
                 .httpBasic(Customizer.withDefaults())

@@ -1,0 +1,61 @@
+package br.com.cshub.taxify.rest;
+
+import br.com.cshub.taxify.constants.AppConstants;
+import br.com.cshub.taxify.dto.billing.BillingCategoryDTO;
+import br.com.cshub.taxify.dto.billing.BillingSettingsDTO;
+import br.com.cshub.taxify.dto.billing.BillingSettingsUpdateDTO;
+import br.com.cshub.taxify.dto.billing.BillingSyncResultDTO;
+import br.com.cshub.taxify.dto.billing.CompanyBillingDTO;
+import br.com.cshub.taxify.service.BillingService;
+import br.com.cshub.taxify.service.BillingSyncService;
+import jakarta.validation.Valid;
+import org.springframework.http.ResponseEntity;
+import org.springframework.web.bind.annotation.GetMapping;
+import org.springframework.web.bind.annotation.PathVariable;
+import org.springframework.web.bind.annotation.PostMapping;
+import org.springframework.web.bind.annotation.PutMapping;
+import org.springframework.web.bind.annotation.RequestBody;
+import org.springframework.web.bind.annotation.RequestMapping;
+import org.springframework.web.bind.annotation.RestController;
+
+import java.util.List;
+import java.util.UUID;
+
+/** Contracts / fees of the current user's firm, provider-agnostic - ADMIN only, see SecurityConfig. */
+@RestController
+@RequestMapping(AppConstants.API + AppConstants.V1 + "/billing")
+public class BillingResource {
+
+    private final BillingService billingService;
+    private final BillingSyncService syncService;
+
+    public BillingResource(BillingService billingService, BillingSyncService syncService) {
+        this.billingService = billingService;
+        this.syncService = syncService;
+    }
+
+    @GetMapping("/settings")
+    public ResponseEntity<BillingSettingsDTO> settings() {
+        return ResponseEntity.ok(billingService.getSettings());
+    }
+
+    @PutMapping("/settings")
+    public ResponseEntity<BillingSettingsDTO> updateSettings(@Valid @RequestBody BillingSettingsUpdateDTO body) {
+        return ResponseEntity.ok(billingService.updateSettings(body));
+    }
+
+    @GetMapping("/categories")
+    public ResponseEntity<List<BillingCategoryDTO>> categories() {
+        return ResponseEntity.ok(billingService.listCategories());
+    }
+
+    @PostMapping("/sync")
+    public ResponseEntity<BillingSyncResultDTO> sync() {
+        return ResponseEntity.ok(syncService.syncCurrentFirm());
+    }
+
+    @GetMapping("/companies/{companyId}")
+    public ResponseEntity<CompanyBillingDTO> companyBilling(@PathVariable UUID companyId) {
+        return ResponseEntity.ok(billingService.getCompanyBilling(companyId));
+    }
+}

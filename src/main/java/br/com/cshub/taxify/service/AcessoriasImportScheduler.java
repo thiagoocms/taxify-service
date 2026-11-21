@@ -2,7 +2,8 @@ package br.com.cshub.taxify.service;
 
 import br.com.cshub.taxify.domain.accountingfirm.AccountingFirm;
 import br.com.cshub.taxify.integration.acessorias.AcessoriasProperties;
-import br.com.cshub.taxify.repository.AccountingFirmRepository;
+import br.com.cshub.taxify.domain.billing.FirmIntegration;
+import br.com.cshub.taxify.enumerated.IntegrationType;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 import org.springframework.scheduling.annotation.Scheduled;
@@ -19,13 +20,13 @@ public class AcessoriasImportScheduler {
 
     private static final Logger log = LoggerFactory.getLogger(AcessoriasImportScheduler.class);
 
-    private final AccountingFirmRepository accountingFirmRepository;
+    private final FirmIntegrationService firmIntegrationService;
     private final AcessoriasImportService importService;
     private final AcessoriasProperties properties;
 
-    public AcessoriasImportScheduler(AccountingFirmRepository accountingFirmRepository, AcessoriasImportService importService,
+    public AcessoriasImportScheduler(FirmIntegrationService firmIntegrationService, AcessoriasImportService importService,
                                      AcessoriasProperties properties) {
-        this.accountingFirmRepository = accountingFirmRepository;
+        this.firmIntegrationService = firmIntegrationService;
         this.importService = importService;
         this.properties = properties;
     }
@@ -36,10 +37,8 @@ public class AcessoriasImportScheduler {
             return;
         }
 
-        for (AccountingFirm firm : accountingFirmRepository.findByAcessoriasApiTokenIsNotNullAndDeletedIsFalse()) {
-            if (firm.getAcessoriasApiToken().isBlank()) {
-                continue;
-            }
+        for (FirmIntegration integration : firmIntegrationService.findConfigured(IntegrationType.ACESSORIAS)) {
+            AccountingFirm firm = integration.getAccountingFirm();
             try {
                 importService.importFirm(firm, true);
             } catch (Exception e) {

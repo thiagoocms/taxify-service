@@ -1,5 +1,6 @@
 package br.com.cshub.taxify.service;
 
+import br.com.cshub.taxify.enumerated.IntegrationType;
 import br.com.cshub.taxify.common.MessageService;
 import br.com.cshub.taxify.domain.accountingfirm.AccountingFirm;
 import br.com.cshub.taxify.domain.company.Company;
@@ -53,6 +54,8 @@ class FiscalXmlIntegrationServiceSyncTest {
     private CompanyValidation companyValidation;
     @Mock
     private MessageService messageService;
+    @Mock
+    private FirmIntegrationService firmIntegrationService;
 
     private FiscalXmlIntegrationService service;
     private UUID companyId;
@@ -66,7 +69,7 @@ class FiscalXmlIntegrationServiceSyncTest {
         Company company = new Company(companyId);
         company.setDocument(new Document("11594485000105", DocumentTypeEnum.CNPJ));
         AccountingFirm firm = new AccountingFirm(UUID.randomUUID());
-        firm.setSiegApiKey("test-api-key");
+        lenient().when(firmIntegrationService.getApiKey(firm.getId(), IntegrationType.SIEG)).thenReturn("test-api-key");
         company.setAccountingFirm(firm);
         lenient().when(companyValidation.checkExist(companyId)).thenReturn(company);
         lenient().when(messageService.getMessage(any())).thenReturn("error");
@@ -79,7 +82,7 @@ class FiscalXmlIntegrationServiceSyncTest {
 
         service = new FiscalXmlIntegrationService(siegClient, new FiscalXmlMetadataParser(),
                 new FiscalXmlFileStorage(syncProperties, messageService), new FiscalXmlPackageExtractor(),
-                xmlDocumentRepository, syncControlRepository, companyValidation, messageService, properties);
+                xmlDocumentRepository, syncControlRepository, companyValidation, messageService, properties, firmIntegrationService);
     }
 
     @Test
