@@ -56,6 +56,30 @@ public class AccountingFirm extends AbstractAuditingEntity {
     @Column(name = "acessorias_last_sync_at")
     private LocalDateTime acessoriasLastSyncAt;
 
+    /*
+     * Conta Azul OAuth2 connection of this firm (see ContaAzulAuthService). The app's
+     * client id/secret are system-wide (conta-azul.* properties); what's per firm is the
+     * authorization an ADMIN grants by logging into Conta Azul: these tokens.
+     */
+    @Column(name = "conta_azul_access_token", columnDefinition = "TEXT")
+    private String contaAzulAccessToken;
+
+    @Column(name = "conta_azul_refresh_token", columnDefinition = "TEXT")
+    private String contaAzulRefreshToken;
+
+    @Column(name = "conta_azul_token_expires_at")
+    private LocalDateTime contaAzulTokenExpiresAt;
+
+    @Column(name = "conta_azul_connected_at")
+    private LocalDateTime contaAzulConnectedAt;
+
+    /** Anti-CSRF "state" of the authorization in progress - checked on the callback, then cleared. */
+    @Column(name = "conta_azul_oauth_state", length = 64)
+    private String contaAzulOauthState;
+
+    @Column(name = "conta_azul_oauth_state_created_at")
+    private LocalDateTime contaAzulOauthStateCreatedAt;
+
     public AccountingFirm() {
     }
 
@@ -101,5 +125,53 @@ public class AccountingFirm extends AbstractAuditingEntity {
 
     public void setAcessoriasLastSyncAt(LocalDateTime acessoriasLastSyncAt) {
         this.acessoriasLastSyncAt = acessoriasLastSyncAt;
+    }
+
+    public String getContaAzulAccessToken() {
+        return contaAzulAccessToken;
+    }
+
+    public void setContaAzulAccessToken(String contaAzulAccessToken) {
+        this.contaAzulAccessToken = contaAzulAccessToken;
+    }
+
+    public String getContaAzulRefreshToken() {
+        return contaAzulRefreshToken;
+    }
+
+    public void setContaAzulRefreshToken(String contaAzulRefreshToken) {
+        this.contaAzulRefreshToken = contaAzulRefreshToken;
+    }
+
+    public LocalDateTime getContaAzulTokenExpiresAt() {
+        return contaAzulTokenExpiresAt;
+    }
+
+    public void setContaAzulTokenExpiresAt(LocalDateTime contaAzulTokenExpiresAt) {
+        this.contaAzulTokenExpiresAt = contaAzulTokenExpiresAt;
+    }
+
+    public LocalDateTime getContaAzulConnectedAt() {
+        return contaAzulConnectedAt;
+    }
+
+    public void setContaAzulConnectedAt(LocalDateTime contaAzulConnectedAt) {
+        this.contaAzulConnectedAt = contaAzulConnectedAt;
+    }
+
+    public String getContaAzulOauthState() {
+        return contaAzulOauthState;
+    }
+
+    public void setContaAzulOauthState(String contaAzulOauthState) {
+        this.contaAzulOauthState = contaAzulOauthState;
+    }
+
+    public LocalDateTime getContaAzulOauthStateCreatedAt() {
+        return contaAzulOauthStateCreatedAt;
+    }
+
+    public void setContaAzulOauthStateCreatedAt(LocalDateTime contaAzulOauthStateCreatedAt) {
+        this.contaAzulOauthStateCreatedAt = contaAzulOauthStateCreatedAt;
     }
 }

@@ -6,6 +6,7 @@ import br.com.cshub.taxify.exception.BadRequestException;
 import br.com.cshub.taxify.exception.ConflictException;
 import br.com.cshub.taxify.exception.ResourceNotFoundException;
 import br.com.cshub.taxify.exception.AcessoriasIntegrationException;
+import br.com.cshub.taxify.exception.ContaAzulIntegrationException;
 import br.com.cshub.taxify.exception.SiegIntegrationException;
 import br.com.cshub.taxify.exception.UnauthorizedException;
 import org.springframework.http.HttpHeaders;
@@ -61,6 +62,14 @@ public class GlobalExceptionHandler extends ResponseEntityExceptionHandler {
     @ExceptionHandler(AcessoriasIntegrationException.class)
     public ResponseEntity<ErrorDetailsDTO> handleAcessoriasIntegrationException(AcessoriasIntegrationException exception,
                                                                                  WebRequest webRequest) {
+        ErrorDetailsDTO errorDetails = new ErrorDetailsDTO(getTime(), HttpStatus.BAD_GATEWAY.value(), exception.getMessage(),
+                webRequest.getDescription(false));
+        return new ResponseEntity<>(errorDetails, new HttpHeaders(), HttpStatus.BAD_GATEWAY);
+    }
+
+    @ExceptionHandler(ContaAzulIntegrationException.class)
+    public ResponseEntity<ErrorDetailsDTO> handleContaAzulIntegrationException(ContaAzulIntegrationException exception,
+                                                                                WebRequest webRequest) {
         ErrorDetailsDTO errorDetails = new ErrorDetailsDTO(getTime(), HttpStatus.BAD_GATEWAY.value(), exception.getMessage(),
                 webRequest.getDescription(false));
         return new ResponseEntity<>(errorDetails, new HttpHeaders(), HttpStatus.BAD_GATEWAY);

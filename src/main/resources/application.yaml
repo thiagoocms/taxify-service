@@ -3,6 +3,8 @@ server:
   servlet:
     context-path: /taxify-service
 spring:
+  config:
+    import: optional:file:.env[.properties]
   datasource:
     url: jdbc:mysql://${DB_HOST}:${DB_PORT}/${DB_NAME}?useUnicode=true&characterEncoding=utf8&useSSL=false&allowPublicKeyRetrieval=true
     username: ${DB_USER}
@@ -46,6 +48,12 @@ sieg:
   client-id: ${SIEG_CLIENT_ID}
   client-secret: ${SIEG_CLIENT_SECRET}
   max-requests-per-minute: 2
+conta-azul:
+  client-id: ${CONTA_AZUL_CLIENT_ID:}
+  client-secret: ${CONTA_AZUL_CLIENT_SECRET:}
+  redirect-uri: ${CONTA_AZUL_REDIRECT_URI:https://ec2-52-14-79-235.us-east-2.compute.amazonaws.com/integracoes/conta-azul/callback}
+  authorize-url: ${CONTA_AZUL_AUTHORIZE_URL:https://login.contaazul.com/#/oauth/authorize}
+  token-url: ${CONTA_AZUL_TOKEN_URL:https://auth.contaazul.com/oauth2/token}
 acessorias:
   base-url: https://api.acessorias.com
   sync-enabled: ${ACESSORIAS_SYNC_ENABLED:true}
