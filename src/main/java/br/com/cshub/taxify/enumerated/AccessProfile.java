@@ -17,6 +17,7 @@ import static br.com.cshub.taxify.enumerated.Permission.INVOICES_VIEW;
 import static br.com.cshub.taxify.enumerated.Permission.PLANS_VIEW;
 import static br.com.cshub.taxify.enumerated.Permission.SUBSCRIPTIONS_MANAGE;
 import static br.com.cshub.taxify.enumerated.Permission.SUBSCRIPTIONS_VIEW;
+import static br.com.cshub.taxify.enumerated.Permission.TAX_ASSESSMENT_VIEW;
 
 /**
  * Fixed access profiles of the firm's team (an employee can have several - permissions add
@@ -27,10 +28,10 @@ public enum AccessProfile {
 
     /** Notas, SIEG, auditoria, retificação e regras fiscais. */
     FISCAL(EnumSet.of(COMPANIES_VIEW, INVOICES_VIEW, INVOICES_SYNC, INVOICES_RECTIFY, INVOICES_AUDIT,
-            FISCAL_RULES_VIEW, FISCAL_RULES_MANAGE)),
+            FISCAL_RULES_VIEW, FISCAL_RULES_MANAGE, TAX_ASSESSMENT_VIEW)),
 
     /** Contábil: consulta notas e regras fiscais das empresas. */
-    ACCOUNTING(EnumSet.of(COMPANIES_VIEW, INVOICES_VIEW, FISCAL_RULES_VIEW)),
+    ACCOUNTING(EnumSet.of(COMPANIES_VIEW, INVOICES_VIEW, FISCAL_RULES_VIEW, TAX_ASSESSMENT_VIEW)),
 
     /** Planos, assinaturas, contratos, honorários e cobranças. */
     FINANCIAL(EnumSet.of(COMPANIES_VIEW, PLANS_VIEW, SUBSCRIPTIONS_VIEW, SUBSCRIPTIONS_MANAGE, BILLING_VIEW, BILLING_SYNC)),
@@ -39,7 +40,7 @@ public enum AccessProfile {
     PAYROLL(EnumSet.of(COMPANIES_VIEW)),
 
     /** Gestão: enxerga tudo, sem alterar nada. */
-    MANAGEMENT(EnumSet.of(COMPANIES_VIEW, INVOICES_VIEW, FISCAL_RULES_VIEW, PLANS_VIEW, SUBSCRIPTIONS_VIEW, BILLING_VIEW));
+    MANAGEMENT(EnumSet.of(COMPANIES_VIEW, INVOICES_VIEW, FISCAL_RULES_VIEW, TAX_ASSESSMENT_VIEW, PLANS_VIEW, SUBSCRIPTIONS_VIEW, BILLING_VIEW));
 
     private final Set<Permission> permissions;
 

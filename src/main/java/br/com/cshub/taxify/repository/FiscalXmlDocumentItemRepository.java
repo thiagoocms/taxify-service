@@ -39,4 +39,19 @@ public interface FiscalXmlDocumentItemRepository extends JpaRepository<FiscalXml
             + "and (lower(i.codigo) like :term or lower(i.descricao) like :term) "
             + "group by i.codigo order by count(i) desc, i.codigo asc")
     List<Object[]> findDistinctProductsByCompany(@Param("companyId") UUID companyId, @Param("term") String term, Pageable pageable);
+
+    /**
+     * Item values per company, month, direction and CFOP - the input of the period
+     * assessment (TaxAssessmentService). Canceled and deleted notes are out.
+     * Row: company id, year, month, direction, cfop, sum of item values.
+     */
+    @Query("select d.company.id, year(d.issueDate), month(d.issueDate), d.direction, i.cfop, coalesce(sum(i.valorTotal), 0)"
+            + " from FiscalXmlDocumentItem i join i.document d"
+            + " where d.company.id in :companyIds and d.deleted = false and d.direction is not null"
+            + " and (d.status is null or d.status <> br.com.cshub.taxify.enumerated.FiscalDocumentStatus.CANCELED)"
+            + " and d.issueDate >= :from and d.issueDate < :to"
+            + " group by d.company.id, year(d.issueDate), month(d.issueDate), d.direction, i.cfop")
+    List<Object[]> sumByCompanyMonthAndCfop(@Param("companyIds") Collection<UUID> companyIds,
+                                           @Param("from") java.time.LocalDateTime from,
+                                           @Param("to") java.time.LocalDateTime to);
 }

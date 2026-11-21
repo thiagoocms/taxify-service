@@ -21,6 +21,8 @@ public enum Permission {
     INVOICES_AUDIT(Module.FISCAL),
     FISCAL_RULES_VIEW(Module.FISCAL),
     FISCAL_RULES_MANAGE(Module.FISCAL),
+    /** Apuração do período: faturamento, RBT12 e estimativa de impostos. */
+    TAX_ASSESSMENT_VIEW(Module.FISCAL),
 
     // ---- Financeiro
     PLANS_VIEW(Module.FINANCIAL),

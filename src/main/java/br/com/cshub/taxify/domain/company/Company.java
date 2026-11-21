@@ -1,5 +1,9 @@
 package br.com.cshub.taxify.domain.company;
 
+import br.com.cshub.taxify.enumerated.TaxRegime;
+import br.com.cshub.taxify.enumerated.SimplesAnnex;
+import br.com.cshub.taxify.enumerated.BusinessActivity;
+import br.com.cshub.taxify.common.TaxRegimes;
 import br.com.cshub.taxify.domain.AbstractAuditingEntity;
 import br.com.cshub.taxify.domain.accountingfirm.AccountingFirm;
 import br.com.cshub.taxify.domain.document.Document;
@@ -48,9 +52,27 @@ public class Company extends AbstractAuditingEntity {
     @Column(name = "uf", length = 2)
     private String uf;
 
-    /** Free text as the source system names it (e.g. "Simples Nacional - Comércio e Serviço"). */
+    /** Label as the source system names it (e.g. "Simples Nacional - Comércio e Serviço") - kept for display. */
     @Column(name = "tax_regime", length = 100)
     private String taxRegime;
+
+    /** Structured regime - what the period assessment uses. Parsed from {@link #taxRegime} when imported. */
+    @Enumerated(EnumType.STRING)
+    @Column(name = "tax_regime_type", length = 30)
+    private TaxRegime taxRegimeType;
+
+    @Enumerated(EnumType.STRING)
+    @Column(name = "business_activity", length = 30)
+    private BusinessActivity businessActivity;
+
+    /**
+     * Simples Nacional annex for the company's service revenue (III, IV or V - depends on the
+     * activity and the fator R). Goods follow the CFOP: own production → II, resale → I.
+     * Null = III.
+     */
+    @Enumerated(EnumType.STRING)
+    @Column(name = "simples_service_annex", length = 5)
+    private SimplesAnnex simplesServiceAnnex;
 
     /** Inscrição(ões) estadual(is) - several are joined as "IE/UF; IE/UF". */
     @Column(name = "state_registration", length = 255)
@@ -191,5 +213,40 @@ public class Company extends AbstractAuditingEntity {
 
     public void setAcessoriasId(String acessoriasId) {
         this.acessoriasId = acessoriasId;
+    }
+
+    public TaxRegime getTaxRegimeType() {
+        return taxRegimeType;
+    }
+
+    public void setTaxRegimeType(TaxRegime taxRegimeType) {
+        this.taxRegimeType = taxRegimeType;
+    }
+
+    public BusinessActivity getBusinessActivity() {
+        return businessActivity;
+    }
+
+    public void setBusinessActivity(BusinessActivity businessActivity) {
+        this.businessActivity = businessActivity;
+    }
+
+    public SimplesAnnex getSimplesServiceAnnex() {
+        return simplesServiceAnnex;
+    }
+
+    public void setSimplesServiceAnnex(SimplesAnnex simplesServiceAnnex) {
+        this.simplesServiceAnnex = simplesServiceAnnex;
+    }
+
+    /**
+     * Sets the label and, from it, the structured regime and activity - what an import from
+     * another system does (the annex is never in the label, it is kept).
+     */
+    public void applyTaxRegimeLabel(String label) {
+        this.taxRegime = label;
+        TaxRegimes.Parsed parsed = TaxRegimes.parse(label);
+        this.taxRegimeType = parsed == null ? null : parsed.regime();
+        this.businessActivity = parsed == null ? null : parsed.activity();
     }
 }

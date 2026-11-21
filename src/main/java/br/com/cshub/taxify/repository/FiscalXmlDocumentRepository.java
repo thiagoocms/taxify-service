@@ -1,5 +1,6 @@
 package br.com.cshub.taxify.repository;
 
+import java.util.Collection;
 import java.util.Optional;
 import br.com.cshub.taxify.enumerated.FiscalDirection;
 import br.com.cshub.taxify.common.AbstractJpaRepository;
@@ -79,4 +80,18 @@ public interface FiscalXmlDocumentRepository extends AbstractJpaRepository<Fisca
     List<Object[]> totalsByDirection(@Param("companyId") UUID companyId,
                                      @Param("issueDateFrom") LocalDateTime issueDateFrom,
                                      @Param("issueDateTo") LocalDateTime issueDateTo);
+
+    /** Outbound (non-canceled) notes per company in [from, to). Row: company id, count. */
+    @Query("select d.company.id, count(d) from FiscalXmlDocument d where d.company.id in :companyIds and d.deleted = false"
+            + " and d.direction = br.com.cshub.taxify.enumerated.FiscalDirection.OUTBOUND"
+            + " and (d.status is null or d.status <> " + CANCELED + ")"
+            + " and d.issueDate >= :from and d.issueDate < :to group by d.company.id")
+    List<Object[]> countOutboundByCompany(@Param("companyIds") Collection<UUID> companyIds,
+                                          @Param("from") LocalDateTime from, @Param("to") LocalDateTime to);
+
+    /** First outbound note of each company - start of activity for the RBT12 proportionalization. Row: company id, date. */
+    @Query("select d.company.id, min(d.issueDate) from FiscalXmlDocument d where d.company.id in :companyIds and d.deleted = false"
+            + " and d.direction = br.com.cshub.taxify.enumerated.FiscalDirection.OUTBOUND"
+            + " and (d.status is null or d.status <> " + CANCELED + ") group by d.company.id")
+    List<Object[]> firstOutboundByCompany(@Param("companyIds") Collection<UUID> companyIds);
 }

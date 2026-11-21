@@ -199,7 +199,7 @@ public class AcessoriasImportService {
         changed |= set(company.getTradeName(), truncate(trim(item.fantasia()), NAME_MAX), company::setTradeName);
         changed |= set(company.getPhone(), truncate(trim(item.telefone()), 30), company::setPhone);
         changed |= set(company.getUf(), truncate(upper(item.uf()), 2), company::setUf);
-        changed |= set(company.getTaxRegime(), truncate(trim(item.regime()), 100), company::setTaxRegime);
+        changed |= set(company.getTaxRegime(), truncate(trim(item.regime()), 100), company::applyTaxRegimeLabel);
         changed |= set(company.getStateRegistration(), truncate(stateRegistrations(item), 255), company::setStateRegistration);
         changed |= set(company.getCompanyGroup(), truncate(trim(item.grupoDeEmpresas()), 100), company::setCompanyGroup);
         changed |= set(company.getActive(), active, company::setActive);

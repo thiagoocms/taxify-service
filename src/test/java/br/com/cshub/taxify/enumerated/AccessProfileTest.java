@@ -55,6 +55,7 @@ class AccessProfileTest {
 
         List<String> authorities = new Auth(user).getAuthorities().stream().map(GrantedAuthority::getAuthority).toList();
 
-        assertThat(authorities).containsExactlyInAnyOrder("EMPLOYEE", "COMPANIES_VIEW", "INVOICES_VIEW", "FISCAL_RULES_VIEW");
+        assertThat(authorities).containsExactlyInAnyOrder("EMPLOYEE", "COMPANIES_VIEW", "INVOICES_VIEW", "FISCAL_RULES_VIEW",
+                "TAX_ASSESSMENT_VIEW");
     }
 }
