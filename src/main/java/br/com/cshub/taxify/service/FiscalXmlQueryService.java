@@ -1,5 +1,6 @@
 package br.com.cshub.taxify.service;
 
+import br.com.cshub.taxify.integration.sieg.FiscalXmlFileStorage;
 import br.com.cshub.taxify.dto.fiscalxml.FiscalXmlEventDTO;
 import java.util.Locale;
 import java.math.BigDecimal;
@@ -37,8 +38,6 @@ import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 
 import java.io.IOException;
-import java.nio.file.Files;
-import java.nio.file.Path;
 import java.time.LocalDateTime;
 import java.time.LocalTime;
 import java.util.HashMap;
@@ -58,6 +57,7 @@ public class FiscalXmlQueryService {
     private static final Logger log = LoggerFactory.getLogger(FiscalXmlQueryService.class);
 
     private final FiscalXmlEventService eventService;
+    private final FiscalXmlFileStorage fileStorage;
 
     private final FiscalXmlDocumentRepository documentRepository;
     private final FiscalXmlDocumentItemRepository itemRepository;
@@ -69,7 +69,8 @@ public class FiscalXmlQueryService {
     public FiscalXmlQueryService(FiscalXmlDocumentRepository documentRepository, FiscalXmlDocumentItemRepository itemRepository,
                                  FiscalXmlMetadataParser metadataParser, CompanyValidation companyValidation,
                                  TenantAccessService tenantAccessService, MessageService messageService,
-                                 FiscalXmlEventService eventService) {
+                                 FiscalXmlEventService eventService, FiscalXmlFileStorage fileStorage) {
+        this.fileStorage = fileStorage;
         this.eventService = eventService;
         this.documentRepository = documentRepository;
         this.itemRepository = itemRepository;
@@ -163,7 +164,7 @@ public class FiscalXmlQueryService {
 
         byte[] xmlBytes;
         try {
-            xmlBytes = Files.readAllBytes(Path.of(document.getXmlFilePath()));
+            xmlBytes = fileStorage.read(document.getXmlFilePath());
         } catch (IOException e) {
             log.info("XML file '{}' for document {} not readable, building detail from stored columns", document.getXmlFilePath(), document.getId());
             return detailFromColumns(document);
@@ -226,7 +227,7 @@ public class FiscalXmlQueryService {
 
     private byte[] readFile(FiscalXmlDocument document, String path) {
         try {
-            return Files.readAllBytes(Path.of(path));
+            return fileStorage.read(path);
         } catch (IOException e) {
             log.warn("Could not read stored XML file '{}' for document {}", path, document.getId(), e);
             throw new ResourceNotFoundException(messageService.getMessage("error.fiscalXml.file.not.found"));

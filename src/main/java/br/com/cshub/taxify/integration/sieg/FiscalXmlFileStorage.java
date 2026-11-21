@@ -4,26 +4,60 @@ import br.com.cshub.taxify.common.MessageService;
 import br.com.cshub.taxify.domain.xml.FiscalXmlDocument;
 import br.com.cshub.taxify.exception.SiegIntegrationException;
 import br.com.cshub.taxify.integration.fiscalxml.FiscalXmlSyncProperties;
+import br.com.cshub.taxify.integration.storage.FiscalXmlStorageProperties;
+import br.com.cshub.taxify.integration.storage.LocalXmlStorage;
+import br.com.cshub.taxify.integration.storage.S3XmlStorage;
+import br.com.cshub.taxify.integration.storage.XmlStorageBackend;
+import org.springframework.beans.factory.ObjectProvider;
+import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.stereotype.Component;
 
 import java.io.IOException;
-import java.nio.file.Files;
 import java.nio.file.Path;
+import java.util.ArrayList;
+import java.util.List;
 import java.util.UUID;
 
 /**
- * Writes fiscal XML bytes to disk under {@link SiegProperties#getXmlStoragePath()},
- * organized by company. {@link FiscalXmlDocument} keeps only the resulting path plus
- * the parsed field values - not the XML content itself.
+ * The one place fiscal XML files are written, read and deleted. New files go to the
+ * configured storage ({@code fiscal-xml.storage.type}: local disk or S3), organized as
+ * {companyId}/{file}; each file is read back from wherever its location says it is, so
+ * notes stored on disk before the move to S3 keep opening. {@link FiscalXmlDocument}
+ * keeps only that location plus the parsed field values - not the XML itself.
  */
 @Component
 public class FiscalXmlFileStorage {
 
-    private final FiscalXmlSyncProperties properties;
+    private final XmlStorageBackend writer;
+    private final List<XmlStorageBackend> readers;
     private final MessageService messageService;
 
+    @Autowired
+    public FiscalXmlFileStorage(LocalXmlStorage local, ObjectProvider<S3XmlStorage> s3, FiscalXmlStorageProperties properties,
+                                MessageService messageService) {
+        this.messageService = messageService;
+        List<XmlStorageBackend> backends = new ArrayList<>();
+        S3XmlStorage s3Storage = s3.getIfAvailable();
+        if (s3Storage != null) {
+            backends.add(s3Storage);
+        }
+        backends.add(local);
+        this.readers = List.copyOf(backends);
+        if (properties.getType() == FiscalXmlStorageProperties.Type.S3) {
+            if (s3Storage == null) {
+                throw new IllegalStateException("fiscal-xml.storage.type=s3 but the S3 storage is not configured");
+            }
+            this.writer = s3Storage;
+        } else {
+            this.writer = local;
+        }
+    }
+
+    /** Local disk only - for tests and tools. */
     public FiscalXmlFileStorage(FiscalXmlSyncProperties properties, MessageService messageService) {
-        this.properties = properties;
+        LocalXmlStorage local = new LocalXmlStorage(properties);
+        this.writer = local;
+        this.readers = List.of(local);
         this.messageService = messageService;
     }
 
@@ -40,19 +74,57 @@ public class FiscalXmlFileStorage {
         return write(companyId, fileName(accessKey, "-retificado-" + System.currentTimeMillis() + ".xml"), xmlBytes);
     }
 
+    /** @throws java.nio.file.NoSuchFileException when the file is gone (purged) */
+    public byte[] read(String location) throws IOException {
+        return backendOf(location).read(location);
+    }
+
+    /** @return false when there was nothing to delete */
+    public boolean delete(String location) throws IOException {
+        if (location == null || location.isBlank()) {
+            return false;
+        }
+        return backendOf(location).delete(location);
+    }
+
+    /** Whether a location is already where new files are written (e.g. on S3 after the move). */
+    public boolean isOnCurrentStorage(String location) {
+        return location != null && writer.handles(location);
+    }
+
+    /**
+     * Copies a file to the current storage keeping its {companyId}/{file} key - the move from
+     * disk to S3. Returns the new location (the original file is left in place).
+     */
+    public String copyToCurrentStorage(String location) throws IOException {
+        byte[] content = read(location);
+        Path path = Path.of(location);
+        Path parent = path.getParent();
+        String key = (parent == null || parent.getFileName() == null ? "" : parent.getFileName() + "/") + path.getFileName();
+        return writer.write(key, content);
+    }
+
     private String fileName(String accessKey, String suffix) {
         return (accessKey != null && !accessKey.isBlank() ? accessKey : UUID.randomUUID().toString()) + suffix;
     }
 
     private String write(UUID companyId, String fileName, byte[] xmlBytes) {
-        Path directory = Path.of(properties.getStoragePath(), companyId.toString());
-        Path file = directory.resolve(fileName);
         try {
-            Files.createDirectories(directory);
-            Files.write(file, xmlBytes);
-            return file.toString();
+            return writer.write(companyId + "/" + fileName, xmlBytes);
         } catch (IOException e) {
             throw new SiegIntegrationException(messageService.getMessage("error.sieg.xml.storage.failed"), e);
         }
+    }
+
+    private XmlStorageBackend backendOf(String location) throws IOException {
+        if (location == null || location.isBlank()) {
+            throw new java.nio.file.NoSuchFileException(String.valueOf(location));
+        }
+        for (XmlStorageBackend backend : readers) {
+            if (backend.handles(location)) {
+                return backend;
+            }
+        }
+        throw new IOException("No storage configured for " + location + " (is fiscal-xml.storage.type=s3 set?)");
     }
 }

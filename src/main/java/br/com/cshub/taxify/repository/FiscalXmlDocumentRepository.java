@@ -113,4 +113,14 @@ public interface FiscalXmlDocumentRepository extends AbstractJpaRepository<Fisca
             + " and d.issueDate >= :from and d.issueDate < :to group by d.company.id")
     List<Object[]> countPendingReviewByCompany(@Param("companyIds") Collection<UUID> companyIds,
                                                @Param("from") LocalDateTime from, @Param("to") LocalDateTime to);
+
+    /**
+     * Notes with a file still outside S3 (original or rectified), in id order after
+     * {@code afterId} (ids are stored as text, so the keyset compares text) - the batches FiscalXmlStorageMigration copies to the bucket.
+     */
+    @Query("select d from FiscalXmlDocument d where cast(d.id as String) > :afterId"
+            + " and ((d.xmlFilePath is not null and d.xmlFilePath not like 's3://%')"
+            + "      or (d.rectifiedFilePath is not null and d.rectifiedFilePath not like 's3://%'))"
+            + " order by cast(d.id as String)")
+    List<FiscalXmlDocument> findWithFileOutsideS3(@Param("afterId") String afterId, Pageable pageable);
 }

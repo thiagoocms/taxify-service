@@ -30,8 +30,6 @@ import javax.xml.transform.dom.DOMSource;
 import javax.xml.transform.stream.StreamResult;
 import java.io.ByteArrayOutputStream;
 import java.io.IOException;
-import java.nio.file.Files;
-import java.nio.file.Path;
 import java.time.LocalDateTime;
 import java.util.ArrayList;
 import java.util.List;
@@ -206,7 +204,7 @@ public class FiscalXmlRectificationService {
 
     private byte[] readOriginal(String xmlFilePath) {
         try {
-            return Files.readAllBytes(Path.of(xmlFilePath));
+            return fileStorage.read(xmlFilePath);
         } catch (IOException e) {
             throw new SiegIntegrationException(messageService.getMessage("error.fiscalXml.rectification.failed"), e);
         }

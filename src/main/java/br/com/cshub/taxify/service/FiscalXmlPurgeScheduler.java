@@ -1,5 +1,6 @@
 package br.com.cshub.taxify.service;
 
+import br.com.cshub.taxify.integration.sieg.FiscalXmlFileStorage;
 import br.com.cshub.taxify.domain.xml.FiscalXmlDocument;
 import br.com.cshub.taxify.integration.fiscalxml.FiscalXmlPurgeProperties;
 import br.com.cshub.taxify.repository.FiscalXmlDocumentRepository;
@@ -9,8 +10,6 @@ import org.springframework.scheduling.annotation.Scheduled;
 import org.springframework.stereotype.Component;
 
 import java.io.IOException;
-import java.nio.file.Files;
-import java.nio.file.Path;
 import java.time.LocalDateTime;
 import java.util.List;
 
@@ -20,7 +19,7 @@ import java.util.List;
  * {@link FiscalXmlDocument#getIssueDate()} - the note's own fiscal date, not when it was
  * imported, so a note synced late is purged on the same schedule as one synced promptly.
  *
- * <p>Only the files on disk are removed. {@link FiscalXmlDocument} itself, and every
+ * <p>Only the stored files (disk or S3) are removed. {@link FiscalXmlDocument} itself, and every
  * extracted field on it, stays in the database untouched - reporting and the sync
  * control table keep working for purged notes; only re-reading or exporting the raw XML
  * stops being possible once its file is gone (the existing "file missing" handling in
@@ -36,8 +35,11 @@ public class FiscalXmlPurgeScheduler {
 
     private final FiscalXmlDocumentRepository documentRepository;
     private final FiscalXmlPurgeProperties properties;
+    private final FiscalXmlFileStorage fileStorage;
 
-    public FiscalXmlPurgeScheduler(FiscalXmlDocumentRepository documentRepository, FiscalXmlPurgeProperties properties) {
+    public FiscalXmlPurgeScheduler(FiscalXmlDocumentRepository documentRepository, FiscalXmlPurgeProperties properties,
+                                   FiscalXmlFileStorage fileStorage) {
+        this.fileStorage = fileStorage;
         this.documentRepository = documentRepository;
         this.properties = properties;
     }
@@ -75,9 +77,6 @@ public class FiscalXmlPurgeScheduler {
     }
 
     private boolean deleteIfExists(String path) throws IOException {
-        if (path == null || path.isBlank()) {
-            return false;
-        }
-        return Files.deleteIfExists(Path.of(path));
+        return fileStorage.delete(path);
     }
 }

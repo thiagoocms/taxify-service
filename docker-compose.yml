@@ -40,6 +40,17 @@ services:
       SIEG_CLIENT_ID: ${SIEG_CLIENT_ID}
       SIEG_CLIENT_SECRET: ${SIEG_CLIENT_SECRET}
       FISCAL_XML_STORAGE_PATH: /data/fiscal-xml
+      # local = volume abaixo; s3 = bucket (os XMLs que já estão no volume continuam sendo lidos dele)
+      FISCAL_XML_STORAGE_TYPE: ${FISCAL_XML_STORAGE_TYPE:-local}
+      # true = copia em segundo plano os XMLs do volume para o S3 na subida (pode ficar ligado até terminar)
+      FISCAL_XML_STORAGE_MIGRATE_LOCAL: ${FISCAL_XML_STORAGE_MIGRATE_LOCAL:-false}
+      FISCAL_XML_S3_BUCKET: ${FISCAL_XML_S3_BUCKET:-taxify-cshub}
+      FISCAL_XML_S3_REGION: ${FISCAL_XML_S3_REGION:-us-east-2}
+      FISCAL_XML_S3_PREFIX: ${FISCAL_XML_S3_PREFIX:-fiscal-xml}
+      # Credenciais: prefira a IAM role da instância EC2. Sem role, defina no .env:
+      # AWS_ACCESS_KEY_ID / AWS_SECRET_ACCESS_KEY (e descomente as duas linhas abaixo)
+      # AWS_ACCESS_KEY_ID: ${AWS_ACCESS_KEY_ID}
+      # AWS_SECRET_ACCESS_KEY: ${AWS_SECRET_ACCESS_KEY}
       FISCAL_XML_SYNC_ENABLED: true
       FISCAL_XML_SYNC_CRON: 0 0/5 * * * *
       FISCAL_XML_SYNC_BATCH_SIZE: 2

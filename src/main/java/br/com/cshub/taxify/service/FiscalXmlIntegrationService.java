@@ -29,8 +29,6 @@ import org.springframework.transaction.annotation.Transactional;
 import java.io.ByteArrayOutputStream;
 import java.io.IOException;
 import java.nio.charset.StandardCharsets;
-import java.nio.file.Files;
-import java.nio.file.Path;
 import java.time.*;
 import java.util.ArrayList;
 import java.util.HashSet;
@@ -362,7 +360,7 @@ public class FiscalXmlIntegrationService {
         for (FiscalXmlDocument document : documents) {
             String path = document.getRectifiedFilePath() != null ? document.getRectifiedFilePath() : document.getXmlFilePath();
             try {
-                byte[] xmlBytes = Files.readAllBytes(Path.of(path));
+                byte[] xmlBytes = fileStorage.read(path);
                 FiscalXmlMetadata metadata = metadataParser.parse(xmlBytes);
                 xmls.add(toItemDTO(metadata, new String(xmlBytes, StandardCharsets.UTF_8)));
             } catch (IOException e) {
@@ -396,7 +394,7 @@ public class FiscalXmlIntegrationService {
                 String path = document.getRectifiedFilePath() != null ? document.getRectifiedFilePath() : document.getXmlFilePath();
                 byte[] xmlBytes;
                 try {
-                    xmlBytes = Files.readAllBytes(Path.of(path));
+                    xmlBytes = fileStorage.read(path);
                 } catch (IOException e) {
                     log.warn("Could not read stored XML file '{}' for document {} during zip export", path, document.getId(), e);
                     continue;

@@ -35,7 +35,7 @@ spring:
     hibernate:
       # Transition: Hibernate still adds what an old database may lack after the migrations.
       # Switch to "validate" once every environment has run Flyway (JPA_DDL_AUTO=validate).
-      ddl-auto: ${JPA_DDL_AUTO:update}
+      ddl-auto: ${JPA_DDL_AUTO:validate}
     properties:
       hibernate:
         # unique keys are Flyway's - Hibernate's default drops and recreates them on every start
@@ -81,6 +81,17 @@ fiscal-xml:
     batch-size: ${FISCAL_XML_SYNC_BATCH_SIZE}
     provider: ${FISCAL_XML_SYNC_PROVIDER}
     storage-path: ${FISCAL_XML_STORAGE_PATH}
+  # Where the XML files go: local (the volume at storage-path) or s3. With s3, files already on
+  # disk keep being read from there; migrate-local=true copies them to the bucket in background.
+  # AWS credentials: EC2 instance role (recommended) or AWS_ACCESS_KEY_ID/AWS_SECRET_ACCESS_KEY.
+  storage:
+    type: ${FISCAL_XML_STORAGE_TYPE:local}
+    migrate-local: ${FISCAL_XML_STORAGE_MIGRATE_LOCAL:false}
+    s3:
+      bucket: ${FISCAL_XML_S3_BUCKET:}
+      region: ${FISCAL_XML_S3_REGION:us-east-2}
+      prefix: ${FISCAL_XML_S3_PREFIX:fiscal-xml}
+      endpoint: ${FISCAL_XML_S3_ENDPOINT:}
   rectification:
     enabled: ${FISCAL_XML_RECTIFICATION_ENABLED}
     cron: ${FISCAL_XML_RECTIFICATION_CRON}

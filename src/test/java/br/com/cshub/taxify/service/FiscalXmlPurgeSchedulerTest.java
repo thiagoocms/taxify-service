@@ -41,7 +41,10 @@ class FiscalXmlPurgeSchedulerTest {
     void setUp() {
         properties = new FiscalXmlPurgeProperties();
         properties.setRetentionMonths(3);
-        scheduler = new FiscalXmlPurgeScheduler(documentRepository, properties);
+        br.com.cshub.taxify.integration.fiscalxml.FiscalXmlSyncProperties syncProperties = new br.com.cshub.taxify.integration.fiscalxml.FiscalXmlSyncProperties();
+        syncProperties.setStoragePath(tempDir.toString());
+        scheduler = new FiscalXmlPurgeScheduler(documentRepository, properties,
+                new br.com.cshub.taxify.integration.sieg.FiscalXmlFileStorage(syncProperties, org.mockito.Mockito.mock(br.com.cshub.taxify.common.MessageService.class)));
     }
 
     @Test
