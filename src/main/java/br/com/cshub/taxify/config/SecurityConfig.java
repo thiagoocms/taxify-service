@@ -61,9 +61,9 @@ public class SecurityConfig {
                                 .access(AuthorizationManagers.anyOf(AuthenticatedAuthorizationManager.anonymous(),
                                         AuthorityAuthorizationManager.hasAuthority(ADMIN)))
                                 .requestMatchers("/v3/api-docs/**", "/swagger-ui.html", "/swagger-ui/**").permitAll()
-                                // Actuator health/prometheus - see application.yaml's management.endpoints
-                                // comment for why only these two are exposed.
-                                .requestMatchers("/actuator/health", "/actuator/prometheus").permitAll()
+                                // Actuator health - see application.yaml's management.endpoints comment
+                                // for why it's the only one exposed.
+                                .requestMatchers("/actuator/health").permitAll()
                                 // Everything else needs a logged-in user. What each endpoint further requires
                                 // (a permission, or ADMIN) is declared on the controller itself with
                                 // @RequiresPermission / @AdminOnly - see MethodSecurityConfig.

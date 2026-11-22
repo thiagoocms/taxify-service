@@ -41,7 +41,7 @@ Este repositório contém a **API** do Taxify. O front-end está em **[taxify-ui
 - **Spring Data JPA / Hibernate** + **MySQL 8**
 - **Spring Cloud OpenFeign** para a integração com a API da SIEG
 - **Spring Scheduling** para as rotinas automáticas (sincronização, retificação e expurgo)
-- **Actuator + Micrometer + Prometheus + Grafana** para observabilidade
+- **Actuator** (health) + **Amazon CloudWatch** (métricas da EC2, logs e alarmes) para observabilidade — ver [`monitoring/README.md`](monitoring/README.md)
 - **Springdoc OpenAPI** (Swagger)
 - **Docker / Docker Compose**
 
@@ -52,7 +52,7 @@ Este repositório contém a **API** do Taxify. O front-end está em **[taxify-ui
                 └──────┬───────┘        │                  │ ──▶ Disco (XMLs)
                        │                │  Schedulers      │
                        ▼                │  Feign ─────────────▶ API SIEG
-              Grafana / Prometheus ◀────│  /actuator/prom. │
+              CloudWatch (logs/métricas)│  /actuator/health│
                                         └──────────────────┘
 ```
 
@@ -104,10 +104,15 @@ Swagger: `/taxify-service/swagger-ui.html`
 
 ## ▶️ Como rodar
 
-**Com Docker Compose** (MySQL + API + Front + Prometheus + Grafana):
+**Com Docker Compose** (MySQL + API + Front):
 ```bash
 cp .env.example .env    # preencha as variáveis
 docker compose up -d
+```
+
+**Na EC2**, com os logs dos containers indo para o CloudWatch (ver [`monitoring/README.md`](monitoring/README.md)):
+```bash
+docker compose -f docker-compose.yml -f docker-compose.aws.yml up -d
 ```
 
 **Local:**

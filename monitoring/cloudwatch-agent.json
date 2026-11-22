@@ -1,0 +1,20 @@
+{
+  "metrics": {
+    "namespace": "Taxify",
+    "append_dimensions": {
+      "InstanceId": "${aws:InstanceId}"
+    },
+    "metrics_collected": {
+      "mem": {
+        "measurement": ["mem_used_percent", "mem_available"],
+        "metrics_collection_interval": 60
+      },
+      "disk": {
+        "measurement": ["used_percent"],
+        "resources": ["/"],
+        "drop_device": true,
+        "metrics_collection_interval": 300
+      }
+    }
+  }
+}

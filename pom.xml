@@ -56,10 +56,6 @@
 			<groupId>org.springframework.boot</groupId>
 			<artifactId>spring-boot-starter-actuator</artifactId>
 		</dependency>
-		<dependency>
-			<groupId>io.micrometer</groupId>
-			<artifactId>micrometer-registry-prometheus</artifactId>
-		</dependency>
 		<!-- XMLs fiscais no S3 (fiscal-xml.storage.type=s3) -->
 		<dependency>
 			<groupId>software.amazon.awssdk</groupId>
