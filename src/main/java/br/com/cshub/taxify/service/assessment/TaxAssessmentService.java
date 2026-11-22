@@ -4,6 +4,7 @@ import br.com.cshub.taxify.common.MessageService;
 import br.com.cshub.taxify.common.TenantAccessService;
 import br.com.cshub.taxify.domain.assessment.FiscalPeriodClosing;
 import br.com.cshub.taxify.domain.company.Company;
+import br.com.cshub.taxify.dto.assessment.IbsCbsSummaryDTO;
 import br.com.cshub.taxify.dto.assessment.PeriodClosingDTO;
 import br.com.cshub.taxify.dto.assessment.TaxAssessmentDTO;
 import br.com.cshub.taxify.enumerated.FiscalDirection;
@@ -165,6 +166,7 @@ public class TaxAssessmentService {
             }
         }
         Map<UUID, CompanyTaxRegimeService.RegimeAt> regimes = taxRegimeService.regimesAt(companies, month);
+        Map<UUID, IbsCbsSummaryDTO> ibsCbs = ibsCbsByCompany(ids, month);
 
         return companies.stream()
                 .map(company -> TaxAssessmentCalculator.assess(new TaxAssessmentCalculator.Input(
@@ -173,8 +175,49 @@ public class TaxAssessmentService {
                         revenue.getOrDefault(company.getId(), Map.of()),
                         invoices.getOrDefault(company.getId(), 0L),
                         company.getOpeningDate() != null ? YearMonth.from(company.getOpeningDate()) : firstSale.get(company.getId()),
-                        withHistory)))
+                        withHistory)).withIbsCbs(ibsCbs.get(company.getId())))
                 .toList();
+    }
+
+    /** The informative IBS/CBS block of each company that has notes with the group in the month. */
+    private Map<UUID, IbsCbsSummaryDTO> ibsCbsByCompany(Collection<UUID> ids, YearMonth month) {
+        Map<UUID, Object[]> outbound = new HashMap<>();
+        Map<UUID, Object[]> inbound = new HashMap<>();
+        for (Object[] row : itemRepository.sumIbsCbsByCompanyAndDirection(ids, month.atDay(1).atStartOfDay(),
+                month.plusMonths(1).atDay(1).atStartOfDay())) {
+            (row[1] == FiscalDirection.OUTBOUND ? outbound : inbound).put((UUID) row[0], row);
+        }
+        Map<UUID, IbsCbsSummaryDTO> result = new HashMap<>();
+        for (UUID id : ids) {
+            Object[] out = outbound.get(id);
+            Object[] in = inbound.get(id);
+            if (out == null && in == null) {
+                continue;
+            }
+            BigDecimal debitIbs = amount(out, 2);
+            BigDecimal debitCbs = amount(out, 3);
+            BigDecimal creditIbs = amount(in, 2);
+            BigDecimal creditCbs = amount(in, 3);
+            result.put(id, new IbsCbsSummaryDTO(debitIbs, debitCbs, creditIbs, creditCbs,
+                    debitIbs.subtract(creditIbs), debitCbs.subtract(creditCbs),
+                    count(out), count(in), IBS_CBS_NOTE));
+        }
+        return result;
+    }
+
+    private static final String IBS_CBS_NOTE = "Informativo: valores destacados nas notas. Em 2026 (ano de teste) o IBS/CBS"
+            + " é apenas informado, sem recolhimento; a CBS passa a ser devida em 2027.";
+
+    private static BigDecimal amount(Object[] row, int index) {
+        if (row == null || row[index] == null) {
+            return BigDecimal.ZERO.setScale(2);
+        }
+        BigDecimal value = row[index] instanceof BigDecimal decimal ? decimal : new BigDecimal(row[index].toString());
+        return value.setScale(2, java.math.RoundingMode.HALF_UP);
+    }
+
+    private static long count(Object[] row) {
+        return row == null ? 0 : ((Number) row[4]).longValue();
     }
 
     private Map<UUID, Map<YearMonth, TaxAssessmentCalculator.MonthRevenue>> revenueByCompany(Collection<UUID> ids,

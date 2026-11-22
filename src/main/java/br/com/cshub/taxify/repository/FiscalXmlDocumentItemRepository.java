@@ -71,6 +71,25 @@ public interface FiscalXmlDocumentItemRepository extends JpaRepository<FiscalXml
                                                 @Param("direction") br.com.cshub.taxify.enumerated.FiscalDirection direction);
 
     /**
+     * IBS and CBS of the items of the period per company and direction - the informative
+     * IBS/CBS block of the assessment. Only items with an IBS/CBS group; canceled and
+     * deleted notes are out. vIBS falls back to vIBSUF + vIBSMun when the note leaves it out.
+     * Row: company id, direction, sum of IBS, sum of CBS, number of notes.
+     */
+    @Query("select d.company.id, d.direction,"
+            + " coalesce(sum(coalesce(i.ibsCbs.valorIbs, coalesce(i.ibsCbs.valorIbsUf, 0) + coalesce(i.ibsCbs.valorIbsMun, 0))), 0),"
+            + " coalesce(sum(i.ibsCbs.valorCbs), 0), count(distinct d.id)"
+            + " from FiscalXmlDocumentItem i join i.document d"
+            + " where d.company.id in :companyIds and d.deleted = false and d.direction is not null"
+            + " and (d.status is null or d.status <> br.com.cshub.taxify.enumerated.FiscalDocumentStatus.CANCELED)"
+            + " and i.ibsCbs.cst is not null"
+            + " and d.issueDate >= :from and d.issueDate < :to"
+            + " group by d.company.id, d.direction")
+    List<Object[]> sumIbsCbsByCompanyAndDirection(@Param("companyIds") Collection<UUID> companyIds,
+                                                  @Param("from") java.time.LocalDateTime from,
+                                                  @Param("to") java.time.LocalDateTime to);
+
+    /**
      * Item values per company, month, direction and CFOP - the input of the period
      * assessment (TaxAssessmentService). Canceled and deleted notes are out.
      * Row: company id, year, month, direction, cfop, sum of item values.

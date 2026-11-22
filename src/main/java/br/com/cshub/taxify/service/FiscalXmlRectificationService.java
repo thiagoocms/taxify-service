@@ -39,8 +39,10 @@ import java.util.UUID;
 
 /**
  * Rewrites one already-downloaded NFe's CFOP (and NCM, when the rule pins one) to what
- * {@link ProductFiscalRule} says is correct for each product, and writes the result as
- * a brand-new file next to the original - the original is never touched.
+ * {@link ProductFiscalRule} says is correct for each product - plus, when the rule has a
+ * tax classification, the tax codes that can be swapped without changing the XML's shape
+ * ({@link TaxCodeRectifier}; rates and values never) - and writes the result as a
+ * brand-new file next to the original - the original is never touched.
  *
  * <p>IMPORTANT: this only edits the XML content. It does NOT re-sign the note - NFe's
  * digital signature covers {@code infNFe} byte-for-byte, so any edit invalidates the
@@ -180,6 +182,9 @@ public class FiscalXmlRectificationService {
             applyField(prod, "CFOP", rule.getCfopCorreto(), codigo, corrections);
             if (rule.getNcmCorreto() != null) {
                 applyField(prod, "NCM", rule.getNcmCorreto(), codigo, corrections);
+            }
+            if (rule.getTaxRule() != null) {
+                TaxCodeRectifier.apply(det, rule.getTaxRule(), codigo, corrections);
             }
         }
         return corrections;

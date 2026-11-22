@@ -154,6 +154,7 @@ public final class TaxAssessmentCalculator {
                 money(totalTaxes),
                 alerts,
                 history,
+                null,
                 null
         );
     }
