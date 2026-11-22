@@ -90,6 +90,14 @@ public class FiscalXmlDocumentItem {
     @Column(name = "valor_cofins", precision = 19, scale = 2)
     private BigDecimal valorCofins;
 
+    /** Null when every one of its columns is null (items imported before V22 and not yet backfilled). */
+    @Embedded
+    private FiscalItemTaxDetail taxDetail;
+
+    /** Null when the note has no IBSCBS group. */
+    @Embedded
+    private FiscalItemIbsCbs ibsCbs;
+
     public UUID getId() {
         return id;
     }
@@ -288,5 +296,21 @@ public class FiscalXmlDocumentItem {
 
     public void setValorCofins(BigDecimal valorCofins) {
         this.valorCofins = valorCofins;
+    }
+
+    public FiscalItemTaxDetail getTaxDetail() {
+        return taxDetail;
+    }
+
+    public void setTaxDetail(FiscalItemTaxDetail taxDetail) {
+        this.taxDetail = taxDetail;
+    }
+
+    public FiscalItemIbsCbs getIbsCbs() {
+        return ibsCbs;
+    }
+
+    public void setIbsCbs(FiscalItemIbsCbs ibsCbs) {
+        this.ibsCbs = ibsCbs;
     }
 }

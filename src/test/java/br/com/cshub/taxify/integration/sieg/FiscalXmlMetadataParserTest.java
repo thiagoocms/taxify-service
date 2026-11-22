@@ -206,6 +206,142 @@ class FiscalXmlMetadataParserTest {
     }
 
     @Test
+    void parsesItemTaxDetailAndIbsCbs() {
+        String xml = """
+                <?xml version="1.0" encoding="UTF-8"?>
+                <nfeProc xmlns="http://www.portalfiscal.inf.br/nfe">
+                  <NFe>
+                    <infNFe Id="NFe35260112345678000199550010000000011000000010" versao="4.00">
+                      <ide><dhEmi>2026-09-01T10:15:00-03:00</dhEmi></ide>
+                      <emit><CNPJ>12345678000199</CNPJ><CRT>3</CRT></emit>
+                      <det nItem="1">
+                        <prod>
+                          <cProd>P001</cProd>
+                          <NCM>22021000</NCM>
+                          <CEST>0300700</CEST>
+                          <cBenef>SP000001</cBenef>
+                          <CFOP>5405</CFOP>
+                          <vProd>100.00</vProd>
+                        </prod>
+                        <imposto>
+                          <ICMS>
+                            <ICMS10>
+                              <orig>0</orig>
+                              <CST>10</CST>
+                              <modBC>3</modBC>
+                              <vBC>100.00</vBC>
+                              <pICMS>18.00</pICMS>
+                              <vICMS>18.00</vICMS>
+                              <modBCST>4</modBCST>
+                              <pMVAST>40.00</pMVAST>
+                              <vBCST>140.00</vBCST>
+                              <pICMSST>18.00</pICMSST>
+                              <vICMSST>7.20</vICMSST>
+                            </ICMS10>
+                          </ICMS>
+                          <IPI><cEnq>999</cEnq><IPITrib><CST>50</CST><vBC>100.00</vBC><pIPI>5.00</pIPI><vIPI>5.00</vIPI></IPITrib></IPI>
+                          <PIS><PISAliq><CST>01</CST><vBC>100.00</vBC><pPIS>1.65</pPIS><vPIS>1.65</vPIS></PISAliq></PIS>
+                          <COFINS><COFINSAliq><CST>01</CST><vBC>100.00</vBC><pCOFINS>7.60</pCOFINS><vCOFINS>7.60</vCOFINS></COFINSAliq></COFINS>
+                          <IBSCBS>
+                            <CST>000</CST>
+                            <cClassTrib>000001</cClassTrib>
+                            <gIBSCBS>
+                              <vBC>100.00</vBC>
+                              <gIBSUF><pIBSUF>0.1000</pIBSUF><vIBSUF>0.10</vIBSUF></gIBSUF>
+                              <gIBSMun><pIBSMun>0.0000</pIBSMun><vIBSMun>0.00</vIBSMun></gIBSMun>
+                              <vIBS>0.10</vIBS>
+                              <gCBS><pCBS>0.9000</pCBS><gRed><pRedAliq>60.0000</pRedAliq><pAliqEfet>0.3600</pAliqEfet></gRed><vCBS>0.36</vCBS></gCBS>
+                            </gIBSCBS>
+                          </IBSCBS>
+                        </imposto>
+                      </det>
+                      <det nItem="2">
+                        <prod><cProd>P002</cProd><CFOP>5102</CFOP><vProd>10.00</vProd></prod>
+                        <imposto>
+                          <ICMS><ICMSSN102><orig>2</orig><CSOSN>102</CSOSN></ICMSSN102></ICMS>
+                        </imposto>
+                      </det>
+                      <total>
+                        <ICMSTot><vNF>110.00</vNF></ICMSTot>
+                        <IBSCBSTot>
+                          <vBCIBSCBS>100.00</vBCIBSCBS>
+                          <gIBS>
+                            <gIBSUF><vDif>0.00</vDif><vDevTrib>0.00</vDevTrib><vIBSUF>0.10</vIBSUF></gIBSUF>
+                            <gIBSMun><vDif>0.00</vDif><vDevTrib>0.00</vDevTrib><vIBSMun>0.00</vIBSMun></gIBSMun>
+                            <vIBS>0.10</vIBS>
+                          </gIBS>
+                          <gCBS><vDif>0.00</vDif><vDevTrib>0.00</vDevTrib><vCBS>0.36</vCBS></gCBS>
+                        </IBSCBSTot>
+                      </total>
+                    </infNFe>
+                  </NFe>
+                </nfeProc>
+                """;
+
+        FiscalXmlMetadata metadata = parser.parse(xml.getBytes(StandardCharsets.UTF_8));
+
+        var impostos = metadata.produtos().get(0).impostos();
+        var detalhe = impostos.detalhe();
+        assertThat(detalhe.cest()).isEqualTo("0300700");
+        assertThat(detalhe.codigoBeneficio()).isEqualTo("SP000001");
+        assertThat(detalhe.origemMercadoria()).isEqualTo("0");
+        assertThat(detalhe.csosn()).isNull();
+        assertThat(detalhe.modalidadeBcIcms()).isEqualTo("3");
+        assertThat(detalhe.mvaIcmsSt()).isEqualByComparingTo("40");
+        assertThat(detalhe.baseCalculoIcmsSt()).isEqualByComparingTo("140");
+        assertThat(detalhe.aliquotaIcmsSt()).isEqualByComparingTo("18");
+        assertThat(detalhe.valorIcmsSt()).isEqualByComparingTo("7.20");
+        assertThat(detalhe.baseCalculoIpi()).isEqualByComparingTo("100");
+        assertThat(detalhe.aliquotaIpi()).isEqualByComparingTo("5");
+        assertThat(detalhe.aliquotaPis()).isEqualByComparingTo("1.65");
+        assertThat(detalhe.baseCalculoCofins()).isEqualByComparingTo("100");
+        assertThat(detalhe.aliquotaCofins()).isEqualByComparingTo("7.60");
+
+        var ibsCbs = impostos.ibsCbs();
+        assertThat(ibsCbs.cst()).isEqualTo("000");
+        assertThat(ibsCbs.classificacaoTributaria()).isEqualTo("000001");
+        assertThat(ibsCbs.baseCalculo()).isEqualByComparingTo("100");
+        assertThat(ibsCbs.aliquotaIbsUf()).isEqualByComparingTo("0.1");
+        assertThat(ibsCbs.reducaoAliquotaIbsUf()).isNull();
+        assertThat(ibsCbs.valorIbsUf()).isEqualByComparingTo("0.10");
+        assertThat(ibsCbs.aliquotaIbsMun()).isEqualByComparingTo("0");
+        assertThat(ibsCbs.valorIbs()).isEqualByComparingTo("0.10");
+        assertThat(ibsCbs.aliquotaCbs()).isEqualByComparingTo("0.9");
+        assertThat(ibsCbs.reducaoAliquotaCbs()).isEqualByComparingTo("60");
+        assertThat(ibsCbs.valorCbs()).isEqualByComparingTo("0.36");
+
+        var simples = metadata.produtos().get(1).impostos();
+        assertThat(simples.situacaoTributariaIcms()).isEqualTo("102");
+        assertThat(simples.detalhe().csosn()).isEqualTo("102");
+        assertThat(simples.detalhe().origemMercadoria()).isEqualTo("2");
+        assertThat(simples.ibsCbs()).isNull();
+
+        var totais = metadata.totais().ibsCbs();
+        assertThat(totais.baseCalculo()).isEqualByComparingTo("100");
+        assertThat(totais.valorIbsUf()).isEqualByComparingTo("0.10");
+        assertThat(totais.valorIbsMun()).isEqualByComparingTo("0");
+        assertThat(totais.valorIbs()).isEqualByComparingTo("0.10");
+        assertThat(totais.valorCbs()).isEqualByComparingTo("0.36");
+    }
+
+    @Test
+    void noteWithoutIbsCbsHasNoIbsCbsGroups() {
+        String xml = """
+                <nfeProc xmlns="http://www.portalfiscal.inf.br/nfe"><NFe>
+                  <infNFe Id="NFe35240112345678000199550010000000011000000010" versao="4.00">
+                    <det nItem="1"><prod><cProd>P1</cProd></prod>
+                      <imposto><ICMS><ICMS00><orig>0</orig><CST>00</CST></ICMS00></ICMS></imposto></det>
+                    <total><ICMSTot><vNF>1.00</vNF></ICMSTot></total>
+                  </infNFe></NFe></nfeProc>
+                """;
+
+        FiscalXmlMetadata metadata = parser.parse(xml.getBytes(StandardCharsets.UTF_8));
+
+        assertThat(metadata.produtos().get(0).impostos().ibsCbs()).isNull();
+        assertThat(metadata.totais().ibsCbs()).isNull();
+    }
+
+    @Test
     void parsesCteAsCteDocumentType() {
         String xml = """
                 <?xml version="1.0" encoding="UTF-8"?>

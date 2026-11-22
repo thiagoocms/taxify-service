@@ -429,6 +429,7 @@ public class FiscalXmlIntegrationService {
         document.setRecipientCnpj(metadata.recipientCnpj());
         document.setIssueDate(metadata.issueDate());
         document.setXmlFilePath(xmlFilePath);
+        document.setMetadataVersion(FiscalXmlMetadataParser.CURRENT_VERSION);
         document.setDeleted(false);
         String issuerCpf = metadata.emitente() == null ? null : metadata.emitente().cpf();
         String tipoOperacao = metadata.identificacao() == null ? null : metadata.identificacao().tipoOperacao();
@@ -541,6 +542,7 @@ public class FiscalXmlIntegrationService {
         document.setValorOutrasDespesas(totais.valorOutrasDespesas());
         document.setValorTotalNota(totais.valorTotalNota());
         document.setValorAproximadoTributos(totais.valorAproximadoTributos());
+        document.setIbsCbsTotals(totais.ibsCbs());
     }
 
     private FiscalXmlDocumentItem toItemEntity(FiscalXmlProdutoDTO produto, FiscalXmlDocument document) {
@@ -572,6 +574,8 @@ public class FiscalXmlIntegrationService {
             item.setValorPis(impostos.valorPis());
             item.setSituacaoTributariaCofins(impostos.situacaoTributariaCofins());
             item.setValorCofins(impostos.valorCofins());
+            item.setTaxDetail(impostos.detalhe());
+            item.setIbsCbs(impostos.ibsCbs());
         }
 
         return item;

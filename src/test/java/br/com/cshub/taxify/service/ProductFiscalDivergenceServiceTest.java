@@ -10,6 +10,8 @@ import br.com.cshub.taxify.exception.BadRequestException;
 import br.com.cshub.taxify.exception.ResourceNotFoundException;
 import br.com.cshub.taxify.repository.FiscalXmlDocumentItemRepository;
 import br.com.cshub.taxify.repository.ProductFiscalRuleRepository;
+import br.com.cshub.taxify.service.fiscalcheck.FiscalCheckEngine;
+import br.com.cshub.taxify.service.fiscalcheck.ProductRuleCheck;
 import br.com.cshub.taxify.validation.CompanyValidation;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
@@ -46,7 +48,9 @@ class ProductFiscalDivergenceServiceTest {
 
     @BeforeEach
     void setUp() {
-        service = new ProductFiscalDivergenceService(itemRepository, ruleRepository, companyValidation, messageService);
+        FiscalCheckEngine engine = new FiscalCheckEngine(List.of(new ProductRuleCheck()), List.of(), ruleRepository,
+                org.mockito.Mockito.mock(br.com.cshub.taxify.repository.IbsCbsRateRepository.class));
+        service = new ProductFiscalDivergenceService(itemRepository, engine, companyValidation, messageService);
         lenient().when(companyValidation.checkExist(companyId)).thenReturn(new Company(companyId));
     }
 
@@ -77,8 +81,7 @@ class ProductFiscalDivergenceServiceTest {
                 .thenReturn(List.of(item));
 
         ProductFiscalRule rule = ruleWith("P001", "5102", null);
-        when(ruleRepository.findFirstByCompany_IdAndCodigoProdutoAndDeletedIsFalse(companyId, "P001"))
-                .thenReturn(java.util.Optional.of(rule));
+        when(ruleRepository.findByCompany_IdAndDeletedIsFalse(companyId)).thenReturn(List.of(rule));
 
         List<ProductFiscalDivergenceDTO> result = service.findDivergences(companyId.toString(), null, null);
 
@@ -96,8 +99,7 @@ class ProductFiscalDivergenceServiceTest {
                 .thenReturn(List.of(item));
 
         ProductFiscalRule rule = ruleWith("P002", "5102", "22222222");
-        when(ruleRepository.findFirstByCompany_IdAndCodigoProdutoAndDeletedIsFalse(companyId, "P002"))
-                .thenReturn(java.util.Optional.of(rule));
+        when(ruleRepository.findByCompany_IdAndDeletedIsFalse(companyId)).thenReturn(List.of(rule));
 
         List<ProductFiscalDivergenceDTO> result = service.findDivergences(companyId.toString(), null, null);
 
@@ -113,8 +115,7 @@ class ProductFiscalDivergenceServiceTest {
                 .thenReturn(List.of(item));
 
         ProductFiscalRule rule = ruleWith("P003", "5102", "12345678");
-        when(ruleRepository.findFirstByCompany_IdAndCodigoProdutoAndDeletedIsFalse(companyId, "P003"))
-                .thenReturn(java.util.Optional.of(rule));
+        when(ruleRepository.findByCompany_IdAndDeletedIsFalse(companyId)).thenReturn(List.of(rule));
 
         assertThat(service.findDivergences(companyId.toString(), null, null)).isEmpty();
     }
@@ -124,8 +125,7 @@ class ProductFiscalDivergenceServiceTest {
         FiscalXmlDocumentItem item = itemWith("P004", "5405", "12345678");
         when(itemRepository.findByDocument_Company_IdAndDocument_IssueDateBetween(eq(companyId), any(), any()))
                 .thenReturn(List.of(item));
-        when(ruleRepository.findFirstByCompany_IdAndCodigoProdutoAndDeletedIsFalse(companyId, "P004"))
-                .thenReturn(java.util.Optional.empty());
+        when(ruleRepository.findByCompany_IdAndDeletedIsFalse(companyId)).thenReturn(List.of(ruleWith("OUTRO", "5102", null)));
 
         assertThat(service.findDivergences(companyId.toString(), null, null)).isEmpty();
     }

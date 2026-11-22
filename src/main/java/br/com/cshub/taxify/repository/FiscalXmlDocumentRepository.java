@@ -123,4 +123,17 @@ public interface FiscalXmlDocumentRepository extends AbstractJpaRepository<Fisca
             + "      or (d.rectifiedFilePath is not null and d.rectifiedFilePath not like 's3://%'))"
             + " order by cast(d.id as String)")
     List<FiscalXmlDocument> findWithFileOutsideS3(@Param("afterId") String afterId, Pageable pageable);
+
+    /**
+     * NFe notes still holding fields parsed by an older FiscalXmlMetadataParser (see
+     * {@code FiscalXmlMetadataParser.CURRENT_VERSION}) - what FiscalXmlTaxDetailBackfill
+     * re-reads. Paged by id ({@code afterId}, "" to start) so a note that fails to be read
+     * is not picked again in the same run.
+     */
+    @Query("select d.id from FiscalXmlDocument d where d.deleted = false and d.documentType = 'NFE'"
+            + " and d.xmlFilePath is not null"
+            + " and (d.metadataVersion is null or d.metadataVersion < :version)"
+            + " and cast(d.id as String) > :afterId"
+            + " order by cast(d.id as String)")
+    List<UUID> findIdsParsedBefore(@Param("version") int version, @Param("afterId") String afterId, Pageable pageable);
 }

@@ -17,6 +17,8 @@ public interface ProductFiscalRuleRepository extends AbstractJpaRepository<Produ
 
     Optional<ProductFiscalRule> findFirstByCompany_IdAndCodigoProdutoAndDeletedIsFalse(UUID companyId, String codigoProduto);
 
+    List<ProductFiscalRule> findByCompany_IdAndDeletedIsFalse(UUID companyId);
+
     boolean existsByCompany_IdAndCodigoProdutoAndDeletedIsFalse(UUID companyId, String codigoProduto);
 
     boolean existsByCompany_IdAndCodigoProdutoAndDeletedIsFalseAndIdNot(UUID companyId, String codigoProduto, UUID id);

@@ -238,6 +238,19 @@ public class FiscalXmlDocument extends AbstractAuditingEntity {
     @Column(name = "total_valor_aproximado_tributos", precision = 19, scale = 2)
     private BigDecimal valorAproximadoTributos;
 
+    /** Null when the note has no IBSCBSTot group. */
+    @Embedded
+    private FiscalIbsCbsTotals ibsCbsTotals;
+
+    /**
+     * Which version of {@link br.com.cshub.taxify.integration.sieg.FiscalXmlMetadataParser}
+     * filled the parsed fields - null for notes imported before the version existed. Lets
+     * {@link br.com.cshub.taxify.config.FiscalXmlTaxDetailBackfill} re-read only the notes
+     * saved by an older parser.
+     */
+    @Column(name = "metadata_version")
+    private Integer metadataVersion;
+
     @OneToMany(mappedBy = "document", cascade = CascadeType.ALL, orphanRemoval = true, fetch = FetchType.LAZY)
     private List<FiscalXmlDocumentItem> itens = new ArrayList<>();
 
@@ -904,5 +917,21 @@ public class FiscalXmlDocument extends AbstractAuditingEntity {
         this.reviewedAt = pending ? null : at;
         this.reviewedBy = pending ? null : by;
         this.reviewNote = note == null || note.isBlank() ? null : (note.length() > 500 ? note.substring(0, 500) : note.strip());
+    }
+
+    public FiscalIbsCbsTotals getIbsCbsTotals() {
+        return ibsCbsTotals;
+    }
+
+    public void setIbsCbsTotals(FiscalIbsCbsTotals ibsCbsTotals) {
+        this.ibsCbsTotals = ibsCbsTotals;
+    }
+
+    public Integer getMetadataVersion() {
+        return metadataVersion;
+    }
+
+    public void setMetadataVersion(Integer metadataVersion) {
+        this.metadataVersion = metadataVersion;
     }
 }

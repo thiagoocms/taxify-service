@@ -7,7 +7,9 @@ import br.com.cshub.taxify.domain.xml.FiscalXmlDocumentItem;
 import br.com.cshub.taxify.dto.fiscalrule.ProductFiscalDivergenceDTO;
 import br.com.cshub.taxify.exception.BadRequestException;
 import br.com.cshub.taxify.repository.FiscalXmlDocumentItemRepository;
-import br.com.cshub.taxify.repository.ProductFiscalRuleRepository;
+import br.com.cshub.taxify.service.fiscalcheck.FiscalCheckContext;
+import br.com.cshub.taxify.service.fiscalcheck.FiscalCheckEngine;
+import br.com.cshub.taxify.service.fiscalcheck.ProductRuleCheck;
 import br.com.cshub.taxify.validation.CompanyValidation;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
@@ -17,7 +19,7 @@ import java.time.LocalDateTime;
 import java.time.LocalTime;
 import java.util.ArrayList;
 import java.util.List;
-import java.util.Objects;
+import java.util.Set;
 import java.util.UUID;
 
 /**
@@ -25,20 +27,26 @@ import java.util.UUID;
  * {@link ProductFiscalRule} registered for each product, to find notes that were
  * issued with the wrong CFOP/NCM and need rectifying - the actual correction still
  * happens upstream (in the issuing system), this only tells you what to fix.
+ *
+ * <p>The comparison itself is {@link ProductRuleCheck}, run through {@link FiscalCheckEngine};
+ * this response keeps its original shape (one row per item, current x correct CFOP/NCM), so
+ * only that check's findings go into it - the other checks get their own response.
  */
 @Service
 public class ProductFiscalDivergenceService {
 
+    private static final Set<String> RULE_CODES = Set.of(ProductRuleCheck.CFOP, ProductRuleCheck.NCM);
+
     private final FiscalXmlDocumentItemRepository itemRepository;
-    private final ProductFiscalRuleRepository ruleRepository;
+    private final FiscalCheckEngine checkEngine;
     private final CompanyValidation companyValidation;
     private final MessageService messageService;
 
-    public ProductFiscalDivergenceService(FiscalXmlDocumentItemRepository itemRepository, ProductFiscalRuleRepository ruleRepository, CompanyValidation companyValidation, MessageService messageService) {
+    public ProductFiscalDivergenceService(FiscalXmlDocumentItemRepository itemRepository, FiscalCheckEngine checkEngine,
+                                          CompanyValidation companyValidation, MessageService messageService) {
         this.itemRepository = itemRepository;
-        this.ruleRepository = ruleRepository;
+        this.checkEngine = checkEngine;
         this.companyValidation = companyValidation;
-
         this.messageService = messageService;
     }
 
@@ -51,27 +59,17 @@ public class ProductFiscalDivergenceService {
         LocalDateTime to = dataEmissaoFim != null ? dataEmissaoFim.atTime(LocalTime.MAX) : LocalDateTime.MAX;
 
         List<FiscalXmlDocumentItem> items = itemRepository.findByDocument_Company_IdAndDocument_IssueDateBetween(id, from, to);
+        FiscalCheckContext context = checkEngine.contextFor(id);
 
         List<ProductFiscalDivergenceDTO> divergences = new ArrayList<>();
         for (FiscalXmlDocumentItem item : items) {
-            if (item.getCodigo() == null) {
-                continue;
+            boolean diverges = checkEngine.check(item, context).stream()
+                    .anyMatch(divergence -> RULE_CODES.contains(divergence.code()));
+            if (diverges) {
+                context.ruleFor(item.getCodigo()).ifPresent(rule -> divergences.add(toDivergenceDTO(item, rule)));
             }
-            ruleRepository.findFirstByCompany_IdAndCodigoProdutoAndDeletedIsFalse(id, item.getCodigo())
-                    .filter(rule -> diverges(item, rule))
-                    .ifPresent(rule -> divergences.add(toDivergenceDTO(item, rule)));
         }
         return divergences;
-    }
-
-    private boolean diverges(FiscalXmlDocumentItem item, ProductFiscalRule rule) {
-        boolean cfopDiverges = !equalsTrimmed(item.getCfop(), rule.getCfopCorreto());
-        boolean ncmDiverges = rule.getNcmCorreto() != null && !equalsTrimmed(item.getNcm(), rule.getNcmCorreto());
-        return cfopDiverges || ncmDiverges;
-    }
-
-    private boolean equalsTrimmed(String a, String b) {
-        return Objects.equals(a == null ? null : a.trim(), b == null ? null : b.trim());
     }
 
     private ProductFiscalDivergenceDTO toDivergenceDTO(FiscalXmlDocumentItem item, ProductFiscalRule rule) {

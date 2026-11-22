@@ -44,7 +44,7 @@ class DanfePdfServiceTest {
                         null, end),
                 new FiscalXmlTotaisDTO(new BigDecimal("1000"), new BigDecimal("180"), null, null, null, null, null,
                         new BigDecimal("1000"), null, null, null, null, null, null, null, null,
-                        new BigDecimal("1000"), new BigDecimal("300.50")),
+                        new BigDecimal("1000"), new BigDecimal("300.50"), null),
                 FiscalDirection.OUTBOUND, true, FiscalDocumentStatus.AUTHORIZED, null, null, null, null, null);
     }
 
@@ -53,7 +53,7 @@ class DanfePdfServiceTest {
                 "Produto de teste número " + i, "84713012", "5102", "UN", new BigDecimal("2"),
                 new BigDecimal("250"), new BigDecimal("500"), "UN", new BigDecimal("2"), new BigDecimal("250"),
                 new FiscalXmlImpostoItemDTO("00", new BigDecimal("500"), new BigDecimal("18"), new BigDecimal("90"),
-                        null, null, null, null, null, null))).toList();
+                        null, null, null, null, null, null, null, null))).toList();
     }
 
     @Test

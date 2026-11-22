@@ -2,6 +2,7 @@ package br.com.cshub.taxify.repository;
 
 import br.com.cshub.taxify.domain.xml.FiscalXmlDocumentItem;
 import org.springframework.data.domain.Pageable;
+import org.springframework.data.jpa.repository.EntityGraph;
 import org.springframework.data.jpa.repository.JpaRepository;
 import org.springframework.data.jpa.repository.Query;
 import org.springframework.data.repository.query.Param;
@@ -15,6 +16,8 @@ import java.util.UUID;
 @Repository
 public interface FiscalXmlDocumentItemRepository extends JpaRepository<FiscalXmlDocumentItem, UUID> {
 
+    /** Fetches each item's note with it - callers read the note of every item. */
+    @EntityGraph(attributePaths = "document")
     List<FiscalXmlDocumentItem> findByDocument_Company_IdAndDocument_IssueDateBetween(
             UUID companyId, LocalDateTime issueDateFrom, LocalDateTime issueDateTo);
 

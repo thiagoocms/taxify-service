@@ -261,7 +261,7 @@ public class FiscalXmlQueryService {
                 d.getBaseCalculoIcmsSt(), d.getValorIcmsSt(), d.getValorFcpSt(), d.getValorProdutos(),
                 d.getValorFrete(), d.getValorSeguro(), d.getValorDesconto(), d.getValorImportacao(),
                 d.getValorIpi(), d.getValorPis(), d.getValorCofins(), d.getValorOutrasDespesas(),
-                d.getValorTotalNota(), d.getValorAproximadoTributos());
+                d.getValorTotalNota(), d.getValorAproximadoTributos(), d.getIbsCbsTotals());
 
         return new FiscalXmlDetailDTO(d.getId(), d.getCompany().getId(), d.getAccessKey(), d.getDocumentType(),
                 d.getIssuerCnpj(), d.getRecipientCnpj(), d.getIssueDate(), d.getRectifiedFilePath() != null,
@@ -322,7 +322,9 @@ public class FiscalXmlQueryService {
                         item.getSituacaoTributariaPis(),
                         item.getValorPis(),
                         item.getSituacaoTributariaCofins(),
-                        item.getValorCofins()
+                        item.getValorCofins(),
+                        item.getTaxDetail(),
+                        item.getIbsCbs()
                 )
         );
     }

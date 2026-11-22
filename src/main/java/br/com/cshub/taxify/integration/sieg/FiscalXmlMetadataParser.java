@@ -1,5 +1,8 @@
 package br.com.cshub.taxify.integration.sieg;
 
+import br.com.cshub.taxify.domain.xml.FiscalIbsCbsTotals;
+import br.com.cshub.taxify.domain.xml.FiscalItemIbsCbs;
+import br.com.cshub.taxify.domain.xml.FiscalItemTaxDetail;
 import br.com.cshub.taxify.dto.fiscalxml.FiscalXmlDestinatarioDTO;
 import br.com.cshub.taxify.dto.fiscalxml.FiscalXmlEmitenteDTO;
 import br.com.cshub.taxify.dto.fiscalxml.FiscalXmlEnderecoDTO;
@@ -27,11 +30,23 @@ import java.util.List;
  * response don't depend on SIEG's response envelope - only on the (public, stable)
  * NFe/CTe XML layout published by the Brazilian tax authority. For NFe this maps the
  * full header (ide/emit/dest/ICMSTot) and every line item (det/prod plus a summary of
- * its ICMS/IPI/PIS/COFINS); CTe only gets the basic identification fields for now,
+ * its ICMS/IPI/PIS/COFINS and IBS/CBS); CTe only gets the basic identification fields for now,
  * since its layout (rem/exped/receb/infCTeNorm) is materially different from NFe's.
  */
 @Component
 public class FiscalXmlMetadataParser {
+
+    /**
+     * Bumped whenever the parser starts extracting fields it didn't before. Saved on each
+     * note ({@code FiscalXmlDocument#metadataVersion}) so the backfill knows which stored
+     * notes were parsed by an older version and need re-reading.
+     * <ul>
+     *   <li>1 - item tax detail (origin, CSOSN, ST, IPI/PIS/COFINS base and rate, CEST,
+     *       cBenef) and IBS/CBS on items and totals.</li>
+     *   <li>2 - IBS/CBS deferral/refund indicator (gDif/gDevTrib) on items.</li>
+     * </ul>
+     */
+    public static final int CURRENT_VERSION = 2;
 
     private static final Logger log = LoggerFactory.getLogger(FiscalXmlMetadataParser.class);
     private static final DateTimeFormatter DATE_ONLY = DateTimeFormatter.ISO_LOCAL_DATE;
@@ -73,13 +88,14 @@ public class FiscalXmlMetadataParser {
         Element dest = firstElementIgnoringNamespace(infNFe, "dest");
         Element total = firstElementIgnoringNamespace(infNFe, "total");
         Element icmsTot = total == null ? null : firstElementIgnoringNamespace(total, "ICMSTot");
+        Element ibsCbsTot = total == null ? null : firstElementIgnoringNamespace(total, "IBSCBSTot");
 
         String issuerCnpj = textOf(emit, "CNPJ");
         String recipientCnpj = textOf(dest, "CNPJ");
         LocalDateTime issueDate = extractIssueDate(infNFe);
 
         return new FiscalXmlMetadata(accessKey, "NFE", issuerCnpj, recipientCnpj, issueDate,
-                mapIdentificacao(ide), mapEmitente(emit), mapDestinatario(dest), mapTotais(icmsTot), mapProdutos(infNFe));
+                mapIdentificacao(ide), mapEmitente(emit), mapDestinatario(dest), mapTotais(icmsTot, ibsCbsTot), mapProdutos(infNFe));
     }
 
     private FiscalXmlIdentificacaoDTO mapIdentificacao(Element ide) {
@@ -162,8 +178,8 @@ public class FiscalXmlMetadataParser {
         );
     }
 
-    private FiscalXmlTotaisDTO mapTotais(Element icmsTot) {
-        if (icmsTot == null) {
+    private FiscalXmlTotaisDTO mapTotais(Element icmsTot, Element ibsCbsTot) {
+        if (icmsTot == null && ibsCbsTot == null) {
             return null;
         }
         return new FiscalXmlTotaisDTO(
@@ -184,7 +200,24 @@ public class FiscalXmlMetadataParser {
                 decimalOf(icmsTot, "vCOFINS"),
                 decimalOf(icmsTot, "vOutro"),
                 decimalOf(icmsTot, "vNF"),
-                decimalOf(icmsTot, "vTotTrib")
+                decimalOf(icmsTot, "vTotTrib"),
+                mapIbsCbsTotais(ibsCbsTot)
+        );
+    }
+
+    /** total/IBSCBSTot - the IBS values sit in gIBS (gIBSUF/gIBSMun), the CBS one in gCBS. */
+    private FiscalIbsCbsTotals mapIbsCbsTotais(Element ibsCbsTot) {
+        if (ibsCbsTot == null) {
+            return null;
+        }
+        Element gIbs = firstElementIgnoringNamespace(ibsCbsTot, "gIBS");
+        Element gCbs = firstElementIgnoringNamespace(ibsCbsTot, "gCBS");
+        return new FiscalIbsCbsTotals(
+                decimalOf(ibsCbsTot, "vBCIBSCBS"),
+                decimalOf(gIbs, "vIBSUF"),
+                decimalOf(gIbs, "vIBSMun"),
+                decimalOf(gIbs, "vIBS"),
+                decimalOf(gCbs, "vCBS")
         );
     }
 
@@ -213,13 +246,13 @@ public class FiscalXmlMetadataParser {
                     textOf(prod, "uTrib"),
                     decimalOf(prod, "qTrib"),
                     decimalOf(prod, "vUnTrib"),
-                    mapImpostoItem(firstElementIgnoringNamespace(det, "imposto"))
+                    mapImpostoItem(prod, firstElementIgnoringNamespace(det, "imposto"))
             ));
         }
         return produtos;
     }
 
-    private FiscalXmlImpostoItemDTO mapImpostoItem(Element imposto) {
+    private FiscalXmlImpostoItemDTO mapImpostoItem(Element prod, Element imposto) {
         if (imposto == null) {
             return null;
         }
@@ -238,7 +271,64 @@ public class FiscalXmlMetadataParser {
                 textOf(pis, "CST"),
                 decimalOf(pis, "vPIS"),
                 textOf(cofins, "CST"),
-                decimalOf(cofins, "vCOFINS")
+                decimalOf(cofins, "vCOFINS"),
+                mapTaxDetail(prod, icms, ipi, pis, cofins),
+                mapIbsCbs(firstElementIgnoringNamespace(imposto, "IBSCBS"))
+        );
+    }
+
+    private FiscalItemTaxDetail mapTaxDetail(Element prod, Element icms, Element ipi, Element pis, Element cofins) {
+        return new FiscalItemTaxDetail(
+                textOf(prod, "CEST"),
+                textOf(prod, "cBenef"),
+                textOf(icms, "orig"),
+                textOf(icms, "CSOSN"),
+                textOf(icms, "modBC"),
+                decimalOf(icms, "pRedBC"),
+                decimalOf(icms, "vICMSDeson"),
+                textOf(icms, "modBCST"),
+                decimalOf(icms, "pMVAST"),
+                decimalOf(icms, "vBCST"),
+                decimalOf(icms, "pICMSST"),
+                decimalOf(icms, "vICMSST"),
+                decimalOf(ipi, "vBC"),
+                decimalOf(ipi, "pIPI"),
+                decimalOf(pis, "vBC"),
+                decimalOf(pis, "pPIS"),
+                decimalOf(cofins, "vBC"),
+                decimalOf(cofins, "pCOFINS")
+        );
+    }
+
+    /**
+     * det/imposto/IBSCBS: CST and cClassTrib at the top, the values in gIBSCBS - one
+     * subgroup per tax (gIBSUF, gIBSMun, gCBS), each with its rate, an optional reduction
+     * (gRed/pRedAliq) and the value. A note with no IBSCBS group gets null.
+     */
+    private FiscalItemIbsCbs mapIbsCbs(Element ibsCbs) {
+        if (ibsCbs == null) {
+            return null;
+        }
+        Element values = firstElementIgnoringNamespace(ibsCbs, "gIBSCBS");
+        Element ibsUf = firstElementIgnoringNamespace(values, "gIBSUF");
+        Element ibsMun = firstElementIgnoringNamespace(values, "gIBSMun");
+        Element cbs = firstElementIgnoringNamespace(values, "gCBS");
+        return new FiscalItemIbsCbs(
+                textOf(ibsCbs, "CST"),
+                textOf(ibsCbs, "cClassTrib"),
+                decimalOf(values, "vBC"),
+                decimalOf(ibsUf, "pIBSUF"),
+                decimalOf(firstElementIgnoringNamespace(ibsUf, "gRed"), "pRedAliq"),
+                decimalOf(ibsUf, "vIBSUF"),
+                decimalOf(ibsMun, "pIBSMun"),
+                decimalOf(firstElementIgnoringNamespace(ibsMun, "gRed"), "pRedAliq"),
+                decimalOf(ibsMun, "vIBSMun"),
+                decimalOf(values, "vIBS"),
+                decimalOf(cbs, "pCBS"),
+                decimalOf(firstElementIgnoringNamespace(cbs, "gRed"), "pRedAliq"),
+                decimalOf(cbs, "vCBS"),
+                firstElementIgnoringNamespace(values, "gDif") != null
+                        || firstElementIgnoringNamespace(values, "gDevTrib") != null
         );
     }
 
@@ -251,7 +341,8 @@ public class FiscalXmlMetadataParser {
      * ICMS/IPI/PIS/COFINS wrap their real fields one level deeper, in a group element
      * whose name varies by tax regime (ICMS00, ICMS60, ICMSSN101, IPITrib, PISAliq,
      * PISOutr...) - NFe defines dozens of these. Rather than enumerate every variant,
-     * just take whichever single child element is actually there.
+     * just take the child element that is a group. Not simply the first child: IPI starts
+     * with plain fields (cEnq, CNPJProd, cSelo...) before IPITrib/IPINT.
      */
     private Element firstRegimeGroup(Element parent) {
         if (parent == null) {
@@ -259,11 +350,21 @@ public class FiscalXmlMetadataParser {
         }
         NodeList children = parent.getChildNodes();
         for (int i = 0; i < children.getLength(); i++) {
-            if (children.item(i) instanceof Element child) {
+            if (children.item(i) instanceof Element child && hasChildElement(child)) {
                 return child;
             }
         }
         return null;
+    }
+
+    private boolean hasChildElement(Element element) {
+        NodeList children = element.getChildNodes();
+        for (int i = 0; i < children.getLength(); i++) {
+            if (children.item(i) instanceof Element) {
+                return true;
+            }
+        }
+        return false;
     }
 
     private Integer intOf(String value) {
