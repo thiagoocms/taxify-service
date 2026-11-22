@@ -9,7 +9,7 @@ import org.hibernate.type.SqlTypes;
 import java.util.UUID;
 
 /**
- * The correct CFOP/NCM for one product of one company, kept in taxify so already
+ * The correct CFOP/NCM (and, optionally, tax classification - {@link ProductTaxRule}) for one product of one company, kept in taxify so already
  * downloaded/stored {@link br.com.cshub.taxify.domain.xml.FiscalXmlDocumentItem}s can be
  * checked against it (see {@link br.com.cshub.taxify.service.ProductFiscalDivergenceService})
  * to find notes that were issued with the wrong classification and need rectifying.
@@ -43,6 +43,18 @@ public class ProductFiscalRule extends AbstractAuditingEntity {
 
     @Column(name = "observacoes", length = 1000)
     private String observacoes;
+
+    /** Null when no tax field is set - only CFOP/NCM are checked then. */
+    @Embedded
+    private ProductTaxRule taxRule;
+
+    public ProductTaxRule getTaxRule() {
+        return taxRule;
+    }
+
+    public void setTaxRule(ProductTaxRule taxRule) {
+        this.taxRule = taxRule;
+    }
 
     public ProductFiscalRule() {
     }

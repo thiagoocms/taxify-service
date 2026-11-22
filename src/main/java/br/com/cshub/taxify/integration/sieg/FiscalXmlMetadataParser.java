@@ -44,9 +44,11 @@ public class FiscalXmlMetadataParser {
      *   <li>1 - item tax detail (origin, CSOSN, ST, IPI/PIS/COFINS base and rate, CEST,
      *       cBenef) and IBS/CBS on items and totals.</li>
      *   <li>2 - IBS/CBS deferral/refund indicator (gDif/gDevTrib) on items.</li>
+     *   <li>3 - IPI CST/value read from IPITrib/IPINT (before, cEnq was taken as the group
+     *       and both were always empty).</li>
      * </ul>
      */
-    public static final int CURRENT_VERSION = 2;
+    public static final int CURRENT_VERSION = 3;
 
     private static final Logger log = LoggerFactory.getLogger(FiscalXmlMetadataParser.class);
     private static final DateTimeFormatter DATE_ONLY = DateTimeFormatter.ISO_LOCAL_DATE;

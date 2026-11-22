@@ -9,10 +9,13 @@ import br.com.cshub.taxify.dto.fiscalrule.FiscalCheckFindingDTO;
 import br.com.cshub.taxify.dto.fiscalrule.ProductFiscalDivergenceDTO;
 import br.com.cshub.taxify.dto.fiscalrule.ProductFiscalRuleDTO;
 import br.com.cshub.taxify.dto.fiscalrule.ProductFiscalRuleFilterDTO;
+import br.com.cshub.taxify.dto.fiscalrule.ProductRuleSuggestionDTO;
+import br.com.cshub.taxify.enumerated.FiscalDirection;
 import br.com.cshub.taxify.service.CompanyProductService;
 import br.com.cshub.taxify.service.FiscalConferenceService;
 import br.com.cshub.taxify.service.ProductFiscalDivergenceService;
 import br.com.cshub.taxify.service.ProductFiscalRuleService;
+import br.com.cshub.taxify.service.ProductRuleSuggestionService;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.format.annotation.DateTimeFormat;
 import org.springframework.http.ResponseEntity;
@@ -33,14 +36,17 @@ public class ProductFiscalRuleResource extends AbstractCrudResource<UUID, Produc
     private final ProductFiscalDivergenceService divergenceService;
     private final CompanyProductService companyProductService;
     private final FiscalConferenceService conferenceService;
+    private final ProductRuleSuggestionService suggestionService;
 
     @Autowired
     protected ProductFiscalRuleResource(ProductFiscalRuleService service, ProductFiscalDivergenceService divergenceService,
-                                        CompanyProductService companyProductService, FiscalConferenceService conferenceService) {
+                                        CompanyProductService companyProductService, FiscalConferenceService conferenceService,
+                                        ProductRuleSuggestionService suggestionService) {
         super(service);
         this.divergenceService = divergenceService;
         this.companyProductService = companyProductService;
         this.conferenceService = conferenceService;
+        this.suggestionService = suggestionService;
     }
 
     /**
@@ -75,5 +81,17 @@ public class ProductFiscalRuleResource extends AbstractCrudResource<UUID, Produc
             @RequestParam(required = false) @DateTimeFormat(iso = DateTimeFormat.ISO.DATE) LocalDate dataEmissaoInicio,
             @RequestParam(required = false) @DateTimeFormat(iso = DateTimeFormat.ISO.DATE) LocalDate dataEmissaoFim) {
         return ResponseEntity.ok(conferenceService.findFindings(companyId, dataEmissaoInicio, dataEmissaoFim));
+    }
+
+    /**
+     * Suggested rules: per product, the value each field had most often on the notes and how
+     * consistent the notes are about it. {@code direcao} OUTBOUND = only the company's own sales.
+     */
+    @GetMapping("/sugestoes")
+    public ResponseEntity<List<ProductRuleSuggestionDTO>> sugestoes(
+            @RequestParam String companyId,
+            @RequestParam(required = false) FiscalDirection direcao,
+            @RequestParam(defaultValue = "true") boolean somenteSemRegra) {
+        return ResponseEntity.ok(suggestionService.suggest(companyId, direcao, somenteSemRegra));
     }
 }

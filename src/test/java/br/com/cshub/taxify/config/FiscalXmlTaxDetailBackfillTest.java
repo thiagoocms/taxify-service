@@ -38,7 +38,8 @@ class FiscalXmlTaxDetailBackfillTest {
                       <gIBSCBS><vBC>10.00</vBC><gCBS><pCBS>0.9000</pCBS><vCBS>0.09</vCBS></gCBS></gIBSCBS></IBSCBS>
                   </imposto></det>
                 <det nItem="2"><prod><cProd>P2</cProd></prod>
-                  <imposto><ICMS><ICMS00><orig>0</orig><CST>00</CST><pICMS>18</pICMS></ICMS00></ICMS></imposto></det>
+                  <imposto><ICMS><ICMS00><orig>0</orig><CST>00</CST><pICMS>18</pICMS></ICMS00></ICMS>
+                    <IPI><cEnq>999</cEnq><IPITrib><CST>50</CST><vBC>10.00</vBC><pIPI>10</pIPI><vIPI>1.00</vIPI></IPITrib></IPI></imposto></det>
                 <total><ICMSTot><vNF>20.00</vNF></ICMSTot>
                   <IBSCBSTot><vBCIBSCBS>10.00</vBCIBSCBS><gCBS><vCBS>0.09</vCBS></gCBS></IBSCBSTot></total>
               </infNFe></NFe></nfeProc>
@@ -73,6 +74,9 @@ class FiscalXmlTaxDetailBackfillTest {
         assertThat(first.getIbsCbs().valorCbs()).isEqualByComparingTo("0.09");
         assertThat(second.getTaxDetail().origemMercadoria()).isEqualTo("0");
         assertThat(second.getIbsCbs()).isNull();
+        // IPI CST/value, always empty before parser version 3, are rewritten
+        assertThat(second.getSituacaoTributariaIpi()).isEqualTo("50");
+        assertThat(second.getValorIpi()).isEqualByComparingTo("1.00");
         // fields the old parser already had are not rewritten
         assertThat(second.getAliquotaIcms()).isEqualByComparingTo("12");
         assertThat(document.getIbsCbsTotals().valorCbs()).isEqualByComparingTo("0.09");

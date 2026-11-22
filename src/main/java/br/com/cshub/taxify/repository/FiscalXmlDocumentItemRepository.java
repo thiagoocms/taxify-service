@@ -44,6 +44,33 @@ public interface FiscalXmlDocumentItemRepository extends JpaRepository<FiscalXml
     List<Object[]> findDistinctProductsByCompany(@Param("companyId") UUID companyId, @Param("term") String term, Pageable pageable);
 
     /**
+     * How the company's products were classified on its notes: one row per product code and
+     * distinct combination of fields, with how many items had it - what the rule suggestion
+     * picks the most frequent value of each field from. The ICMS rate only counts internal
+     * operations (an interstate rate isn't the product's). Canceled and deleted notes are out;
+     * {@code direction} null = every note.
+     * Row: codigo, descricao, ncm, cfop, origem, cst (null when CSOSN), csosn, internal pICMS, cest,
+     * cst IPI, pIPI, cst PIS, pPIS, cst COFINS, pCOFINS, cst IBS/CBS, cClassTrib, count.
+     */
+    @Query("select i.codigo, max(i.descricao), i.ncm, i.cfop, i.taxDetail.origemMercadoria,"
+            + " case when i.taxDetail.csosn is null then i.situacaoTributariaIcms end, i.taxDetail.csosn,"
+            + " case when d.destinoOperacao = '1' then i.aliquotaIcms end, i.taxDetail.cest,"
+            + " i.situacaoTributariaIpi, i.taxDetail.aliquotaIpi, i.situacaoTributariaPis, i.taxDetail.aliquotaPis,"
+            + " i.situacaoTributariaCofins, i.taxDetail.aliquotaCofins, i.ibsCbs.cst, i.ibsCbs.classificacaoTributaria, count(i)"
+            + " from FiscalXmlDocumentItem i join i.document d"
+            + " where d.company.id = :companyId and d.deleted = false"
+            + " and (d.status is null or d.status <> br.com.cshub.taxify.enumerated.FiscalDocumentStatus.CANCELED)"
+            + " and (:direction is null or d.direction = :direction)"
+            + " and i.codigo is not null and i.codigo <> ''"
+            + " group by i.codigo, i.ncm, i.cfop, i.taxDetail.origemMercadoria,"
+            + " case when i.taxDetail.csosn is null then i.situacaoTributariaIcms end, i.taxDetail.csosn,"
+            + " case when d.destinoOperacao = '1' then i.aliquotaIcms end, i.taxDetail.cest,"
+            + " i.situacaoTributariaIpi, i.taxDetail.aliquotaIpi, i.situacaoTributariaPis, i.taxDetail.aliquotaPis,"
+            + " i.situacaoTributariaCofins, i.taxDetail.aliquotaCofins, i.ibsCbs.cst, i.ibsCbs.classificacaoTributaria")
+    List<Object[]> findClassificationsByProduct(@Param("companyId") UUID companyId,
+                                                @Param("direction") br.com.cshub.taxify.enumerated.FiscalDirection direction);
+
+    /**
      * Item values per company, month, direction and CFOP - the input of the period
      * assessment (TaxAssessmentService). Canceled and deleted notes are out.
      * Row: company id, year, month, direction, cfop, sum of item values.

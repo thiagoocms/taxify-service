@@ -3,6 +3,7 @@ package br.com.cshub.taxify.mapper;
 import br.com.cshub.taxify.common.AbstractMapper;
 import br.com.cshub.taxify.domain.company.Company;
 import br.com.cshub.taxify.domain.fiscalrule.ProductFiscalRule;
+import br.com.cshub.taxify.domain.fiscalrule.ProductTaxRule;
 import br.com.cshub.taxify.dto.fiscalrule.ProductFiscalRuleDTO;
 import org.springframework.stereotype.Component;
 
@@ -22,11 +23,13 @@ public class ProductFiscalRuleMapper extends AbstractMapper<ProductFiscalRule, P
         entity.setCfopCorreto(source.cfopCorreto());
         entity.setObservacoes(source.observacoes());
         entity.setDeleted(Boolean.TRUE.equals(source.deleted()));
+        entity.setTaxRule(taxRuleOf(source));
         return entity;
     }
 
     @Override
     protected ProductFiscalRuleDTO toModel(ProductFiscalRule source) {
+        ProductTaxRule tax = source.getTaxRule();
         return new ProductFiscalRuleDTO(
                 source.getId().toString(),
                 source.getCompany().getId().toString(),
@@ -35,7 +38,20 @@ public class ProductFiscalRuleMapper extends AbstractMapper<ProductFiscalRule, P
                 source.getNcmCorreto(),
                 source.getCfopCorreto(),
                 source.getObservacoes(),
-                source.isDeleted()
+                source.isDeleted(),
+                tax == null ? null : tax.origemMercadoria(),
+                tax == null ? null : tax.cstIcms(),
+                tax == null ? null : tax.csosn(),
+                tax == null ? null : tax.aliquotaIcms(),
+                tax == null ? null : tax.cest(),
+                tax == null ? null : tax.cstIpi(),
+                tax == null ? null : tax.aliquotaIpi(),
+                tax == null ? null : tax.cstPis(),
+                tax == null ? null : tax.aliquotaPis(),
+                tax == null ? null : tax.cstCofins(),
+                tax == null ? null : tax.aliquotaCofins(),
+                tax == null ? null : tax.cstIbsCbs(),
+                tax == null ? null : tax.classificacaoTributaria()
         );
     }
 
@@ -48,5 +64,32 @@ public class ProductFiscalRuleMapper extends AbstractMapper<ProductFiscalRule, P
         target.setCfopCorreto(source.getCfopCorreto());
         target.setObservacoes(source.getObservacoes());
         target.setDeleted(source.isDeleted());
+        target.setTaxRule(source.getTaxRule());
+    }
+
+    /** Blank fields become null ("don't check"); a rule with no tax field at all has no ProductTaxRule. */
+    private static ProductTaxRule taxRuleOf(ProductFiscalRuleDTO source) {
+        ProductTaxRule rule = new ProductTaxRule(
+                trimToNull(source.origemMercadoria()),
+                trimToNull(source.cstIcms()),
+                trimToNull(source.csosn()),
+                source.aliquotaIcms(),
+                trimToNull(source.cest()),
+                trimToNull(source.cstIpi()),
+                source.aliquotaIpi(),
+                trimToNull(source.cstPis()),
+                source.aliquotaPis(),
+                trimToNull(source.cstCofins()),
+                source.aliquotaCofins(),
+                trimToNull(source.cstIbsCbs()),
+                trimToNull(source.classificacaoTributaria()));
+        return rule.equals(EMPTY) ? null : rule;
+    }
+
+    private static final ProductTaxRule EMPTY = new ProductTaxRule(null, null, null, null, null, null, null, null,
+            null, null, null, null, null);
+
+    private static String trimToNull(String value) {
+        return value == null || value.isBlank() ? null : value.trim();
     }
 }

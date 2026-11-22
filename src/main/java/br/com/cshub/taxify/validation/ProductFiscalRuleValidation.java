@@ -89,5 +89,11 @@ public class ProductFiscalRuleValidation extends AbstractCrudValidation<ProductF
         if (duplicate) {
             throw new ConflictException(messageService.getMessage("error.productFiscalRule.duplicate"));
         }
+
+        var tax = entity.getTaxRule();
+        if (tax != null && tax.cstIbsCbs() != null && tax.classificacaoTributaria() != null
+                && !tax.classificacaoTributaria().startsWith(tax.cstIbsCbs())) {
+            throw new BadRequestException(messageService.getMessage("error.productFiscalRule.classTrib.cst"));
+        }
     }
 }

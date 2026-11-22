@@ -28,8 +28,9 @@ import java.util.UUID;
 /**
  * Re-reads the stored XML of notes parsed by an older {@link FiscalXmlMetadataParser}
  * ({@code metadata_version} below {@link FiscalXmlMetadataParser#CURRENT_VERSION}) and
- * fills in only what that version didn't extract - the items' tax detail and IBS/CBS and
- * the note's IBS/CBS totals. Nothing else is touched: no item is recreated, so ids, review
+ * fills in only what that version didn't extract or got wrong - the items' tax detail,
+ * IBS/CBS and IPI CST/value (always empty before version 3), and the note's IBS/CBS totals.
+ * Nothing else is touched: no item is recreated, so ids, review
  * state and audit history stay as they are. Always reads the original file, never the
  * rectified copy - the checks are about what was actually issued.
  *
@@ -97,7 +98,9 @@ public class FiscalXmlTaxDetailBackfill {
             after = ids.getLast().toString();
             log.info("Tax detail backfill: {} notes so far", totals);
         }
-        if (!totals.isEmpty()) {
+        if (stopping) {
+            log.info("Tax detail backfill interrupted by shutdown: {} - resumes on the next startup", totals);
+        } else if (!totals.isEmpty()) {
             log.info("Tax detail backfill finished: {}{}", totals,
                     totals.getOrDefault(Outcome.FAILED, 0) > 0 ? " - restart to retry the failed ones" : "");
         }
@@ -136,7 +139,7 @@ public class FiscalXmlTaxDetailBackfill {
         }
     }
 
-    /** Only the fields the older parser didn't have - items matched by nItem, else by position. */
+    /** Only the fields the older parser didn't have or got wrong - items matched by nItem, else by position. */
     static void apply(FiscalXmlDocument document, FiscalXmlMetadata metadata) {
         if (metadata.totais() != null) {
             document.setIbsCbsTotals(metadata.totais().ibsCbs());
@@ -158,6 +161,8 @@ public class FiscalXmlTaxDetailBackfill {
             if (impostos != null) {
                 item.setTaxDetail(impostos.detalhe());
                 item.setIbsCbs(impostos.ibsCbs());
+                item.setSituacaoTributariaIpi(impostos.situacaoTributariaIpi());
+                item.setValorIpi(impostos.valorIpi());
             }
         }
     }
