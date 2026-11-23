@@ -64,7 +64,7 @@ class FiscalXmlQueryServiceDetailTest {
     @BeforeEach
     void setUp() {
         service = new FiscalXmlQueryService(documentRepository, itemRepository, new FiscalXmlMetadataParser(), companyValidation,
-                tenantAccessService, messageService, eventService, fileStorage);
+                tenantAccessService, messageService, eventService, fileStorage, org.mockito.Mockito.mock(br.com.cshub.taxify.repository.ProductFiscalRuleRepository.class));
         document = new FiscalXmlDocument();
         document.setId(UUID.randomUUID());
         document.setCompany(new Company(UUID.randomUUID()));

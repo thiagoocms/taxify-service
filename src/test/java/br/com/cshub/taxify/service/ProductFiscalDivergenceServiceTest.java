@@ -18,6 +18,7 @@ import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.extension.ExtendWith;
 import org.mockito.Mock;
 import org.mockito.junit.jupiter.MockitoExtension;
+import org.springframework.test.util.ReflectionTestUtils;
 
 import java.time.LocalDateTime;
 import java.util.List;
@@ -128,6 +129,34 @@ class ProductFiscalDivergenceServiceTest {
         when(ruleRepository.findByCompany_IdAndDeletedIsFalse(companyId)).thenReturn(List.of(ruleWith("OUTRO", "5102", null)));
 
         assertThat(service.findDivergences(companyId.toString(), null, null)).isEmpty();
+    }
+
+    @Test
+    void aNoteRectifiedWithTheCurrentRuleNoLongerDiverges() {
+        FiscalXmlDocumentItem item = itemWith("P005", "5405", "11111111");
+        item.getDocument().setRectifiedFilePath("s3://bucket/fiscal-xml/retificado.xml");
+        item.getDocument().setLastRectificationCheckedAt(LocalDateTime.now());
+        when(itemRepository.findByDocument_Company_IdAndDocument_IssueDateBetween(eq(companyId), any(), any()))
+                .thenReturn(List.of(item));
+        ProductFiscalRule rule = ruleWith("P005", "5102", "22222222");
+        ReflectionTestUtils.setField(rule, "lastModifiedDate", LocalDateTime.now().minusDays(1));
+        when(ruleRepository.findByCompany_IdAndDeletedIsFalse(companyId)).thenReturn(List.of(rule));
+
+        assertThat(service.findDivergences(companyId.toString(), null, null)).isEmpty();
+    }
+
+    @Test
+    void aRuleEditedAfterTheRectificationMakesTheNoteDivergeAgain() {
+        FiscalXmlDocumentItem item = itemWith("P006", "5405", "11111111");
+        item.getDocument().setRectifiedFilePath("s3://bucket/fiscal-xml/retificado.xml");
+        item.getDocument().setLastRectificationCheckedAt(LocalDateTime.now().minusDays(2));
+        when(itemRepository.findByDocument_Company_IdAndDocument_IssueDateBetween(eq(companyId), any(), any()))
+                .thenReturn(List.of(item));
+        ProductFiscalRule rule = ruleWith("P006", "6102", null);
+        ReflectionTestUtils.setField(rule, "lastModifiedDate", LocalDateTime.now().minusDays(1));
+        when(ruleRepository.findByCompany_IdAndDeletedIsFalse(companyId)).thenReturn(List.of(rule));
+
+        assertThat(service.findDivergences(companyId.toString(), null, null)).hasSize(1);
     }
 
     private FiscalXmlDocumentItem itemWith(String codigo, String cfop, String ncm) {

@@ -10,6 +10,7 @@ import br.com.cshub.taxify.enumerated.DivergenceSeverity;
 import org.springframework.stereotype.Component;
 
 import java.math.BigDecimal;
+import java.time.LocalDateTime;
 import java.util.ArrayList;
 import java.util.List;
 import java.util.Objects;
@@ -53,8 +54,10 @@ public class ProductRuleCheck implements FiscalCheck {
 
     private List<FiscalDivergence> compare(FiscalXmlDocumentItem item, ProductFiscalRule rule) {
         List<FiscalDivergence> divergences = new ArrayList<>();
-        text(divergences, CFOP, "CFOP", "CFOP", item.getCfop(), rule.getCfopCorreto(), true);
-        text(divergences, NCM, "NCM", "NCM", item.getNcm(), rule.getNcmCorreto(), true);
+        if (!rectifiedUnder(item.getDocument(), rule)) {
+            text(divergences, CFOP, "CFOP", "CFOP", item.getCfop(), rule.getCfopCorreto(), true);
+            text(divergences, NCM, "NCM", "NCM", item.getNcm(), rule.getNcmCorreto(), true);
+        }
 
         ProductTaxRule tax = rule.getTaxRule();
         if (tax == null) {
@@ -108,6 +111,21 @@ public class ProductRuleCheck implements FiscalCheck {
             divergences.add(new FiscalDivergence(code, field, Money.show(found), Money.show(expected), DivergenceSeverity.ERROR,
                     "%s %s%% diferente da cadastrada para o produto (%s%%)".formatted(label, Money.show(found), Money.show(expected))));
         }
+    }
+
+    /**
+     * The note already has a rectified version built with this rule as it stands now: the
+     * rectification always rewrites CFOP and NCM to the rule's values, so those no longer diverge.
+     * The item columns keep what was issued, hence the check against the rectification itself.
+     * A rule edited after the last rectification run makes the rectified copy stale - it diverges again.
+     * Tax codes are only swapped within the same XML group, so those are still compared.
+     */
+    public static boolean rectifiedUnder(FiscalXmlDocument document, ProductFiscalRule rule) {
+        if (document == null || document.getRectifiedFilePath() == null || document.getLastRectificationCheckedAt() == null) {
+            return false;
+        }
+        LocalDateTime ruleChangedAt = rule.getLastModifiedDate() != null ? rule.getLastModifiedDate() : rule.getCreatedDate();
+        return ruleChangedAt == null || !ruleChangedAt.isAfter(document.getLastRectificationCheckedAt());
     }
 
     private static boolean isInternal(FiscalXmlDocument document) {

@@ -1,5 +1,9 @@
 package br.com.cshub.taxify.service;
 
+import br.com.cshub.taxify.domain.fiscalrule.ProductFiscalRule;
+import br.com.cshub.taxify.repository.ProductFiscalRuleRepository;
+import br.com.cshub.taxify.service.fiscalcheck.ProductRuleCheck;
+
 import br.com.cshub.taxify.integration.sieg.FiscalXmlFileStorage;
 import br.com.cshub.taxify.dto.fiscalxml.FiscalXmlEventDTO;
 import java.util.Locale;
@@ -59,6 +63,7 @@ public class FiscalXmlQueryService {
 
     private final FiscalXmlEventService eventService;
     private final FiscalXmlFileStorage fileStorage;
+    private final ProductFiscalRuleRepository ruleRepository;
 
     private final FiscalXmlDocumentRepository documentRepository;
     private final FiscalXmlDocumentItemRepository itemRepository;
@@ -70,7 +75,9 @@ public class FiscalXmlQueryService {
     public FiscalXmlQueryService(FiscalXmlDocumentRepository documentRepository, FiscalXmlDocumentItemRepository itemRepository,
                                  FiscalXmlMetadataParser metadataParser, CompanyValidation companyValidation,
                                  TenantAccessService tenantAccessService, MessageService messageService,
-                                 FiscalXmlEventService eventService, FiscalXmlFileStorage fileStorage) {
+                                 FiscalXmlEventService eventService, FiscalXmlFileStorage fileStorage,
+                                 ProductFiscalRuleRepository ruleRepository) {
+        this.ruleRepository = ruleRepository;
         this.fileStorage = fileStorage;
         this.eventService = eventService;
         this.documentRepository = documentRepository;
@@ -149,16 +156,42 @@ public class FiscalXmlQueryService {
             for (Object[] row : itemRepository.countByDocumentIds(ids)) {
                 itemCounts.put((UUID) row[0], (Long) row[1]);
             }
+            Map<UUID, FiscalXmlDocument> byId = documents.getContent().stream()
+                    .collect(java.util.stream.Collectors.toMap(FiscalXmlDocument::getId, d -> d));
+            Map<String, ProductFiscalRule> rules = rulesIfAnyRectified(company.getId(), documents.getContent());
             for (Object[] row : itemRepository.findDistinctCfopsByDocumentIds(ids)) {
-                String cfop = ((String) row[1]).strip();
+                UUID documentId = (UUID) row[0];
+                ProductFiscalRule rule = row[1] == null ? null : rules.get((String) row[1]);
+                String cfop = effectiveCfop(byId.get(documentId), rule, (String) row[2]);
                 if (!cfop.isEmpty()) {
-                    cfops.computeIfAbsent((UUID) row[0], id -> new java.util.TreeSet<>()).add(cfop);
+                    cfops.computeIfAbsent(documentId, id -> new java.util.TreeSet<>()).add(cfop);
                 }
             }
         }
 
         return documents.map(document -> toSummary(document, itemCounts.getOrDefault(document.getId(), 0L),
                 List.copyOf(cfops.getOrDefault(document.getId(), new java.util.TreeSet<>()))));
+    }
+
+    /** The company's rules by product code - only read when some note of the page has a rectified version. */
+    private Map<String, ProductFiscalRule> rulesIfAnyRectified(UUID companyId, List<FiscalXmlDocument> documents) {
+        if (documents.stream().noneMatch(document -> document.getRectifiedFilePath() != null)) {
+            return Map.of();
+        }
+        return ruleRepository.findByCompany_IdAndDeletedIsFalse(companyId).stream()
+                .filter(rule -> rule.getCodigoProduto() != null)
+                .collect(java.util.stream.Collectors.toMap(ProductFiscalRule::getCodigoProduto, rule -> rule, (first, second) -> first));
+    }
+
+    /**
+     * The item's CFOP as the note stands now: a rectified version built with the current rule
+     * rewrote it to the rule's CFOP (the item column keeps what was issued).
+     */
+    private static String effectiveCfop(FiscalXmlDocument document, ProductFiscalRule rule, String issued) {
+        if (rule != null && rule.getCfopCorreto() != null && ProductRuleCheck.rectifiedUnder(document, rule)) {
+            return rule.getCfopCorreto().strip();
+        }
+        return issued.strip();
     }
 
     /** First parser version that stores every header field the detail shows ({@link FiscalXmlHeaderExtras}). */
