@@ -53,11 +53,7 @@ public class SefazDistClient {
 
     public SefazDistResponse fetch(A1Certificate certificate, String uf, String cnpj, String ultNsu)
             throws IOException, GeneralSecurityException {
-        SSLContext sslContext = certificate.sslContext();
-        try (HttpClient http = HttpClient.newBuilder()
-                .sslContext(sslContext)
-                .connectTimeout(Duration.ofSeconds(30))
-                .build()) {
+        try (HttpClient http = httpClient(certificate.sslContext())) {
             HttpRequest request = HttpRequest.newBuilder(URI.create(properties.endpoint()))
                     .timeout(Duration.ofSeconds(properties.getTimeoutSeconds()))
                     .header("Content-Type", "application/soap+xml; charset=utf-8")
@@ -72,6 +68,18 @@ public class SefazDistClient {
             Thread.currentThread().interrupt();
             throw new IOException("Interrupted while calling SEFAZ", e);
         }
+    }
+
+    /**
+     * HTTP/1.1 only: the SEFAZ servers (IIS) refuse client-certificate requests over HTTP/2 -
+     * "RST_STREAM: Use HTTP/1.1 for request" - and Java's client negotiates HTTP/2 by default.
+     */
+    static HttpClient httpClient(SSLContext sslContext) {
+        return HttpClient.newBuilder()
+                .version(HttpClient.Version.HTTP_1_1)
+                .sslContext(sslContext)
+                .connectTimeout(Duration.ofSeconds(30))
+                .build();
     }
 
     static String envelope(String tpAmb, String cUfAutor, String cnpj, String ultNsu) {

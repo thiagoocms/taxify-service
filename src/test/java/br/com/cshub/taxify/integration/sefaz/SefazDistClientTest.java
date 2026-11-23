@@ -32,6 +32,13 @@ class SefazDistClientTest {
     }
 
     @Test
+    void usesHttp11BecauseSefazRefusesClientCertificatesOverHttp2() throws Exception {
+        try (java.net.http.HttpClient http = SefazDistClient.httpClient(javax.net.ssl.SSLContext.getDefault())) {
+            assertThat(http.version()).isEqualTo(java.net.http.HttpClient.Version.HTTP_1_1);
+        }
+    }
+
+    @Test
     void ufCodes() {
         assertThat(SefazDistClient.ufCode("PE")).isEqualTo("26");
         assertThat(SefazDistClient.ufCode(" sp ")).isEqualTo("35");
