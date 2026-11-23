@@ -9,6 +9,7 @@ import br.com.cshub.taxify.domain.fiscalrule.ProductFiscalRule;
 import br.com.cshub.taxify.domain.invoice.InvoiceAuditLog;
 import br.com.cshub.taxify.domain.user.User;
 import br.com.cshub.taxify.domain.xml.FiscalXmlDocument;
+import br.com.cshub.taxify.domain.xml.FiscalXmlDocumentItem;
 import br.com.cshub.taxify.dto.fiscalrule.FiscalXmlRectificationResultDTO;
 import br.com.cshub.taxify.enumerated.InvoiceAuditStatus;
 import br.com.cshub.taxify.exception.BadRequestException;
@@ -30,6 +31,7 @@ import java.io.IOException;
 import java.nio.charset.StandardCharsets;
 import java.nio.file.Files;
 import java.nio.file.Path;
+import java.util.List;
 import java.util.Optional;
 import java.util.UUID;
 
@@ -293,5 +295,75 @@ class FiscalXmlRectificationServiceTest {
         assertThat(result.correcoesAplicadas()).hasSize(1);
         String rectifiedContent = Files.readString(Path.of(result.rectifiedFilePath()), StandardCharsets.UTF_8);
         assertThat(rectifiedContent).contains("<NCM>87654321</NCM>");
+    }
+
+    /** A note saved by the current parser, with its one item stored as columns (CFOP 5405, NCM 12345678). */
+    private FiscalXmlDocument parsedDocument() {
+        FiscalXmlDocument document = document();
+        document.setDocumentType("NFE");
+        document.setMetadataVersion(4);
+        FiscalXmlDocumentItem item = new FiscalXmlDocumentItem();
+        item.setDocument(document);
+        item.setCodigo("P001");
+        item.setCfop("5405");
+        item.setNcm("12345678");
+        document.getItens().add(item);
+        return document;
+    }
+
+    private ProductFiscalRule ruleWithCfop(String cfop) {
+        ProductFiscalRule rule = new ProductFiscalRule(UUID.randomUUID());
+        rule.setCodigoProduto("P001");
+        rule.setCfopCorreto(cfop);
+        return rule;
+    }
+
+    @Test
+    void doesNotReadTheFileWhenTheStoredItemsAlreadyMatchTheRules() throws IOException {
+        Files.delete(originalFile); // reading it would fail the rectification
+        when(documentRepository.findFirstByIdAndDeletedIsFalse(documentId)).thenReturn(Optional.of(parsedDocument()));
+        when(ruleRepository.findByCompany_IdAndDeletedIsFalse(companyId)).thenReturn(List.of(ruleWithCfop("5405")));
+
+        FiscalXmlRectificationResultDTO result = service.rectify(documentId);
+
+        assertThat(result.correcoesAplicadas()).isEmpty();
+        verify(ruleRepository, never()).findFirstByCompany_IdAndCodigoProdutoAndDeletedIsFalse(any(), any());
+        verify(documentRepository).save(any());
+    }
+
+    @Test
+    void revertsWithoutReadingTheFileWhenTheRuleNoLongerDiverges() throws IOException {
+        Files.delete(originalFile);
+        FiscalXmlDocument document = parsedDocument();
+        document.setRectifiedFilePath(tempDir.resolve("old-rectified.xml").toString());
+        when(documentRepository.findFirstByIdAndDeletedIsFalse(documentId)).thenReturn(Optional.of(document));
+        when(ruleRepository.findByCompany_IdAndDeletedIsFalse(companyId)).thenReturn(List.of());
+
+        service.rectify(documentId);
+
+        assertThat(document.getRectifiedFilePath()).isNull();
+    }
+
+    @Test
+    void readsTheFileWhenAStoredItemDiffersFromItsRule() {
+        when(documentRepository.findFirstByIdAndDeletedIsFalse(documentId)).thenReturn(Optional.of(parsedDocument()));
+        ProductFiscalRule rule = ruleWithCfop("5102");
+        when(ruleRepository.findByCompany_IdAndDeletedIsFalse(companyId)).thenReturn(List.of(rule));
+        when(ruleRepository.findFirstByCompany_IdAndCodigoProdutoAndDeletedIsFalse(companyId, "P001")).thenReturn(Optional.of(rule));
+
+        FiscalXmlRectificationResultDTO result = service.rectify(documentId);
+
+        assertThat(result.correcoesAplicadas()).hasSize(1);
+        assertThat(result.rectifiedFilePath()).isNotNull();
+    }
+
+    @Test
+    void rejectsAnotherDocumentTypeWithoutReadingTheFile() throws IOException {
+        Files.delete(originalFile);
+        FiscalXmlDocument document = document();
+        document.setDocumentType("CTE");
+        when(documentRepository.findFirstByIdAndDeletedIsFalse(documentId)).thenReturn(Optional.of(document));
+
+        assertThatThrownBy(() -> service.rectify(documentId)).isInstanceOf(BadRequestException.class);
     }
 }

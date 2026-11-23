@@ -11,6 +11,7 @@ import br.com.cshub.taxify.common.TenantAccessService;
 import br.com.cshub.taxify.domain.company.Company;
 import br.com.cshub.taxify.domain.xml.FiscalXmlDocument;
 import br.com.cshub.taxify.domain.xml.FiscalXmlDocumentItem;
+import br.com.cshub.taxify.domain.xml.FiscalXmlHeaderExtras;
 import br.com.cshub.taxify.dto.PageRequestDTO;
 import br.com.cshub.taxify.dto.fiscalxml.FiscalXmlDestinatarioDTO;
 import br.com.cshub.taxify.dto.fiscalxml.FiscalXmlDetailDTO;
@@ -152,15 +153,22 @@ public class FiscalXmlQueryService {
         return documents.map(document -> toSummary(document, itemCounts.getOrDefault(document.getId(), 0L)));
     }
 
+    /** First parser version that stores every header field the detail shows ({@link FiscalXmlHeaderExtras}). */
+    private static final int HEADER_EXTRAS_VERSION = 4;
+
     /**
-     * Parses the original file, since a few header fields shown on screen (tipo de
-     * emissão, versão do emissor, país...) aren't stored as columns. When the file is
-     * gone (purged by FiscalXmlPurgeScheduler), falls back to the stored columns so the
-     * note still opens - just without those few fields.
+     * Built from the stored columns - no file read - for NFes saved (or backfilled) by
+     * parser version 4 on, which keeps every header field shown on screen. Older notes and
+     * other document types parse the original file; when it is gone (purged by
+     * FiscalXmlPurgeScheduler), they fall back to the columns too, just without the few
+     * fields those older versions didn't store.
      */
     @Transactional(readOnly = true)
     public FiscalXmlDetailDTO findDetail(UUID documentId) {
         FiscalXmlDocument document = findDocument(documentId);
+        if (hasAllHeaderColumns(document)) {
+            return detailFromColumns(document);
+        }
 
         byte[] xmlBytes;
         try {
@@ -234,12 +242,21 @@ public class FiscalXmlQueryService {
         }
     }
 
+    private boolean hasAllHeaderColumns(FiscalXmlDocument document) {
+        return "NFE".equals(document.getDocumentType())
+                && document.getMetadataVersion() != null
+                && document.getMetadataVersion() >= HEADER_EXTRAS_VERSION;
+    }
+
     private FiscalXmlDetailDTO detailFromColumns(FiscalXmlDocument d) {
+        FiscalXmlHeaderExtras x = d.getHeaderExtras() != null ? d.getHeaderExtras()
+                : new FiscalXmlHeaderExtras(null, null, null, null, null, null, null, null, null);
         FiscalXmlIdentificacaoDTO identificacao = new FiscalXmlIdentificacaoDTO(
                 d.getCodigoUf(), d.getNaturezaOperacao(), d.getModelo(), d.getSerie(), d.getNumero(),
                 d.getIssueDate(), d.getDataSaidaEntrada(), d.getTipoOperacao(), d.getDestinoOperacao(),
-                d.getCodigoMunicipioFatoGerador(), null, null, null, d.getAmbiente(), d.getFinalidadeEmissao(),
-                d.getConsumidorFinal(), d.getIndicadorPresenca(), null, null);
+                d.getCodigoMunicipioFatoGerador(), x.tipoImpressao(), x.tipoEmissao(), x.digitoVerificador(),
+                d.getAmbiente(), d.getFinalidadeEmissao(), d.getConsumidorFinal(), d.getIndicadorPresenca(),
+                x.processoEmissao(), x.versaoProcessoEmissao());
 
         FiscalXmlEmitenteDTO emitente = new FiscalXmlEmitenteDTO(
                 d.getIssuerCnpj(), d.getEmitenteCpf(), d.getEmitenteNome(), d.getEmitenteNomeFantasia(),
@@ -247,14 +264,14 @@ public class FiscalXmlQueryService {
                 d.getEmitenteInscricaoMunicipal(), d.getEmitenteCnae(), d.getEmitenteRegimeTributario(),
                 new FiscalXmlEnderecoDTO(d.getEmitenteLogradouro(), d.getEmitenteEnderecoNumero(), d.getEmitenteComplemento(),
                         d.getEmitenteBairro(), d.getEmitenteCodigoMunicipio(), d.getEmitenteMunicipio(), d.getEmitenteUf(),
-                        d.getEmitenteCep(), null, null, d.getEmitenteTelefone()));
+                        d.getEmitenteCep(), x.emitenteCodigoPais(), x.emitentePais(), d.getEmitenteTelefone()));
 
         FiscalXmlDestinatarioDTO destinatario = new FiscalXmlDestinatarioDTO(
                 d.getRecipientCnpj(), d.getDestinatarioCpf(), d.getDestinatarioIdEstrangeiro(), d.getDestinatarioNome(),
                 d.getDestinatarioInscricaoEstadual(), d.getDestinatarioIndicadorIe(), d.getDestinatarioEmail(),
                 new FiscalXmlEnderecoDTO(d.getDestinatarioLogradouro(), d.getDestinatarioEnderecoNumero(), d.getDestinatarioComplemento(),
                         d.getDestinatarioBairro(), d.getDestinatarioCodigoMunicipio(), d.getDestinatarioMunicipio(), d.getDestinatarioUf(),
-                        d.getDestinatarioCep(), null, null, d.getDestinatarioTelefone()));
+                        d.getDestinatarioCep(), x.destinatarioCodigoPais(), x.destinatarioPais(), d.getDestinatarioTelefone()));
 
         FiscalXmlTotaisDTO totais = new FiscalXmlTotaisDTO(
                 d.getBaseCalculoIcms(), d.getValorIcms(), d.getValorIcmsDesonerado(), d.getValorFcp(),

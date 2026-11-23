@@ -10,6 +10,7 @@ import br.com.cshub.taxify.common.MessageService;
 import br.com.cshub.taxify.domain.company.Company;
 import br.com.cshub.taxify.domain.xml.FiscalXmlDocument;
 import br.com.cshub.taxify.domain.xml.FiscalXmlDocumentItem;
+import br.com.cshub.taxify.domain.xml.FiscalXmlHeaderExtras;
 import br.com.cshub.taxify.domain.xml.FiscalXmlSyncControl;
 import br.com.cshub.taxify.dto.fiscalxml.*;
 import br.com.cshub.taxify.dto.sieg.XmlDownloadFilterDTO;
@@ -441,6 +442,7 @@ public class FiscalXmlIntegrationService {
         applyEmitente(document, metadata.emitente());
         applyDestinatario(document, metadata.destinatario());
         applyTotais(document, metadata.totais());
+        document.setHeaderExtras(FiscalXmlHeaderExtras.of(metadata));
 
         for (FiscalXmlProdutoDTO produto : metadata.produtos()) {
             document.getItens().add(toItemEntity(produto, document));

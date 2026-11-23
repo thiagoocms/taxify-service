@@ -33,9 +33,11 @@ import java.io.IOException;
 import java.time.LocalDateTime;
 import java.util.ArrayList;
 import java.util.List;
+import java.util.Map;
 import java.util.Objects;
 import java.util.Optional;
 import java.util.UUID;
+import java.util.stream.Collectors;
 
 /**
  * Rewrites one already-downloaded NFe's CFOP (and NCM, when the rule pins one) to what
@@ -69,6 +71,8 @@ import java.util.UUID;
 public class FiscalXmlRectificationService {
 
     private static final int NOTES_MAX_LENGTH = 500;
+    /** First parser version whose item columns hold every tax code the rectifier touches (IPI CST came in 3). */
+    private static final int ITEM_COLUMNS_VERSION = 3;
 
     private final FiscalXmlDocumentRepository documentRepository;
     private final ProductFiscalRuleRepository ruleRepository;
@@ -104,15 +108,21 @@ public class FiscalXmlRectificationService {
             throw new BadRequestException(messageService.getMessage("error.fiscalXml.rectification.own.issue"));
         }
 
-        byte[] originalBytes = readOriginal(document.getXmlFilePath());
-        Document dom = parse(originalBytes);
-
-        Element infNFe = firstElementIgnoringNamespace(dom, "infNFe");
-        if (infNFe == null) {
+        if (document.getDocumentType() != null && !"NFE".equals(document.getDocumentType())) {
             throw new BadRequestException(messageService.getMessage("error.fiscalXml.rectification.not.nfe"));
         }
 
-        List<String> corrections = applyRules(infNFe, document.getCompany().getId());
+        // Only reads the XML (from S3) when the stored items show something a rule would change.
+        Document dom = null;
+        List<String> corrections = List.of();
+        if (mayNeedCorrection(document)) {
+            dom = parse(readOriginal(document.getXmlFilePath()));
+            Element infNFe = firstElementIgnoringNamespace(dom, "infNFe");
+            if (infNFe == null) {
+                throw new BadRequestException(messageService.getMessage("error.fiscalXml.rectification.not.nfe"));
+            }
+            corrections = applyRules(infNFe, document.getCompany().getId());
+        }
 
         String rectifiedPath = null;
         if (!corrections.isEmpty()) {
@@ -140,6 +150,26 @@ public class FiscalXmlRectificationService {
 
         return new FiscalXmlRectificationResultDTO(
                 document.getId().toString(), document.getAccessKey(), document.getXmlFilePath(), rectifiedPath, corrections);
+    }
+
+    /**
+     * Whether reading the file could turn up a correction, judged from the item columns
+     * ({@link RectificationPrecheck}). Notes whose columns came from a parser before version
+     * 3 (tax codes incomplete) or that have no stored items are always read.
+     */
+    private boolean mayNeedCorrection(FiscalXmlDocument document) {
+        Integer version = document.getMetadataVersion();
+        if (version == null || version < ITEM_COLUMNS_VERSION || document.getItens().isEmpty()) {
+            return true;
+        }
+        Map<String, List<ProductFiscalRule>> rulesByProduct = ruleRepository
+                .findByCompany_IdAndDeletedIsFalse(document.getCompany().getId()).stream()
+                .filter(rule -> rule.getCodigoProduto() != null)
+                .collect(Collectors.groupingBy(ProductFiscalRule::getCodigoProduto));
+        return document.getItens().stream()
+                .filter(item -> item.getCodigo() != null)
+                .anyMatch(item -> rulesByProduct.getOrDefault(item.getCodigo(), List.of()).stream()
+                        .anyMatch(rule -> RectificationPrecheck.mayChange(item, rule)));
     }
 
     private boolean alreadyLogged(String externalInvoiceKey, String notes) {

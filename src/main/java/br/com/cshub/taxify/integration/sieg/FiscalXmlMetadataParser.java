@@ -46,9 +46,12 @@ public class FiscalXmlMetadataParser {
      *   <li>2 - IBS/CBS deferral/refund indicator (gDif/gDevTrib) on items.</li>
      *   <li>3 - IPI CST/value read from IPITrib/IPINT (before, cEnq was taken as the group
      *       and both were always empty).</li>
+     *   <li>4 - header fields only the detail screen shows ({@link
+     *       br.com.cshub.taxify.domain.xml.FiscalXmlHeaderExtras}), so opening a note no
+     *       longer reads its file.</li>
      * </ul>
      */
-    public static final int CURRENT_VERSION = 3;
+    public static final int CURRENT_VERSION = 4;
 
     private static final Logger log = LoggerFactory.getLogger(FiscalXmlMetadataParser.class);
     private static final DateTimeFormatter DATE_ONLY = DateTimeFormatter.ISO_LOCAL_DATE;

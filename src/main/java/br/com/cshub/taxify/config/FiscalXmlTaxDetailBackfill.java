@@ -2,6 +2,7 @@ package br.com.cshub.taxify.config;
 
 import br.com.cshub.taxify.domain.xml.FiscalXmlDocument;
 import br.com.cshub.taxify.domain.xml.FiscalXmlDocumentItem;
+import br.com.cshub.taxify.domain.xml.FiscalXmlHeaderExtras;
 import br.com.cshub.taxify.dto.fiscalxml.FiscalXmlImpostoItemDTO;
 import br.com.cshub.taxify.dto.fiscalxml.FiscalXmlProdutoDTO;
 import br.com.cshub.taxify.integration.sieg.FiscalXmlFileStorage;
@@ -29,7 +30,8 @@ import java.util.UUID;
  * Re-reads the stored XML of notes parsed by an older {@link FiscalXmlMetadataParser}
  * ({@code metadata_version} below {@link FiscalXmlMetadataParser#CURRENT_VERSION}) and
  * fills in only what that version didn't extract or got wrong - the items' tax detail,
- * IBS/CBS and IPI CST/value (always empty before version 3), and the note's IBS/CBS totals.
+ * IBS/CBS and IPI CST/value (always empty before version 3), the note's IBS/CBS totals
+ * and the header extras of version 4.
  * Nothing else is touched: no item is recreated, so ids, review
  * state and audit history stay as they are. Always reads the original file, never the
  * rectified copy - the checks are about what was actually issued.
@@ -141,6 +143,7 @@ public class FiscalXmlTaxDetailBackfill {
 
     /** Only the fields the older parser didn't have or got wrong - items matched by nItem, else by position. */
     static void apply(FiscalXmlDocument document, FiscalXmlMetadata metadata) {
+        document.setHeaderExtras(FiscalXmlHeaderExtras.of(metadata));
         if (metadata.totais() != null) {
             document.setIbsCbsTotals(metadata.totais().ibsCbs());
         }

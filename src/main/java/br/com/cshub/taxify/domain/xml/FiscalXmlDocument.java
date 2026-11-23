@@ -242,6 +242,10 @@ public class FiscalXmlDocument extends AbstractAuditingEntity {
     @Embedded
     private FiscalIbsCbsTotals ibsCbsTotals;
 
+    /** Header fields only the detail screen shows - null before parser version 4. */
+    @Embedded
+    private FiscalXmlHeaderExtras headerExtras;
+
     /**
      * Which version of {@link br.com.cshub.taxify.integration.sieg.FiscalXmlMetadataParser}
      * filled the parsed fields - null for notes imported before the version existed. Lets
@@ -925,6 +929,14 @@ public class FiscalXmlDocument extends AbstractAuditingEntity {
 
     public void setIbsCbsTotals(FiscalIbsCbsTotals ibsCbsTotals) {
         this.ibsCbsTotals = ibsCbsTotals;
+    }
+
+    public FiscalXmlHeaderExtras getHeaderExtras() {
+        return headerExtras;
+    }
+
+    public void setHeaderExtras(FiscalXmlHeaderExtras headerExtras) {
+        this.headerExtras = headerExtras;
     }
 
     public Integer getMetadataVersion() {

@@ -74,6 +74,8 @@ public class FiscalXmlRectificationScheduler {
         LocalDateTime rulesUpdatedAt = ruleRepository.findMaxLastModifiedDateByCompanyId(company.getId()).orElse(null);
         List<FiscalXmlDocument> needsCheck = documents.stream()
                 .filter(document -> !document.isOwnIssue() && !document.isCanceled())
+                // Only NFes can be rectified - a CT-e would fail on every run.
+                .filter(document -> document.getDocumentType() == null || "NFE".equals(document.getDocumentType()))
                 .filter(document -> needsRectificationCheck(document, rulesUpdatedAt))
                 .toList();
 
