@@ -87,7 +87,7 @@ class SefazDistServiceTest {
 
     @Test
     void readsBatchesUntilCaughtUpStoringOnlyFullDocuments() throws Exception {
-        when(client.fetch(certificate, "PE", CNPJ, "000000000000000")).thenReturn(new SefazDistResponse("138", "ok",
+        when(client.fetch(certificate, "PE", CNPJ, "000000000000001")).thenReturn(new SefazDistResponse("138", "ok",
                 "000000000000003", "000000000000005",
                 List.of(doc("1", "procNFe_v4.00.xsd"), doc("2", "resNFe_v1.01.xsd"), doc("3", "procEventoNFe_v1.00.xsd"))));
         when(client.fetch(certificate, "PE", CNPJ, "000000000000003")).thenReturn(new SefazDistResponse("138", "ok",
@@ -115,7 +115,7 @@ class SefazDistServiceTest {
 
         assertThat(control.getLastStatus()).isEqualTo(SefazDistControl.Status.SEM_MOVIMENTO);
         assertThat(control.getNextQueryAt()).isAfter(LocalDateTime.now().plusMinutes(60));
-        assertThat(control.getUltNsu()).isEqualTo("000000000000000");
+        assertThat(control.getUltNsu()).isEqualTo("000000000000001");
     }
 
     @Test
@@ -130,7 +130,7 @@ class SefazDistServiceTest {
         assertThat(control.getMaxNsu()).isEqualTo("000000000004400");
         assertThat(control.getNextQueryAt()).isAfter(LocalDateTime.now().plusMinutes(60));
         assertThat(control.getLastStatus()).isEqualTo(SefazDistControl.Status.SEM_MOVIMENTO);
-        assertThat(control.getLastDetail()).contains("NSU ajustado de 000000000000000 para 000000000004321")
+        assertThat(control.getLastDetail()).contains("NSU ajustado de 000000000000001 para 000000000004321")
                 .contains("Consumo Indevido");
     }
 

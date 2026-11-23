@@ -32,7 +32,7 @@ public class SefazDistControl extends AbstractAuditingEntity {
     private Company company;
 
     @Column(name = "ult_nsu", nullable = false, length = 15)
-    private String ultNsu = "000000000000000";
+    private String ultNsu = "000000000000001";
 
     @Column(name = "max_nsu", length = 15)
     private String maxNsu;

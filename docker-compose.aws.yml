@@ -1,23 +1,12 @@
-# Na EC2: manda os logs dos containers para o CloudWatch Logs (grupo /taxify, um stream
-# por container). Use junto com o docker-compose.yml:
-#
-#   docker compose -f docker-compose.yml -f docker-compose.aws.yml up -d
-#
-# As credenciais vêm da IAM role da instância (precisa da CloudWatchAgentServerPolicy) e
-# o "docker logs" continua funcionando normalmente. Passo a passo em monitoring/README.md.
-
 x-cloudwatch-logs: &cloudwatch-logs
   driver: awslogs
   options:
-    awslogs-region: ${AWS_LOG_REGION:-us-east-2}
-    awslogs-group: ${AWS_LOG_GROUP:-/taxify}
+    awslogs-region: us-east-2
+    awslogs-group: /taxify
     awslogs-create-group: "true"
-    # Nome do stream = nome do container (taxify-backend, taxify-mysql, taxify-frontend).
     tag: "{{.Name}}"
-    # Se o CloudWatch ficar fora do ar, descarta log em vez de travar o container.
     mode: non-blocking
     max-buffer-size: 4m
-
 services:
   mysql:
     logging: *cloudwatch-logs
