@@ -132,6 +132,7 @@ public class FiscalXmlTaxDetailBackfill {
                     return Outcome.UNREADABLE;
                 }
                 apply(document, metadata);
+                br.com.cshub.taxify.integration.fiscalxml.NfeRetentions.parse(xml).applyTo(document);
                 markDone(document);
                 return Outcome.UPDATED;
             });

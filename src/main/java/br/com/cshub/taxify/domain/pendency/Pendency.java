@@ -28,6 +28,8 @@ public class Pendency extends AbstractAuditingEntity {
     public static final String OBJECT_COMPANY = "COMPANY";
     public static final String OBJECT_NOTE = "NOTE";
     public static final String OBJECT_NOTE_KEY = "NOTE_KEY";
+    /** A service invoice (NFS-e) - the screen opens the service notes. */
+    public static final String OBJECT_SERVICE_NOTE = "SERVICE_NOTE";
 
     @Id
     @GeneratedValue(strategy = GenerationType.UUID)

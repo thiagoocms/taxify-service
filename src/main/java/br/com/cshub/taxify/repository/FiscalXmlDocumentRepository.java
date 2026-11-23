@@ -97,6 +97,18 @@ public interface FiscalXmlDocumentRepository extends AbstractJpaRepository<Fisca
     long countOnlySieg(@Param("companyId") UUID companyId, @Param("before") LocalDateTime before,
                        @Param("issuedSince") LocalDateTime issuedSince);
 
+    /**
+     * The retentions' source (M1) on goods notes: non-canceled NF-e issued in the period with a federal
+     * retention (retTrib), or purchases with ICMS-ST (informative).
+     */
+    @Query("select d from FiscalXmlDocument d join fetch d.company where d.company.id in :companyIds and d.deleted = false"
+            + " and (d.status is null or d.status <> br.com.cshub.taxify.enumerated.FiscalDocumentStatus.CANCELED)"
+            + " and d.issueDate between :from and :to"
+            + " and (d.retPis > 0 or d.retCofins > 0 or d.retCsll > 0 or d.retIrrf > 0 or d.retInss > 0"
+            + "      or (d.ownIssue = false and d.valorIcmsSt > 0))")
+    List<FiscalXmlDocument> findForRetentions(@Param("companyIds") Collection<UUID> companyIds,
+                                              @Param("from") LocalDateTime from, @Param("to") LocalDateTime to);
+
     /** {@link #countOnlySieg}'s notes themselves, oldest first. */
     @Query("select d from FiscalXmlDocument d where d.company.id = :companyId and d.deleted = false"
             + " and d.ownIssue = false and d.foundInSiegAt < :before and d.foundInSefazAt is null"

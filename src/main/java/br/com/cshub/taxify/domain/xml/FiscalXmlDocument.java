@@ -66,6 +66,22 @@ public class FiscalXmlDocument extends AbstractAuditingEntity {
     @Column(name = "source_system", length = 20, nullable = false)
     private String sourceSystem = "SIEG";
 
+    /** Federal retentions of the note (total/retTrib) - M1. Null = none. */
+    @Column(name = "ret_pis", precision = 15, scale = 2)
+    private BigDecimal retPis;
+
+    @Column(name = "ret_cofins", precision = 15, scale = 2)
+    private BigDecimal retCofins;
+
+    @Column(name = "ret_csll", precision = 15, scale = 2)
+    private BigDecimal retCsll;
+
+    @Column(name = "ret_irrf", precision = 15, scale = 2)
+    private BigDecimal retIrrf;
+
+    @Column(name = "ret_inss", precision = 15, scale = 2)
+    private BigDecimal retInss;
+
     /** When SIEG first brought this note (or saw it again) - for the SIEG x SEFAZ comparison. */
     @Column(name = "found_in_sieg_at")
     private LocalDateTime foundInSiegAt;
@@ -358,6 +374,17 @@ public class FiscalXmlDocument extends AbstractAuditingEntity {
     public void setSourceSystem(String sourceSystem) {
         this.sourceSystem = sourceSystem;
     }
+
+    public BigDecimal getRetPis() { return retPis; }
+    public void setRetPis(BigDecimal retPis) { this.retPis = retPis; }
+    public BigDecimal getRetCofins() { return retCofins; }
+    public void setRetCofins(BigDecimal retCofins) { this.retCofins = retCofins; }
+    public BigDecimal getRetCsll() { return retCsll; }
+    public void setRetCsll(BigDecimal retCsll) { this.retCsll = retCsll; }
+    public BigDecimal getRetIrrf() { return retIrrf; }
+    public void setRetIrrf(BigDecimal retIrrf) { this.retIrrf = retIrrf; }
+    public BigDecimal getRetInss() { return retInss; }
+    public void setRetInss(BigDecimal retInss) { this.retInss = retInss; }
 
     public LocalDateTime getFoundInSiegAt() {
         return foundInSiegAt;

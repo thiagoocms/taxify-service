@@ -25,6 +25,7 @@ import br.com.cshub.taxify.repository.FiscalXmlSyncControlRepository;
 import br.com.cshub.taxify.repository.SefazNoteSummaryRepository;
 import br.com.cshub.taxify.enumerated.FiscalXmlSource;
 import br.com.cshub.taxify.integration.nfse.NfseXml;
+import br.com.cshub.taxify.integration.fiscalxml.NfeRetentions;
 import br.com.cshub.taxify.validation.CompanyValidation;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
@@ -336,6 +337,7 @@ public class FiscalXmlIntegrationService {
 
             String xmlFilePath = fileStorage.store(company.getId(), metadata.accessKey(), xmlBytes);
             FiscalXmlDocument fresh = toDocument(metadata, company, xmlFilePath);
+            NfeRetentions.parse(xmlBytes).applyTo(fresh);
             fresh.setSourceSystem(source.name());
             markFoundIn(fresh, source);
             completeSummary(company, fresh);

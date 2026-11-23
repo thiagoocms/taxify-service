@@ -54,7 +54,8 @@ public class FiscalXmlMetadataParser {
      *       longer reads its file.</li>
      * </ul>
      */
-    public static final int CURRENT_VERSION = 4;
+    /** 5: the federal retentions (retTrib) are stored too - see NfeRetentions. */
+    public static final int CURRENT_VERSION = 5;
 
     private static final Logger log = LoggerFactory.getLogger(FiscalXmlMetadataParser.class);
     private static final DateTimeFormatter DATE_ONLY = DateTimeFormatter.ISO_LOCAL_DATE;

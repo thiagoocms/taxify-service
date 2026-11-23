@@ -67,11 +67,14 @@ public class PendencyFinder {
     private final SubscriptionRepository subscriptionRepository;
     private final SefazManifestationScreenService manifestationService;
     private final SefazProperties sefazProperties;
+    private final br.com.cshub.taxify.service.retention.RetentionCalculator retentionCalculator;
 
     public PendencyFinder(CompanyCertificateService certificateService, SefazDistControlRepository controlRepository,
                           SefazNoteSummaryRepository summaryRepository, FiscalXmlDocumentRepository documentRepository,
                           CompanyTaxRegimeRepository regimeRepository, SubscriptionRepository subscriptionRepository,
-                          SefazManifestationScreenService manifestationService, SefazProperties sefazProperties) {
+                          SefazManifestationScreenService manifestationService, SefazProperties sefazProperties,
+                          br.com.cshub.taxify.service.retention.RetentionCalculator retentionCalculator) {
+        this.retentionCalculator = retentionCalculator;
         this.certificateService = certificateService;
         this.controlRepository = controlRepository;
         this.summaryRepository = summaryRepository;
@@ -109,6 +112,7 @@ public class PendencyFinder {
         }
         divergent(company, now, findings);
         regime(company, findings);
+        retentions(company, findings);
         return findings;
     }
 
@@ -205,6 +209,28 @@ public class PendencyFinder {
                     document.getReviewNote() != null && !document.getReviewNote().isBlank()
                             ? "Conferência: " + document.getReviewNote()
                             : "Conferida com divergência - corrija (regra, retificação) e marque como conferida."));
+        }
+    }
+
+    /** The retention problems (M1) of the current and the previous competence. */
+    private void retentions(Company company, List<Finding> findings) {
+        java.time.YearMonth current = java.time.YearMonth.now();
+        for (java.time.YearMonth month : List.of(current.minusMonths(1), current)) {
+            int count = 0;
+            for (var issue : retentionCalculator.compute(List.of(company), month).issues()) {
+                if (++count > MAX_PER_TYPE) {
+                    break;
+                }
+                boolean undue = br.com.cshub.taxify.service.retention.RetentionCalculator.Issue.UNDUE.equals(issue.kind());
+                PendencyType type = undue ? PendencyType.RETENTION_UNDUE : PendencyType.ISS_RETAINED_WITHOUT_VALUE;
+                boolean service = "NFSE".equals(issue.documentType());
+                findings.add(new Finding(type, type.defaultSeverity,
+                        key(type, issue.documentType() + ":" + issue.documentId()), month.toString(),
+                        service ? Pendency.OBJECT_SERVICE_NOTE : Pendency.OBJECT_NOTE, issue.documentId().toString(),
+                        (undue ? "Retenção provavelmente indevida" : "ISS retido sem valor") + " - "
+                                + (service ? "NFS-e " : "NF ") + issue.numero() + " de " + nameOr(issue.counterpartName()),
+                        issue.detail() + (undue ? " Veja a tela de Retenções." : " Confira a nota com o tomador.")));
+            }
         }
     }
 

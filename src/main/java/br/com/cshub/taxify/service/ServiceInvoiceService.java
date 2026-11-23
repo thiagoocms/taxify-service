@@ -129,7 +129,7 @@ public class ServiceInvoiceService {
         return ServiceInvoice.TERCEIRO;
     }
 
-    private static ServiceInvoice toEntity(Company company, NfseXml nfse, String path, String source) {
+    public static ServiceInvoice toEntity(Company company, NfseXml nfse, String path, String source) {
         ServiceInvoice invoice = new ServiceInvoice();
         invoice.setCompany(company);
         invoice.setAccessKey(nfse.accessKey());

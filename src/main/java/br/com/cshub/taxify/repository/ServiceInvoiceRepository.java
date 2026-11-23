@@ -32,6 +32,12 @@ public interface ServiceInvoiceRepository extends AbstractJpaRepository<ServiceI
                                 @Param("participant") String participant, @Param("numero") String numero,
                                 @Param("onlyRetained") boolean onlyRetained, Pageable pageable);
 
+    /** The retentions' source (M1): the companies' non-canceled NFS-e of a competence. */
+    @Query("select s from ServiceInvoice s join fetch s.company where s.company.id in :companyIds and s.deleted = false"
+            + " and s.canceled = false and s.competence between :from and :to")
+    List<ServiceInvoice> findForRetentions(@Param("companyIds") java.util.Collection<UUID> companyIds,
+                                           @Param("from") java.time.LocalDate from, @Param("to") java.time.LocalDate to);
+
     /** The period's notes that aren't canceled - totals and retentions. */
     @Query("select s from ServiceInvoice s where s.company.id = :companyId and s.deleted = false and s.canceled = false"
             + " and s.issueDate between :from and :to")

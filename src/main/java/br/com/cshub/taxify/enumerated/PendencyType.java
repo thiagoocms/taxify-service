@@ -13,7 +13,9 @@ public enum PendencyType {
     SOURCE_ONLY_SIEG(PendencySeverity.BAIXA, "Nota só no SIEG"),
     SOURCE_ONLY_SEFAZ(PendencySeverity.BAIXA, "Nota só na SEFAZ"),
     NOTE_DIVERGENT(PendencySeverity.MEDIA, "Nota conferida com divergência"),
-    REGIME_MISSING(PendencySeverity.MEDIA, "Regime tributário não informado");
+    REGIME_MISSING(PendencySeverity.MEDIA, "Regime tributário não informado"),
+    RETENTION_UNDUE(PendencySeverity.MEDIA, "Provável retenção indevida"),
+    ISS_RETAINED_WITHOUT_VALUE(PendencySeverity.BAIXA, "ISS retido sem valor");
 
     public final PendencySeverity defaultSeverity;
     public final String label;
