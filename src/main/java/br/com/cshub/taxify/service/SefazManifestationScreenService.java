@@ -93,11 +93,16 @@ public class SefazManifestationScreenService {
     @Transactional(readOnly = true)
     public ManifestationDTOs.Pending pending(String companyId) {
         Company company = companyValidation.checkExist(RequestIds.parse(companyId, messageService));
-        boolean enabled = manifestService.manifests(company.getId());
-        boolean certificate = validCertificate(company).isPresent();
+        return new ManifestationDTOs.Pending(manifestService.manifests(company.getId()), validCertificate(company).isPresent(),
+                notesOf(company));
+    }
+
+    /** The company's entries without a conclusive manifestation, nearest deadline first (also the pendencies' source). */
+    @Transactional(readOnly = true)
+    public List<ManifestationDTOs.Note> notesOf(Company company) {
         String cnpj = CompanyCertificateService.cnpjOf(company);
         if (cnpj == null) {
-            return new ManifestationDTOs.Pending(enabled, certificate, List.of());
+            return List.of();
         }
         LocalDateTime since = LocalDate.now().minusDays(DEADLINE_DAYS).atStartOfDay();
         PageRequest page = PageRequest.of(0, MAX_LISTED);
@@ -131,7 +136,7 @@ public class SefazManifestationScreenService {
         }
         List<ManifestationDTOs.Note> notes = new ArrayList<>(byKey.values());
         notes.sort(Comparator.comparing(ManifestationDTOs.Note::prazo, Comparator.nullsLast(Comparator.naturalOrder())));
-        return new ManifestationDTOs.Pending(enabled, certificate, notes);
+        return notes;
     }
 
     /** Sends the chosen manifestation for the notes - in batches of 20 - and tells what SEFAZ said for each. */

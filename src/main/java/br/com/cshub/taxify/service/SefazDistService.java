@@ -10,6 +10,8 @@ import br.com.cshub.taxify.integration.sefaz.SefazDistClient;
 import br.com.cshub.taxify.integration.sefaz.SefazDistResponse;
 import br.com.cshub.taxify.integration.sefaz.SefazProperties;
 import br.com.cshub.taxify.repository.SefazDistControlRepository;
+import br.com.cshub.taxify.repository.CaptureRunRepository;
+import br.com.cshub.taxify.domain.pendency.CaptureRun;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 import org.springframework.stereotype.Service;
@@ -47,11 +49,13 @@ public class SefazDistService {
     private final SefazDistClient client;
     private final SefazProperties properties;
     private final SefazManifestService manifestService;
+    private final CaptureRunRepository captureRunRepository;
 
     public SefazDistService(SefazDistControlRepository controlRepository, CompanyCertificateService certificateService,
                             FiscalXmlIntegrationService integrationService, SefazDistClient client, SefazProperties properties,
-                            SefazManifestService manifestService) {
+                            SefazManifestService manifestService, CaptureRunRepository captureRunRepository) {
         this.manifestService = manifestService;
+        this.captureRunRepository = captureRunRepository;
         this.controlRepository = controlRepository;
         this.certificateService = certificateService;
         this.integrationService = integrationService;
@@ -73,6 +77,7 @@ public class SefazDistService {
         }
 
         Run run = new Run();
+        LocalDateTime startedAt = LocalDateTime.now();
         try {
             A1Certificate certificate = runBatches(company, control, run);
             if (certificate != null) {
@@ -104,7 +109,27 @@ public class SefazDistService {
         log.info("SEFAZ distribution for company {}: {} - {} new notes, {} events, {} summaries, {} ciencias{}", company.getId(),
                 control.getLastStatus(), run.newNotes, run.events, run.summaries, run.ciencias,
                 run.error == null ? "" : " (" + run.error + ")");
-        return controlRepository.save(control);
+        SefazDistControl saved = controlRepository.save(control);
+        recordRun(company, startedAt, control);
+        return saved;
+    }
+
+    /** History of the runs - the integrations' health on the pendencies screen. Never fails the capture. */
+    private void recordRun(Company company, LocalDateTime startedAt, SefazDistControl control) {
+        try {
+            CaptureRun captureRun = new CaptureRun();
+            captureRun.setCompany(company);
+            captureRun.setService(CaptureRun.SEFAZ_DIST);
+            captureRun.setStartedAt(startedAt);
+            captureRun.setFinishedAt(control.getLastRunAt());
+            captureRun.setStatus(control.getLastStatus().name());
+            captureRun.setNewDocuments(control.getLastNewNotes());
+            captureRun.setDetail(control.getLastDetail());
+            captureRun.setDeleted(false);
+            captureRunRepository.save(captureRun);
+        } catch (RuntimeException e) {
+            log.warn("Could not record the SEFAZ capture run of company {}", company.getId(), e);
+        }
     }
 
     /** @return the opened certificate when the distribution could be asked (the ciência step uses it too) */

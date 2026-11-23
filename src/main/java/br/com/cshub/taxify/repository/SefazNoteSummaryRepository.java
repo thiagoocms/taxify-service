@@ -42,6 +42,9 @@ public interface SefazNoteSummaryRepository extends AbstractJpaRepository<SefazN
 
     long countByCompany_IdAndCompletedAtIsNullAndCienciaStatus(UUID companyId, CienciaStatus status);
 
+    List<SefazNoteSummary> findByCompany_IdAndCompletedAtIsNullAndCienciaStatus(UUID companyId, CienciaStatus status,
+                                                                               Pageable pageable);
+
     /** Summaries (no XML yet) of authorized notes issued since {@code since} without a conclusive manifestation. */
     @Query("select s from SefazNoteSummary s where s.company.id = :companyId and s.completedAt is null"
             + " and (s.situation is null or s.situation = '1') and s.issueDate >= :since"

@@ -115,6 +115,11 @@ sefaz:
     # entrega só como resumo, e busca o XML completo pela chave na consulta seguinte.
     auto-ciencia: ${SEFAZ_AUTO_CIENCIA:true}
 
+# Painel de pendências (M13): recalcula as pendências de todas as empresas (depois da captura SEFAZ das :15).
+pendencies:
+  enabled: ${PENDENCIES_ENABLED:true}
+  cron: ${PENDENCIES_CRON:0 40 * * * *}
+
 # Opcional: chave AES-256 (base64, 32 bytes - openssl rand -base64 32) que cifra os certificados
 # A1 e suas senhas. Vazia = guardados sem essa criptografia. Perdê-la = reenviar os cifrados.
 taxify:

@@ -97,6 +97,23 @@ public interface FiscalXmlDocumentRepository extends AbstractJpaRepository<Fisca
     long countOnlySieg(@Param("companyId") UUID companyId, @Param("before") LocalDateTime before,
                        @Param("issuedSince") LocalDateTime issuedSince);
 
+    /** {@link #countOnlySieg}'s notes themselves, oldest first. */
+    @Query("select d from FiscalXmlDocument d where d.company.id = :companyId and d.deleted = false"
+            + " and d.ownIssue = false and d.foundInSiegAt < :before and d.foundInSefazAt is null"
+            + " and d.issueDate >= :issuedSince order by d.issueDate asc")
+    List<FiscalXmlDocument> findOnlySieg(@Param("companyId") UUID companyId, @Param("before") LocalDateTime before,
+                                         @Param("issuedSince") LocalDateTime issuedSince, Pageable pageable);
+
+    /** {@link #countOnlySefaz}'s notes themselves, oldest first. */
+    @Query("select d from FiscalXmlDocument d where d.company.id = :companyId and d.deleted = false"
+            + " and d.foundInSefazAt < :before and d.foundInSiegAt is null order by d.issueDate asc")
+    List<FiscalXmlDocument> findOnlySefaz(@Param("companyId") UUID companyId, @Param("before") LocalDateTime before,
+                                          Pageable pageable);
+
+    /** Notes reviewed with a divergence, issued since {@code since}. */
+    List<FiscalXmlDocument> findByCompany_IdAndDeletedIsFalseAndReviewStatusAndIssueDateGreaterThanEqualOrderByIssueDateAsc(
+            UUID companyId, ReviewStatus reviewStatus, LocalDateTime since, Pageable pageable);
+
     /** SIEG x SEFAZ: notes SEFAZ handed over before {@code before} that SIEG never brought. */
     @Query("select count(d) from FiscalXmlDocument d where d.company.id = :companyId and d.deleted = false"
             + " and d.foundInSefazAt < :before and d.foundInSiegAt is null")

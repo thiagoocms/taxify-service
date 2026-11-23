@@ -52,6 +52,8 @@ class SefazDistServiceTest {
     private SefazDistClient client;
     @Mock
     private SefazManifestService manifestService;
+    @Mock
+    private br.com.cshub.taxify.repository.CaptureRunRepository captureRunRepository;
 
     private SefazDistService service;
     private Company company;
@@ -63,7 +65,7 @@ class SefazDistServiceTest {
         properties.setPauseBetweenBatchesMillis(0);
         properties.setMaxBatchesPerCompany(5);
         service = new SefazDistService(controlRepository, certificateService, integrationService, client, properties,
-                manifestService);
+                manifestService, captureRunRepository);
 
         company = new Company(UUID.randomUUID());
         company.setDocument(new Document(CNPJ, DocumentTypeEnum.CNPJ));
@@ -113,6 +115,11 @@ class SefazDistServiceTest {
         assertThat(control.getLastSummaries()).isEqualTo(1);
         assertThat(control.getLastDetail()).contains("1 entrada(s) nova(s) só com resumo");
         verify(manifestService).manifestAndFetch(company, certificate, CNPJ, true);
+        ArgumentCaptor<br.com.cshub.taxify.domain.pendency.CaptureRun> run = ArgumentCaptor.captor();
+        verify(captureRunRepository).save(run.capture());
+        assertThat(run.getValue().getStatus()).isEqualTo("OK");
+        assertThat(run.getValue().getNewDocuments()).isEqualTo(2);
+        assertThat(run.getValue().getService()).isEqualTo("SEFAZ_DIST");
     }
 
     @Test
