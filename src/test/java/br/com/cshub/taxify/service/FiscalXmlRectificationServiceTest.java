@@ -133,7 +133,7 @@ class FiscalXmlRectificationServiceTest {
     @Test
     void doesNothingWhenNoRuleIsRegisteredForTheProduct() {
         when(documentRepository.findFirstByIdAndDeletedIsFalse(documentId)).thenReturn(Optional.of(document()));
-        when(ruleRepository.findFirstByCompany_IdAndCodigoProdutoAndDeletedIsFalse(companyId, "P001")).thenReturn(Optional.empty());
+        when(ruleRepository.findByCompany_IdAndDeletedIsFalse(companyId)).thenReturn(List.of());
 
         FiscalXmlRectificationResultDTO result = service.rectify(documentId);
 
@@ -152,7 +152,7 @@ class FiscalXmlRectificationServiceTest {
         ProductFiscalRule rule = new ProductFiscalRule(UUID.randomUUID());
         rule.setCodigoProduto("P001");
         rule.setCfopCorreto("5405");
-        when(ruleRepository.findFirstByCompany_IdAndCodigoProdutoAndDeletedIsFalse(companyId, "P001")).thenReturn(Optional.of(rule));
+        when(ruleRepository.findByCompany_IdAndDeletedIsFalse(companyId)).thenReturn(List.of(rule));
 
         FiscalXmlRectificationResultDTO result = service.rectify(documentId);
 
@@ -168,7 +168,7 @@ class FiscalXmlRectificationServiceTest {
         ProductFiscalRule rule = new ProductFiscalRule(UUID.randomUUID());
         rule.setCodigoProduto("P001");
         rule.setCfopCorreto("5102");
-        when(ruleRepository.findFirstByCompany_IdAndCodigoProdutoAndDeletedIsFalse(companyId, "P001")).thenReturn(Optional.of(rule));
+        when(ruleRepository.findByCompany_IdAndDeletedIsFalse(companyId)).thenReturn(List.of(rule));
 
         FiscalXmlRectificationResultDTO result = service.rectify(documentId);
 
@@ -204,7 +204,7 @@ class FiscalXmlRectificationServiceTest {
         ProductFiscalRule rule = new ProductFiscalRule(UUID.randomUUID());
         rule.setCodigoProduto("P001");
         rule.setCfopCorreto("5102");
-        when(ruleRepository.findFirstByCompany_IdAndCodigoProdutoAndDeletedIsFalse(companyId, "P001")).thenReturn(Optional.of(rule));
+        when(ruleRepository.findByCompany_IdAndDeletedIsFalse(companyId)).thenReturn(List.of(rule));
         User currentUser = new User();
         when(currentUserService.getCurrentUser()).thenReturn(Optional.of(currentUser));
 
@@ -221,7 +221,7 @@ class FiscalXmlRectificationServiceTest {
         ProductFiscalRule rule = new ProductFiscalRule(UUID.randomUUID());
         rule.setCodigoProduto("P001");
         rule.setCfopCorreto("5102");
-        when(ruleRepository.findFirstByCompany_IdAndCodigoProdutoAndDeletedIsFalse(companyId, "P001")).thenReturn(Optional.of(rule));
+        when(ruleRepository.findByCompany_IdAndDeletedIsFalse(companyId)).thenReturn(List.of(rule));
 
         FiscalXmlRectificationResultDTO first = service.rectify(documentId);
         assertThat(first.rectifiedFilePath()).isNotNull();
@@ -250,7 +250,7 @@ class FiscalXmlRectificationServiceTest {
         FiscalXmlDocument document = document();
         document.setRectifiedFilePath("rectified/old.xml");
         when(documentRepository.findFirstByIdAndDeletedIsFalse(documentId)).thenReturn(Optional.of(document));
-        when(ruleRepository.findFirstByCompany_IdAndCodigoProdutoAndDeletedIsFalse(companyId, "P001")).thenReturn(Optional.empty());
+        when(ruleRepository.findByCompany_IdAndDeletedIsFalse(companyId)).thenReturn(List.of());
 
         FiscalXmlRectificationResultDTO result = service.rectify(documentId);
 
@@ -269,7 +269,7 @@ class FiscalXmlRectificationServiceTest {
         ProductFiscalRule rule = new ProductFiscalRule(UUID.randomUUID());
         rule.setCodigoProduto("P001");
         rule.setCfopCorreto("5102");
-        when(ruleRepository.findFirstByCompany_IdAndCodigoProdutoAndDeletedIsFalse(companyId, "P001")).thenReturn(Optional.of(rule));
+        when(ruleRepository.findByCompany_IdAndDeletedIsFalse(companyId)).thenReturn(List.of(rule));
         InvoiceAuditLog previous = new InvoiceAuditLog();
         previous.setNotes("Retificacao automatica: Item P001: CFOP 5405 -> 5102");
         when(auditLogRepository.findFirstByExternalInvoiceKeyAndStatusAndDeletedIsFalseOrderByCreatedDateDesc(
@@ -288,7 +288,7 @@ class FiscalXmlRectificationServiceTest {
         rule.setCodigoProduto("P001");
         rule.setCfopCorreto("5405");
         rule.setNcmCorreto("87654321");
-        when(ruleRepository.findFirstByCompany_IdAndCodigoProdutoAndDeletedIsFalse(companyId, "P001")).thenReturn(Optional.of(rule));
+        when(ruleRepository.findByCompany_IdAndDeletedIsFalse(companyId)).thenReturn(List.of(rule));
 
         FiscalXmlRectificationResultDTO result = service.rectify(documentId);
 
@@ -327,7 +327,6 @@ class FiscalXmlRectificationServiceTest {
         FiscalXmlRectificationResultDTO result = service.rectify(documentId);
 
         assertThat(result.correcoesAplicadas()).isEmpty();
-        verify(ruleRepository, never()).findFirstByCompany_IdAndCodigoProdutoAndDeletedIsFalse(any(), any());
         verify(documentRepository).save(any());
     }
 
@@ -349,7 +348,7 @@ class FiscalXmlRectificationServiceTest {
         when(documentRepository.findFirstByIdAndDeletedIsFalse(documentId)).thenReturn(Optional.of(parsedDocument()));
         ProductFiscalRule rule = ruleWithCfop("5102");
         when(ruleRepository.findByCompany_IdAndDeletedIsFalse(companyId)).thenReturn(List.of(rule));
-        when(ruleRepository.findFirstByCompany_IdAndCodigoProdutoAndDeletedIsFalse(companyId, "P001")).thenReturn(Optional.of(rule));
+        when(ruleRepository.findByCompany_IdAndDeletedIsFalse(companyId)).thenReturn(List.of(rule));
 
         FiscalXmlRectificationResultDTO result = service.rectify(documentId);
 

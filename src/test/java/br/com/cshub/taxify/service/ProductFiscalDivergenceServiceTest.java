@@ -146,6 +146,51 @@ class ProductFiscalDivergenceServiceTest {
     }
 
     @Test
+    void theCompanysOwnNotesAreNotCheckedAgainstTheEntryRules() {
+        FiscalXmlDocumentItem sale = itemWith("P010", "5102", "11111111");
+        sale.getDocument().setOwnIssue(true);
+        when(itemRepository.findByDocument_Company_IdAndDocument_IssueDateBetween(eq(companyId), any(), any()))
+                .thenReturn(List.of(sale));
+        when(ruleRepository.findByCompany_IdAndDeletedIsFalse(companyId)).thenReturn(List.of(ruleWith("P010", "1102", null)));
+
+        assertThat(service.findDivergences(companyId.toString(), null, null)).isEmpty();
+    }
+
+    @Test
+    void theRuleCfopTakesTheFirstDigitOfTheNoteOperation() {
+        FiscalXmlDocumentItem interstate = itemWith("P011", "2102", "11111111");
+        interstate.getDocument().setDestinoOperacao("2");
+        FiscalXmlDocumentItem internalWrong = itemWith("P011", "2102", "11111111");
+        internalWrong.getDocument().setDestinoOperacao("1");
+        when(itemRepository.findByDocument_Company_IdAndDocument_IssueDateBetween(eq(companyId), any(), any()))
+                .thenReturn(List.of(interstate, internalWrong));
+        when(ruleRepository.findByCompany_IdAndDeletedIsFalse(companyId)).thenReturn(List.of(ruleWith("P011", "1102", null)));
+
+        List<ProductFiscalDivergenceDTO> result = service.findDivergences(companyId.toString(), null, null);
+
+        assertThat(result).hasSize(1);
+        assertThat(result.getFirst().cfopAtual()).isEqualTo("2102");
+        assertThat(result.getFirst().cfopCorreto()).isEqualTo("1102");
+    }
+
+    @Test
+    void aSupplierRuleOnlyAppliesToThatSuppliersNotes() {
+        FiscalXmlDocumentItem fromA = itemWith("001", "5102", "11111111");
+        fromA.getDocument().setIssuerCnpj("11222333000181");
+        FiscalXmlDocumentItem fromB = itemWith("001", "5102", "11111111");
+        fromB.getDocument().setIssuerCnpj("99888777000166");
+        when(itemRepository.findByDocument_Company_IdAndDocument_IssueDateBetween(eq(companyId), any(), any()))
+                .thenReturn(List.of(fromA, fromB));
+        ProductFiscalRule ofA = ruleWith("001", "1102", null);
+        ofA.setDocumentoFornecedor("11222333000181");
+        when(ruleRepository.findByCompany_IdAndDeletedIsFalse(companyId)).thenReturn(List.of(ofA));
+
+        List<ProductFiscalDivergenceDTO> result = service.findDivergences(companyId.toString(), null, null);
+
+        assertThat(result).extracting(ProductFiscalDivergenceDTO::documentId).containsExactly(fromA.getDocument().getId().toString());
+    }
+
+    @Test
     void canceledAndDeletedNotesAreNotDivergences() {
         FiscalXmlDocumentItem canceled = itemWith("P007", "5405", "11111111");
         canceled.getDocument().setStatus(br.com.cshub.taxify.enumerated.FiscalDocumentStatus.CANCELED);

@@ -1,5 +1,7 @@
 package br.com.cshub.taxify.service.fiscalcheck;
 
+import br.com.cshub.taxify.domain.xml.FiscalXmlDocumentItem;
+import br.com.cshub.taxify.domain.fiscalrule.ProductRules;
 import br.com.cshub.taxify.domain.fiscalrule.ProductFiscalRule;
 import br.com.cshub.taxify.domain.reform.IbsCbsRate;
 
@@ -9,22 +11,27 @@ import java.util.UUID;
 
 /**
  * What the checks of one company share, loaded once per run instead of once per item:
- * the company's product rules by product code and the IBS/CBS reference rates by year.
+ * the company's product rules ({@link ProductRules}: by code and supplier) and the IBS/CBS
+ * reference rates by year.
  */
-public record FiscalCheckContext(UUID companyId, Map<String, ProductFiscalRule> rulesByProduct,
-                                 Map<Integer, IbsCbsRate> ibsCbsRatesByYear) {
+public record FiscalCheckContext(UUID companyId, ProductRules rules, Map<Integer, IbsCbsRate> ibsCbsRatesByYear) {
 
     public FiscalCheckContext {
-        rulesByProduct = Map.copyOf(rulesByProduct);
         ibsCbsRatesByYear = Map.copyOf(ibsCbsRatesByYear);
+    }
+
+    /** General rules (no supplier) keyed by product code - for tests and simple callers. */
+    public FiscalCheckContext(UUID companyId, Map<String, ProductFiscalRule> rulesByProduct, Map<Integer, IbsCbsRate> ibsCbsRatesByYear) {
+        this(companyId, ProductRules.of(rulesByProduct.values()), ibsCbsRatesByYear);
     }
 
     public FiscalCheckContext(UUID companyId, Map<String, ProductFiscalRule> rulesByProduct) {
         this(companyId, rulesByProduct, Map.of());
     }
 
-    public Optional<ProductFiscalRule> ruleFor(String codigoProduto) {
-        return codigoProduto == null ? Optional.empty() : Optional.ofNullable(rulesByProduct.get(codigoProduto));
+    /** The rule for the item: its supplier's, or the code's general one. */
+    public Optional<ProductFiscalRule> ruleFor(FiscalXmlDocumentItem item) {
+        return rules.forItem(item);
     }
 
     public Optional<IbsCbsRate> ibsCbsRateFor(int year) {

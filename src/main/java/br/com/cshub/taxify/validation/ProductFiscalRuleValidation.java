@@ -81,10 +81,8 @@ public class ProductFiscalRuleValidation extends AbstractCrudValidation<ProductF
 
     @Override
     protected void checkValidationsExtras(ProductFiscalRule entity) {
-        boolean duplicate = entity.getId() == null
-                ? repository.existsByCompany_IdAndCodigoProdutoAndDeletedIsFalse(entity.getCompany().getId(), entity.getCodigoProduto())
-                : repository.existsByCompany_IdAndCodigoProdutoAndDeletedIsFalseAndIdNot(
-                        entity.getCompany().getId(), entity.getCodigoProduto(), entity.getId());
+        boolean duplicate = repository.existsDuplicate(entity.getCompany().getId(), entity.getCodigoProduto(),
+                entity.getDocumentoFornecedor(), entity.getId());
 
         if (duplicate) {
             throw new ConflictException(messageService.getMessage("error.productFiscalRule.duplicate"));

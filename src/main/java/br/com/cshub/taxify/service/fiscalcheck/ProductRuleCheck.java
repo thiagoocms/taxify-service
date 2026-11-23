@@ -45,17 +45,31 @@ public class ProductRuleCheck implements FiscalCheck {
     /** ide/idDest of an internal operation. */
     private static final String INTERNAL = "1";
 
+    /**
+     * Only notes the company received: the rules describe how a purchase is booked (entry CFOP,
+     * the supplier's product code) and only those notes are rectified - the company's own notes
+     * would all "diverge" from an entry CFOP.
+     */
     @Override
     public List<FiscalDivergence> check(FiscalXmlDocumentItem item, FiscalCheckContext context) {
-        return context.ruleFor(item.getCodigo())
+        if (item.getDocument() != null && item.getDocument().isOwnIssue()) {
+            return List.of();
+        }
+        return context.ruleFor(item)
                 .map(rule -> compare(item, rule))
                 .orElse(List.of());
+    }
+
+    /** The rule's CFOP with the first digit of this note's operation (1102 → 2102 interstate). */
+    public static String expectedCfop(FiscalXmlDocumentItem item, ProductFiscalRule rule) {
+        return OperationCfops.forOperation(rule.getCfopCorreto(),
+                item.getDocument() == null ? null : item.getDocument().getDestinoOperacao());
     }
 
     private List<FiscalDivergence> compare(FiscalXmlDocumentItem item, ProductFiscalRule rule) {
         List<FiscalDivergence> divergences = new ArrayList<>();
         if (!rectifiedUnder(item.getDocument(), rule)) {
-            text(divergences, CFOP, "CFOP", "CFOP", item.getCfop(), rule.getCfopCorreto(), true);
+            text(divergences, CFOP, "CFOP", "CFOP", item.getCfop(), expectedCfop(item, rule), true);
             text(divergences, NCM, "NCM", "NCM", item.getNcm(), rule.getNcmCorreto(), true);
         }
 

@@ -85,13 +85,15 @@ public class ProductFiscalRuleResource extends AbstractCrudResource<UUID, Produc
     /**
      * Suggested rules from the notes the company received: per product, the value each field had
      * most often and how consistent the notes are about it, with the supplier's CFOP turned into
-     * the entry one. {@code codigoProduto}: only that product.
+     * the entry one; one suggestion per supplier and code. {@code codigoProduto} (and
+     * {@code fornecedor}): only that product (of that supplier).
      */
     @GetMapping("/sugestoes")
     public ResponseEntity<List<ProductRuleSuggestionDTO>> sugestoes(
             @RequestParam String companyId,
             @RequestParam(defaultValue = "true") boolean somenteSemRegra,
-            @RequestParam(required = false) String codigoProduto) {
-        return ResponseEntity.ok(suggestionService.suggest(companyId, somenteSemRegra, codigoProduto));
+            @RequestParam(required = false) String codigoProduto,
+            @RequestParam(required = false) String fornecedor) {
+        return ResponseEntity.ok(suggestionService.suggest(companyId, somenteSemRegra, codigoProduto, fornecedor));
     }
 }

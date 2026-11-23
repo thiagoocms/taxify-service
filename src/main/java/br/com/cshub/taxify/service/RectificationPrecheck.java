@@ -1,5 +1,6 @@
 package br.com.cshub.taxify.service;
 
+import br.com.cshub.taxify.service.fiscalcheck.ProductRuleCheck;
 import br.com.cshub.taxify.domain.fiscalrule.ProductFiscalRule;
 import br.com.cshub.taxify.domain.fiscalrule.ProductTaxRule;
 import br.com.cshub.taxify.domain.xml.FiscalItemIbsCbs;
@@ -22,7 +23,7 @@ final class RectificationPrecheck {
     }
 
     static boolean mayChange(FiscalXmlDocumentItem item, ProductFiscalRule rule) {
-        if (differs(item.getCfop(), rule.getCfopCorreto())) {
+        if (differs(item.getCfop(), ProductRuleCheck.expectedCfop(item, rule))) {
             return true;
         }
         if (rule.getNcmCorreto() != null && differs(item.getNcm(), rule.getNcmCorreto())) {

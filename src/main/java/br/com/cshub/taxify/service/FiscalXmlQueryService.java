@@ -1,5 +1,7 @@
 package br.com.cshub.taxify.service;
 
+import br.com.cshub.taxify.service.fiscalcheck.OperationCfops;
+import br.com.cshub.taxify.domain.fiscalrule.ProductRules;
 import br.com.cshub.taxify.common.IssuePeriod;
 import br.com.cshub.taxify.common.RequestIds;
 import br.com.cshub.taxify.domain.fiscalrule.ProductFiscalRule;
@@ -158,10 +160,10 @@ public class FiscalXmlQueryService {
             }
             Map<UUID, FiscalXmlDocument> byId = documents.getContent().stream()
                     .collect(java.util.stream.Collectors.toMap(FiscalXmlDocument::getId, d -> d));
-            Map<String, ProductFiscalRule> rules = rulesIfAnyRectified(company.getId(), documents.getContent());
+            ProductRules rules = rulesIfAnyRectified(company.getId(), documents.getContent());
             for (Object[] row : itemRepository.findDistinctCfopsByDocumentIds(ids)) {
                 UUID documentId = (UUID) row[0];
-                ProductFiscalRule rule = row[1] == null ? null : rules.get((String) row[1]);
+                ProductFiscalRule rule = rules.find((String) row[1], ProductRules.supplierOf(byId.get(documentId))).orElse(null);
                 String cfop = effectiveCfop(byId.get(documentId), rule, (String) row[2]);
                 if (!cfop.isEmpty()) {
                     cfops.computeIfAbsent(documentId, id -> new java.util.TreeSet<>()).add(cfop);
@@ -174,11 +176,11 @@ public class FiscalXmlQueryService {
     }
 
     /** The company's rules by product code - only read when some note of the page has a rectified version. */
-    private Map<String, ProductFiscalRule> rulesIfAnyRectified(UUID companyId, List<FiscalXmlDocument> documents) {
+    private ProductRules rulesIfAnyRectified(UUID companyId, List<FiscalXmlDocument> documents) {
         if (documents.stream().noneMatch(document -> document.getRectifiedFilePath() != null)) {
-            return Map.of();
+            return ProductRules.none();
         }
-        return ProductFiscalRule.byProduct(ruleRepository.findByCompany_IdAndDeletedIsFalse(companyId));
+        return ProductRules.of(ruleRepository.findByCompany_IdAndDeletedIsFalse(companyId));
     }
 
     /**
@@ -187,7 +189,7 @@ public class FiscalXmlQueryService {
      */
     private static String effectiveCfop(FiscalXmlDocument document, ProductFiscalRule rule, String issued) {
         if (rule != null && rule.getCfopCorreto() != null && ProductRuleCheck.rectifiedUnder(document, rule)) {
-            return rule.getCfopCorreto().strip();
+            return OperationCfops.forOperation(rule.getCfopCorreto(), document.getDestinoOperacao()).strip();
         }
         return issued.strip();
     }
@@ -259,11 +261,11 @@ public class FiscalXmlQueryService {
     @Transactional(readOnly = true)
     public List<FiscalXmlProdutoDTO> findProdutosAsRectified(UUID documentId) {
         FiscalXmlDocument document = findDocument(documentId);
-        Map<String, ProductFiscalRule> rules = rulesIfAnyRectified(document.getCompany().getId(), List.of(document));
+        ProductRules rules = rulesIfAnyRectified(document.getCompany().getId(), List.of(document));
         return itemRepository.findByDocument_IdOrderByNumeroItemAsc(document.getId()).stream()
                 .map(item -> {
                     FiscalXmlProdutoDTO produto = toProduto(item);
-                    ProductFiscalRule rule = item.getCodigo() == null ? null : rules.get(item.getCodigo());
+                    ProductFiscalRule rule = rules.forItem(item).orElse(null);
                     return item.getCfop() == null ? produto
                             : produto.withRectifiedCfop(effectiveCfop(document, rule, item.getCfop()));
                 })

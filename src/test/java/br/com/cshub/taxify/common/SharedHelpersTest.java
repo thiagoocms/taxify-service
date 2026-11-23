@@ -1,6 +1,8 @@
 package br.com.cshub.taxify.common;
 
 import br.com.cshub.taxify.domain.fiscalrule.ProductFiscalRule;
+import br.com.cshub.taxify.domain.fiscalrule.ProductRules;
+import br.com.cshub.taxify.service.fiscalcheck.OperationCfops;
 import br.com.cshub.taxify.domain.xml.FiscalXmlDocument;
 import br.com.cshub.taxify.exception.BadRequestException;
 import br.com.cshub.taxify.integration.fiscalxml.FiscalXmlDom;
@@ -55,13 +57,29 @@ class SharedHelpersTest {
     }
 
     @Test
-    void rulesByProductSkipRulesWithoutCodeAndKeepTheFirst() {
-        ProductFiscalRule first = rule("P1");
-        ProductFiscalRule duplicate = rule("P1");
+    void theSupplierRuleWinsOverTheGeneralOneOfTheCode() {
+        ProductFiscalRule general = rule("P1");
+        ProductFiscalRule ofSupplier = rule("P1");
+        ofSupplier.setDocumentoFornecedor("11222333000181");
+        ProductRules rules = ProductRules.of(List.of(general, ofSupplier, rule(null)));
 
-        assertThat(ProductFiscalRule.byProduct(List.of(first, duplicate, rule(null))))
-                .containsOnlyKeys("P1")
-                .containsEntry("P1", first);
+        assertThat(rules.find("P1", "11.222.333/0001-81")).contains(ofSupplier);
+        assertThat(rules.find("P1", "99888777000166")).contains(general);
+        assertThat(rules.find("P1", null)).contains(general);
+        assertThat(rules.find("P2", "11222333000181")).isEmpty();
+        assertThat(ProductRules.of(List.of(ofSupplier)).find("P1", "99888777000166")).isEmpty();
+    }
+
+    @Test
+    void theCfopFollowsTheOperationOfTheNote() {
+        assertThat(OperationCfops.forOperation("1102", "1")).isEqualTo("1102");
+        assertThat(OperationCfops.forOperation("1102", "2")).isEqualTo("2102");
+        assertThat(OperationCfops.forOperation("2102", "1")).isEqualTo("1102");
+        assertThat(OperationCfops.forOperation("1102", "3")).isEqualTo("3102");
+        assertThat(OperationCfops.forOperation("5102", "2")).isEqualTo("6102"); // an exit rule stays an exit
+        assertThat(OperationCfops.forOperation("1102", null)).isEqualTo("1102");
+        assertThat(OperationCfops.forOperation("1102", "9")).isEqualTo("1102");
+        assertThat(OperationCfops.forOperation(" 1556 ", "2")).isEqualTo("2556");
     }
 
     @Test

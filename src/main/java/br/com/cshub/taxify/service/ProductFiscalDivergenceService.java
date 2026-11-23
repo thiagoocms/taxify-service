@@ -69,7 +69,7 @@ public class ProductFiscalDivergenceService {
             boolean diverges = checkEngine.check(item, context).stream()
                     .anyMatch(divergence -> RULE_CODES.contains(divergence.code()));
             if (diverges) {
-                context.ruleFor(item.getCodigo()).ifPresent(rule -> divergences.add(toDivergenceDTO(item, rule)));
+                context.ruleFor(item).ifPresent(rule -> divergences.add(toDivergenceDTO(item, rule)));
             }
         }
         return divergences;
@@ -84,7 +84,7 @@ public class ProductFiscalDivergenceService {
                 item.getCodigo(),
                 item.getDescricao(),
                 item.getCfop(),
-                rule.getCfopCorreto(),
+                ProductRuleCheck.expectedCfop(item, rule),
                 item.getNcm(),
                 rule.getNcmCorreto()
         );

@@ -18,6 +18,7 @@ public class ProductFiscalRuleMapper extends AbstractMapper<ProductFiscalRule, P
         entity.setId(source.id() != null ? UUID.fromString(source.id()) : null);
         entity.setCompany(source.companyId() != null ? new Company(UUID.fromString(source.companyId())) : null);
         entity.setCodigoProduto(source.codigoProduto());
+        entity.setDocumentoFornecedor(supplierDigits(source.documentoFornecedor()));
         entity.setDescricaoProduto(source.descricaoProduto());
         entity.setNcmCorreto(source.ncmCorreto());
         entity.setCfopCorreto(source.cfopCorreto());
@@ -51,7 +52,8 @@ public class ProductFiscalRuleMapper extends AbstractMapper<ProductFiscalRule, P
                 tax == null ? null : tax.cstCofins(),
                 tax == null ? null : tax.aliquotaCofins(),
                 tax == null ? null : tax.cstIbsCbs(),
-                tax == null ? null : tax.classificacaoTributaria()
+                tax == null ? null : tax.classificacaoTributaria(),
+                source.getDocumentoFornecedor()
         );
     }
 
@@ -59,6 +61,7 @@ public class ProductFiscalRuleMapper extends AbstractMapper<ProductFiscalRule, P
     public void merge(ProductFiscalRule source, ProductFiscalRule target) {
         target.setCompany(source.getCompany());
         target.setCodigoProduto(source.getCodigoProduto());
+        target.setDocumentoFornecedor(source.getDocumentoFornecedor());
         target.setDescricaoProduto(source.getDescricaoProduto());
         target.setNcmCorreto(source.getNcmCorreto());
         target.setCfopCorreto(source.getCfopCorreto());
@@ -88,6 +91,12 @@ public class ProductFiscalRuleMapper extends AbstractMapper<ProductFiscalRule, P
 
     private static final ProductTaxRule EMPTY = new ProductTaxRule(null, null, null, null, null, null, null, null,
             null, null, null, null, null);
+
+    /** Stored as digits; blank = every supplier. */
+    private static String supplierDigits(String value) {
+        String digits = br.com.cshub.taxify.common.DocumentNumbers.onlyDigits(value);
+        return digits == null || digits.isEmpty() ? null : digits;
+    }
 
     private static String trimToNull(String value) {
         return value == null || value.isBlank() ? null : value.trim();

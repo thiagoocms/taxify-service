@@ -12,7 +12,11 @@ import java.util.Map;
  * @param ocorrencias items of this product on the notes
  * @param possuiRegra    the product already has a rule
  * @param cfopFornecedor the supplier's exit CFOP most used on the notes - {@code campos.cfopCorreto}
- *                       is the entry CFOP equivalent to it ({@code EntryCfops})
+ *                       is the entry CFOP equivalent to it ({@code EntryCfops}), with the first
+ *                       digit of an internal purchase (the rule adapts it to each note's operation)
+ * @param documentoFornecedor CNPJ/CPF of the supplier whose code this is (the product code on a
+ *                            received note is the supplier's)
+ * @param nomeFornecedor      the supplier's name on the notes
  */
 public record ProductRuleSuggestionDTO(
         String codigoProduto,
@@ -20,7 +24,9 @@ public record ProductRuleSuggestionDTO(
         long ocorrencias,
         boolean possuiRegra,
         Map<String, SuggestedValue> campos,
-        SuggestedValue cfopFornecedor
+        SuggestedValue cfopFornecedor,
+        String documentoFornecedor,
+        String nomeFornecedor
 ) {
 
     /**

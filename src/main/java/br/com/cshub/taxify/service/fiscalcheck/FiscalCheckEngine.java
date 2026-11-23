@@ -1,5 +1,6 @@
 package br.com.cshub.taxify.service.fiscalcheck;
 
+import br.com.cshub.taxify.domain.fiscalrule.ProductRules;
 import br.com.cshub.taxify.domain.fiscalrule.ProductFiscalRule;
 import br.com.cshub.taxify.domain.reform.IbsCbsRate;
 import br.com.cshub.taxify.domain.xml.FiscalXmlDocument;
@@ -38,7 +39,7 @@ public class FiscalCheckEngine {
 
     /** The company's rules and the IBS/CBS rates - two queries. A product code is unique per company (ProductFiscalRuleValidation). */
     public FiscalCheckContext contextFor(UUID companyId) {
-        Map<String, ProductFiscalRule> rules = ProductFiscalRule.byProduct(ruleRepository.findByCompany_IdAndDeletedIsFalse(companyId));
+        ProductRules rules = ProductRules.of(ruleRepository.findByCompany_IdAndDeletedIsFalse(companyId));
         Map<Integer, IbsCbsRate> rates = ibsCbsRateRepository.findAll().stream()
                 .collect(Collectors.toMap(IbsCbsRate::getAno, Function.identity()));
         return new FiscalCheckContext(companyId, rules, rates);

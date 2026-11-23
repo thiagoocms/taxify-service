@@ -1,5 +1,7 @@
 package br.com.cshub.taxify.service;
 
+import br.com.cshub.taxify.service.fiscalcheck.OperationCfops;
+import br.com.cshub.taxify.domain.fiscalrule.ProductRules;
 import br.com.cshub.taxify.common.MessageService;
 import br.com.cshub.taxify.common.TenantAccessService;
 import br.com.cshub.taxify.domain.fiscalrule.ProductFiscalRule;
@@ -122,7 +124,7 @@ public class FiscalXmlRectificationService {
             if (infNFe == null) {
                 throw new BadRequestException(messageService.getMessage("error.fiscalXml.rectification.not.nfe"));
             }
-            corrections = applyRules(infNFe, document.getCompany().getId());
+            corrections = applyRules(infNFe, document);
         }
 
         String rectifiedPath = null;
@@ -163,11 +165,9 @@ public class FiscalXmlRectificationService {
         if (version == null || version < ITEM_COLUMNS_VERSION || document.getItens().isEmpty()) {
             return true;
         }
-        Map<String, ProductFiscalRule> rulesByProduct = ProductFiscalRule.byProduct(
-                ruleRepository.findByCompany_IdAndDeletedIsFalse(document.getCompany().getId()));
+        ProductRules rules = ProductRules.of(ruleRepository.findByCompany_IdAndDeletedIsFalse(document.getCompany().getId()));
         return document.getItens().stream()
-                .filter(item -> item.getCodigo() != null && rulesByProduct.containsKey(item.getCodigo()))
-                .anyMatch(item -> RectificationPrecheck.mayChange(item, rulesByProduct.get(item.getCodigo())));
+                .anyMatch(item -> rules.forItem(item).map(rule -> RectificationPrecheck.mayChange(item, rule)).orElse(false));
     }
 
     private boolean alreadyLogged(String externalInvoiceKey, String notes) {
@@ -187,7 +187,14 @@ public class FiscalXmlRectificationService {
         return notes.length() > NOTES_MAX_LENGTH ? notes.substring(0, NOTES_MAX_LENGTH) : notes;
     }
 
-    private List<String> applyRules(Element infNFe, UUID companyId) {
+    /**
+     * The rule of each item: by its code and the note's supplier ({@link ProductRules}); the CFOP
+     * takes the first digit of the note's operation (ide/idDest).
+     */
+    private List<String> applyRules(Element infNFe, FiscalXmlDocument document) {
+        ProductRules rules = ProductRules.of(ruleRepository.findByCompany_IdAndDeletedIsFalse(document.getCompany().getId()));
+        String supplier = ProductRules.supplierOf(document);
+        String idDest = text(first(infNFe, "ide"), "idDest");
         List<String> corrections = new ArrayList<>();
         NodeList detNodes = infNFe.getElementsByTagNameNS("*", "det");
 
@@ -201,13 +208,13 @@ public class FiscalXmlRectificationService {
                 continue;
             }
 
-            Optional<ProductFiscalRule> ruleOpt = ruleRepository.findFirstByCompany_IdAndCodigoProdutoAndDeletedIsFalse(companyId, codigo);
+            Optional<ProductFiscalRule> ruleOpt = rules.find(codigo, supplier);
             if (ruleOpt.isEmpty()) {
                 continue;
             }
             ProductFiscalRule rule = ruleOpt.get();
 
-            applyField(prod, "CFOP", rule.getCfopCorreto(), codigo, corrections);
+            applyField(prod, "CFOP", OperationCfops.forOperation(rule.getCfopCorreto(), idDest), codigo, corrections);
             if (rule.getNcmCorreto() != null) {
                 applyField(prod, "NCM", rule.getNcmCorreto(), codigo, corrections);
             }

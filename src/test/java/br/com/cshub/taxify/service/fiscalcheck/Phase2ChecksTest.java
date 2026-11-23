@@ -52,6 +52,7 @@ class Phase2ChecksTest {
                 detail("0", "102", null, null, null, null, null, null, null, null, null, null));
         FiscalXmlDocumentItem interstate = item(document("3", "2", "SP", "BA"), "00", "100", "7", "7.00",
                 detail("0", null, null, null, null, null, null, null, null, null, null, null));
+        interstate.setCfop("6102"); // the rule's 5102 on an interstate operation
 
         assertThat(new ProductRuleCheck().check(simples, contextWith(rule)))
                 .extracting(FiscalDivergence::code).containsExactly(ProductRuleCheck.CSOSN);

@@ -1,5 +1,8 @@
 package br.com.cshub.taxify.service;
 
+import br.com.cshub.taxify.common.DocumentNumbers;
+import br.com.cshub.taxify.domain.fiscalrule.ProductRules;
+import br.com.cshub.taxify.service.fiscalcheck.OperationCfops;
 import br.com.cshub.taxify.common.RequestIds;
 import br.com.cshub.taxify.common.MessageService;
 import br.com.cshub.taxify.dto.fiscalrule.ProductRuleSuggestionDTO;
@@ -15,11 +18,9 @@ import java.math.RoundingMode;
 import java.util.ArrayList;
 import java.util.Comparator;
 import java.util.HashMap;
-import java.util.HashSet;
 import java.util.LinkedHashMap;
 import java.util.List;
 import java.util.Map;
-import java.util.Set;
 import java.util.UUID;
 
 /**
@@ -41,6 +42,8 @@ public class ProductRuleSuggestionService {
     private static final int FIRST_FIELD = 2;
     /** Index of cfopCorreto in FIELDS. */
     private static final int CFOP = 1;
+    /** Row index of the supplier's CNPJ/CPF; its name comes next, then the count. */
+    private static final int SUPPLIER = FIRST_FIELD + FIELDS.length;
     private static final int MAX_PRODUCTS = 500;
     private static final BigDecimal HUNDRED = new BigDecimal("100");
 
@@ -60,53 +63,72 @@ public class ProductRuleSuggestionService {
     /**
      * @param onlyWithoutRule leave out products that already have a rule
      * @param codigoProduto   only this product (the rule form); null = every product
-     * @return up to 500 products, most frequent first
+     * @param fornecedor      with {@code codigoProduto}: only this supplier's (CNPJ/CPF); null = any
+     * @return up to 500 supplier products, most frequent first - one per supplier and code, since
+     *         the code on a received note is the supplier's
      */
     @Transactional(readOnly = true)
-    public List<ProductRuleSuggestionDTO> suggest(String companyId, boolean onlyWithoutRule, String codigoProduto) {
+    public List<ProductRuleSuggestionDTO> suggest(String companyId, boolean onlyWithoutRule, String codigoProduto, String fornecedor) {
         UUID id = RequestIds.parse(companyId, messageService);
         companyValidation.checkExist(id);
         String onlyCode = codigoProduto == null || codigoProduto.isBlank() ? null : codigoProduto.strip();
+        String onlySupplier = DocumentNumbers.onlyDigits(fornecedor);
+        if (onlySupplier != null && onlySupplier.isEmpty()) {
+            onlySupplier = null;
+        }
 
         Map<String, Product> products = new LinkedHashMap<>();
         for (Object[] row : itemRepository.findReceivedClassificationsByProduct(id)) {
             String codigo = (String) row[0];
-            if (onlyCode != null && !onlyCode.equals(codigo)) {
+            String supplier = DocumentNumbers.onlyDigits((String) row[SUPPLIER]);
+            if ((onlyCode != null && !onlyCode.equals(codigo)) || (onlySupplier != null && !onlySupplier.equals(supplier))) {
                 continue;
             }
             long count = ((Number) row[row.length - 1]).longValue();
-            Product product = products.computeIfAbsent(codigo, Product::new);
-            product.add((String) row[1], row, count);
+            Product product = products.computeIfAbsent(codigo + '|' + supplier, key -> new Product(codigo, supplier));
+            product.add((String) row[1], (String) row[SUPPLIER + 1], row, count);
         }
-        Set<String> withRule = products.isEmpty() ? Set.of()
-                : new HashSet<>(ruleRepository.findCodigosWithRule(id, products.keySet()));
+        ProductRules rules = products.isEmpty() ? ProductRules.none()
+                : ProductRules.of(ruleRepository.findByCompany_IdAndDeletedIsFalse(id));
 
         return products.values().stream()
-                .filter(product -> !onlyWithoutRule || !withRule.contains(product.codigo))
-                .sorted(Comparator.comparingLong((Product product) -> product.total).reversed().thenComparing(product -> product.codigo))
+                .filter(product -> !onlyWithoutRule || !product.hasRule(rules))
+                .sorted(Comparator.comparingLong((Product product) -> product.total).reversed()
+                        .thenComparing(product -> product.codigo)
+                        .thenComparing(product -> product.supplier == null ? "" : product.supplier))
                 .limit(MAX_PRODUCTS)
-                .map(product -> product.toDTO(withRule.contains(product.codigo)))
+                .map(product -> product.toDTO(product.hasRule(rules)))
                 .toList();
     }
 
     /** Counts per value of each field across the product's combinations. */
     private static final class Product {
         private final String codigo;
+        private final String supplier;
+        private String supplierName;
         private String descricao;
         private long descricaoCount;
         private long total;
         private final List<Map<String, Long>> counts = new ArrayList<>();
         private final Map<String, Long> supplierCfops = new HashMap<>();
 
-        Product(String codigo) {
+        Product(String codigo, String supplier) {
             this.codigo = codigo;
+            this.supplier = supplier;
             for (int i = 0; i < FIELDS.length; i++) {
                 counts.add(new HashMap<>());
             }
         }
 
-        void add(String descricao, Object[] row, long count) {
+        boolean hasRule(ProductRules rules) {
+            return rules.find(codigo, supplier).isPresent();
+        }
+
+        void add(String descricao, String supplierName, Object[] row, long count) {
             total += count;
+            if (supplierName != null) {
+                this.supplierName = supplierName;
+            }
             if (descricao != null && count > descricaoCount) {
                 this.descricao = descricao;
                 this.descricaoCount = count;
@@ -118,7 +140,8 @@ public class ProductRuleSuggestionService {
                 }
                 if (i == CFOP) {
                     supplierCfops.merge(value, count, Long::sum);
-                    value = EntryCfops.fromSupplier(value);
+                    // Kept as an internal purchase (1xxx): the rule adapts it to each note's operation.
+                    value = OperationCfops.forOperation(EntryCfops.fromSupplier(value), "1");
                 }
                 counts.get(i).merge(value, count, Long::sum);
             }
@@ -132,7 +155,8 @@ public class ProductRuleSuggestionService {
                     fields.put(FIELDS[i], mode);
                 }
             }
-            return new ProductRuleSuggestionDTO(codigo, descricao, total, hasRule, fields, mode(supplierCfops));
+            return new ProductRuleSuggestionDTO(codigo, descricao, total, hasRule, fields, mode(supplierCfops),
+                    supplier, supplierName);
         }
 
         private static SuggestedValue mode(Map<String, Long> byValue) {

@@ -16,7 +16,7 @@ import java.util.UUID;
  */
 @Entity
 @Table(name = "product_fiscal_rules",
-        uniqueConstraints = @UniqueConstraint(columnNames = {"company_id", "codigo_produto"}))
+        uniqueConstraints = @UniqueConstraint(columnNames = {"company_id", "codigo_produto", "documento_fornecedor"}))
 public class ProductFiscalRule extends AbstractAuditingEntity {
 
     @Id
@@ -31,6 +31,13 @@ public class ProductFiscalRule extends AbstractAuditingEntity {
 
     @Column(name = "codigo_produto", length = 60, nullable = false)
     private String codigoProduto;
+
+    /**
+     * CNPJ/CPF (digits) of the supplier this rule is for - on a received note the product code
+     * is the supplier's. Null = the code's general rule ({@link ProductRules}).
+     */
+    @Column(name = "documento_fornecedor", length = 14)
+    private String documentoFornecedor;
 
     @Column(name = "descricao_produto", length = 500)
     private String descricaoProduto;
@@ -59,15 +66,12 @@ public class ProductFiscalRule extends AbstractAuditingEntity {
     public ProductFiscalRule() {
     }
 
-    /** The rules indexed by product code (unique per company - ProductFiscalRuleValidation); rules without a code are left out. */
-    public static java.util.Map<String, ProductFiscalRule> byProduct(java.util.Collection<ProductFiscalRule> rules) {
-        java.util.Map<String, ProductFiscalRule> byCode = new java.util.HashMap<>();
-        for (ProductFiscalRule rule : rules) {
-            if (rule.getCodigoProduto() != null) {
-                byCode.putIfAbsent(rule.getCodigoProduto(), rule);
-            }
-        }
-        return byCode;
+    public String getDocumentoFornecedor() {
+        return documentoFornecedor;
+    }
+
+    public void setDocumentoFornecedor(String documentoFornecedor) {
+        this.documentoFornecedor = documentoFornecedor;
     }
 
     public ProductFiscalRule(UUID id) {
