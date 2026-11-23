@@ -50,7 +50,8 @@ import java.util.concurrent.atomic.AtomicInteger;
  * tells the provider to skip its own count check and go straight to downloading - saves a
  * rate-limited request for something already established from an earlier tick.
  *
- * <p>Only companies entitled to {@link PlanServiceEnum#FISCAL_XML_IMPORT} are actually
+ * <p>Only companies entitled to {@link PlanServiceEnum#FISCAL_XML_IMPORT} with SIEG as a source
+ * ({@link PlanServiceEnum#SIEG_INTEGRATION}) are actually
  * synced: {@link #hasFiscalXmlImportEntitlement} requires a currently "vigente" (active -
  * {@code startDate <= today <= endDate}) {@link Subscription} whose {@link
  * br.com.cshub.taxify.domain.plan.Plan} includes that service. {@link
@@ -130,7 +131,8 @@ public class FiscalXmlSyncScheduler {
 
     /**
      * "Vigente" - {@code startDate <= today <= endDate} - and the plan attached to that
-     * subscription lists {@link PlanServiceEnum#FISCAL_XML_IMPORT} among its services. No
+     * subscription lists {@link PlanServiceEnum#FISCAL_XML_IMPORT} and, as the source,
+     * {@link PlanServiceEnum#SIEG_INTEGRATION} among its services (SEFAZ is SefazDistScheduler's). No
      * active subscription, or an active one on a plan without this service, both mean
      * "not entitled" - the company is simply left out of the tick (its control row is
      * untouched, not deleted or flagged).
@@ -140,7 +142,7 @@ public class FiscalXmlSyncScheduler {
                 .findFirstByCompanyIdAndDeletedIsFalseAndStartDateLessThanEqualAndEndDateGreaterThanEqualOrderByStartDateDesc(
                         company.getId(), today, today)
                 .map(Subscription::getPlan)
-                .map(plan -> plan.getServices().contains(PlanServiceEnum.FISCAL_XML_IMPORT))
+                .map(plan -> PlanServiceEnum.importsFrom(plan.getServices(), PlanServiceEnum.SIEG_INTEGRATION))
                 .orElse(false);
     }
 

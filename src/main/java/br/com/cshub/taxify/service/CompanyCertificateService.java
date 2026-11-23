@@ -5,6 +5,9 @@ import br.com.cshub.taxify.common.MessageService;
 import br.com.cshub.taxify.common.SecretCipher;
 import br.com.cshub.taxify.domain.certificate.CompanyCertificate;
 import br.com.cshub.taxify.domain.company.Company;
+import br.com.cshub.taxify.domain.subscription.Subscription;
+import br.com.cshub.taxify.enumerated.PlanServiceEnum;
+import br.com.cshub.taxify.repository.SubscriptionRepository;
 import br.com.cshub.taxify.domain.xml.SefazDistControl;
 import br.com.cshub.taxify.dto.company.CompanyCertificateDTO;
 import br.com.cshub.taxify.exception.BadRequestException;
@@ -20,6 +23,7 @@ import org.springframework.transaction.annotation.Transactional;
 
 import java.io.IOException;
 import java.security.GeneralSecurityException;
+import java.time.LocalDate;
 import java.time.LocalDateTime;
 import java.util.Comparator;
 import java.util.Optional;
@@ -42,16 +46,31 @@ public class CompanyCertificateService {
     private final FiscalXmlFileStorage storage;
     private final SecretCipher cipher;
     private final MessageService messageService;
+    private final SubscriptionRepository subscriptionRepository;
 
     public CompanyCertificateService(CompanyCertificateRepository repository, SefazDistControlRepository controlRepository,
                                      CompanyValidation companyValidation, FiscalXmlFileStorage storage,
-                                     SecretCipher cipher, MessageService messageService) {
+                                     SecretCipher cipher, MessageService messageService,
+                                     SubscriptionRepository subscriptionRepository) {
         this.repository = repository;
         this.controlRepository = controlRepository;
         this.companyValidation = companyValidation;
         this.storage = storage;
         this.cipher = cipher;
         this.messageService = messageService;
+        this.subscriptionRepository = subscriptionRepository;
+    }
+
+    /** Whether today's plan of the company imports notes from SEFAZ (FISCAL_XML_IMPORT + SEFAZ_INTEGRATION). */
+    @Transactional(readOnly = true)
+    public boolean sefazInPlan(UUID companyId) {
+        LocalDate today = LocalDate.now();
+        return subscriptionRepository
+                .findFirstByCompanyIdAndDeletedIsFalseAndStartDateLessThanEqualAndEndDateGreaterThanEqualOrderByStartDateDesc(
+                        companyId, today, today)
+                .map(Subscription::getPlan)
+                .map(plan -> PlanServiceEnum.importsFrom(plan.getServices(), PlanServiceEnum.SEFAZ_INTEGRATION))
+                .orElse(false);
     }
 
     @Transactional(readOnly = true)
@@ -161,12 +180,13 @@ public class CompanyCertificateService {
                 control.getUltNsu(), control.getMaxNsu());
         if (certificate == null) {
             return new CompanyCertificateDTO(false, false, null, null, null, null, null, null, false,
-                    cipher.isConfigured(), sefaz);
+                    cipher.isConfigured(), sefazInPlan(company.getId()), sefaz);
         }
         Company owner = certificate.getCompany();
         return new CompanyCertificateDTO(true, !owner.getId().equals(company.getId()), owner.getId(), owner.getName(),
                 certificate.getSubjectName(), certificate.getCnpj(), certificate.getValidFrom(), certificate.getValidUntil(),
-                certificate.getValidUntil().isBefore(LocalDateTime.now()), cipher.isConfigured(), sefaz);
+                certificate.getValidUntil().isBefore(LocalDateTime.now()), cipher.isConfigured(),
+                sefazInPlan(company.getId()), sefaz);
     }
 
     private void deleteQuietly(String location) {

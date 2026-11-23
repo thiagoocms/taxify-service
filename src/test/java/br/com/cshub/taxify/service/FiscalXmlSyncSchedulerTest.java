@@ -76,7 +76,7 @@ class FiscalXmlSyncSchedulerTest {
         companyE = companyWithId("00000000-0000-0000-0000-00000000000e");
 
         // Every company is entitled by default (active subscription on a plan with
-        // FISCAL_XML_IMPORT), so existing tests keep exercising batching/skip logic
+        // FISCAL_XML_IMPORT + SIEG_INTEGRATION), so existing tests keep exercising batching/skip logic
         // without also having to set up a subscription each time. Tests about the
         // entitlement gate itself override this per company.
         lenient().when(subscriptionRepository.findFirstByCompanyIdAndDeletedIsFalseAndStartDateLessThanEqualAndEndDateGreaterThanEqualOrderByStartDateDesc(
@@ -317,6 +317,29 @@ class FiscalXmlSyncSchedulerTest {
     }
 
     @Test
+    void importWithoutSiegAsSourceIsNotSyncedFromSieg() {
+        for (Set<PlanServiceEnum> services : List.of(
+                Set.of(PlanServiceEnum.FISCAL_XML_IMPORT),
+                Set.of(PlanServiceEnum.FISCAL_XML_IMPORT, PlanServiceEnum.SEFAZ_INTEGRATION),
+                Set.of(PlanServiceEnum.SIEG_INTEGRATION))) {
+            when(companyRepository.findAll()).thenReturn(List.of(companyA));
+            when(syncControlRepository.findAllCompanyIds()).thenReturn(List.of(companyA.getId()));
+            when(syncControlRepository.findAllWithCompany()).thenReturn(List.of(controlFor(companyA, 0)));
+            Plan plan = new Plan(UUID.randomUUID());
+            plan.setServices(services);
+            Subscription subscription = new Subscription(UUID.randomUUID());
+            subscription.setPlan(plan);
+            when(subscriptionRepository.findFirstByCompanyIdAndDeletedIsFalseAndStartDateLessThanEqualAndEndDateGreaterThanEqualOrderByStartDateDesc(
+                            eq(companyA.getId()), any(), any()))
+                    .thenReturn(Optional.of(subscription));
+
+            scheduler.syncAllCompanies();
+        }
+
+        verifyNoInteractions(provider);
+    }
+
+    @Test
     void syncsACompanyWithAnActiveSubscriptionEntitledToFiscalXmlImport() {
         when(companyRepository.findAll()).thenReturn(List.of(companyA));
         when(syncControlRepository.findAllCompanyIds()).thenReturn(List.of(companyA.getId()));
@@ -396,7 +419,7 @@ class FiscalXmlSyncSchedulerTest {
 
     private Subscription entitledSubscription() {
         Plan plan = new Plan(UUID.randomUUID());
-        plan.setServices(Set.of(PlanServiceEnum.FISCAL_XML_IMPORT));
+        plan.setServices(Set.of(PlanServiceEnum.FISCAL_XML_IMPORT, PlanServiceEnum.SIEG_INTEGRATION));
         Subscription subscription = new Subscription(UUID.randomUUID());
         subscription.setPlan(plan);
         return subscription;

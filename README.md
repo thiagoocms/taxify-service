@@ -111,8 +111,10 @@ certificado A1 (e-CNPJ) de cada empresa — sem captcha nem navegador:
 - Filiais usam o certificado da matriz (mesma raiz de CNPJ).
 - Começa por **Pernambuco**: só empresas das UFs em `SEFAZ_DIST_UFS` (padrão `PE`; vazio = todas)
   entram na captura automática. O botão "Capturar agora" da tela vale para qualquer UF.
-- De hora em hora (`SEFAZ_DIST_CRON`), para empresas com certificado e o serviço de importação de
-  XML no plano: lê a partir do último NSU, grava as notas completas e os eventos pelo mesmo caminho
+- **Qual fonte, pelo plano:** "Importação de XML fiscal" (`FISCAL_XML_IMPORT`) coloca a empresa no
+  agendador; a fonte vem das integrações do mesmo plano — `SIEG_INTEGRATION` → SIEG,
+  `SEFAZ_INTEGRATION` → SEFAZ, as duas → as duas (a mesma nota nunca é gravada duas vezes).
+- De hora em hora (`SEFAZ_DIST_CRON`), para empresas com certificado e a SEFAZ como fonte no plano: lê a partir do último NSU, grava as notas completas e os eventos pelo mesmo caminho
   do SIEG (sem duplicar) e respeita a pausa de 1h da SEFAZ (cStat 656). A SEFAZ guarda os
   documentos por 90 dias.
 - Entradas que ainda não tiveram "Ciência da Operação" chegam só como resumo (`resNFe`): são

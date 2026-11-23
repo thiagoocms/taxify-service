@@ -53,6 +53,8 @@ class CompanyCertificateServiceTest {
     private FiscalXmlFileStorage storage;
     @Mock
     private MessageService messageService;
+    @Mock
+    private br.com.cshub.taxify.repository.SubscriptionRepository subscriptionRepository;
 
     private final SecretCipher cipher = new SecretCipher(Base64.getEncoder().encodeToString(new byte[32]));
     private CompanyCertificateService service;
@@ -76,7 +78,7 @@ class CompanyCertificateServiceTest {
 
     @BeforeEach
     void setUp() {
-        service = new CompanyCertificateService(repository, controlRepository, companyValidation, storage, cipher, messageService);
+        service = new CompanyCertificateService(repository, controlRepository, companyValidation, storage, cipher, messageService, subscriptionRepository);
         when(messageService.getMessage(anyString())).thenAnswer(invocation -> invocation.getArgument(0));
         when(messageService.getMessage(anyString(), any(String[].class))).thenAnswer(invocation -> invocation.getArgument(0));
         when(controlRepository.findByCompany_Id(any())).thenReturn(Optional.empty());
@@ -134,7 +136,7 @@ class CompanyCertificateServiceTest {
     @Test
     void refusedWhenTheEncryptionKeyIsMissing() throws Exception {
         service = new CompanyCertificateService(repository, controlRepository, companyValidation, storage,
-                new SecretCipher(""), messageService);
+                new SecretCipher(""), messageService, subscriptionRepository);
         Company company = company("11222333000181");
 
         assertThatThrownBy(() -> service.upload(company.getId(), testPfx(), "teste123"))

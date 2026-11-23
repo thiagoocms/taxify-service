@@ -24,7 +24,8 @@ import java.util.stream.Collectors;
 /**
  * Hourly SEFAZ capture, alongside SIEG: every company of the configured UFs
  * ({@code sefaz.dist.ufs}, PE to start) with an A1 certificate (its own or one of the same
- * CNPJ root in the firm) and the fiscal XML import service on its current plan. Runs on a
+ * CNPJ root in the firm) and, on its current plan, the fiscal XML import service with
+ * SEFAZ as a source (SEFAZ_INTEGRATION; with SIEG_INTEGRATION too, both sources run). Runs on a
  * virtual thread so the shared scheduler thread (the SIEG sync ticks every minute) is
  * never held by the SEFAZ calls; a run still going when the next one fires is not doubled.
  * Each company decides itself whether SEFAZ's waiting hour is over (SefazDistService).
@@ -110,7 +111,7 @@ public class SefazDistScheduler {
                 .findFirstByCompanyIdAndDeletedIsFalseAndStartDateLessThanEqualAndEndDateGreaterThanEqualOrderByStartDateDesc(
                         company.getId(), today, today)
                 .map(Subscription::getPlan)
-                .map(plan -> plan.getServices().contains(PlanServiceEnum.FISCAL_XML_IMPORT))
+                .map(plan -> PlanServiceEnum.importsFrom(plan.getServices(), PlanServiceEnum.SEFAZ_INTEGRATION))
                 .orElse(false);
     }
 }

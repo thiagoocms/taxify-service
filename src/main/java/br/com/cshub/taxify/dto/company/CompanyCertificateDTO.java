@@ -19,6 +19,8 @@ public record CompanyCertificateDTO(
         LocalDateTime validUntil,
         boolean expired,
         boolean encryptionConfigured,
+        /** Today's plan has note import with SEFAZ as a source - without it the capture doesn't run. */
+        boolean sefazInPlan,
         SefazStatus sefaz
 ) {
 

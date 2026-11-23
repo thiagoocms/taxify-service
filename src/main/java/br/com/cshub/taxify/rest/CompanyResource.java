@@ -1,6 +1,9 @@
 package br.com.cshub.taxify.rest;
 
+import br.com.cshub.taxify.common.MessageService;
+import br.com.cshub.taxify.domain.company.Company;
 import br.com.cshub.taxify.dto.company.CompanyCertificateDTO;
+import br.com.cshub.taxify.exception.BadRequestException;
 import br.com.cshub.taxify.service.CompanyCertificateService;
 import br.com.cshub.taxify.service.SefazDistService;
 import br.com.cshub.taxify.validation.CompanyValidation;
@@ -46,17 +49,20 @@ public class CompanyResource extends AbstractCrudResource<UUID, CompanyDTO, Comp
     private final CompanyCertificateService certificateService;
     private final SefazDistService sefazDistService;
     private final CompanyValidation companyValidation;
+    private final MessageService messageService;
 
     @Autowired
     protected CompanyResource(CompanyService service, CompanyTaxRegimeService taxRegimeService,
                               CompanyRegistrationService registrationService, CompanyCertificateService certificateService,
-                              SefazDistService sefazDistService, CompanyValidation companyValidation) {
+                              SefazDistService sefazDistService, CompanyValidation companyValidation,
+                              MessageService messageService) {
         super(service);
         this.taxRegimeService = taxRegimeService;
         this.registrationService = registrationService;
         this.certificateService = certificateService;
         this.sefazDistService = sefazDistService;
         this.companyValidation = companyValidation;
+        this.messageService = messageService;
     }
 
     /** The A1 certificate used for the SEFAZ capture (own or the CNPJ root's) and how the last capture went. */
@@ -78,10 +84,14 @@ public class CompanyResource extends AbstractCrudResource<UUID, CompanyDTO, Comp
         return ResponseEntity.ok(certificateService.delete(id));
     }
 
-    /** Runs the SEFAZ capture now (still respecting SEFAZ's one-hour wait). */
+    /** Runs the SEFAZ capture now (still respecting SEFAZ's one-hour wait) - only with SEFAZ as a source on the plan. */
     @PostMapping("/{id}/sefaz/capturar")
     public ResponseEntity<CompanyCertificateDTO> captureFromSefaz(@PathVariable UUID id) {
-        sefazDistService.capture(companyValidation.checkExist(id));
+        Company company = companyValidation.checkExist(id);
+        if (!certificateService.sefazInPlan(id)) {
+            throw new BadRequestException(messageService.getMessage("error.sefaz.not.in.plan"));
+        }
+        sefazDistService.capture(company);
         return ResponseEntity.ok(certificateService.status(id));
     }
 
