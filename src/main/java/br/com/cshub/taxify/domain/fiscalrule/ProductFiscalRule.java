@@ -59,6 +59,17 @@ public class ProductFiscalRule extends AbstractAuditingEntity {
     public ProductFiscalRule() {
     }
 
+    /** The rules indexed by product code (unique per company - ProductFiscalRuleValidation); rules without a code are left out. */
+    public static java.util.Map<String, ProductFiscalRule> byProduct(java.util.Collection<ProductFiscalRule> rules) {
+        java.util.Map<String, ProductFiscalRule> byCode = new java.util.HashMap<>();
+        for (ProductFiscalRule rule : rules) {
+            if (rule.getCodigoProduto() != null) {
+                byCode.putIfAbsent(rule.getCodigoProduto(), rule);
+            }
+        }
+        return byCode;
+    }
+
     public ProductFiscalRule(UUID id) {
         this.id = id;
     }

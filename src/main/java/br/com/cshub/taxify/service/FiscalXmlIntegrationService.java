@@ -1,5 +1,6 @@
 package br.com.cshub.taxify.service;
 
+import br.com.cshub.taxify.common.IssuePeriod;
 import java.util.Optional;
 import br.com.cshub.taxify.integration.fiscalxml.FiscalEventParser;
 import br.com.cshub.taxify.integration.fiscalxml.FiscalEventData;
@@ -214,8 +215,8 @@ public class FiscalXmlIntegrationService {
                     created.setUltimaVerificacaoEm(LocalDateTime.now());
                     return created;
                 });
-        LocalDateTime from = dataEmissaoInicio != null ? dataEmissaoInicio.atStartOfDay() : LocalDateTime.MIN;
-        LocalDateTime to = dataEmissaoFim != null ? dataEmissaoFim.atTime(LocalTime.MAX) : LocalDateTime.MAX;
+        LocalDateTime from = IssuePeriod.start(dataEmissaoInicio);
+        LocalDateTime to = IssuePeriod.end(dataEmissaoFim);
 
         int imported = (int) xmlDocumentRepository.countByCompany_IdAndOwnIssueAndIssueDateBetween(
                 company.getId(), side.ownIssue(), from, to);
@@ -373,8 +374,8 @@ public class FiscalXmlIntegrationService {
     public List<FiscalXmlItemDTO> exportXmls(XmlDownloadFilterDTO filter) {
         Company company = findCompanyWithCnpj(filter.companyId());
 
-        LocalDateTime from = filter.dataEmissaoInicio() != null ? filter.dataEmissaoInicio().atStartOfDay() : LocalDateTime.MIN;
-        LocalDateTime to = filter.dataEmissaoFim() != null ? filter.dataEmissaoFim().atTime(LocalTime.MAX) : LocalDateTime.MAX;
+        LocalDateTime from = IssuePeriod.start(filter.dataEmissaoInicio());
+        LocalDateTime to = IssuePeriod.end(filter.dataEmissaoFim());
 
         List<FiscalXmlDocument> documents = xmlDocumentRepository
                 .findByCompany_IdAndIssueDateBetweenOrderByIssueDateDesc(company.getId(), from, to);
@@ -404,8 +405,8 @@ public class FiscalXmlIntegrationService {
     public byte[] exportXmlsZip(XmlDownloadFilterDTO filter) {
         Company company = findCompanyWithCnpj(filter.companyId());
 
-        LocalDateTime from = filter.dataEmissaoInicio() != null ? filter.dataEmissaoInicio().atStartOfDay() : LocalDateTime.MIN;
-        LocalDateTime to = filter.dataEmissaoFim() != null ? filter.dataEmissaoFim().atTime(LocalTime.MAX) : LocalDateTime.MAX;
+        LocalDateTime from = IssuePeriod.start(filter.dataEmissaoInicio());
+        LocalDateTime to = IssuePeriod.end(filter.dataEmissaoFim());
 
         List<FiscalXmlDocument> documents = xmlDocumentRepository
                 .findByCompany_IdAndIssueDateBetweenOrderByIssueDateDesc(company.getId(), from, to);
@@ -433,8 +434,7 @@ public class FiscalXmlIntegrationService {
     }
 
     private String uniqueEntryName(FiscalXmlDocument document, Set<String> usedNames) {
-        String base = document.getAccessKey() != null && !document.getAccessKey().isBlank()
-                ? document.getAccessKey() : document.getId().toString();
+        String base = document.accessKeyOrId();
         String name = base + ".xml";
         int suffix = 2;
         while (!usedNames.add(name)) {

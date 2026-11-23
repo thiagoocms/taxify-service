@@ -146,6 +146,19 @@ class ProductFiscalDivergenceServiceTest {
     }
 
     @Test
+    void canceledAndDeletedNotesAreNotDivergences() {
+        FiscalXmlDocumentItem canceled = itemWith("P007", "5405", "11111111");
+        canceled.getDocument().setStatus(br.com.cshub.taxify.enumerated.FiscalDocumentStatus.CANCELED);
+        FiscalXmlDocumentItem deleted = itemWith("P007", "5405", "11111111");
+        deleted.getDocument().setDeleted(true);
+        when(itemRepository.findByDocument_Company_IdAndDocument_IssueDateBetween(eq(companyId), any(), any()))
+                .thenReturn(List.of(canceled, deleted));
+        when(ruleRepository.findByCompany_IdAndDeletedIsFalse(companyId)).thenReturn(List.of(ruleWith("P007", "5102", null)));
+
+        assertThat(service.findDivergences(companyId.toString(), null, null)).isEmpty();
+    }
+
+    @Test
     void aRuleEditedAfterTheRectificationMakesTheNoteDivergeAgain() {
         FiscalXmlDocumentItem item = itemWith("P006", "5405", "11111111");
         item.getDocument().setRectifiedFilePath("s3://bucket/fiscal-xml/retificado.xml");

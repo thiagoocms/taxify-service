@@ -278,6 +278,11 @@ public class FiscalXmlDocument extends AbstractAuditingEntity {
         return accessKey;
     }
 
+    /** The access key; a note without one (manual upload of an odd file) is identified by its id. */
+    public String accessKeyOrId() {
+        return accessKey != null && !accessKey.isBlank() ? accessKey : String.valueOf(id);
+    }
+
     public void setAccessKey(String accessKey) {
         this.accessKey = accessKey;
     }

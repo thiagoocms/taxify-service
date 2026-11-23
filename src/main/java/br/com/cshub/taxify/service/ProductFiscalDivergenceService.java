@@ -1,11 +1,12 @@
 package br.com.cshub.taxify.service;
 
+import br.com.cshub.taxify.common.IssuePeriod;
+import br.com.cshub.taxify.common.RequestIds;
 import br.com.cshub.taxify.common.MessageService;
 import br.com.cshub.taxify.domain.fiscalrule.ProductFiscalRule;
 import br.com.cshub.taxify.domain.xml.FiscalXmlDocument;
 import br.com.cshub.taxify.domain.xml.FiscalXmlDocumentItem;
 import br.com.cshub.taxify.dto.fiscalrule.ProductFiscalDivergenceDTO;
-import br.com.cshub.taxify.exception.BadRequestException;
 import br.com.cshub.taxify.repository.FiscalXmlDocumentItemRepository;
 import br.com.cshub.taxify.service.fiscalcheck.FiscalCheckContext;
 import br.com.cshub.taxify.service.fiscalcheck.FiscalCheckEngine;
@@ -16,7 +17,6 @@ import org.springframework.transaction.annotation.Transactional;
 
 import java.time.LocalDate;
 import java.time.LocalDateTime;
-import java.time.LocalTime;
 import java.util.ArrayList;
 import java.util.List;
 import java.util.Set;
@@ -52,17 +52,20 @@ public class ProductFiscalDivergenceService {
 
     @Transactional(readOnly = true)
     public List<ProductFiscalDivergenceDTO> findDivergences(String companyId, LocalDate dataEmissaoInicio, LocalDate dataEmissaoFim) {
-        UUID id = parseCompanyId(companyId);
+        UUID id = RequestIds.parse(companyId, messageService);
         companyValidation.checkExist(id);
 
-        LocalDateTime from = dataEmissaoInicio != null ? dataEmissaoInicio.atStartOfDay() : LocalDateTime.MIN;
-        LocalDateTime to = dataEmissaoFim != null ? dataEmissaoFim.atTime(LocalTime.MAX) : LocalDateTime.MAX;
+        LocalDateTime from = IssuePeriod.start(dataEmissaoInicio);
+        LocalDateTime to = IssuePeriod.end(dataEmissaoFim);
 
         List<FiscalXmlDocumentItem> items = itemRepository.findByDocument_Company_IdAndDocument_IssueDateBetween(id, from, to);
         FiscalCheckContext context = checkEngine.contextFor(id);
 
         List<ProductFiscalDivergenceDTO> divergences = new ArrayList<>();
         for (FiscalXmlDocumentItem item : items) {
+            if (!FiscalCheckEngine.isCheckable(item.getDocument())) {
+                continue;
+            }
             boolean diverges = checkEngine.check(item, context).stream()
                     .anyMatch(divergence -> RULE_CODES.contains(divergence.code()));
             if (diverges) {
@@ -85,14 +88,6 @@ public class ProductFiscalDivergenceService {
                 item.getNcm(),
                 rule.getNcmCorreto()
         );
-    }
-
-    private UUID parseCompanyId(String companyId) {
-        try {
-            return UUID.fromString(companyId);
-        } catch (IllegalArgumentException e) {
-            throw new BadRequestException(messageService.getMessage("error.generic.bad.request"));
-        }
     }
 
 }

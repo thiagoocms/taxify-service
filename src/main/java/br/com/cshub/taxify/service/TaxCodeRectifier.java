@@ -11,6 +11,8 @@ import java.util.Objects;
 import java.util.Set;
 import java.util.function.Predicate;
 
+import static br.com.cshub.taxify.integration.fiscalxml.FiscalXmlDom.first;
+
 /**
  * Rewrites the tax <em>codes</em> of one NFe item ({@code det}) to what its {@link ProductTaxRule}
  * says - origin, CST/CSOSN, CEST, CST of IPI/PIS/COFINS, cClassTrib of IBS/CBS. Never a rate
@@ -134,14 +136,6 @@ final class TaxCodeRectifier {
             }
         }
         return false;
-    }
-
-    private static Element first(Element parent, String localName) {
-        if (parent == null) {
-            return null;
-        }
-        NodeList nodes = parent.getElementsByTagNameNS("*", localName);
-        return nodes.getLength() > 0 ? (Element) nodes.item(0) : null;
     }
 
     private static String text(Element element) {

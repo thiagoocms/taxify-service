@@ -6,13 +6,15 @@ import org.springframework.stereotype.Component;
 import org.springframework.util.StringUtils;
 import org.w3c.dom.Document;
 import org.w3c.dom.Element;
-import org.w3c.dom.NodeList;
 
 import java.time.LocalDateTime;
 import java.time.OffsetDateTime;
 import java.time.format.DateTimeParseException;
 import java.util.Optional;
 import java.util.Set;
+
+import static br.com.cshub.taxify.integration.fiscalxml.FiscalXmlDom.first;
+import static br.com.cshub.taxify.integration.fiscalxml.FiscalXmlDom.text;
 
 /**
  * Recognizes SEFAZ event XMLs (procEventoNFe, procEventoCTe, or a bare evento) - what SIEG
@@ -63,19 +65,6 @@ public class FiscalEventParser {
                 firstText(detEvento, "xJust", "xCorrecao"),
                 // no retEvento (a bare evento) = can't tell it was accepted - treat as not registered
                 status != null && REGISTERED.contains(status.strip())));
-    }
-
-    private static Element first(Element parent, String localName) {
-        if (parent == null) {
-            return null;
-        }
-        NodeList nodes = parent.getElementsByTagNameNS("*", localName);
-        return nodes.getLength() > 0 ? (Element) nodes.item(0) : null;
-    }
-
-    private static String text(Element parent, String localName) {
-        Element child = first(parent, localName);
-        return child == null ? null : child.getTextContent();
     }
 
     private static String firstText(Element parent, String... localNames) {

@@ -1,9 +1,9 @@
 package br.com.cshub.taxify.service;
 
+import br.com.cshub.taxify.common.RequestIds;
 import br.com.cshub.taxify.common.MessageService;
 import br.com.cshub.taxify.dto.fiscalrule.ProductRuleSuggestionDTO;
 import br.com.cshub.taxify.dto.fiscalrule.ProductRuleSuggestionDTO.SuggestedValue;
-import br.com.cshub.taxify.exception.BadRequestException;
 import br.com.cshub.taxify.repository.FiscalXmlDocumentItemRepository;
 import br.com.cshub.taxify.repository.ProductFiscalRuleRepository;
 import br.com.cshub.taxify.validation.CompanyValidation;
@@ -64,7 +64,7 @@ public class ProductRuleSuggestionService {
      */
     @Transactional(readOnly = true)
     public List<ProductRuleSuggestionDTO> suggest(String companyId, boolean onlyWithoutRule, String codigoProduto) {
-        UUID id = parseCompanyId(companyId);
+        UUID id = RequestIds.parse(companyId, messageService);
         companyValidation.checkExist(id);
         String onlyCode = codigoProduto == null || codigoProduto.isBlank() ? null : codigoProduto.strip();
 
@@ -158,13 +158,5 @@ public class ProductRuleSuggestionService {
         }
         String text = value.toString().trim();
         return text.isEmpty() ? null : text;
-    }
-
-    private UUID parseCompanyId(String companyId) {
-        try {
-            return UUID.fromString(companyId);
-        } catch (IllegalArgumentException e) {
-            throw new BadRequestException(messageService.getMessage("error.generic.bad.request"));
-        }
     }
 }

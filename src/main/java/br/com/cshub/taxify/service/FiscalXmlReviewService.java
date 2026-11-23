@@ -74,6 +74,6 @@ public class FiscalXmlReviewService {
 
     /** The access key; a note without one (manual upload of an odd file) is identified by its id. */
     static String noteKey(FiscalXmlDocument document) {
-        return document.getAccessKey() != null ? document.getAccessKey() : document.getId().toString();
+        return document.accessKeyOrId();
     }
 }

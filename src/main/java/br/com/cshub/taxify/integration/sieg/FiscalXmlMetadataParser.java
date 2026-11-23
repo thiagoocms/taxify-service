@@ -25,6 +25,9 @@ import java.time.format.DateTimeFormatter;
 import java.util.ArrayList;
 import java.util.List;
 
+import static br.com.cshub.taxify.integration.fiscalxml.FiscalXmlDom.first;
+import static br.com.cshub.taxify.integration.fiscalxml.FiscalXmlDom.text;
+
 /**
  * Extracts fields directly from the fiscal XML content, so persistence and the API
  * response don't depend on SIEG's response envelope - only on the (public, stable)
@@ -60,12 +63,12 @@ public class FiscalXmlMetadataParser {
         try {
             Document doc = FiscalXmlDomParser.parse(xmlBytes);
 
-            Element infNFe = firstElementIgnoringNamespace(doc, "infNFe");
+            Element infNFe = first(doc, "infNFe");
             if (infNFe != null) {
                 return fromNfe(infNFe);
             }
 
-            Element infCte = firstElementIgnoringNamespace(doc, "infCte");
+            Element infCte = first(doc, "infCte");
             if (infCte != null) {
                 return fromInfoElement(infCte, "CTE");
             }
@@ -79,8 +82,8 @@ public class FiscalXmlMetadataParser {
 
     private FiscalXmlMetadata fromInfoElement(Element infoElement, String documentType) {
         String accessKey = normalizeAccessKey(infoElement.getAttribute("Id"));
-        String issuerCnpj = textOf(firstElementIgnoringNamespace(infoElement, "emit"), "CNPJ");
-        String recipientCnpj = textOf(firstElementIgnoringNamespace(infoElement, "dest"), "CNPJ");
+        String issuerCnpj = text(first(infoElement, "emit"), "CNPJ");
+        String recipientCnpj = text(first(infoElement, "dest"), "CNPJ");
         LocalDateTime issueDate = extractIssueDate(infoElement);
         return new FiscalXmlMetadata(accessKey, documentType, issuerCnpj, recipientCnpj, issueDate,
                 null, null, null, null, List.of());
@@ -88,15 +91,15 @@ public class FiscalXmlMetadataParser {
 
     private FiscalXmlMetadata fromNfe(Element infNFe) {
         String accessKey = normalizeAccessKey(infNFe.getAttribute("Id"));
-        Element ide = firstElementIgnoringNamespace(infNFe, "ide");
-        Element emit = firstElementIgnoringNamespace(infNFe, "emit");
-        Element dest = firstElementIgnoringNamespace(infNFe, "dest");
-        Element total = firstElementIgnoringNamespace(infNFe, "total");
-        Element icmsTot = total == null ? null : firstElementIgnoringNamespace(total, "ICMSTot");
-        Element ibsCbsTot = total == null ? null : firstElementIgnoringNamespace(total, "IBSCBSTot");
+        Element ide = first(infNFe, "ide");
+        Element emit = first(infNFe, "emit");
+        Element dest = first(infNFe, "dest");
+        Element total = first(infNFe, "total");
+        Element icmsTot = total == null ? null : first(total, "ICMSTot");
+        Element ibsCbsTot = total == null ? null : first(total, "IBSCBSTot");
 
-        String issuerCnpj = textOf(emit, "CNPJ");
-        String recipientCnpj = textOf(dest, "CNPJ");
+        String issuerCnpj = text(emit, "CNPJ");
+        String recipientCnpj = text(dest, "CNPJ");
         LocalDateTime issueDate = extractIssueDate(infNFe);
 
         return new FiscalXmlMetadata(accessKey, "NFE", issuerCnpj, recipientCnpj, issueDate,
@@ -108,25 +111,25 @@ public class FiscalXmlMetadataParser {
             return null;
         }
         return new FiscalXmlIdentificacaoDTO(
-                textOf(ide, "cUF"),
-                textOf(ide, "natOp"),
-                textOf(ide, "mod"),
-                textOf(ide, "serie"),
-                textOf(ide, "nNF"),
-                parseDateTime(textOf(ide, "dhEmi")),
-                parseDateTime(textOf(ide, "dhSaiEnt")),
-                textOf(ide, "tpNF"),
-                textOf(ide, "idDest"),
-                textOf(ide, "cMunFG"),
-                textOf(ide, "tpImp"),
-                textOf(ide, "tpEmis"),
-                textOf(ide, "cDV"),
-                textOf(ide, "tpAmb"),
-                textOf(ide, "finNFe"),
-                textOf(ide, "indFinal"),
-                textOf(ide, "indPres"),
-                textOf(ide, "procEmi"),
-                textOf(ide, "verProcEmi")
+                text(ide, "cUF"),
+                text(ide, "natOp"),
+                text(ide, "mod"),
+                text(ide, "serie"),
+                text(ide, "nNF"),
+                parseDateTime(text(ide, "dhEmi")),
+                parseDateTime(text(ide, "dhSaiEnt")),
+                text(ide, "tpNF"),
+                text(ide, "idDest"),
+                text(ide, "cMunFG"),
+                text(ide, "tpImp"),
+                text(ide, "tpEmis"),
+                text(ide, "cDV"),
+                text(ide, "tpAmb"),
+                text(ide, "finNFe"),
+                text(ide, "indFinal"),
+                text(ide, "indPres"),
+                text(ide, "procEmi"),
+                text(ide, "verProcEmi")
         );
     }
 
@@ -135,16 +138,16 @@ public class FiscalXmlMetadataParser {
             return null;
         }
         return new FiscalXmlEmitenteDTO(
-                textOf(emit, "CNPJ"),
-                textOf(emit, "CPF"),
-                textOf(emit, "xNome"),
-                textOf(emit, "xFant"),
-                textOf(emit, "IE"),
-                textOf(emit, "IEST"),
-                textOf(emit, "IM"),
-                textOf(emit, "CNAE"),
-                textOf(emit, "CRT"),
-                mapEndereco(firstElementIgnoringNamespace(emit, "enderEmit"))
+                text(emit, "CNPJ"),
+                text(emit, "CPF"),
+                text(emit, "xNome"),
+                text(emit, "xFant"),
+                text(emit, "IE"),
+                text(emit, "IEST"),
+                text(emit, "IM"),
+                text(emit, "CNAE"),
+                text(emit, "CRT"),
+                mapEndereco(first(emit, "enderEmit"))
         );
     }
 
@@ -153,14 +156,14 @@ public class FiscalXmlMetadataParser {
             return null;
         }
         return new FiscalXmlDestinatarioDTO(
-                textOf(dest, "CNPJ"),
-                textOf(dest, "CPF"),
-                textOf(dest, "idEstrangeiro"),
-                textOf(dest, "xNome"),
-                textOf(dest, "IE"),
-                textOf(dest, "indIEDest"),
-                textOf(dest, "email"),
-                mapEndereco(firstElementIgnoringNamespace(dest, "enderDest"))
+                text(dest, "CNPJ"),
+                text(dest, "CPF"),
+                text(dest, "idEstrangeiro"),
+                text(dest, "xNome"),
+                text(dest, "IE"),
+                text(dest, "indIEDest"),
+                text(dest, "email"),
+                mapEndereco(first(dest, "enderDest"))
         );
     }
 
@@ -169,17 +172,17 @@ public class FiscalXmlMetadataParser {
             return null;
         }
         return new FiscalXmlEnderecoDTO(
-                textOf(ender, "xLgr"),
-                textOf(ender, "nro"),
-                textOf(ender, "xCpl"),
-                textOf(ender, "xBairro"),
-                textOf(ender, "cMun"),
-                textOf(ender, "xMun"),
-                textOf(ender, "UF"),
-                textOf(ender, "CEP"),
-                textOf(ender, "cPais"),
-                textOf(ender, "xPais"),
-                textOf(ender, "fone")
+                text(ender, "xLgr"),
+                text(ender, "nro"),
+                text(ender, "xCpl"),
+                text(ender, "xBairro"),
+                text(ender, "cMun"),
+                text(ender, "xMun"),
+                text(ender, "UF"),
+                text(ender, "CEP"),
+                text(ender, "cPais"),
+                text(ender, "xPais"),
+                text(ender, "fone")
         );
     }
 
@@ -215,8 +218,8 @@ public class FiscalXmlMetadataParser {
         if (ibsCbsTot == null) {
             return null;
         }
-        Element gIbs = firstElementIgnoringNamespace(ibsCbsTot, "gIBS");
-        Element gCbs = firstElementIgnoringNamespace(ibsCbsTot, "gCBS");
+        Element gIbs = first(ibsCbsTot, "gIBS");
+        Element gCbs = first(ibsCbsTot, "gCBS");
         return new FiscalIbsCbsTotals(
                 decimalOf(ibsCbsTot, "vBCIBSCBS"),
                 decimalOf(gIbs, "vIBSUF"),
@@ -233,25 +236,25 @@ public class FiscalXmlMetadataParser {
             if (!(detNodes.item(i) instanceof Element det)) {
                 continue;
             }
-            Element prod = firstElementIgnoringNamespace(det, "prod");
+            Element prod = first(det, "prod");
             if (prod == null) {
                 continue;
             }
             produtos.add(new FiscalXmlProdutoDTO(
                     intOf(det.getAttribute("nItem")),
-                    textOf(prod, "cProd"),
-                    textOf(prod, "cEAN"),
-                    textOf(prod, "xProd"),
-                    textOf(prod, "NCM"),
-                    textOf(prod, "CFOP"),
-                    textOf(prod, "uCom"),
+                    text(prod, "cProd"),
+                    text(prod, "cEAN"),
+                    text(prod, "xProd"),
+                    text(prod, "NCM"),
+                    text(prod, "CFOP"),
+                    text(prod, "uCom"),
                     decimalOf(prod, "qCom"),
                     decimalOf(prod, "vUnCom"),
                     decimalOf(prod, "vProd"),
-                    textOf(prod, "uTrib"),
+                    text(prod, "uTrib"),
                     decimalOf(prod, "qTrib"),
                     decimalOf(prod, "vUnTrib"),
-                    mapImpostoItem(prod, firstElementIgnoringNamespace(det, "imposto"))
+                    mapImpostoItem(prod, first(det, "imposto"))
             ));
         }
         return produtos;
@@ -261,37 +264,37 @@ public class FiscalXmlMetadataParser {
         if (imposto == null) {
             return null;
         }
-        Element icms = firstRegimeGroup(firstElementIgnoringNamespace(imposto, "ICMS"));
-        Element ipi = firstRegimeGroup(firstElementIgnoringNamespace(imposto, "IPI"));
-        Element pis = firstRegimeGroup(firstElementIgnoringNamespace(imposto, "PIS"));
-        Element cofins = firstRegimeGroup(firstElementIgnoringNamespace(imposto, "COFINS"));
+        Element icms = firstRegimeGroup(first(imposto, "ICMS"));
+        Element ipi = firstRegimeGroup(first(imposto, "IPI"));
+        Element pis = firstRegimeGroup(first(imposto, "PIS"));
+        Element cofins = firstRegimeGroup(first(imposto, "COFINS"));
 
         return new FiscalXmlImpostoItemDTO(
                 icmsSituacao(icms),
                 decimalOf(icms, "vBC"),
                 decimalOf(icms, "pICMS"),
                 decimalOf(icms, "vICMS"),
-                textOf(ipi, "CST"),
+                text(ipi, "CST"),
                 decimalOf(ipi, "vIPI"),
-                textOf(pis, "CST"),
+                text(pis, "CST"),
                 decimalOf(pis, "vPIS"),
-                textOf(cofins, "CST"),
+                text(cofins, "CST"),
                 decimalOf(cofins, "vCOFINS"),
                 mapTaxDetail(prod, icms, ipi, pis, cofins),
-                mapIbsCbs(firstElementIgnoringNamespace(imposto, "IBSCBS"))
+                mapIbsCbs(first(imposto, "IBSCBS"))
         );
     }
 
     private FiscalItemTaxDetail mapTaxDetail(Element prod, Element icms, Element ipi, Element pis, Element cofins) {
         return new FiscalItemTaxDetail(
-                textOf(prod, "CEST"),
-                textOf(prod, "cBenef"),
-                textOf(icms, "orig"),
-                textOf(icms, "CSOSN"),
-                textOf(icms, "modBC"),
+                text(prod, "CEST"),
+                text(prod, "cBenef"),
+                text(icms, "orig"),
+                text(icms, "CSOSN"),
+                text(icms, "modBC"),
                 decimalOf(icms, "pRedBC"),
                 decimalOf(icms, "vICMSDeson"),
-                textOf(icms, "modBCST"),
+                text(icms, "modBCST"),
                 decimalOf(icms, "pMVAST"),
                 decimalOf(icms, "vBCST"),
                 decimalOf(icms, "pICMSST"),
@@ -314,32 +317,32 @@ public class FiscalXmlMetadataParser {
         if (ibsCbs == null) {
             return null;
         }
-        Element values = firstElementIgnoringNamespace(ibsCbs, "gIBSCBS");
-        Element ibsUf = firstElementIgnoringNamespace(values, "gIBSUF");
-        Element ibsMun = firstElementIgnoringNamespace(values, "gIBSMun");
-        Element cbs = firstElementIgnoringNamespace(values, "gCBS");
+        Element values = first(ibsCbs, "gIBSCBS");
+        Element ibsUf = first(values, "gIBSUF");
+        Element ibsMun = first(values, "gIBSMun");
+        Element cbs = first(values, "gCBS");
         return new FiscalItemIbsCbs(
-                textOf(ibsCbs, "CST"),
-                textOf(ibsCbs, "cClassTrib"),
+                text(ibsCbs, "CST"),
+                text(ibsCbs, "cClassTrib"),
                 decimalOf(values, "vBC"),
                 decimalOf(ibsUf, "pIBSUF"),
-                decimalOf(firstElementIgnoringNamespace(ibsUf, "gRed"), "pRedAliq"),
+                decimalOf(first(ibsUf, "gRed"), "pRedAliq"),
                 decimalOf(ibsUf, "vIBSUF"),
                 decimalOf(ibsMun, "pIBSMun"),
-                decimalOf(firstElementIgnoringNamespace(ibsMun, "gRed"), "pRedAliq"),
+                decimalOf(first(ibsMun, "gRed"), "pRedAliq"),
                 decimalOf(ibsMun, "vIBSMun"),
                 decimalOf(values, "vIBS"),
                 decimalOf(cbs, "pCBS"),
-                decimalOf(firstElementIgnoringNamespace(cbs, "gRed"), "pRedAliq"),
+                decimalOf(first(cbs, "gRed"), "pRedAliq"),
                 decimalOf(cbs, "vCBS"),
-                firstElementIgnoringNamespace(values, "gDif") != null
-                        || firstElementIgnoringNamespace(values, "gDevTrib") != null
+                first(values, "gDif") != null
+                        || first(values, "gDevTrib") != null
         );
     }
 
     private String icmsSituacao(Element icms) {
-        String cst = textOf(icms, "CST");
-        return cst != null ? cst : textOf(icms, "CSOSN");
+        String cst = text(icms, "CST");
+        return cst != null ? cst : text(icms, "CSOSN");
     }
 
     /**
@@ -384,7 +387,7 @@ public class FiscalXmlMetadataParser {
     }
 
     private BigDecimal decimalOf(Element parent, String childLocalName) {
-        String value = textOf(parent, childLocalName);
+        String value = text(parent, childLocalName);
         if (value == null || value.isBlank()) {
             return null;
         }
@@ -423,32 +426,14 @@ public class FiscalXmlMetadataParser {
     }
 
     private LocalDateTime extractIssueDate(Element infoElement) {
-        Element ide = firstElementIgnoringNamespace(infoElement, "ide");
+        Element ide = first(infoElement, "ide");
         if (ide == null) {
             return null;
         }
-        LocalDateTime dhEmi = parseDateTime(textOf(ide, "dhEmi"));
+        LocalDateTime dhEmi = parseDateTime(text(ide, "dhEmi"));
         if (dhEmi != null) {
             return dhEmi;
         }
-        return parseDateTime(textOf(ide, "dEmi"));
-    }
-
-    private String textOf(Element parent, String childLocalName) {
-        Element child = firstElementIgnoringNamespace(parent, childLocalName);
-        return child == null ? null : child.getTextContent();
-    }
-
-    private Element firstElementIgnoringNamespace(Document doc, String localName) {
-        NodeList nodes = doc.getElementsByTagNameNS("*", localName);
-        return nodes.getLength() > 0 ? (Element) nodes.item(0) : null;
-    }
-
-    private Element firstElementIgnoringNamespace(Element parent, String localName) {
-        if (parent == null) {
-            return null;
-        }
-        NodeList nodes = parent.getElementsByTagNameNS("*", localName);
-        return nodes.getLength() > 0 ? (Element) nodes.item(0) : null;
+        return parseDateTime(text(ide, "dEmi"));
     }
 }

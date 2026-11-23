@@ -1,10 +1,11 @@
 package br.com.cshub.taxify.service;
 
+import br.com.cshub.taxify.common.IssuePeriod;
+import br.com.cshub.taxify.common.RequestIds;
 import br.com.cshub.taxify.common.MessageService;
 import br.com.cshub.taxify.domain.xml.FiscalXmlDocument;
 import br.com.cshub.taxify.domain.xml.FiscalXmlDocumentItem;
 import br.com.cshub.taxify.dto.fiscalrule.FiscalCheckFindingDTO;
-import br.com.cshub.taxify.exception.BadRequestException;
 import br.com.cshub.taxify.repository.FiscalXmlDocumentItemRepository;
 import br.com.cshub.taxify.service.fiscalcheck.FiscalCheckContext;
 import br.com.cshub.taxify.service.fiscalcheck.FiscalCheckEngine;
@@ -15,7 +16,6 @@ import org.springframework.transaction.annotation.Transactional;
 
 import java.time.LocalDate;
 import java.time.LocalDateTime;
-import java.time.LocalTime;
 import java.util.ArrayList;
 import java.util.LinkedHashMap;
 import java.util.List;
@@ -45,16 +45,16 @@ public class FiscalConferenceService {
 
     @Transactional(readOnly = true)
     public List<FiscalCheckFindingDTO> findFindings(String companyId, LocalDate dataEmissaoInicio, LocalDate dataEmissaoFim) {
-        UUID id = parseCompanyId(companyId);
+        UUID id = RequestIds.parse(companyId, messageService);
         companyValidation.checkExist(id);
 
-        LocalDateTime from = dataEmissaoInicio != null ? dataEmissaoInicio.atStartOfDay() : LocalDateTime.MIN;
-        LocalDateTime to = dataEmissaoFim != null ? dataEmissaoFim.atTime(LocalTime.MAX) : LocalDateTime.MAX;
+        LocalDateTime from = IssuePeriod.start(dataEmissaoInicio);
+        LocalDateTime to = IssuePeriod.end(dataEmissaoFim);
 
         Map<FiscalXmlDocument, List<FiscalXmlDocumentItem>> itemsByDocument = new LinkedHashMap<>();
         for (FiscalXmlDocumentItem item : itemRepository.findByDocument_Company_IdAndDocument_IssueDateBetween(id, from, to)) {
             FiscalXmlDocument document = item.getDocument();
-            if (!document.isDeleted() && !document.isCanceled()) {
+            if (FiscalCheckEngine.isCheckable(document)) {
                 itemsByDocument.computeIfAbsent(document, key -> new ArrayList<>()).add(item);
             }
         }
@@ -87,13 +87,5 @@ public class FiscalConferenceService {
                 divergence.severity(),
                 divergence.message()
         );
-    }
-
-    private UUID parseCompanyId(String companyId) {
-        try {
-            return UUID.fromString(companyId);
-        } catch (IllegalArgumentException e) {
-            throw new BadRequestException(messageService.getMessage("error.generic.bad.request"));
-        }
     }
 }

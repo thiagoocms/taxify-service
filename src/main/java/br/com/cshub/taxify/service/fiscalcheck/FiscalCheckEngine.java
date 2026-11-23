@@ -38,12 +38,15 @@ public class FiscalCheckEngine {
 
     /** The company's rules and the IBS/CBS rates - two queries. A product code is unique per company (ProductFiscalRuleValidation). */
     public FiscalCheckContext contextFor(UUID companyId) {
-        Map<String, ProductFiscalRule> rules = ruleRepository.findByCompany_IdAndDeletedIsFalse(companyId).stream()
-                .filter(rule -> rule.getCodigoProduto() != null)
-                .collect(Collectors.toMap(ProductFiscalRule::getCodigoProduto, Function.identity(), (first, second) -> first));
+        Map<String, ProductFiscalRule> rules = ProductFiscalRule.byProduct(ruleRepository.findByCompany_IdAndDeletedIsFalse(companyId));
         Map<Integer, IbsCbsRate> rates = ibsCbsRateRepository.findAll().stream()
                 .collect(Collectors.toMap(IbsCbsRate::getAno, Function.identity()));
         return new FiscalCheckContext(companyId, rules, rates);
+    }
+
+    /** Canceled or deleted notes are listed but never checked (no divergence, no conferência finding). */
+    public static boolean isCheckable(FiscalXmlDocument document) {
+        return document != null && !document.isDeleted() && !document.isCanceled();
     }
 
     public List<FiscalDivergence> check(FiscalXmlDocumentItem item, FiscalCheckContext context) {

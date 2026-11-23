@@ -1,8 +1,8 @@
 package br.com.cshub.taxify.service;
 
+import br.com.cshub.taxify.common.RequestIds;
 import br.com.cshub.taxify.common.MessageService;
 import br.com.cshub.taxify.dto.fiscalrule.CompanyProductDTO;
-import br.com.cshub.taxify.exception.BadRequestException;
 import br.com.cshub.taxify.repository.FiscalXmlDocumentItemRepository;
 import br.com.cshub.taxify.repository.ProductFiscalRuleRepository;
 import br.com.cshub.taxify.validation.CompanyValidation;
@@ -42,7 +42,7 @@ public class CompanyProductService {
     /** Up to 20 products whose code or description contains {@code search} (any, when blank). */
     @Transactional(readOnly = true)
     public List<CompanyProductDTO> search(String companyId, String search) {
-        UUID id = parseCompanyId(companyId);
+        UUID id = RequestIds.parse(companyId, messageService);
         companyValidation.checkExist(id);
 
         String term = "%" + (search == null ? "" : search.trim().toLowerCase(Locale.ROOT)) + "%";
@@ -67,13 +67,5 @@ public class CompanyProductService {
                     descricao == null || descricao.isBlank() ? codigo : codigo + " - " + descricao
             );
         }).toList();
-    }
-
-    private UUID parseCompanyId(String companyId) {
-        try {
-            return UUID.fromString(companyId);
-        } catch (IllegalArgumentException | NullPointerException e) {
-            throw new BadRequestException(messageService.getMessage("error.generic.bad.request"));
-        }
     }
 }

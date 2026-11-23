@@ -1,5 +1,7 @@
 package br.com.cshub.taxify.service;
 
+import br.com.cshub.taxify.common.IssuePeriod;
+import br.com.cshub.taxify.common.RequestIds;
 import br.com.cshub.taxify.domain.fiscalrule.ProductFiscalRule;
 import br.com.cshub.taxify.repository.ProductFiscalRuleRepository;
 import br.com.cshub.taxify.service.fiscalcheck.ProductRuleCheck;
@@ -27,7 +29,6 @@ import br.com.cshub.taxify.dto.fiscalxml.FiscalXmlProdutoDTO;
 import br.com.cshub.taxify.dto.fiscalxml.FiscalXmlSummaryDTO;
 import br.com.cshub.taxify.dto.fiscalxml.FiscalXmlTotaisDTO;
 import br.com.cshub.taxify.dto.fiscalxml.XmlSearchFilterDTO;
-import br.com.cshub.taxify.exception.BadRequestException;
 import br.com.cshub.taxify.exception.ResourceNotFoundException;
 import br.com.cshub.taxify.integration.sieg.FiscalXmlMetadata;
 import br.com.cshub.taxify.integration.sieg.FiscalXmlMetadataParser;
@@ -44,7 +45,6 @@ import org.springframework.transaction.annotation.Transactional;
 
 import java.io.IOException;
 import java.time.LocalDateTime;
-import java.time.LocalTime;
 import java.util.HashMap;
 import java.util.List;
 import java.util.Map;
@@ -91,9 +91,9 @@ public class FiscalXmlQueryService {
     /** Entries and exits of the period (same company/period filter as the list, other filters ignored). */
     @Transactional(readOnly = true)
     public FiscalXmlTotalsDTO totals(XmlSearchFilterDTO filter) {
-        Company company = companyValidation.checkExist(parseUuid(filter.companyId()));
-        LocalDateTime from = filter.dataEmissaoInicio() != null ? filter.dataEmissaoInicio().atStartOfDay() : LocalDateTime.MIN;
-        LocalDateTime to = filter.dataEmissaoFim() != null ? filter.dataEmissaoFim().atTime(LocalTime.MAX) : LocalDateTime.MAX;
+        Company company = companyValidation.checkExist(RequestIds.parse(filter.companyId(), messageService));
+        LocalDateTime from = IssuePeriod.start(filter.dataEmissaoInicio());
+        LocalDateTime to = IssuePeriod.end(filter.dataEmissaoFim());
 
         FiscalXmlTotalsDTO.DirectionTotals inbound = FiscalXmlTotalsDTO.DirectionTotals.empty();
         FiscalXmlTotalsDTO.DirectionTotals outbound = FiscalXmlTotalsDTO.DirectionTotals.empty();
@@ -136,11 +136,11 @@ public class FiscalXmlQueryService {
 
     @Transactional(readOnly = true)
     public Page<FiscalXmlSummaryDTO> search(XmlSearchFilterDTO filter) {
-        Company company = companyValidation.checkExist(parseUuid(filter.companyId()));
+        Company company = companyValidation.checkExist(RequestIds.parse(filter.companyId(), messageService));
         Pageable pageable = PageRequestDTO.toPageable(filter.pagination(), "issueDate", Sort.Direction.DESC);
 
-        LocalDateTime from = filter.dataEmissaoInicio() != null ? filter.dataEmissaoInicio().atStartOfDay() : LocalDateTime.MIN;
-        LocalDateTime to = filter.dataEmissaoFim() != null ? filter.dataEmissaoFim().atTime(LocalTime.MAX) : LocalDateTime.MAX;
+        LocalDateTime from = IssuePeriod.start(filter.dataEmissaoInicio());
+        LocalDateTime to = IssuePeriod.end(filter.dataEmissaoFim());
 
         // nNF is stored without leading zeros, so "000123" typed by the user still matches.
         String numero = filter.numero() == null ? "" : filter.numero().replaceAll("\\D", "").replaceFirst("^0+(?=\\d)", "");
@@ -178,9 +178,7 @@ public class FiscalXmlQueryService {
         if (documents.stream().noneMatch(document -> document.getRectifiedFilePath() != null)) {
             return Map.of();
         }
-        return ruleRepository.findByCompany_IdAndDeletedIsFalse(companyId).stream()
-                .filter(rule -> rule.getCodigoProduto() != null)
-                .collect(java.util.stream.Collectors.toMap(ProductFiscalRule::getCodigoProduto, rule -> rule, (first, second) -> first));
+        return ProductFiscalRule.byProduct(ruleRepository.findByCompany_IdAndDeletedIsFalse(companyId));
     }
 
     /**
@@ -281,8 +279,7 @@ public class FiscalXmlQueryService {
         FiscalXmlDocument document = findDocument(documentId);
         String path = rectified && document.getRectifiedFilePath() != null
                 ? document.getRectifiedFilePath() : document.getXmlFilePath();
-        String baseName = document.getAccessKey() != null && !document.getAccessKey().isBlank()
-                ? document.getAccessKey() : document.getId().toString();
+        String baseName = document.accessKeyOrId();
         return new StoredXml(baseName + ".xml", readFile(document, path));
     }
 
@@ -405,13 +402,5 @@ public class FiscalXmlQueryService {
                         item.getIbsCbs()
                 )
         );
-    }
-
-    private UUID parseUuid(String value) {
-        try {
-            return UUID.fromString(value);
-        } catch (IllegalArgumentException e) {
-            throw new BadRequestException(messageService.getMessage("error.generic.bad.request"));
-        }
     }
 }

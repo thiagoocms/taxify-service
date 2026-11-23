@@ -15,7 +15,6 @@ import br.com.cshub.taxify.integration.sieg.FiscalXmlFileStorage;
 import br.com.cshub.taxify.repository.FiscalXmlDocumentRepository;
 import br.com.cshub.taxify.repository.InvoiceAuditLogRepository;
 import br.com.cshub.taxify.repository.ProductFiscalRuleRepository;
-import org.w3c.dom.Comment;
 import org.w3c.dom.Document;
 import org.w3c.dom.Element;
 import org.w3c.dom.NodeList;
@@ -37,7 +36,9 @@ import java.util.Map;
 import java.util.Objects;
 import java.util.Optional;
 import java.util.UUID;
-import java.util.stream.Collectors;
+
+import static br.com.cshub.taxify.integration.fiscalxml.FiscalXmlDom.first;
+import static br.com.cshub.taxify.integration.fiscalxml.FiscalXmlDom.text;
 
 /**
  * Rewrites one already-downloaded NFe's CFOP (and NCM, when the rule pins one) to what
@@ -117,7 +118,7 @@ public class FiscalXmlRectificationService {
         List<String> corrections = List.of();
         if (mayNeedCorrection(document)) {
             dom = parse(readOriginal(document.getXmlFilePath()));
-            Element infNFe = firstElementIgnoringNamespace(dom, "infNFe");
+            Element infNFe = first(dom, "infNFe");
             if (infNFe == null) {
                 throw new BadRequestException(messageService.getMessage("error.fiscalXml.rectification.not.nfe"));
             }
@@ -126,7 +127,7 @@ public class FiscalXmlRectificationService {
 
         String rectifiedPath = null;
         if (!corrections.isEmpty()) {
-            String externalInvoiceKey = document.getAccessKey() != null ? document.getAccessKey() : document.getId().toString();
+            String externalInvoiceKey = document.accessKeyOrId();
             String notes = buildNotes(corrections);
 
             // Same corrections already logged AND still in effect: nothing to do. When the rectified
@@ -142,7 +143,7 @@ public class FiscalXmlRectificationService {
             // No rule diverges any more (the rule was removed or now matches the note): exports go back
             // to the original. The rectified file stays in storage as history; only the pointer is dropped.
             document.setRectifiedFilePath(null);
-            String externalInvoiceKey = document.getAccessKey() != null ? document.getAccessKey() : document.getId().toString();
+            String externalInvoiceKey = document.accessKeyOrId();
             auditTrail.record(document.getCompany(), externalInvoiceKey, InvoiceAuditStatus.RECTIFICATION_REVERTED, null);
         }
         document.setLastRectificationCheckedAt(LocalDateTime.now());
@@ -162,14 +163,11 @@ public class FiscalXmlRectificationService {
         if (version == null || version < ITEM_COLUMNS_VERSION || document.getItens().isEmpty()) {
             return true;
         }
-        Map<String, List<ProductFiscalRule>> rulesByProduct = ruleRepository
-                .findByCompany_IdAndDeletedIsFalse(document.getCompany().getId()).stream()
-                .filter(rule -> rule.getCodigoProduto() != null)
-                .collect(Collectors.groupingBy(ProductFiscalRule::getCodigoProduto));
+        Map<String, ProductFiscalRule> rulesByProduct = ProductFiscalRule.byProduct(
+                ruleRepository.findByCompany_IdAndDeletedIsFalse(document.getCompany().getId()));
         return document.getItens().stream()
-                .filter(item -> item.getCodigo() != null)
-                .anyMatch(item -> rulesByProduct.getOrDefault(item.getCodigo(), List.of()).stream()
-                        .anyMatch(rule -> RectificationPrecheck.mayChange(item, rule)));
+                .filter(item -> item.getCodigo() != null && rulesByProduct.containsKey(item.getCodigo()))
+                .anyMatch(item -> RectificationPrecheck.mayChange(item, rulesByProduct.get(item.getCodigo())));
     }
 
     private boolean alreadyLogged(String externalInvoiceKey, String notes) {
@@ -197,8 +195,8 @@ public class FiscalXmlRectificationService {
             if (!(detNodes.item(i) instanceof Element det)) {
                 continue;
             }
-            Element prod = firstElementIgnoringNamespace(det, "prod");
-            String codigo = textOf(prod, "cProd");
+            Element prod = first(det, "prod");
+            String codigo = text(prod, "cProd");
             if (codigo == null) {
                 continue;
             }
@@ -221,7 +219,7 @@ public class FiscalXmlRectificationService {
     }
 
     private void applyField(Element prod, String fieldName, String correctValue, String codigoProduto, List<String> corrections) {
-        Element field = firstElementIgnoringNamespace(prod, fieldName);
+        Element field = first(prod, fieldName);
         if (field == null) {
             return;
         }
@@ -273,23 +271,5 @@ public class FiscalXmlRectificationService {
         } catch (Exception e) {
             throw new SiegIntegrationException(messageService.getMessage("error.fiscalXml.rectification.failed"), e);
         }
-    }
-
-    private String textOf(Element parent, String childLocalName) {
-        Element child = firstElementIgnoringNamespace(parent, childLocalName);
-        return child == null ? null : child.getTextContent();
-    }
-
-    private Element firstElementIgnoringNamespace(Document doc, String localName) {
-        NodeList nodes = doc.getElementsByTagNameNS("*", localName);
-        return nodes.getLength() > 0 ? (Element) nodes.item(0) : null;
-    }
-
-    private Element firstElementIgnoringNamespace(Element parent, String localName) {
-        if (parent == null) {
-            return null;
-        }
-        NodeList nodes = parent.getElementsByTagNameNS("*", localName);
-        return nodes.getLength() > 0 ? (Element) nodes.item(0) : null;
     }
 }
