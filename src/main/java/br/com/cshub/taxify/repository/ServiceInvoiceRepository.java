@@ -26,11 +26,15 @@ public interface ServiceInvoiceRepository extends AbstractJpaRepository<ServiceI
             + "      or s.prestadorDocumento like :participant or s.tomadorDocumento like :participant)"
             + " and (:numero is null or s.numero = :numero)"
             + " and (:onlyRetained = false or s.issRetido = true or s.valorIrrf > 0 or s.valorCsll > 0 or s.valorInss > 0"
-            + "      or (s.pisCofinsRetidos = true and (s.valorPis > 0 or s.valorCofins > 0)))")
+            + "      or (s.pisCofinsRetidos = true and (s.valorPis > 0 or s.valorCofins > 0)))"
+            + " and (:onlySiegBefore is null or (s.foundInSiegAt < :onlySiegBefore and s.foundInAdnAt is null))"
+            + " and (:onlyAdnBefore is null or (s.foundInAdnAt < :onlyAdnBefore and s.foundInSiegAt is null))")
     Page<ServiceInvoice> search(@Param("companyId") UUID companyId, @Param("from") LocalDateTime from,
                                 @Param("to") LocalDateTime to, @Param("direction") String direction,
                                 @Param("participant") String participant, @Param("numero") String numero,
-                                @Param("onlyRetained") boolean onlyRetained, Pageable pageable);
+                                @Param("onlyRetained") boolean onlyRetained,
+                                @Param("onlySiegBefore") LocalDateTime onlySiegBefore,
+                                @Param("onlyAdnBefore") LocalDateTime onlyAdnBefore, Pageable pageable);
 
     /** The retentions' source (M1): the companies' non-canceled NFS-e of a competence. */
     @Query("select s from ServiceInvoice s join fetch s.company where s.company.id in :companyIds and s.deleted = false"

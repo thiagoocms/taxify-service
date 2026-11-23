@@ -8,6 +8,7 @@ public enum PendencyType {
     CERTIFICATE_EXPIRED(PendencySeverity.ALTA, "Certificado A1 vencido"),
     CERTIFICATE_EXPIRING(PendencySeverity.MEDIA, "Certificado A1 vencendo"),
     SEFAZ_CAPTURE_ERROR(PendencySeverity.ALTA, "Captura SEFAZ com erro"),
+    NFSE_CAPTURE_ERROR(PendencySeverity.ALTA, "Captura de NFS-e (Ambiente Nacional) com erro"),
     CIENCIA_REFUSED(PendencySeverity.MEDIA, "Ciência recusada pela SEFAZ"),
     MANIFESTATION_DEADLINE(PendencySeverity.ALTA, "Prazo de manifestação perto do fim"),
     SOURCE_ONLY_SIEG(PendencySeverity.BAIXA, "Nota só no SIEG"),

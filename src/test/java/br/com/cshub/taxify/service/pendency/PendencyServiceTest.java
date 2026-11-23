@@ -64,7 +64,8 @@ class PendencyServiceTest {
     @BeforeEach
     void setUp() {
         service = new PendencyService(repository, finder, companyRepository, companyValidation, tenantAccessService,
-                controlRepository, captureRunRepository, messageService, () -> Optional.of("ana"));
+                controlRepository, captureRunRepository, messageService, () -> Optional.of("ana"),
+                org.mockito.Mockito.mock(br.com.cshub.taxify.repository.NfseAdnControlRepository.class));
         company = new Company(UUID.randomUUID());
         company.setName("EMPRESA");
         when(repository.findByCompany_IdAndTypeIn(eq(company.getId()), any())).thenReturn(stored);

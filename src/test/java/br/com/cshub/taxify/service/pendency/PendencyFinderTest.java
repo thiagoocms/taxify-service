@@ -59,6 +59,8 @@ class PendencyFinderTest {
     private SefazManifestationScreenService manifestationService;
     @Mock
     private br.com.cshub.taxify.service.retention.RetentionCalculator retentionCalculator;
+    @Mock
+    private br.com.cshub.taxify.repository.NfseAdnControlRepository adnControlRepository;
 
     private PendencyFinder finder;
     private Company company;
@@ -66,7 +68,9 @@ class PendencyFinderTest {
     @BeforeEach
     void setUp() {
         finder = new PendencyFinder(certificateService, controlRepository, summaryRepository, documentRepository,
-                regimeRepository, subscriptionRepository, manifestationService, new SefazProperties(), retentionCalculator);
+                regimeRepository, subscriptionRepository, manifestationService, new SefazProperties(), retentionCalculator,
+                adnControlRepository);
+        when(adnControlRepository.findByCompany_Id(any())).thenReturn(Optional.empty());
         when(retentionCalculator.compute(any(), any()))
                 .thenReturn(new br.com.cshub.taxify.service.retention.RetentionCalculator.Result(List.of(), List.of()));
         company = new Company(UUID.randomUUID());

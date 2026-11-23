@@ -68,12 +68,15 @@ public class PendencyFinder {
     private final SefazManifestationScreenService manifestationService;
     private final SefazProperties sefazProperties;
     private final br.com.cshub.taxify.service.retention.RetentionCalculator retentionCalculator;
+    private final br.com.cshub.taxify.repository.NfseAdnControlRepository adnControlRepository;
 
     public PendencyFinder(CompanyCertificateService certificateService, SefazDistControlRepository controlRepository,
                           SefazNoteSummaryRepository summaryRepository, FiscalXmlDocumentRepository documentRepository,
                           CompanyTaxRegimeRepository regimeRepository, SubscriptionRepository subscriptionRepository,
                           SefazManifestationScreenService manifestationService, SefazProperties sefazProperties,
-                          br.com.cshub.taxify.service.retention.RetentionCalculator retentionCalculator) {
+                          br.com.cshub.taxify.service.retention.RetentionCalculator retentionCalculator,
+                          br.com.cshub.taxify.repository.NfseAdnControlRepository adnControlRepository) {
+        this.adnControlRepository = adnControlRepository;
         this.retentionCalculator = retentionCalculator;
         this.certificateService = certificateService;
         this.controlRepository = controlRepository;
@@ -109,6 +112,9 @@ public class PendencyFinder {
             if (sieg) {
                 sources(company, now, findings);
             }
+        }
+        if (PlanServiceEnum.importsFrom(services, PlanServiceEnum.NFSE_NATIONAL_INTEGRATION)) {
+            nfseCapture(company, findings);
         }
         divergent(company, now, findings);
         regime(company, findings);
@@ -148,6 +154,18 @@ public class PendencyFinder {
         findings.add(new Finding(PendencyType.SEFAZ_CAPTURE_ERROR, PendencyType.SEFAZ_CAPTURE_ERROR.defaultSeverity,
                 key(PendencyType.SEFAZ_CAPTURE_ERROR, company.getId()), null, Pendency.OBJECT_COMPANY, company.getId().toString(),
                 "Captura pela SEFAZ falhando",
+                (control.getLastRunAt() == null ? "" : "Última tentativa em " + control.getLastRunAt().format(DAY) + ": ")
+                        + (control.getLastDetail() == null ? "sem detalhe." : control.getLastDetail())));
+    }
+
+    private void nfseCapture(Company company, List<Finding> findings) {
+        var control = adnControlRepository.findByCompany_Id(company.getId()).orElse(null);
+        if (control == null || control.getLastStatus() != br.com.cshub.taxify.domain.xml.NfseAdnControl.Status.ERRO) {
+            return;
+        }
+        findings.add(new Finding(PendencyType.NFSE_CAPTURE_ERROR, PendencyType.NFSE_CAPTURE_ERROR.defaultSeverity,
+                key(PendencyType.NFSE_CAPTURE_ERROR, company.getId()), null, Pendency.OBJECT_COMPANY, company.getId().toString(),
+                "Captura de NFS-e pelo Ambiente Nacional falhando",
                 (control.getLastRunAt() == null ? "" : "Última tentativa em " + control.getLastRunAt().format(DAY) + ": ")
                         + (control.getLastDetail() == null ? "sem detalhe." : control.getLastDetail())));
     }

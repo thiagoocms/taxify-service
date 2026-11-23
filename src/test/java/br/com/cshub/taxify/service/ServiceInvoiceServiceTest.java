@@ -100,6 +100,32 @@ class ServiceInvoiceServiceTest {
     }
 
     @Test
+    void eachSourceIsMarkedWhenItBringsTheNote() {
+        service.store(company, bytes(NfseXmlTest.ABRASF), "SIEG");
+        ArgumentCaptor<ServiceInvoice> saved = ArgumentCaptor.captor();
+        verify(repository).save(saved.capture());
+        ServiceInvoice invoice = saved.getValue();
+        assertThat(invoice.getFoundInSiegAt()).isNotNull();
+        assertThat(invoice.getFoundInAdnAt()).isNull();
+
+        when(repository.findByCompany_IdAndAccessKey(company.getId(), invoice.getAccessKey())).thenReturn(Optional.of(invoice));
+        assertThat(service.store(company, bytes(NfseXmlTest.ABRASF), "ADN")).isEqualTo(ServiceInvoiceService.Stored.DUPLICATE);
+        assertThat(invoice.getFoundInAdnAt()).isNotNull();
+        assertThat(invoice.getSourceSystem()).isEqualTo("SIEG"); // the origin stays the first source
+    }
+
+    @Test
+    void aCancellationEventMarksTheNote() {
+        ServiceInvoice invoice = new ServiceInvoice();
+        when(repository.findByCompany_IdAndAccessKey(company.getId(), "K")).thenReturn(Optional.of(invoice));
+
+        assertThat(service.markCanceled(company, "K")).isTrue();
+        assertThat(invoice.isCanceled()).isTrue();
+        assertThat(service.markCanceled(company, "K")).isFalse(); // already canceled
+        assertThat(service.markCanceled(company, "OTHER")).isFalse();
+    }
+
+    @Test
     void somethingElseIsInvalid() {
         assertThat(service.store(company, bytes("<x/>"), "UPLOAD")).isEqualTo(ServiceInvoiceService.Stored.INVALID);
     }

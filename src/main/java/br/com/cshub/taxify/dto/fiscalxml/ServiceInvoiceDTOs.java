@@ -19,7 +19,17 @@ public final class ServiceInvoiceDTOs {
      */
     public record Filter(@NotBlank String companyId, LocalDate dataEmissaoInicio, LocalDate dataEmissaoFim,
                          String direction, String participant, String numero, Boolean somenteComRetencao,
-                         Integer page, Integer size) {
+                         Integer page, Integer size,
+                         /** SO_SIEG / SO_ADN: in one source and not the other for 48h+; blank = no comparison. */
+                         String fonte) {
+
+        public static final String ONLY_SIEG = "SO_SIEG";
+        public static final String ONLY_ADN = "SO_ADN";
+
+        public Filter(String companyId, LocalDate dataEmissaoInicio, LocalDate dataEmissaoFim, String direction,
+                      String participant, String numero, Boolean somenteComRetencao, Integer page, Integer size) {
+            this(companyId, dataEmissaoInicio, dataEmissaoFim, direction, participant, numero, somenteComRetencao, page, size, null);
+        }
     }
 
     /** @param totalRetido ISS retained + IRRF + CSLL + INSS + PIS/COFINS when retained */
@@ -46,6 +56,7 @@ public final class ServiceInvoiceDTOs {
                                   BigDecimal federaisRetidos, BigDecimal totalRetido) {
     }
 
-    public record Totals(DirectionTotals prestadas, DirectionTotals tomadas) {
+    /** @param soSieg / soAdn notes in one source and not the other for 48h+ (the SIEG x Ambiente Nacional comparison) */
+    public record Totals(DirectionTotals prestadas, DirectionTotals tomadas, long soSieg, long soAdn) {
     }
 }

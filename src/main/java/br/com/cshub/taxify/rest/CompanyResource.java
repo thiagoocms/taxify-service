@@ -51,6 +51,8 @@ public class CompanyResource extends AbstractCrudResource<UUID, CompanyDTO, Comp
     private final CompanyCertificateService certificateService;
     private final SefazDistService sefazDistService;
     private final SefazNotesService sefazNotesService;
+    private final br.com.cshub.taxify.service.NfseAdnService nfseAdnService;
+    private final br.com.cshub.taxify.service.NfseAdnScheduler nfseAdnScheduler;
     private final CompanyValidation companyValidation;
     private final MessageService messageService;
 
@@ -58,7 +60,11 @@ public class CompanyResource extends AbstractCrudResource<UUID, CompanyDTO, Comp
     protected CompanyResource(CompanyService service, CompanyTaxRegimeService taxRegimeService,
                               CompanyRegistrationService registrationService, CompanyCertificateService certificateService,
                               SefazDistService sefazDistService, SefazNotesService sefazNotesService,
-                              CompanyValidation companyValidation, MessageService messageService) {
+                              CompanyValidation companyValidation, MessageService messageService,
+                              br.com.cshub.taxify.service.NfseAdnService nfseAdnService,
+                              br.com.cshub.taxify.service.NfseAdnScheduler nfseAdnScheduler) {
+        this.nfseAdnService = nfseAdnService;
+        this.nfseAdnScheduler = nfseAdnScheduler;
         this.sefazNotesService = sefazNotesService;
         super(service);
         this.taxRegimeService = taxRegimeService;
@@ -109,6 +115,24 @@ public class CompanyResource extends AbstractCrudResource<UUID, CompanyDTO, Comp
     @PostMapping("/{id}/sefaz/resumos/{chave}/reenviar-ciencia")
     public ResponseEntity<SefazNotesDTO> retryCiencia(@PathVariable UUID id, @PathVariable String chave) {
         return ResponseEntity.ok(sefazNotesService.retryCiencia(companyValidation.checkExist(id), chave));
+    }
+
+    /** The NFS-e capture from the Ambiente Nacional: last run and whether the plan includes it. */
+    @GetMapping("/{id}/nfse-nacional")
+    public ResponseEntity<br.com.cshub.taxify.dto.company.NfseAdnStatusDTO> nfseAdnStatus(@PathVariable UUID id) {
+        Company company = companyValidation.checkExist(id);
+        return ResponseEntity.ok(nfseAdnService.status(company, nfseAdnScheduler.entitled(id, java.time.LocalDate.now())));
+    }
+
+    /** Runs the NFS-e capture now (still respecting the waiting time) - only with the national NFS-e integration on the plan. */
+    @PostMapping("/{id}/nfse-nacional/capturar")
+    public ResponseEntity<br.com.cshub.taxify.dto.company.NfseAdnStatusDTO> captureNfseAdn(@PathVariable UUID id) {
+        Company company = companyValidation.checkExist(id);
+        if (!nfseAdnScheduler.entitled(id, java.time.LocalDate.now())) {
+            throw new BadRequestException(messageService.getMessage("error.nfse.adn.not.in.plan"));
+        }
+        nfseAdnService.capture(company);
+        return ResponseEntity.ok(nfseAdnService.status(company, true));
     }
 
     /** Regime periods of the company, oldest first. */

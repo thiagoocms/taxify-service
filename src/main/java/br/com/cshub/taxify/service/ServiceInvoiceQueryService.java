@@ -51,7 +51,9 @@ public class ServiceInvoiceQueryService {
         String numero = filter.numero() == null || filter.numero().isBlank() ? null : filter.numero().strip();
         return repository.search(company.getId(), IssuePeriod.start(filter.dataEmissaoInicio()),
                         IssuePeriod.end(filter.dataEmissaoFim()), direction, participantPattern(filter.participant()), numero,
-                        Boolean.TRUE.equals(filter.somenteComRetencao()), page)
+                        Boolean.TRUE.equals(filter.somenteComRetencao()),
+                        ServiceInvoiceDTOs.Filter.ONLY_SIEG.equals(filter.fonte()) ? comparisonCutoff() : null,
+                        ServiceInvoiceDTOs.Filter.ONLY_ADN.equals(filter.fonte()) ? comparisonCutoff() : null, page)
                 .map(ServiceInvoiceQueryService::toSummary);
     }
 
@@ -60,7 +62,13 @@ public class ServiceInvoiceQueryService {
         Company company = companyValidation.checkExist(RequestIds.parse(filter.companyId(), messageService));
         List<ServiceInvoice> notes = repository.findActiveInPeriod(company.getId(), IssuePeriod.start(filter.dataEmissaoInicio()),
                 IssuePeriod.end(filter.dataEmissaoFim()));
-        return new ServiceInvoiceDTOs.Totals(totalsOf(notes, ServiceInvoice.PRESTADA), totalsOf(notes, ServiceInvoice.TOMADA));
+        java.time.LocalDateTime cutoff = comparisonCutoff();
+        long onlySieg = notes.stream().filter(s -> s.getFoundInSiegAt() != null && s.getFoundInSiegAt().isBefore(cutoff)
+                && s.getFoundInAdnAt() == null).count();
+        long onlyAdn = notes.stream().filter(s -> s.getFoundInAdnAt() != null && s.getFoundInAdnAt().isBefore(cutoff)
+                && s.getFoundInSiegAt() == null).count();
+        return new ServiceInvoiceDTOs.Totals(totalsOf(notes, ServiceInvoice.PRESTADA), totalsOf(notes, ServiceInvoice.TOMADA),
+                onlySieg, onlyAdn);
     }
 
     @Transactional(readOnly = true)
@@ -84,6 +92,11 @@ public class ServiceInvoiceQueryService {
         } catch (IOException e) {
             throw new BadRequestException(messageService.getMessage("error.sieg.xml.storage.failed"));
         }
+    }
+
+    /** A note in one source and not in the other for this long counts as a difference. */
+    private static java.time.LocalDateTime comparisonCutoff() {
+        return java.time.LocalDateTime.now().minusHours(FiscalXmlQueryService.SOURCE_COMPARISON_HOURS);
     }
 
     /** ISS retained + IRRF + CSLL + INSS + PIS/COFINS when retained. */

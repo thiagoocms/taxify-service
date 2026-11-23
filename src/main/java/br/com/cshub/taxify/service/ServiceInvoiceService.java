@@ -107,15 +107,48 @@ public class ServiceInvoiceService {
         NfseXml nfse = parsed.get();
         Optional<ServiceInvoice> known = repository.findByCompany_IdAndAccessKey(company.getId(), nfse.accessKey());
         if (known.isPresent()) {
+            boolean changed = markFoundIn(known.get(), source);
             if (nfse.canceled() && !known.get().isCanceled()) {
                 known.get().setCanceled(true);
+                changed = true;
+            }
+            if (changed) {
                 repository.save(known.get());
             }
             return Stored.DUPLICATE;
         }
         String path = fileStorage.store(company.getId(), "NFSE-" + nfse.accessKey(), xml);
-        repository.save(toEntity(company, nfse, path, source));
+        ServiceInvoice invoice = toEntity(company, nfse, path, source);
+        markFoundIn(invoice, source);
+        repository.save(invoice);
         return Stored.NEW;
+    }
+
+    /** A cancellation event (Ambiente Nacional): marks the company's note canceled. @return true when it changed */
+    @Transactional
+    public boolean markCanceled(Company company, String accessKey) {
+        return repository.findByCompany_IdAndAccessKey(company.getId(), accessKey)
+                .filter(invoice -> !invoice.isCanceled())
+                .map(invoice -> {
+                    invoice.setCanceled(true);
+                    repository.save(invoice);
+                    return true;
+                })
+                .orElse(false);
+    }
+
+    /** @return whether the note changed - the first time this source brings it */
+    static boolean markFoundIn(ServiceInvoice invoice, String source) {
+        java.time.LocalDateTime now = java.time.LocalDateTime.now();
+        if ("SIEG".equals(source) && invoice.getFoundInSiegAt() == null) {
+            invoice.setFoundInSiegAt(now);
+            return true;
+        }
+        if ("ADN".equals(source) && invoice.getFoundInAdnAt() == null) {
+            invoice.setFoundInAdnAt(now);
+            return true;
+        }
+        return false;
     }
 
     static String directionOf(Company company, NfseXml nfse) {

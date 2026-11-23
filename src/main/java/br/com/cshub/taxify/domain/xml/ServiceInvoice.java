@@ -139,6 +139,13 @@ public class ServiceInvoice extends AbstractAuditingEntity {
     @Column(name = "source_system", length = 20, nullable = false)
     private String sourceSystem;
 
+    /** When SIEG / the Ambiente Nacional had the note - the comparison between the two. */
+    @Column(name = "found_in_sieg_at")
+    private LocalDateTime foundInSiegAt;
+
+    @Column(name = "found_in_adn_at")
+    private LocalDateTime foundInAdnAt;
+
     public UUID getId() { return id; }
     public void setId(UUID id) { this.id = id; }
     public Company getCompany() { return company; }
@@ -207,6 +214,10 @@ public class ServiceInvoice extends AbstractAuditingEntity {
     public void setCanceled(boolean canceled) { this.canceled = canceled; }
     public String getXmlFilePath() { return xmlFilePath; }
     public void setXmlFilePath(String xmlFilePath) { this.xmlFilePath = xmlFilePath; }
+    public LocalDateTime getFoundInSiegAt() { return foundInSiegAt; }
+    public void setFoundInSiegAt(LocalDateTime foundInSiegAt) { this.foundInSiegAt = foundInSiegAt; }
+    public LocalDateTime getFoundInAdnAt() { return foundInAdnAt; }
+    public void setFoundInAdnAt(LocalDateTime foundInAdnAt) { this.foundInAdnAt = foundInAdnAt; }
     public String getSourceSystem() { return sourceSystem; }
     public void setSourceSystem(String sourceSystem) { this.sourceSystem = sourceSystem; }
 }

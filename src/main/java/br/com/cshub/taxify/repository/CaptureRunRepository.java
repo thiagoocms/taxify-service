@@ -16,9 +16,9 @@ import java.util.UUID;
 @Repository
 public interface CaptureRunRepository extends AbstractJpaRepository<CaptureRun, UUID> {
 
-    /** Runs since {@code since} per company and status. Row: companyId, status, count. */
-    @Query("select r.company.id, r.status, count(r) from CaptureRun r where r.company.id in :companyIds"
-            + " and r.startedAt >= :since group by r.company.id, r.status")
+    /** Runs since {@code since} per company, service and status. Row: companyId, service, status, count. */
+    @Query("select r.company.id, r.service, r.status, count(r) from CaptureRun r where r.company.id in :companyIds"
+            + " and r.startedAt >= :since group by r.company.id, r.service, r.status")
     List<Object[]> countSince(@Param("companyIds") Collection<UUID> companyIds, @Param("since") LocalDateTime since);
 
     @Modifying

@@ -15,6 +15,7 @@ import java.util.UUID;
 public class CaptureRun extends AbstractAuditingEntity {
 
     public static final String SEFAZ_DIST = "SEFAZ_DIST";
+    public static final String NFSE_ADN = "NFSE_ADN";
 
     @Id
     @GeneratedValue(strategy = GenerationType.UUID)

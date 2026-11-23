@@ -5,6 +5,9 @@ import br.com.cshub.taxify.common.TenantAccessService;
 import br.com.cshub.taxify.domain.company.Company;
 import br.com.cshub.taxify.domain.pendency.Pendency;
 import br.com.cshub.taxify.domain.xml.SefazDistControl;
+import br.com.cshub.taxify.domain.xml.NfseAdnControl;
+import br.com.cshub.taxify.domain.pendency.CaptureRun;
+import br.com.cshub.taxify.repository.NfseAdnControlRepository;
 import br.com.cshub.taxify.dto.pendency.PendencyDTOs;
 import br.com.cshub.taxify.enumerated.PendencySeverity;
 import br.com.cshub.taxify.enumerated.PendencyStatus;
@@ -56,11 +59,14 @@ public class PendencyService {
     private final CaptureRunRepository captureRunRepository;
     private final MessageService messageService;
     private final AuditorAware<String> auditorAware;
+    private final NfseAdnControlRepository adnControlRepository;
 
     public PendencyService(PendencyRepository repository, PendencyFinder finder, CompanyRepository companyRepository,
                            CompanyValidation companyValidation, TenantAccessService tenantAccessService,
                            SefazDistControlRepository controlRepository, CaptureRunRepository captureRunRepository,
-                           MessageService messageService, AuditorAware<String> auditorAware) {
+                           MessageService messageService, AuditorAware<String> auditorAware,
+                           NfseAdnControlRepository adnControlRepository) {
+        this.adnControlRepository = adnControlRepository;
         this.repository = repository;
         this.finder = finder;
         this.companyRepository = companyRepository;
@@ -170,26 +176,32 @@ public class PendencyService {
         return new PendencyDTOs.Summary(counters, total);
     }
 
-    /** SEFAZ capture of every company in scope that has one: last run and the last 7 days. */
+    /** The collectors (SEFAZ and NFS-e Nacional) of every company in scope that has one: last run and the last 7 days. */
     @Transactional(readOnly = true)
     public List<PendencyDTOs.IntegrationHealth> health(String companyId) {
         Collection<UUID> scope = scope(companyId);
         if (scope.isEmpty()) {
             return List.of();
         }
-        Map<UUID, long[]> runs = new HashMap<>();
+        Map<String, long[]> runs = new HashMap<>();
         for (Object[] row : captureRunRepository.countSince(scope, LocalDateTime.now().minusDays(HEALTH_DAYS))) {
-            long[] counts = runs.computeIfAbsent((UUID) row[0], key -> new long[2]);
-            counts[0] += (Long) row[2];
-            if (SefazDistControl.Status.ERRO.name().equals(row[1])) {
-                counts[1] += (Long) row[2];
+            long[] counts = runs.computeIfAbsent(row[0] + "|" + row[1], key -> new long[2]);
+            counts[0] += (Long) row[3];
+            if ("ERRO".equals(row[2])) {
+                counts[1] += (Long) row[3];
             }
         }
         List<PendencyDTOs.IntegrationHealth> health = new ArrayList<>();
         for (SefazDistControl control : controlRepository.findByCompany_IdIn(scope)) {
-            long[] counts = runs.getOrDefault(control.getCompany().getId(), new long[2]);
+            long[] counts = runs.getOrDefault(control.getCompany().getId() + "|" + CaptureRun.SEFAZ_DIST, new long[2]);
             health.add(new PendencyDTOs.IntegrationHealth(control.getCompany().getId(), control.getCompany().getName(),
                     "SEFAZ", control.getLastRunAt(), control.getLastStatus() == null ? null : control.getLastStatus().name(),
+                    control.getLastDetail(), control.getNextQueryAt(), counts[0], counts[1]));
+        }
+        for (NfseAdnControl control : adnControlRepository.findByCompany_IdIn(scope)) {
+            long[] counts = runs.getOrDefault(control.getCompany().getId() + "|" + CaptureRun.NFSE_ADN, new long[2]);
+            health.add(new PendencyDTOs.IntegrationHealth(control.getCompany().getId(), control.getCompany().getName(),
+                    "NFS-e Nacional", control.getLastRunAt(), control.getLastStatus() == null ? null : control.getLastStatus().name(),
                     control.getLastDetail(), control.getNextQueryAt(), counts[0], counts[1]));
         }
         health.sort(Comparator.comparing((PendencyDTOs.IntegrationHealth item) -> !"ERRO".equals(item.lastStatus()))

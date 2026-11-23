@@ -17,7 +17,9 @@ public enum PlanServiceEnum {
      * Recipient's manifestation: Taxify sends the Ciência da Operação for the entries SEFAZ hands over
      * only as a summary, then fetches their full XML. Works on top of the SEFAZ capture.
      */
-    SEFAZ_MANIFESTATION;
+    SEFAZ_MANIFESTATION,
+    /** NFS-e capture from the Ambiente Nacional (Sistema Nacional NFS-e) with the company's A1 certificate. */
+    NFSE_NATIONAL_INTEGRATION;
 
     /** Whether a plan with these services imports notes from this source (SIEG or SEFAZ integration). */
     public static boolean importsFrom(java.util.Collection<PlanServiceEnum> services, PlanServiceEnum source) {
