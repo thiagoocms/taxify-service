@@ -103,7 +103,7 @@ public class FiscalXmlResource {
 
     @GetMapping("/{documentId}/produtos")
     public ResponseEntity<List<FiscalXmlProdutoDTO>> buscarProdutos(@PathVariable UUID documentId) {
-        return ResponseEntity.ok(queryService.findProdutos(documentId));
+        return ResponseEntity.ok(queryService.findProdutosAsRectified(documentId));
     }
 
     /**

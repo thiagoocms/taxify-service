@@ -57,6 +57,8 @@ class FiscalXmlQueryServiceDetailTest {
     private FiscalXmlEventService eventService;
     @Mock
     private FiscalXmlFileStorage fileStorage;
+    @Mock
+    private br.com.cshub.taxify.repository.ProductFiscalRuleRepository ruleRepository;
 
     private FiscalXmlQueryService service;
     private FiscalXmlDocument document;
@@ -64,7 +66,7 @@ class FiscalXmlQueryServiceDetailTest {
     @BeforeEach
     void setUp() {
         service = new FiscalXmlQueryService(documentRepository, itemRepository, new FiscalXmlMetadataParser(), companyValidation,
-                tenantAccessService, messageService, eventService, fileStorage, org.mockito.Mockito.mock(br.com.cshub.taxify.repository.ProductFiscalRuleRepository.class));
+                tenantAccessService, messageService, eventService, fileStorage, ruleRepository);
         document = new FiscalXmlDocument();
         document.setId(UUID.randomUUID());
         document.setCompany(new Company(UUID.randomUUID()));
@@ -95,5 +97,32 @@ class FiscalXmlQueryServiceDetailTest {
 
         verify(fileStorage).read(document.getXmlFilePath());
         assertThat(detail.identificacao().tipoEmissao()).isEqualTo("9");
+    }
+
+    @Test
+    void productsTabShowsTheRectifiedCfopWhileTheDanfeKeepsTheIssuedOne() {
+        document.setRectifiedFilePath("s3://bucket/fiscal-xml/retificado.xml");
+        document.setLastRectificationCheckedAt(java.time.LocalDateTime.now());
+        br.com.cshub.taxify.domain.xml.FiscalXmlDocumentItem withRule = new br.com.cshub.taxify.domain.xml.FiscalXmlDocumentItem();
+        withRule.setCodigo("P1");
+        withRule.setCfop("5405");
+        br.com.cshub.taxify.domain.xml.FiscalXmlDocumentItem withoutRule = new br.com.cshub.taxify.domain.xml.FiscalXmlDocumentItem();
+        withoutRule.setCodigo("P2");
+        withoutRule.setCfop("5405");
+        when(itemRepository.findByDocument_IdOrderByNumeroItemAsc(document.getId())).thenReturn(java.util.List.of(withRule, withoutRule));
+        br.com.cshub.taxify.domain.fiscalrule.ProductFiscalRule rule = new br.com.cshub.taxify.domain.fiscalrule.ProductFiscalRule(UUID.randomUUID());
+        rule.setCodigoProduto("P1");
+        rule.setCfopCorreto("5102");
+        org.springframework.test.util.ReflectionTestUtils.setField(rule, "lastModifiedDate", java.time.LocalDateTime.now().minusDays(1));
+        org.mockito.Mockito.lenient().when(ruleRepository.findByCompany_IdAndDeletedIsFalse(document.getCompany().getId()))
+                .thenReturn(java.util.List.of(rule));
+
+        var tab = service.findProdutosAsRectified(document.getId());
+        assertThat(tab.get(0).cfop()).isEqualTo("5102");
+        assertThat(tab.get(0).cfopEmitido()).isEqualTo("5405");
+        assertThat(tab.get(1).cfop()).isEqualTo("5405");
+        assertThat(tab.get(1).cfopEmitido()).isNull();
+
+        assertThat(service.findProdutos(document.getId()).get(0).cfop()).isEqualTo("5405");
     }
 }

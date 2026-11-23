@@ -245,11 +245,30 @@ public class FiscalXmlQueryService {
         );
     }
 
+    /** The items as issued (the DANFE prints these). */
     @Transactional(readOnly = true)
     public List<FiscalXmlProdutoDTO> findProdutos(UUID documentId) {
         FiscalXmlDocument document = findDocument(documentId);
         return itemRepository.findByDocument_IdOrderByNumeroItemAsc(document.getId()).stream()
                 .map(this::toProduto)
+                .toList();
+    }
+
+    /**
+     * The items as the note stands now: when it has a rectified version built with the current
+     * rule, the CFOP shown is the rectified one and {@code cfopEmitido} keeps what was issued.
+     */
+    @Transactional(readOnly = true)
+    public List<FiscalXmlProdutoDTO> findProdutosAsRectified(UUID documentId) {
+        FiscalXmlDocument document = findDocument(documentId);
+        Map<String, ProductFiscalRule> rules = rulesIfAnyRectified(document.getCompany().getId(), List.of(document));
+        return itemRepository.findByDocument_IdOrderByNumeroItemAsc(document.getId()).stream()
+                .map(item -> {
+                    FiscalXmlProdutoDTO produto = toProduto(item);
+                    ProductFiscalRule rule = item.getCodigo() == null ? null : rules.get(item.getCodigo());
+                    return item.getCfop() == null ? produto
+                            : produto.withRectifiedCfop(effectiveCfop(document, rule, item.getCfop()));
+                })
                 .toList();
     }
 
