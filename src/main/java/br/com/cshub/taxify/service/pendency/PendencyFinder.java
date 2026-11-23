@@ -48,7 +48,7 @@ import java.util.Set;
 public class PendencyFinder {
 
     /** The types this finder is responsible for - only these are closed when their cause is gone. */
-    public static final Set<PendencyType> MANAGED = EnumSet.allOf(PendencyType.class);
+    public static final Set<PendencyType> MANAGED = EnumSet.complementOf(EnumSet.of(PendencyType.AUDIT_FINDING));
 
     static final int CERTIFICATE_WARNING_DAYS = 30;
     static final int MANIFESTATION_WARNING_DAYS = 15;

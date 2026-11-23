@@ -90,8 +90,24 @@ public class PendencyService {
      */
     @Transactional
     public int sync(Company company, List<PendencyFinder.Finding> findings) {
+        return sync(company, findings, repository.findByCompany_IdAndTypeIn(company.getId(), PendencyFinder.MANAGED));
+    }
+
+    /**
+     * Same as {@link #sync(Company, List)} but only over the pendencies of these types and competence -
+     * the audit writes one company and month at a time and must not touch the other months.
+     */
+    @Transactional
+    public int syncScoped(Company company, Set<PendencyType> types, String competence, List<PendencyFinder.Finding> findings) {
+        List<Pendency> existing = repository.findByCompany_IdAndTypeIn(company.getId(), types).stream()
+                .filter(pendency -> competence.equals(pendency.getCompetence()))
+                .toList();
+        return sync(company, findings, existing);
+    }
+
+    private int sync(Company company, List<PendencyFinder.Finding> findings, List<Pendency> current) {
         LocalDateTime now = LocalDateTime.now();
-        Map<String, Pendency> existing = repository.findByCompany_IdAndTypeIn(company.getId(), PendencyFinder.MANAGED).stream()
+        Map<String, Pendency> existing = current.stream()
                 .collect(Collectors.toMap(Pendency::getNaturalKey, Function.identity(), (a, b) -> a));
         Set<String> found = new java.util.HashSet<>();
         List<Pendency> changed = new ArrayList<>();

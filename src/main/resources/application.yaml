@@ -123,6 +123,11 @@ nfse:
     # false = produção restrita (ambiente de testes nacional)
     production: ${NFSE_ADN_PRODUCTION:true}
 
+# Auditoria tipo malha (M9): todo dia, competência anterior e atual das empresas com "Auditoria de notas fiscais" no plano.
+audit:
+  enabled: ${AUDIT_ENABLED:true}
+  cron: ${AUDIT_CRON:0 30 5 * * *}
+
 # Painel de pendências (M13): recalcula as pendências de todas as empresas (depois da captura SEFAZ das :15).
 pendencies:
   enabled: ${PENDENCIES_ENABLED:true}

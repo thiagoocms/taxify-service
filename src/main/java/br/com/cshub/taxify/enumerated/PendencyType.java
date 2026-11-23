@@ -16,7 +16,9 @@ public enum PendencyType {
     NOTE_DIVERGENT(PendencySeverity.MEDIA, "Nota conferida com divergência"),
     REGIME_MISSING(PendencySeverity.MEDIA, "Regime tributário não informado"),
     RETENTION_UNDUE(PendencySeverity.MEDIA, "Provável retenção indevida"),
-    ISS_RETAINED_WITHOUT_VALUE(PendencySeverity.BAIXA, "ISS retido sem valor");
+    ISS_RETAINED_WITHOUT_VALUE(PendencySeverity.BAIXA, "ISS retido sem valor"),
+    /** A finding of the Auditoria tipo malha (M9) - written by AuditService per company and competence. */
+    AUDIT_FINDING(PendencySeverity.MEDIA, "Auditoria tipo malha");
 
     public final PendencySeverity defaultSeverity;
     public final String label;

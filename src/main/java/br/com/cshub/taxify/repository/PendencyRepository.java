@@ -20,6 +20,9 @@ public interface PendencyRepository extends AbstractJpaRepository<Pendency, UUID
 
     List<Pendency> findByCompany_IdAndTypeIn(UUID companyId, Collection<PendencyType> types);
 
+    /** The audit findings of one company and competence. */
+    List<Pendency> findByCompany_IdAndTypeAndCompetence(UUID companyId, PendencyType type, String competence);
+
     /** The screen's list: most severe first, then the oldest. Every filter is optional (null = any). */
     @Query(value = "select p from Pendency p join fetch p.company c where c.id in :companyIds and p.deleted = false"
             + " and (:status is null or p.status = :status)"

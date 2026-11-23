@@ -76,6 +76,9 @@ services:
       # Pendências recalculadas de hora em hora.
       PENDENCIES_ENABLED: ${PENDENCIES_ENABLED:-true}
       PENDENCIES_CRON: ${PENDENCIES_CRON:-0 40 * * * *}
+      # Auditoria tipo malha, todo dia às 05:30 (planos com "Auditoria de notas fiscais").
+      AUDIT_ENABLED: ${AUDIT_ENABLED:-true}
+      AUDIT_CRON: ${AUDIT_CRON:-0 30 5 * * *}
       # Opcional: chave que cifra os certificados A1 e as senhas (openssl rand -base64 32). Vazia = sem essa criptografia.
       CERT_ENCRYPTION_KEY: ${CERT_ENCRYPTION_KEY:-}
       ACESSORIAS_SYNC_ENABLED: true
