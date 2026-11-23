@@ -10,7 +10,6 @@ import br.com.cshub.taxify.dto.fiscalrule.ProductFiscalDivergenceDTO;
 import br.com.cshub.taxify.dto.fiscalrule.ProductFiscalRuleDTO;
 import br.com.cshub.taxify.dto.fiscalrule.ProductFiscalRuleFilterDTO;
 import br.com.cshub.taxify.dto.fiscalrule.ProductRuleSuggestionDTO;
-import br.com.cshub.taxify.enumerated.FiscalDirection;
 import br.com.cshub.taxify.service.CompanyProductService;
 import br.com.cshub.taxify.service.FiscalConferenceService;
 import br.com.cshub.taxify.service.ProductFiscalDivergenceService;
@@ -84,14 +83,15 @@ public class ProductFiscalRuleResource extends AbstractCrudResource<UUID, Produc
     }
 
     /**
-     * Suggested rules: per product, the value each field had most often on the notes and how
-     * consistent the notes are about it. {@code direcao} OUTBOUND = only the company's own sales.
+     * Suggested rules from the notes the company received: per product, the value each field had
+     * most often and how consistent the notes are about it, with the supplier's CFOP turned into
+     * the entry one. {@code codigoProduto}: only that product.
      */
     @GetMapping("/sugestoes")
     public ResponseEntity<List<ProductRuleSuggestionDTO>> sugestoes(
             @RequestParam String companyId,
-            @RequestParam(required = false) FiscalDirection direcao,
-            @RequestParam(defaultValue = "true") boolean somenteSemRegra) {
-        return ResponseEntity.ok(suggestionService.suggest(companyId, direcao, somenteSemRegra));
+            @RequestParam(defaultValue = "true") boolean somenteSemRegra,
+            @RequestParam(required = false) String codigoProduto) {
+        return ResponseEntity.ok(suggestionService.suggest(companyId, somenteSemRegra, codigoProduto));
     }
 }

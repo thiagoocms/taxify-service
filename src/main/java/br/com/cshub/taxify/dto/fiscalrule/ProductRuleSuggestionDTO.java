@@ -10,14 +10,17 @@ import java.util.Map;
  * that never appears on the notes is absent.
  *
  * @param ocorrencias items of this product on the notes
- * @param possuiRegra the product already has a rule
+ * @param possuiRegra    the product already has a rule
+ * @param cfopFornecedor the supplier's exit CFOP most used on the notes - {@code campos.cfopCorreto}
+ *                       is the entry CFOP equivalent to it ({@code EntryCfops})
  */
 public record ProductRuleSuggestionDTO(
         String codigoProduto,
         String descricaoProduto,
         long ocorrencias,
         boolean possuiRegra,
-        Map<String, SuggestedValue> campos
+        Map<String, SuggestedValue> campos,
+        SuggestedValue cfopFornecedor
 ) {
 
     /**

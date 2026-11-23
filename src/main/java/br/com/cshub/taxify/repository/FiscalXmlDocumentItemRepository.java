@@ -51,8 +51,9 @@ public interface FiscalXmlDocumentItemRepository extends JpaRepository<FiscalXml
      * How the company's products were classified on its notes: one row per product code and
      * distinct combination of fields, with how many items had it - what the rule suggestion
      * picks the most frequent value of each field from. The ICMS rate only counts internal
-     * operations (an interstate rate isn't the product's). Canceled and deleted notes are out;
-     * {@code direction} null = every note.
+     * operations (an interstate rate isn't the product's). Canceled and deleted notes are out,
+     * and so are the company's own notes: only what it received from suppliers (it is the
+     * recipient) - the notes the rules rectify.
      * Row: codigo, descricao, ncm, cfop, origem, cst (null when CSOSN), csosn, internal pICMS, cest,
      * cst IPI, pIPI, cst PIS, pPIS, cst COFINS, pCOFINS, cst IBS/CBS, cClassTrib, count.
      */
@@ -64,15 +65,14 @@ public interface FiscalXmlDocumentItemRepository extends JpaRepository<FiscalXml
             + " from FiscalXmlDocumentItem i join i.document d"
             + " where d.company.id = :companyId and d.deleted = false"
             + " and (d.status is null or d.status <> br.com.cshub.taxify.enumerated.FiscalDocumentStatus.CANCELED)"
-            + " and (:direction is null or d.direction = :direction)"
+            + " and (d.ownIssue is null or d.ownIssue = false)"
             + " and i.codigo is not null and i.codigo <> ''"
             + " group by i.codigo, i.ncm, i.cfop, i.taxDetail.origemMercadoria,"
             + " case when i.taxDetail.csosn is null then i.situacaoTributariaIcms end, i.taxDetail.csosn,"
             + " case when d.destinoOperacao = '1' then i.aliquotaIcms end, i.taxDetail.cest,"
             + " i.situacaoTributariaIpi, i.taxDetail.aliquotaIpi, i.situacaoTributariaPis, i.taxDetail.aliquotaPis,"
             + " i.situacaoTributariaCofins, i.taxDetail.aliquotaCofins, i.ibsCbs.cst, i.ibsCbs.classificacaoTributaria")
-    List<Object[]> findClassificationsByProduct(@Param("companyId") UUID companyId,
-                                                @Param("direction") br.com.cshub.taxify.enumerated.FiscalDirection direction);
+    List<Object[]> findReceivedClassificationsByProduct(@Param("companyId") UUID companyId);
 
     /**
      * IBS and CBS of the items of the period per company and direction - the informative
