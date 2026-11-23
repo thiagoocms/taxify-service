@@ -136,6 +136,9 @@ public class FiscalXmlQueryService {
         return "%" + (looksLikeDocument ? digits : participant.strip().toLowerCase(Locale.ROOT)) + "%";
     }
 
+    /** A note in one source and not in the other for this long counts as a difference (SIEG x SEFAZ). */
+    public static final long SOURCE_COMPARISON_HOURS = 48;
+
     @Transactional(readOnly = true)
     public Page<FiscalXmlSummaryDTO> search(XmlSearchFilterDTO filter) {
         Company company = companyValidation.checkExist(RequestIds.parse(filter.companyId(), messageService));
@@ -147,9 +150,14 @@ public class FiscalXmlQueryService {
         // nNF is stored without leading zeros, so "000123" typed by the user still matches.
         String numero = filter.numero() == null ? "" : filter.numero().replaceAll("\\D", "").replaceFirst("^0+(?=\\d)", "");
 
+        LocalDateTime comparisonCutoff = LocalDateTime.now().minusHours(SOURCE_COMPARISON_HOURS);
+        String origem = filter.origem() == null || filter.origem().isBlank() ? null : filter.origem().strip();
         Page<FiscalXmlDocument> documents = documentRepository.search(company.getId(), from, to,
                 numero.isEmpty() ? null : numero, filter.direction(), participantPattern(filter.participant()),
-                filter.reviewStatus(), pageable);
+                filter.reviewStatus(), origem,
+                XmlSearchFilterDTO.ONLY_SIEG.equals(filter.fonte()) ? comparisonCutoff : null,
+                XmlSearchFilterDTO.ONLY_SEFAZ.equals(filter.fonte()) ? comparisonCutoff : null,
+                pageable);
 
         Map<UUID, Long> itemCounts = new HashMap<>();
         Map<UUID, java.util.SortedSet<String>> cfops = new HashMap<>();
@@ -242,7 +250,8 @@ public class FiscalXmlQueryService {
                 document.getReviewedAt(),
                 document.getReviewedBy(),
                 document.getReviewNote()
-        );
+        ,
+                document.getSourceSystem(), document.getFoundInSiegAt(), document.getFoundInSefazAt());
     }
 
     /** The items as issued (the DANFE prints these). */
@@ -343,7 +352,8 @@ public class FiscalXmlQueryService {
                 d.getIssuerCnpj(), d.getRecipientCnpj(), d.getIssueDate(), d.getRectifiedFilePath() != null,
                 itemRepository.countByDocument_Id(d.getId()), identificacao, emitente, destinatario, totais,
                 d.getDirection(), d.isOwnIssue(), d.getStatus(), d.getCanceledAt(),
-                d.getReviewStatus(), d.getReviewedAt(), d.getReviewedBy(), d.getReviewNote());
+                d.getReviewStatus(), d.getReviewedAt(), d.getReviewedBy(), d.getReviewNote(),
+                d.getSourceSystem(), d.getFoundInSiegAt(), d.getFoundInSefazAt());
     }
 
     private FiscalXmlSummaryDTO toSummary(FiscalXmlDocument document, long quantidadeItens, List<String> cfops) {
@@ -370,7 +380,8 @@ public class FiscalXmlQueryService {
                 document.isOwnIssue(),
                 document.getStatus(),
                 document.getReviewStatus(),
-                cfops
+                cfops,
+                document.getSourceSystem()
         );
     }
 

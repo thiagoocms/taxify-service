@@ -114,7 +114,8 @@ class FiscalXmlIntegrationServiceExportTest {
         service = new FiscalXmlIntegrationService(siegClient, new FiscalXmlMetadataParser(),
                 new FiscalXmlFileStorage(properties, messageService), new FiscalXmlPackageExtractor(),
                 xmlDocumentRepository, syncControlRepository, companyValidation, messageService, new SiegProperties(), firmIntegrationService,
-                new FiscalEventParser(), eventService);
+                new FiscalEventParser(), eventService,
+                org.mockito.Mockito.mock(br.com.cshub.taxify.repository.SefazNoteSummaryRepository.class));
     }
 
     @Test

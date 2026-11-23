@@ -32,6 +32,23 @@ public record FiscalXmlDetailDTO(
         ReviewStatus reviewStatus,
         LocalDateTime reviewedAt,
         String reviewedBy,
-        String reviewNote
+        String reviewNote,
+        /** SIEG, SEFAZ_DIST or UPLOAD - where the note came from first. */
+        String origem,
+        /** When SIEG / SEFAZ had the note - null = that source never brought it (or before this was tracked). */
+        LocalDateTime encontradaSiegEm,
+        LocalDateTime encontradaSefazEm
 ) {
+
+    /** Without the source fields - callers that don't know them. */
+    public FiscalXmlDetailDTO(UUID id, UUID companyId, String accessKey, String documentType, String issuerCnpj,
+                              String recipientCnpj, LocalDateTime issueDate, boolean retificada, long quantidadeItens,
+                              FiscalXmlIdentificacaoDTO identificacao, FiscalXmlEmitenteDTO emitente,
+                              FiscalXmlDestinatarioDTO destinatario, FiscalXmlTotaisDTO totais, FiscalDirection direction,
+                              boolean ownIssue, FiscalDocumentStatus status, LocalDateTime canceledAt, ReviewStatus reviewStatus,
+                              LocalDateTime reviewedAt, String reviewedBy, String reviewNote) {
+        this(id, companyId, accessKey, documentType, issuerCnpj, recipientCnpj, issueDate, retificada, quantidadeItens,
+                identificacao, emitente, destinatario, totais, direction, ownIssue, status, canceledAt, reviewStatus,
+                reviewedAt, reviewedBy, reviewNote, null, null, null);
+    }
 }

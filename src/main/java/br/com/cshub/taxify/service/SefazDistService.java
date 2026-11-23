@@ -25,7 +25,8 @@ import java.util.Optional;
  * Captures one company's documents from the SEFAZ distribution (NFeDistribuicaoDFe), from
  * the last NSU read on. Full notes and events go through the regular persistence
  * ({@link FiscalXmlIntegrationService#importFromSefaz}); summaries (resNFe - entries without
- * "Ciência da Operação") are only counted for now. The NSU is saved after each batch is
+ * "Ciência da Operação") are kept as notes waiting for their XML, and {@link SefazManifestService}
+ * sends the ciência and fetches them by key afterwards. The NSU is saved after each batch is
  * stored, so a crash only means re-reading that batch (known notes are skipped).
  *
  * <p>SEFAZ rules followed: once caught up ({@code ultNSU == maxNSU} or cStat 137) or told
@@ -45,9 +46,12 @@ public class SefazDistService {
     private final FiscalXmlIntegrationService integrationService;
     private final SefazDistClient client;
     private final SefazProperties properties;
+    private final SefazManifestService manifestService;
 
     public SefazDistService(SefazDistControlRepository controlRepository, CompanyCertificateService certificateService,
-                            FiscalXmlIntegrationService integrationService, SefazDistClient client, SefazProperties properties) {
+                            FiscalXmlIntegrationService integrationService, SefazDistClient client, SefazProperties properties,
+                            SefazManifestService manifestService) {
+        this.manifestService = manifestService;
         this.controlRepository = controlRepository;
         this.certificateService = certificateService;
         this.integrationService = integrationService;
@@ -70,7 +74,20 @@ public class SefazDistService {
 
         Run run = new Run();
         try {
-            runBatches(company, control, run);
+            A1Certificate certificate = runBatches(company, control, run);
+            if (certificate != null) {
+                SefazManifestService.Outcome outcome = manifestService.manifestAndFetch(company, certificate,
+                        CompanyCertificateService.cnpjOf(company), !run.blocked);
+                run.ciencias += outcome.cienciasSent();
+                run.cienciaErrors += outcome.cienciaErrors();
+                run.newNotes += outcome.fetched();
+                if (outcome.blocked()) {
+                    control.setNextQueryAt(LocalDateTime.now().plusMinutes(WAIT_MINUTES));
+                }
+                if (outcome.error() != null && run.error == null) {
+                    run.error(outcome.error());
+                }
+            }
         } catch (IOException e) {
             log.warn("SEFAZ distribution failed for company {}", company.getId(), e);
             run.error("Falha de conexão com a SEFAZ: " + e.getMessage());
@@ -84,30 +101,31 @@ public class SefazDistService {
         control.setLastSummaries(run.summaries);
         control.setLastStatus(run.status());
         control.setLastDetail(truncate(run.detail()));
-        log.info("SEFAZ distribution for company {}: {} - {} new notes, {} events, {} summaries{}", company.getId(),
-                control.getLastStatus(), run.newNotes, run.events, run.summaries,
+        log.info("SEFAZ distribution for company {}: {} - {} new notes, {} events, {} summaries, {} ciencias{}", company.getId(),
+                control.getLastStatus(), run.newNotes, run.events, run.summaries, run.ciencias,
                 run.error == null ? "" : " (" + run.error + ")");
         return controlRepository.save(control);
     }
 
-    private void runBatches(Company company, SefazDistControl control, Run run) throws IOException {
+    /** @return the opened certificate when the distribution could be asked (the ciência step uses it too) */
+    private A1Certificate runBatches(Company company, SefazDistControl control, Run run) throws IOException {
         String cnpj = CompanyCertificateService.cnpjOf(company);
         if (cnpj == null) {
             run.error("A empresa não tem CNPJ.");
-            return;
+            return null;
         }
         if (SefazDistClient.ufCode(company.getUf()) == null) {
             run.error("UF da empresa não informada.");
-            return;
+            return null;
         }
         Optional<CompanyCertificate> stored = certificateService.resolve(company);
         if (stored.isEmpty()) {
             run.error("Sem certificado A1.");
-            return;
+            return null;
         }
         if (stored.get().getValidUntil().isBefore(LocalDateTime.now())) {
             run.error("Certificado vencido em " + stored.get().getValidUntil().format(DATE) + ".");
-            return;
+            return null;
         }
         A1Certificate certificate;
         try {
@@ -116,14 +134,14 @@ public class SefazDistService {
             // e.g. uploaded by a backend with another storage (a local run on disk) - not a SEFAZ problem
             log.warn("Certificate file of company {} not found in the storage: {}", company.getId(), e.getMessage());
             run.error("Arquivo do certificado não encontrado no armazenamento - envie o certificado novamente.");
-            return;
+            return null;
         } catch (IOException e) {
             log.warn("Could not read the certificate file of company {}", company.getId(), e);
             run.error("Não foi possível ler o arquivo do certificado: " + e.getMessage());
-            return;
+            return null;
         } catch (GeneralSecurityException | IllegalStateException e) {
             run.error("Não foi possível abrir o certificado: " + e.getMessage());
-            return;
+            return null;
         }
 
         for (int batch = 0; batch < properties.getMaxBatchesPerCompany(); batch++) {
@@ -132,9 +150,10 @@ public class SefazDistService {
                 response = client.fetch(certificate, company.getUf(), cnpj, control.getUltNsu());
             } catch (GeneralSecurityException e) {
                 run.error("Certificado recusado na conexão: " + e.getMessage());
-                return;
+                return null;
             }
             if ("656".equals(response.cStat())) {
+                run.blocked = true;
                 control.setNextQueryAt(LocalDateTime.now().plusMinutes(WAIT_MINUTES));
                 String motivo = response.xMotivo() == null ? "" : " " + response.xMotivo();
                 // "Deve ser utilizado o ultNSU nas solicitações subsequentes": SEFAZ already delivered up
@@ -152,11 +171,11 @@ public class SefazDistService {
                 } else {
                     run.note("SEFAZ pediu pausa de 1h (656" + motivo + ").");
                 }
-                return;
+                return certificate;
             }
             if (!"137".equals(response.cStat()) && !"138".equals(response.cStat())) {
                 run.error(response.cStat() + " " + response.xMotivo());
-                return;
+                return null;
             }
             store(company, response, run);
             if (response.ultNsu() != null && !response.ultNsu().isBlank()) {
@@ -166,10 +185,11 @@ public class SefazDistService {
             controlRepository.save(control);
             if (response.caughtUp()) {
                 control.setNextQueryAt(LocalDateTime.now().plusMinutes(WAIT_MINUTES));
-                return;
+                return certificate;
             }
             pause();
         }
+        return certificate;
     }
 
     private void store(Company company, SefazDistResponse response, Run run) {
@@ -177,7 +197,7 @@ public class SefazDistService {
                 .filter(document -> document.isFullNote() || document.isFullEvent())
                 .map(SefazDistResponse.Document::xml)
                 .toList();
-        run.summaries += (int) response.documents().stream().filter(SefazDistResponse.Document::isNoteSummary).count();
+        run.summaries += manifestService.recordSummaries(company, response.documents());
         if (!full.isEmpty()) {
             XmlDownloadResultDTO result = integrationService.importFromSefaz(company.getId(), full);
             run.newNotes += result.totalPersistedNew();
@@ -211,6 +231,9 @@ public class SefazDistService {
         int newNotes;
         int events;
         int summaries;
+        int ciencias;
+        int cienciaErrors;
+        boolean blocked;
         String error;
         String note;
 
@@ -226,7 +249,7 @@ public class SefazDistService {
             if (error != null) {
                 return Status.ERRO;
             }
-            return newNotes + events + summaries > 0 ? Status.OK : Status.SEM_MOVIMENTO;
+            return newNotes + events + summaries + ciencias > 0 ? Status.OK : Status.SEM_MOVIMENTO;
         }
 
         String detail() {
@@ -237,12 +260,22 @@ public class SefazDistService {
                 detail.append(note);
             }
             if (summaries > 0) {
-                if (!detail.isEmpty()) {
-                    detail.append(' ');
-                }
-                detail.append(summaries).append(" entrada(s) só com resumo (falta Ciência da Operação).");
+                append(detail, summaries + " entrada(s) nova(s) só com resumo.");
+            }
+            if (ciencias > 0) {
+                append(detail, "Ciência da Operação enviada para " + ciencias + " nota(s) - o XML completo vem na próxima consulta.");
+            }
+            if (cienciaErrors > 0) {
+                append(detail, cienciaErrors + " ciência(s) recusada(s) pela SEFAZ.");
             }
             return detail.isEmpty() ? null : detail.toString();
+        }
+
+        private static void append(StringBuilder detail, String text) {
+            if (!detail.isEmpty()) {
+                detail.append(' ');
+            }
+            detail.append(text);
         }
     }
 }

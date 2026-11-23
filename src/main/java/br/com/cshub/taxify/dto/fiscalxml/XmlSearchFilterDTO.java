@@ -27,6 +27,24 @@ public record XmlSearchFilterDTO(
         /** Conferência status; null = any. */
         ReviewStatus reviewStatus,
         @Valid
-        PageRequestDTO pagination
+        PageRequestDTO pagination,
+        /** SIEG, SEFAZ_DIST or UPLOAD; blank = any. */
+        String origem,
+        /**
+         * SIEG x SEFAZ comparison: SO_SIEG = SIEG has had it for over 48h and SEFAZ never handed it
+         * over (third-party notes only - SEFAZ doesn't distribute the company's own); SO_SEFAZ = the
+         * other way round. Blank = no comparison.
+         */
+        String fonte
 ) {
+
+    public static final String ONLY_SIEG = "SO_SIEG";
+    public static final String ONLY_SEFAZ = "SO_SEFAZ";
+
+    /** Without origin / comparison. */
+    public XmlSearchFilterDTO(String companyId, LocalDate dataEmissaoInicio, LocalDate dataEmissaoFim, String numero,
+                              FiscalDirection direction, String participant, ReviewStatus reviewStatus,
+                              PageRequestDTO pagination) {
+        this(companyId, dataEmissaoInicio, dataEmissaoFim, numero, direction, participant, reviewStatus, pagination, null, null);
+    }
 }

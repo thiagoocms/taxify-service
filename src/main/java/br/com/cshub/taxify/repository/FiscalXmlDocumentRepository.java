@@ -55,7 +55,11 @@ public interface FiscalXmlDocumentRepository extends AbstractJpaRepository<Fisca
             + "      or d.issuerCnpj like :participant or d.recipientCnpj like :participant"
             + "      or d.emitenteCpf like :participant or d.destinatarioCpf like :participant)"
             + " and (:reviewStatus is null"
-            + "      or coalesce(d.reviewStatus, br.com.cshub.taxify.enumerated.ReviewStatus.PENDING) = :reviewStatus)")
+            + "      or coalesce(d.reviewStatus, br.com.cshub.taxify.enumerated.ReviewStatus.PENDING) = :reviewStatus)"
+            + " and (:origem is null or d.sourceSystem = :origem)"
+            + " and (:onlySiegBefore is null or (d.foundInSiegAt < :onlySiegBefore and d.foundInSefazAt is null"
+            + "      and d.ownIssue = false))"
+            + " and (:onlySefazBefore is null or (d.foundInSefazAt < :onlySefazBefore and d.foundInSiegAt is null))")
     Page<FiscalXmlDocument> search(@Param("companyId") UUID companyId,
                                    @Param("issueDateFrom") LocalDateTime issueDateFrom,
                                    @Param("issueDateTo") LocalDateTime issueDateTo,
@@ -63,7 +67,22 @@ public interface FiscalXmlDocumentRepository extends AbstractJpaRepository<Fisca
                                    @Param("direction") FiscalDirection direction,
                                    @Param("participant") String participant,
                                    @Param("reviewStatus") ReviewStatus reviewStatus,
+                                   @Param("origem") String origem,
+                                   @Param("onlySiegBefore") LocalDateTime onlySiegBefore,
+                                   @Param("onlySefazBefore") LocalDateTime onlySefazBefore,
                                    Pageable pageable);
+
+    /** SIEG x SEFAZ: third-party notes SIEG brought before {@code before}, issued since {@code issuedSince}, never seen by SEFAZ. */
+    @Query("select count(d) from FiscalXmlDocument d where d.company.id = :companyId and d.deleted = false"
+            + " and d.ownIssue = false and d.foundInSiegAt < :before and d.foundInSefazAt is null"
+            + " and d.issueDate >= :issuedSince")
+    long countOnlySieg(@Param("companyId") UUID companyId, @Param("before") LocalDateTime before,
+                       @Param("issuedSince") LocalDateTime issuedSince);
+
+    /** SIEG x SEFAZ: notes SEFAZ handed over before {@code before} that SIEG never brought. */
+    @Query("select count(d) from FiscalXmlDocument d where d.company.id = :companyId and d.deleted = false"
+            + " and d.foundInSefazAt < :before and d.foundInSiegAt is null")
+    long countOnlySefaz(@Param("companyId") UUID companyId, @Param("before") LocalDateTime before);
 
     /**
      * Period totals per direction - canceled notes don't count in the sums, only in their own

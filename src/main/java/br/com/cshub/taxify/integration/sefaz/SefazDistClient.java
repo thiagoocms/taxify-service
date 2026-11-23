@@ -53,11 +53,25 @@ public class SefazDistClient {
 
     public SefazDistResponse fetch(A1Certificate certificate, String uf, String cnpj, String ultNsu)
             throws IOException, GeneralSecurityException {
+        return send(certificate, envelope(properties.tpAmb(), ufCode(uf), cnpj, ultNsu));
+    }
+
+    /**
+     * One note by its key (consChNFe) - after the Ciência da Operação the full procNFe comes
+     * back here without waiting for it to show up in the NSU sequence.
+     */
+    public SefazDistResponse fetchByKey(A1Certificate certificate, String uf, String cnpj, String accessKey)
+            throws IOException, GeneralSecurityException {
+        return send(certificate, envelopeWith(properties.tpAmb(), ufCode(uf), cnpj,
+                "<consChNFe><chNFe>" + accessKey + "</chNFe></consChNFe>"));
+    }
+
+    private SefazDistResponse send(A1Certificate certificate, String body) throws IOException, GeneralSecurityException {
         try (HttpClient http = httpClient(certificate.sslContext())) {
             HttpRequest request = HttpRequest.newBuilder(URI.create(properties.endpoint()))
                     .timeout(Duration.ofSeconds(properties.getTimeoutSeconds()))
                     .header("Content-Type", "application/soap+xml; charset=utf-8")
-                    .POST(HttpRequest.BodyPublishers.ofString(envelope(properties.tpAmb(), ufCode(uf), cnpj, ultNsu), StandardCharsets.UTF_8))
+                    .POST(HttpRequest.BodyPublishers.ofString(body, StandardCharsets.UTF_8))
                     .build();
             HttpResponse<byte[]> response = http.send(request, HttpResponse.BodyHandlers.ofByteArray());
             if (response.statusCode() != 200) {
@@ -83,14 +97,19 @@ public class SefazDistClient {
     }
 
     static String envelope(String tpAmb, String cUfAutor, String cnpj, String ultNsu) {
+        return envelopeWith(tpAmb, cUfAutor, cnpj, "<distNSU><ultNSU>" + ultNsu + "</ultNSU></distNSU>");
+    }
+
+    /** {@code query}: distNSU (the sequence) or consChNFe (one note by key). */
+    static String envelopeWith(String tpAmb, String cUfAutor, String cnpj, String query) {
         return """
                 <?xml version="1.0" encoding="utf-8"?>
                 <soap12:Envelope xmlns:soap12="http://www.w3.org/2003/05/soap-envelope"><soap12:Body>\
                 <nfeDistDFeInteresse xmlns="http://www.portalfiscal.inf.br/nfe/wsdl/NFeDistribuicaoDFe"><nfeDadosMsg>\
                 <distDFeInt xmlns="%s" versao="1.01"><tpAmb>%s</tpAmb><cUFAutor>%s</cUFAutor><CNPJ>%s</CNPJ>\
-                <distNSU><ultNSU>%s</ultNSU></distNSU></distDFeInt>\
+                %s</distDFeInt>\
                 </nfeDadosMsg></nfeDistDFeInteresse></soap12:Body></soap12:Envelope>"""
-                .formatted(NS_NFE, tpAmb, cUfAutor, cnpj, ultNsu);
+                .formatted(NS_NFE, tpAmb, cUfAutor, cnpj, query);
     }
 
     static SefazDistResponse parse(byte[] body) throws IOException {

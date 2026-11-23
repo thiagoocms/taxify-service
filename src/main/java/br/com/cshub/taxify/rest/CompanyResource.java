@@ -6,6 +6,8 @@ import br.com.cshub.taxify.dto.company.CompanyCertificateDTO;
 import br.com.cshub.taxify.exception.BadRequestException;
 import br.com.cshub.taxify.service.CompanyCertificateService;
 import br.com.cshub.taxify.service.SefazDistService;
+import br.com.cshub.taxify.service.SefazNotesService;
+import br.com.cshub.taxify.dto.company.SefazNotesDTO;
 import br.com.cshub.taxify.validation.CompanyValidation;
 import org.springframework.http.MediaType;
 import org.springframework.web.bind.annotation.RequestParam;
@@ -48,14 +50,16 @@ public class CompanyResource extends AbstractCrudResource<UUID, CompanyDTO, Comp
     private final CompanyRegistrationService registrationService;
     private final CompanyCertificateService certificateService;
     private final SefazDistService sefazDistService;
+    private final SefazNotesService sefazNotesService;
     private final CompanyValidation companyValidation;
     private final MessageService messageService;
 
     @Autowired
     protected CompanyResource(CompanyService service, CompanyTaxRegimeService taxRegimeService,
                               CompanyRegistrationService registrationService, CompanyCertificateService certificateService,
-                              SefazDistService sefazDistService, CompanyValidation companyValidation,
-                              MessageService messageService) {
+                              SefazDistService sefazDistService, SefazNotesService sefazNotesService,
+                              CompanyValidation companyValidation, MessageService messageService) {
+        this.sefazNotesService = sefazNotesService;
         super(service);
         this.taxRegimeService = taxRegimeService;
         this.registrationService = registrationService;
@@ -93,6 +97,18 @@ public class CompanyResource extends AbstractCrudResource<UUID, CompanyDTO, Comp
         }
         sefazDistService.capture(company);
         return ResponseEntity.ok(certificateService.status(id));
+    }
+
+    /** Entries SEFAZ handed over only as a summary, the Ciência da Operação for them and the SIEG x SEFAZ comparison. */
+    @GetMapping("/{id}/sefaz/resumos")
+    public ResponseEntity<SefazNotesDTO> sefazSummaries(@PathVariable UUID id) {
+        return ResponseEntity.ok(sefazNotesService.of(companyValidation.checkExist(id)));
+    }
+
+    /** Puts a refused ciência back in line - it goes with the next capture. */
+    @PostMapping("/{id}/sefaz/resumos/{chave}/reenviar-ciencia")
+    public ResponseEntity<SefazNotesDTO> retryCiencia(@PathVariable UUID id, @PathVariable String chave) {
+        return ResponseEntity.ok(sefazNotesService.retryCiencia(companyValidation.checkExist(id), chave));
     }
 
     /** Regime periods of the company, oldest first. */

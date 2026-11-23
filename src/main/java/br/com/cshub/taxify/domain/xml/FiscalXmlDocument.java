@@ -66,6 +66,14 @@ public class FiscalXmlDocument extends AbstractAuditingEntity {
     @Column(name = "source_system", length = 20, nullable = false)
     private String sourceSystem = "SIEG";
 
+    /** When SIEG first brought this note (or saw it again) - for the SIEG x SEFAZ comparison. */
+    @Column(name = "found_in_sieg_at")
+    private LocalDateTime foundInSiegAt;
+
+    /** When SEFAZ first handed this note over, complete or as a summary. */
+    @Column(name = "found_in_sefaz_at")
+    private LocalDateTime foundInSefazAt;
+
     /**
      * Entry or exit for the owning company (see FiscalDirection) - set on import; null only
      * for rows older than this column until FiscalDirectionBackfill fills them on startup.
@@ -349,6 +357,22 @@ public class FiscalXmlDocument extends AbstractAuditingEntity {
 
     public void setSourceSystem(String sourceSystem) {
         this.sourceSystem = sourceSystem;
+    }
+
+    public LocalDateTime getFoundInSiegAt() {
+        return foundInSiegAt;
+    }
+
+    public void setFoundInSiegAt(LocalDateTime foundInSiegAt) {
+        this.foundInSiegAt = foundInSiegAt;
+    }
+
+    public LocalDateTime getFoundInSefazAt() {
+        return foundInSefazAt;
+    }
+
+    public void setFoundInSefazAt(LocalDateTime foundInSefazAt) {
+        this.foundInSefazAt = foundInSefazAt;
     }
 
     public String getCodigoUf() {

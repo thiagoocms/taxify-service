@@ -22,6 +22,8 @@ import br.com.cshub.taxify.integration.fiscalxml.FiscalXmlPackageExtractor;
 import br.com.cshub.taxify.integration.sieg.*;
 import br.com.cshub.taxify.repository.FiscalXmlDocumentRepository;
 import br.com.cshub.taxify.repository.FiscalXmlSyncControlRepository;
+import br.com.cshub.taxify.repository.SefazNoteSummaryRepository;
+import br.com.cshub.taxify.enumerated.FiscalXmlSource;
 import br.com.cshub.taxify.validation.CompanyValidation;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
@@ -62,13 +64,15 @@ public class FiscalXmlIntegrationService {
     private final FirmIntegrationService firmIntegrationService;
     private final FiscalEventParser eventParser;
     private final FiscalXmlEventService eventService;
+    private final SefazNoteSummaryRepository summaryRepository;
 
     public FiscalXmlIntegrationService(SiegClient siegClient, FiscalXmlMetadataParser metadataParser,
                                        FiscalXmlFileStorage fileStorage, FiscalXmlPackageExtractor packageExtractor,
                                        FiscalXmlDocumentRepository xmlDocumentRepository, FiscalXmlSyncControlRepository syncControlRepository,
                                        CompanyValidation companyValidation, MessageService messageService, SiegProperties properties,
                                        FirmIntegrationService firmIntegrationService, FiscalEventParser eventParser,
-                                       FiscalXmlEventService eventService) {
+                                       FiscalXmlEventService eventService, SefazNoteSummaryRepository summaryRepository) {
+        this.summaryRepository = summaryRepository;
         this.firmIntegrationService = firmIntegrationService;
         this.eventParser = eventParser;
         this.eventService = eventService;
@@ -145,7 +149,7 @@ public class FiscalXmlIntegrationService {
         if (skipCountCheck) {
             log.info("Skipping contar-xmls for company {} ({}) - already known pending from a previous check", company.getId(), side);
             List<byte[]> xmlContents = siegClient.baixarXmls(request, apiKey);
-            XmlDownloadResultDTO result = persistAll(company, xmlContents);
+            XmlDownloadResultDTO result = persistAll(company, xmlContents, FiscalXmlSource.SIEG);
             // An empty page means the "still pending" from the last count no longer holds (notes
             // gone from SIEG, or counted but never downloadable): drop it, so the next tick counts
             // again instead of asking for this empty page forever.
@@ -161,7 +165,7 @@ public class FiscalXmlIntegrationService {
             result = new XmlDownloadResultDTO(0, 0, 0, 0, 0, List.of(), List.of(), 0);
         } else {
             List<byte[]> xmlContents = siegClient.baixarXmls(request, apiKey);
-            result = persistAll(company, xmlContents);
+            result = persistAll(company, xmlContents, FiscalXmlSource.SIEG);
         }
 
         if (totalSieg >= 0) {
@@ -261,7 +265,7 @@ public class FiscalXmlIntegrationService {
             throw new BadRequestException(messageService.getMessage("error.fiscalXml.import.no.xml.found"));
         }
 
-        return persistAll(company, xmlContents);
+        return persistAll(company, xmlContents, FiscalXmlSource.UPLOAD);
     }
 
     /**
@@ -271,15 +275,17 @@ public class FiscalXmlIntegrationService {
      */
     @Transactional
     public XmlDownloadResultDTO importFromSefaz(UUID companyId, List<byte[]> xmlContents) {
-        return persistAll(findCompanyWithCnpj(companyId.toString()), xmlContents);
+        return persistAll(findCompanyWithCnpj(companyId.toString()), xmlContents, FiscalXmlSource.SEFAZ_DIST);
     }
 
     /**
      * Stores what a provider page (or a manual upload) brought: SEFAZ events go to
      * FiscalXmlEventService, notes are persisted once per company - the same note may
      * legitimately belong to two clients of the firm (one's exit, the other's entry).
+     * {@code source} is kept on a new note and marks, on new and known notes alike, that this
+     * source has it (the SIEG x SEFAZ comparison); a SEFAZ summary of the note is completed.
      */
-    private XmlDownloadResultDTO persistAll(Company company, List<byte[]> xmlContents) {
+    private XmlDownloadResultDTO persistAll(Company company, List<byte[]> xmlContents, FiscalXmlSource source) {
         int persistedNew = 0;
         int duplicated = 0;
         int parseErrors = 0;
@@ -307,12 +313,19 @@ public class FiscalXmlIntegrationService {
 
             if (metadata.accessKey() != null && xmlDocumentRepository.existsByCompany_IdAndAccessKey(company.getId(), metadata.accessKey())) {
                 duplicated++;
+                xmlDocumentRepository.findFirstByCompany_IdAndAccessKey(company.getId(), metadata.accessKey())
+                        .filter(known -> markFoundIn(known, source))
+                        .ifPresent(xmlDocumentRepository::save);
                 xmls.add(toItemDTO(metadata, xmlContent));
                 continue;
             }
 
             String xmlFilePath = fileStorage.store(company.getId(), metadata.accessKey(), xmlBytes);
-            FiscalXmlDocument document = xmlDocumentRepository.save(toDocument(metadata, company, xmlFilePath));
+            FiscalXmlDocument fresh = toDocument(metadata, company, xmlFilePath);
+            fresh.setSourceSystem(source.name());
+            markFoundIn(fresh, source);
+            completeSummary(company, fresh);
+            FiscalXmlDocument document = xmlDocumentRepository.save(fresh);
             eventService.linkPendingEvents(document);
             persistedNew++;
             if (metadata.accessKey() != null) {
@@ -331,6 +344,39 @@ public class FiscalXmlIntegrationService {
                 xmls,
                 events
         );
+    }
+
+    /** @return whether the note changed - the first time this source brings it */
+    private static boolean markFoundIn(FiscalXmlDocument document, FiscalXmlSource source) {
+        LocalDateTime now = LocalDateTime.now();
+        if (source == FiscalXmlSource.SIEG && document.getFoundInSiegAt() == null) {
+            document.setFoundInSiegAt(now);
+            return true;
+        }
+        if (source == FiscalXmlSource.SEFAZ_DIST && document.getFoundInSefazAt() == null) {
+            document.setFoundInSefazAt(now);
+            return true;
+        }
+        return false;
+    }
+
+    /**
+     * A SEFAZ summary of this note (an entry waiting for Ciência) is done now that the full XML is
+     * here, whichever source brought it - and SEFAZ counts as having had the note since then.
+     */
+    private void completeSummary(Company company, FiscalXmlDocument document) {
+        if (document.getAccessKey() == null) {
+            return;
+        }
+        summaryRepository.findByCompany_IdAndAccessKey(company.getId(), document.getAccessKey())
+                .filter(summary -> !summary.isCompleted())
+                .ifPresent(summary -> {
+                    summary.setCompletedAt(LocalDateTime.now());
+                    summaryRepository.save(summary);
+                    if (document.getFoundInSefazAt() == null) {
+                        document.setFoundInSefazAt(summary.getCreatedDate() != null ? summary.getCreatedDate() : LocalDateTime.now());
+                    }
+                });
     }
 
     /**
@@ -354,7 +400,7 @@ public class FiscalXmlIntegrationService {
                     side == FiscalXmlSide.ISSUED ? cnpj : null,
                     side == FiscalXmlSide.RECEIVED ? cnpj : null,
                     true);
-            XmlDownloadResultDTO result = persistAll(company, siegClient.baixarXmls(request, apiKey));
+            XmlDownloadResultDTO result = persistAll(company, siegClient.baixarXmls(request, apiKey), FiscalXmlSource.SIEG);
             events += result.totalEventsRecorded();
             if (result.totalXmlsCounted() < PAGE_SIZE) {
                 break;

@@ -23,6 +23,17 @@ public class SefazProperties {
     private int maxBatchesPerCompany = 40;
     private long pauseBetweenBatchesMillis = 2000;
     private int timeoutSeconds = 90;
+    /** NFeRecepcaoEvento4 of the Ambiente Nacional - where the Ciência da Operação goes. */
+    private String eventUrl = "https://www.nfe.fazenda.gov.br/NFeRecepcaoEvento4/NFeRecepcaoEvento4.asmx";
+    private String eventHomologationUrl = "https://hom1.nfe.fazenda.gov.br/NFeRecepcaoEvento4/NFeRecepcaoEvento4.asmx";
+    /** Sends the Ciência da Operação for every summary (resNFe) so SEFAZ releases the full XML. */
+    private boolean autoCiencia = true;
+    /** Ciências per company per run (in batches of 20). */
+    private int cienciaPerRun = 100;
+    /** A refused ciência is tried again this many times in all, then left for a person. */
+    private int cienciaMaxAttempts = 3;
+    /** Full notes asked by key (consChNFe) per company per run, after the ciência. */
+    private int fetchPerRun = 20;
     /** UFs whose companies are captured automatically - starting with PE; empty = every UF. */
     private java.util.List<String> ufs = java.util.List.of("PE");
 
@@ -44,6 +55,58 @@ public class SefazProperties {
 
     public String endpoint() {
         return production ? url : homologationUrl;
+    }
+
+    public String eventEndpoint() {
+        return production ? eventUrl : eventHomologationUrl;
+    }
+
+    public String getEventUrl() {
+        return eventUrl;
+    }
+
+    public void setEventUrl(String eventUrl) {
+        this.eventUrl = eventUrl;
+    }
+
+    public String getEventHomologationUrl() {
+        return eventHomologationUrl;
+    }
+
+    public void setEventHomologationUrl(String eventHomologationUrl) {
+        this.eventHomologationUrl = eventHomologationUrl;
+    }
+
+    public boolean isAutoCiencia() {
+        return autoCiencia;
+    }
+
+    public void setAutoCiencia(boolean autoCiencia) {
+        this.autoCiencia = autoCiencia;
+    }
+
+    public int getCienciaPerRun() {
+        return cienciaPerRun;
+    }
+
+    public void setCienciaPerRun(int cienciaPerRun) {
+        this.cienciaPerRun = cienciaPerRun;
+    }
+
+    public int getCienciaMaxAttempts() {
+        return cienciaMaxAttempts;
+    }
+
+    public void setCienciaMaxAttempts(int cienciaMaxAttempts) {
+        this.cienciaMaxAttempts = cienciaMaxAttempts;
+    }
+
+    public int getFetchPerRun() {
+        return fetchPerRun;
+    }
+
+    public void setFetchPerRun(int fetchPerRun) {
+        this.fetchPerRun = fetchPerRun;
     }
 
     public String tpAmb() {

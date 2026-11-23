@@ -111,6 +111,9 @@ sefaz:
     max-batches-per-company: ${SEFAZ_DIST_MAX_BATCHES:40}
     # UFs com captura automática (separadas por vírgula; vazio = todas). Começa por PE.
     ufs: ${SEFAZ_DIST_UFS:PE}
+    # Envia a Ciência da Operação (evento 210210, assinado com o A1) para as entradas que a SEFAZ
+    # entrega só como resumo, e busca o XML completo pela chave na consulta seguinte.
+    auto-ciencia: ${SEFAZ_AUTO_CIENCIA:true}
 
 # Opcional: chave AES-256 (base64, 32 bytes - openssl rand -base64 32) que cifra os certificados
 # A1 e suas senhas. Vazia = guardados sem essa criptografia. Perdê-la = reenviar os cifrados.

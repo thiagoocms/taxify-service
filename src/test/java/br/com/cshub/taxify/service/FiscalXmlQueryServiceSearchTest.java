@@ -65,7 +65,7 @@ class FiscalXmlQueryServiceSearchTest {
         FiscalXmlDocument single = document();
         FiscalXmlDocument segmented = document();
         FiscalXmlDocument withoutItems = document();
-        when(documentRepository.search(eq(company.getId()), any(), any(), any(), any(), any(), any(), any()))
+        when(documentRepository.search(eq(company.getId()), any(), any(), any(), any(), any(), any(), any(), any(), any(), any()))
                 .thenReturn(new PageImpl<>(List.of(single, segmented, withoutItems)));
         when(itemRepository.countByDocumentIds(any())).thenReturn(List.of());
         when(itemRepository.findDistinctCfopsByDocumentIds(any())).thenReturn(List.of(
@@ -91,7 +91,7 @@ class FiscalXmlQueryServiceSearchTest {
         rectified.setRectifiedFilePath("s3://bucket/retificado.xml");
         rectified.setLastRectificationCheckedAt(LocalDateTime.now());
         FiscalXmlDocument original = document();
-        when(documentRepository.search(eq(company.getId()), any(), any(), any(), any(), any(), any(), any()))
+        when(documentRepository.search(eq(company.getId()), any(), any(), any(), any(), any(), any(), any(), any(), any(), any()))
                 .thenReturn(new PageImpl<>(List.of(rectified, original)));
         when(itemRepository.countByDocumentIds(any())).thenReturn(List.of());
         when(itemRepository.findDistinctCfopsByDocumentIds(any())).thenReturn(List.of(

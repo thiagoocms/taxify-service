@@ -38,6 +38,8 @@ public record FiscalXmlSummaryDTO(
         FiscalDocumentStatus status,
         ReviewStatus reviewStatus,
         /** Distinct CFOPs of the items, sorted - one = the whole note uses it; more = "segmentado". */
-        java.util.List<String> cfops
+        java.util.List<String> cfops,
+        /** SIEG, SEFAZ_DIST or UPLOAD - where the note came from first. */
+        String origem
 ) {
 }

@@ -12,10 +12,20 @@ public enum PlanServiceEnum {
     MULTI_USER_ACCESS,
     REPORTS,
     /** Capture straight from SEFAZ (NFeDistribuicaoDFe) with the company's A1 certificate. */
-    SEFAZ_INTEGRATION;
+    SEFAZ_INTEGRATION,
+    /**
+     * Recipient's manifestation: Taxify sends the Ciência da Operação for the entries SEFAZ hands over
+     * only as a summary, then fetches their full XML. Works on top of the SEFAZ capture.
+     */
+    SEFAZ_MANIFESTATION;
 
     /** Whether a plan with these services imports notes from this source (SIEG or SEFAZ integration). */
     public static boolean importsFrom(java.util.Collection<PlanServiceEnum> services, PlanServiceEnum source) {
         return services != null && services.contains(FISCAL_XML_IMPORT) && services.contains(source);
+    }
+
+    /** Whether a plan with these services sends the Ciência da Operação (needs the SEFAZ capture too). */
+    public static boolean manifests(java.util.Collection<PlanServiceEnum> services) {
+        return importsFrom(services, SEFAZ_INTEGRATION) && services.contains(SEFAZ_MANIFESTATION);
     }
 }

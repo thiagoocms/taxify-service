@@ -56,6 +56,20 @@ public final class A1Certificate {
         return context;
     }
 
+    /** The holder's private key - for signing events (XMLDSig); never leaves memory. */
+    public java.security.PrivateKey privateKey() throws GeneralSecurityException {
+        for (String alias : Collections.list(keyStore.aliases())) {
+            if (keyStore.isKeyEntry(alias) && certificate.equals(keyStore.getCertificate(alias))) {
+                return (java.security.PrivateKey) keyStore.getKey(alias, password);
+            }
+        }
+        throw new GeneralSecurityException("The .pfx has no private key");
+    }
+
+    public X509Certificate x509() {
+        return certificate;
+    }
+
     public String subjectName() {
         return certificate.getSubjectX500Principal().getName();
     }

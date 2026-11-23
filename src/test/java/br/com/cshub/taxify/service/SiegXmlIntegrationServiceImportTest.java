@@ -70,6 +70,8 @@ class SiegXmlIntegrationServiceImportTest {
     private FiscalXmlEventService eventService;
     @Mock
     private FirmIntegrationService firmIntegrationService;
+    @Mock
+    private br.com.cshub.taxify.repository.SefazNoteSummaryRepository summaryRepository;
 
     private FiscalXmlIntegrationService service;
     private UUID companyId;
@@ -93,7 +95,8 @@ class SiegXmlIntegrationServiceImportTest {
         service = new FiscalXmlIntegrationService(siegClient, new FiscalXmlMetadataParser(),
                 new FiscalXmlFileStorage(syncProperties, messageService), new FiscalXmlPackageExtractor(),
                 xmlDocumentRepository, syncControlRepository, companyValidation, messageService, properties, firmIntegrationService,
-                new FiscalEventParser(), eventService);
+                new FiscalEventParser(), eventService, summaryRepository);
+        lenient().when(xmlDocumentRepository.save(any())).thenAnswer(invocation -> invocation.getArgument(0));
     }
 
     @Test
@@ -149,6 +152,47 @@ class SiegXmlIntegrationServiceImportTest {
 
         assertThat(result.totalPersistedNew()).isZero();
         assertThat(result.totalDuplicatedSkipped()).isEqualTo(1);
+    }
+
+    @Test
+    void anUploadedNoteKeepsItsOriginAndIsNotCountedForEitherSource() {
+        service.importManual(companyId.toString(), NFE_XML.getBytes(StandardCharsets.UTF_8));
+
+        org.mockito.ArgumentCaptor<br.com.cshub.taxify.domain.xml.FiscalXmlDocument> saved = org.mockito.ArgumentCaptor.captor();
+        verify(xmlDocumentRepository).save(saved.capture());
+        assertThat(saved.getValue().getSourceSystem()).isEqualTo("UPLOAD");
+        assertThat(saved.getValue().getFoundInSiegAt()).isNull();
+        assertThat(saved.getValue().getFoundInSefazAt()).isNull();
+    }
+
+    @Test
+    void aSefazNoteCompletesItsSummaryAndCountsAsSeenBySefaz() {
+        br.com.cshub.taxify.domain.xml.SefazNoteSummary summary = new br.com.cshub.taxify.domain.xml.SefazNoteSummary();
+        when(summaryRepository.findByCompany_IdAndAccessKey(companyId, "35240112345678000199550010000000011000000010"))
+                .thenReturn(java.util.Optional.of(summary));
+
+        service.importFromSefaz(companyId, java.util.List.of(NFE_XML.getBytes(StandardCharsets.UTF_8)));
+
+        org.mockito.ArgumentCaptor<br.com.cshub.taxify.domain.xml.FiscalXmlDocument> saved = org.mockito.ArgumentCaptor.captor();
+        verify(xmlDocumentRepository).save(saved.capture());
+        assertThat(saved.getValue().getSourceSystem()).isEqualTo("SEFAZ_DIST");
+        assertThat(saved.getValue().getFoundInSefazAt()).isNotNull();
+        assertThat(summary.isCompleted()).isTrue();
+    }
+
+    @Test
+    void aNoteAlreadyStoredIsMarkedAsFoundByTheNewSource() {
+        br.com.cshub.taxify.domain.xml.FiscalXmlDocument known = new br.com.cshub.taxify.domain.xml.FiscalXmlDocument();
+        String key = "35240112345678000199550010000000011000000010";
+        when(xmlDocumentRepository.existsByCompany_IdAndAccessKey(companyId, key)).thenReturn(true);
+        when(xmlDocumentRepository.findFirstByCompany_IdAndAccessKey(companyId, key)).thenReturn(java.util.Optional.of(known));
+
+        XmlDownloadResultDTO result = service.importFromSefaz(companyId, java.util.List.of(NFE_XML.getBytes(StandardCharsets.UTF_8)));
+
+        assertThat(result.totalDuplicatedSkipped()).isEqualTo(1);
+        assertThat(known.getFoundInSefazAt()).isNotNull();
+        assertThat(known.getFoundInSiegAt()).isNull();
+        verify(xmlDocumentRepository).save(known);
     }
 
     @Test

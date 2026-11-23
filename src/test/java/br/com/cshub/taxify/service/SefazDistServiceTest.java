@@ -50,6 +50,8 @@ class SefazDistServiceTest {
     private FiscalXmlIntegrationService integrationService;
     @Mock
     private SefazDistClient client;
+    @Mock
+    private SefazManifestService manifestService;
 
     private SefazDistService service;
     private Company company;
@@ -60,7 +62,8 @@ class SefazDistServiceTest {
         SefazProperties properties = new SefazProperties();
         properties.setPauseBetweenBatchesMillis(0);
         properties.setMaxBatchesPerCompany(5);
-        service = new SefazDistService(controlRepository, certificateService, integrationService, client, properties);
+        service = new SefazDistService(controlRepository, certificateService, integrationService, client, properties,
+                manifestService);
 
         company = new Company(UUID.randomUUID());
         company.setDocument(new Document(CNPJ, DocumentTypeEnum.CNPJ));
@@ -75,6 +78,11 @@ class SefazDistServiceTest {
         when(controlRepository.save(any())).thenAnswer(invocation -> invocation.getArgument(0));
         when(integrationService.importFromSefaz(eq(company.getId()), any()))
                 .thenAnswer(invocation -> result(((List<?>) invocation.getArgument(1)).size()));
+        when(manifestService.recordSummaries(eq(company), any())).thenAnswer(invocation ->
+                (int) ((List<SefazDistResponse.Document>) invocation.getArgument(1)).stream()
+                        .filter(SefazDistResponse.Document::isNoteSummary).count());
+        when(manifestService.manifestAndFetch(eq(company), any(), anyString(), org.mockito.ArgumentMatchers.anyBoolean()))
+                .thenReturn(SefazManifestService.Outcome.NONE);
     }
 
     private static XmlDownloadResultDTO result(int persisted) {
@@ -103,7 +111,42 @@ class SefazDistServiceTest {
         assertThat(control.getLastStatus()).isEqualTo(SefazDistControl.Status.OK);
         assertThat(control.getLastNewNotes()).isEqualTo(2);
         assertThat(control.getLastSummaries()).isEqualTo(1);
-        assertThat(control.getLastDetail()).contains("Ciência da Operação");
+        assertThat(control.getLastDetail()).contains("1 entrada(s) nova(s) só com resumo");
+        verify(manifestService).manifestAndFetch(company, certificate, CNPJ, true);
+    }
+
+    @Test
+    void cienciaAndNotesFetchedByKeyShowInTheRun() throws Exception {
+        when(client.fetch(any(), anyString(), anyString(), anyString()))
+                .thenReturn(new SefazDistResponse("137", "Nenhum documento", "000000000000001", "000000000000001", List.of()));
+        when(manifestService.manifestAndFetch(company, certificate, CNPJ, true))
+                .thenReturn(new SefazManifestService.Outcome(3, 1, 2, false, null));
+
+        SefazDistControl control = service.capture(company);
+
+        assertThat(control.getLastStatus()).isEqualTo(SefazDistControl.Status.OK);
+        assertThat(control.getLastNewNotes()).isEqualTo(2);
+        assertThat(control.getLastDetail()).contains("Ciência da Operação enviada para 3 nota(s)")
+                .contains("1 ciência(s) recusada(s)");
+    }
+
+    @Test
+    void afterAConsumoIndevidoTheCienciaGoesButNothingIsAskedByKey() throws Exception {
+        when(client.fetch(any(), anyString(), anyString(), anyString()))
+                .thenReturn(new SefazDistResponse("656", "Consumo Indevido", null, null, List.of()));
+
+        service.capture(company);
+
+        verify(manifestService).manifestAndFetch(company, certificate, CNPJ, false);
+    }
+
+    @Test
+    void withoutACertificateThereIsNoCiencia() {
+        when(certificateService.resolve(company)).thenReturn(Optional.empty());
+
+        service.capture(company);
+
+        verify(manifestService, never()).manifestAndFetch(any(), any(), any(), org.mockito.ArgumentMatchers.anyBoolean());
     }
 
     @Test
