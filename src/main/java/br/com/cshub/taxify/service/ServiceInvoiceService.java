@@ -71,7 +71,8 @@ public class ServiceInvoiceService {
     /**
      * The company's NFS-e issued in [from, to] from SIEG: as provider (CnpjEmit) and as taker (CnpjDest).
      * SIEG doesn't document which filter is which for NFS-e - both are asked and the direction is
-     * decided by the note itself, so a swapped mapping still lands right.
+     * decided by the note itself, so a swapped mapping still lands right. SIEG refuses a range over
+     * 2 months, so the period goes in windows of at most one month.
      */
     @Transactional
     public SyncResult syncFromSieg(UUID companyId, LocalDate from, LocalDate to) {
@@ -79,22 +80,38 @@ public class ServiceInvoiceService {
         String cnpj = DocumentNumbers.onlyDigits(company.getDocument().getNumber());
         String apiKey = firmIntegrationService.getApiKey(company.getAccountingFirm().getId(), IntegrationType.SIEG);
         SyncResult result = new SyncResult(0, 0, 0);
-        for (boolean asProvider : new boolean[]{true, false}) {
-            for (int page = 0; page < MAX_PAGES; page++) {
-                SiegBaixarXmlsRequest request = new SiegBaixarXmlsRequest(TIPO_XML_NFSE, PAGE_SIZE, page * PAGE_SIZE,
-                        startOfDay(from), endOfDay(to), asProvider ? cnpj : null, asProvider ? null : cnpj, null);
-                List<byte[]> xmls = siegClient.baixarXmls(request, apiKey);
-                for (byte[] xml : xmls) {
-                    result = result.plus(store(company, xml, "SIEG"));
-                }
-                if (xmls.size() < PAGE_SIZE) {
-                    break;
+        for (LocalDate[] window : windows(from, to)) {
+            for (boolean asProvider : new boolean[]{true, false}) {
+                for (int page = 0; page < MAX_PAGES; page++) {
+                    SiegBaixarXmlsRequest request = new SiegBaixarXmlsRequest(TIPO_XML_NFSE, PAGE_SIZE, page * PAGE_SIZE,
+                            startOfDay(window[0]), endOfDay(window[1]), asProvider ? cnpj : null, asProvider ? null : cnpj, null);
+                    List<byte[]> xmls = siegClient.baixarXmls(request, apiKey);
+                    for (byte[] xml : xmls) {
+                        result = result.plus(store(company, xml, "SIEG"));
+                    }
+                    if (xmls.size() < PAGE_SIZE) {
+                        break;
+                    }
                 }
             }
         }
         log.info("NFS-e from SIEG for company {} ({} to {}): {} new, {} known, {} unreadable", companyId, from, to,
                 result.persistedNew(), result.duplicated(), result.invalid());
         return result;
+    }
+
+    /** [from, to] split into consecutive windows of at most one month (SIEG accepts up to 2). */
+    static List<LocalDate[]> windows(LocalDate from, LocalDate to) {
+        List<LocalDate[]> windows = new java.util.ArrayList<>();
+        for (LocalDate start = from; !start.isAfter(to); ) {
+            LocalDate end = start.plusMonths(1).minusDays(1);
+            if (end.isAfter(to)) {
+                end = to;
+            }
+            windows.add(new LocalDate[]{start, end});
+            start = end.plusDays(1);
+        }
+        return windows;
     }
 
     /** Stores one NFS-e XML of the company (any layout); a known note only takes a cancellation. */

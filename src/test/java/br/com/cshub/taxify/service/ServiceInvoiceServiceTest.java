@@ -144,4 +144,14 @@ class ServiceInvoiceServiceTest {
         assertThat(requests.getAllValues().get(1).cnpjDest()).isEqualTo("11222333000181");
         assertThat(result.persistedNew()).isEqualTo(2); // the mock has no memory: both pages "new"
     }
+
+    @org.junit.jupiter.api.Test
+    void aLongPeriodGoesToSiegInWindowsOfAtMostOneMonth() {
+        List<java.time.LocalDate[]> windows = ServiceInvoiceService.windows(java.time.LocalDate.of(2026, 8, 1), java.time.LocalDate.of(2026, 11, 23));
+
+        org.assertj.core.api.Assertions.assertThat(windows).hasSize(4);
+        org.assertj.core.api.Assertions.assertThat(windows.get(0)).containsExactly(java.time.LocalDate.of(2026, 8, 1), java.time.LocalDate.of(2026, 8, 31));
+        org.assertj.core.api.Assertions.assertThat(windows.get(3)).containsExactly(java.time.LocalDate.of(2026, 11, 1), java.time.LocalDate.of(2026, 11, 23));
+        org.assertj.core.api.Assertions.assertThat(ServiceInvoiceService.windows(java.time.LocalDate.of(2026, 11, 16), java.time.LocalDate.of(2026, 11, 23))).hasSize(1);
+    }
 }
