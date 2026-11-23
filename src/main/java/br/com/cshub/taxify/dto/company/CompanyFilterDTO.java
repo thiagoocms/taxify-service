@@ -8,7 +8,9 @@ public record CompanyFilterDTO(
         String documentNumber,
         String documentType,
         String name,
-        Boolean deleted
+        Boolean deleted,
+        /** Free search: part of the name OR of the CNPJ/CPF (with or without punctuation). */
+        String search
 ) {
 
 }

@@ -36,6 +36,8 @@ public record FiscalXmlSummaryDTO(
         /** Issued by the company itself (can't be rectified). */
         boolean ownIssue,
         FiscalDocumentStatus status,
-        ReviewStatus reviewStatus
+        ReviewStatus reviewStatus,
+        /** Distinct CFOPs of the items, sorted - one = the whole note uses it; more = "segmentado". */
+        java.util.List<String> cfops
 ) {
 }

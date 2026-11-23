@@ -29,6 +29,10 @@ public interface FiscalXmlDocumentItemRepository extends JpaRepository<FiscalXml
     @Query("select i.document.id, count(i) from FiscalXmlDocumentItem i where i.document.id in :documentIds group by i.document.id")
     List<Object[]> countByDocumentIds(@Param("documentIds") Collection<UUID> documentIds);
 
+    /** Each row is {documentId, cfop} - the distinct CFOPs of a whole page of notes in one query. */
+    @Query("select distinct i.document.id, i.cfop from FiscalXmlDocumentItem i where i.document.id in :documentIds and i.cfop is not null")
+    List<Object[]> findDistinctCfopsByDocumentIds(@Param("documentIds") Collection<UUID> documentIds);
+
     /**
      * The company's "product table": one row per distinct product code across the items of
      * its stored notes - {codigo, descricao, ncm, cfop, ocorrencias}, most frequent first.

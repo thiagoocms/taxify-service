@@ -143,14 +143,22 @@ public class FiscalXmlQueryService {
                 filter.reviewStatus(), pageable);
 
         Map<UUID, Long> itemCounts = new HashMap<>();
+        Map<UUID, java.util.SortedSet<String>> cfops = new HashMap<>();
         if (documents.hasContent()) {
             List<UUID> ids = documents.getContent().stream().map(FiscalXmlDocument::getId).toList();
             for (Object[] row : itemRepository.countByDocumentIds(ids)) {
                 itemCounts.put((UUID) row[0], (Long) row[1]);
             }
+            for (Object[] row : itemRepository.findDistinctCfopsByDocumentIds(ids)) {
+                String cfop = ((String) row[1]).strip();
+                if (!cfop.isEmpty()) {
+                    cfops.computeIfAbsent((UUID) row[0], id -> new java.util.TreeSet<>()).add(cfop);
+                }
+            }
         }
 
-        return documents.map(document -> toSummary(document, itemCounts.getOrDefault(document.getId(), 0L)));
+        return documents.map(document -> toSummary(document, itemCounts.getOrDefault(document.getId(), 0L),
+                List.copyOf(cfops.getOrDefault(document.getId(), new java.util.TreeSet<>()))));
     }
 
     /** First parser version that stores every header field the detail shows ({@link FiscalXmlHeaderExtras}). */
@@ -287,7 +295,7 @@ public class FiscalXmlQueryService {
                 d.getReviewStatus(), d.getReviewedAt(), d.getReviewedBy(), d.getReviewNote());
     }
 
-    private FiscalXmlSummaryDTO toSummary(FiscalXmlDocument document, long quantidadeItens) {
+    private FiscalXmlSummaryDTO toSummary(FiscalXmlDocument document, long quantidadeItens, List<String> cfops) {
         return new FiscalXmlSummaryDTO(
                 document.getId(),
                 document.getAccessKey(),
@@ -310,7 +318,8 @@ public class FiscalXmlQueryService {
                 document.getDirection(),
                 document.isOwnIssue(),
                 document.getStatus(),
-                document.getReviewStatus()
+                document.getReviewStatus(),
+                cfops
         );
     }
 

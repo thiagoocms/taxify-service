@@ -1,0 +1,77 @@
+package br.com.cshub.taxify.service;
+
+import br.com.cshub.taxify.common.MessageService;
+import br.com.cshub.taxify.common.TenantAccessService;
+import br.com.cshub.taxify.domain.company.Company;
+import br.com.cshub.taxify.domain.xml.FiscalXmlDocument;
+import br.com.cshub.taxify.dto.fiscalxml.FiscalXmlSummaryDTO;
+import br.com.cshub.taxify.dto.fiscalxml.XmlSearchFilterDTO;
+import br.com.cshub.taxify.integration.sieg.FiscalXmlFileStorage;
+import br.com.cshub.taxify.integration.sieg.FiscalXmlMetadataParser;
+import br.com.cshub.taxify.repository.FiscalXmlDocumentItemRepository;
+import br.com.cshub.taxify.repository.FiscalXmlDocumentRepository;
+import br.com.cshub.taxify.validation.CompanyValidation;
+import org.junit.jupiter.api.Test;
+import org.junit.jupiter.api.extension.ExtendWith;
+import org.mockito.Mock;
+import org.mockito.junit.jupiter.MockitoExtension;
+import org.springframework.data.domain.PageImpl;
+
+import java.util.List;
+import java.util.UUID;
+
+import static org.assertj.core.api.Assertions.assertThat;
+import static org.mockito.ArgumentMatchers.any;
+import static org.mockito.ArgumentMatchers.eq;
+import static org.mockito.Mockito.when;
+
+/** The list's CFOP column: distinct CFOPs of each note's items, read for the whole page at once. */
+@ExtendWith(MockitoExtension.class)
+class FiscalXmlQueryServiceSearchTest {
+
+    @Mock
+    private FiscalXmlDocumentRepository documentRepository;
+    @Mock
+    private FiscalXmlDocumentItemRepository itemRepository;
+    @Mock
+    private CompanyValidation companyValidation;
+    @Mock
+    private TenantAccessService tenantAccessService;
+    @Mock
+    private MessageService messageService;
+    @Mock
+    private FiscalXmlEventService eventService;
+    @Mock
+    private FiscalXmlFileStorage fileStorage;
+
+    private static FiscalXmlDocument document() {
+        FiscalXmlDocument document = new FiscalXmlDocument();
+        document.setId(UUID.randomUUID());
+        return document;
+    }
+
+    @Test
+    void oneCfopForTheWholeNoteOrSeveralWhenSegmented() {
+        FiscalXmlQueryService service = new FiscalXmlQueryService(documentRepository, itemRepository, new FiscalXmlMetadataParser(),
+                companyValidation, tenantAccessService, messageService, eventService, fileStorage);
+        Company company = new Company(UUID.randomUUID());
+        when(companyValidation.checkExist(company.getId())).thenReturn(company);
+        FiscalXmlDocument single = document();
+        FiscalXmlDocument segmented = document();
+        FiscalXmlDocument withoutItems = document();
+        when(documentRepository.search(eq(company.getId()), any(), any(), any(), any(), any(), any(), any()))
+                .thenReturn(new PageImpl<>(List.of(single, segmented, withoutItems)));
+        when(itemRepository.countByDocumentIds(any())).thenReturn(List.of());
+        when(itemRepository.findDistinctCfopsByDocumentIds(any())).thenReturn(List.of(
+                new Object[]{single.getId(), "5102"},
+                new Object[]{segmented.getId(), "5405"},
+                new Object[]{segmented.getId(), " 5102 "}));
+
+        List<FiscalXmlSummaryDTO> rows = service.search(
+                new XmlSearchFilterDTO(company.getId().toString(), null, null, null, null, null, null, null)).getContent();
+
+        assertThat(rows.get(0).cfops()).containsExactly("5102");
+        assertThat(rows.get(1).cfops()).containsExactly("5102", "5405");
+        assertThat(rows.get(2).cfops()).isEmpty();
+    }
+}
