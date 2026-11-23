@@ -109,6 +109,16 @@ public interface FiscalXmlDocumentRepository extends AbstractJpaRepository<Fisca
     List<FiscalXmlDocument> findForRetentions(@Param("companyIds") Collection<UUID> companyIds,
                                               @Param("from") LocalDateTime from, @Param("to") LocalDateTime to);
 
+    /** Purchases per supplier (curva ABC): CNPJ/CPF, name, value, notes. Canceled notes out. */
+    @Query("select coalesce(d.issuerCnpj, d.emitenteCpf), max(d.emitenteNome), coalesce(sum(d.valorTotalNota), 0), count(d)"
+            + " from FiscalXmlDocument d where d.company.id = :companyId and d.deleted = false"
+            + " and d.direction = br.com.cshub.taxify.enumerated.FiscalDirection.INBOUND"
+            + " and (d.status is null or d.status <> br.com.cshub.taxify.enumerated.FiscalDocumentStatus.CANCELED)"
+            + " and d.issueDate >= :from and d.issueDate < :to"
+            + " group by coalesce(d.issuerCnpj, d.emitenteCpf) order by coalesce(sum(d.valorTotalNota), 0) desc")
+    List<Object[]> sumPurchasesBySupplier(@Param("companyId") UUID companyId, @Param("from") LocalDateTime from,
+                                          @Param("to") LocalDateTime to);
+
     /** {@link #countOnlySieg}'s notes themselves, oldest first. */
     @Query("select d from FiscalXmlDocument d where d.company.id = :companyId and d.deleted = false"
             + " and d.ownIssue = false and d.foundInSiegAt < :before and d.foundInSefazAt is null"

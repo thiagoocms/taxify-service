@@ -110,4 +110,15 @@ public interface FiscalXmlDocumentItemRepository extends JpaRepository<FiscalXml
     List<Object[]> sumByCompanyMonthAndCfop(@Param("companyIds") Collection<UUID> companyIds,
                                            @Param("from") java.time.LocalDateTime from,
                                            @Param("to") java.time.LocalDateTime to);
+
+    /** Purchases per product (curva ABC): code, description, NCM, value, notes. Canceled notes out. */
+    @Query("select i.codigo, max(i.descricao), max(i.ncm), coalesce(sum(i.valorTotal), 0), count(distinct d.id)"
+            + " from FiscalXmlDocumentItem i join i.document d"
+            + " where d.company.id = :companyId and d.deleted = false"
+            + " and d.direction = br.com.cshub.taxify.enumerated.FiscalDirection.INBOUND"
+            + " and (d.status is null or d.status <> br.com.cshub.taxify.enumerated.FiscalDocumentStatus.CANCELED)"
+            + " and d.issueDate >= :from and d.issueDate < :to"
+            + " group by i.codigo order by coalesce(sum(i.valorTotal), 0) desc")
+    List<Object[]> sumPurchasesByProduct(@Param("companyId") UUID companyId, @Param("from") java.time.LocalDateTime from,
+                                         @Param("to") java.time.LocalDateTime to);
 }

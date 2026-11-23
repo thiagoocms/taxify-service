@@ -89,6 +89,41 @@ public class TaxAssessmentService {
         return companies.isEmpty() ? List.of() : assessAll(companies, period, false);
     }
 
+    /**
+     * The same assessment rules run under another regime, for the 12 months ending at {@code month}
+     * (the regimes simulation of the reports). Closings are ignored - it's a what-if.
+     *
+     * @return regime -> the 12 monthly assessments, oldest first
+     */
+    @Transactional(readOnly = true)
+    public Map<br.com.cshub.taxify.enumerated.TaxRegime, List<TaxAssessmentDTO>> simulate(Company company, YearMonth month,
+                                                                                          List<br.com.cshub.taxify.enumerated.TaxRegime> regimes) {
+        List<UUID> ids = List.of(company.getId());
+        Map<YearMonth, TaxAssessmentCalculator.MonthRevenue> revenue = revenueByCompany(ids,
+                month.minusMonths(23).atDay(1).atStartOfDay(), month.plusMonths(1).atDay(1).atStartOfDay())
+                .getOrDefault(company.getId(), Map.of());
+        YearMonth firstSale = null;
+        for (Object[] row : documentRepository.firstOutboundByCompany(ids)) {
+            if (row[1] != null) {
+                firstSale = YearMonth.from((LocalDateTime) row[1]);
+            }
+        }
+        YearMonth activityStart = company.getOpeningDate() != null ? YearMonth.from(company.getOpeningDate()) : firstSale;
+        CompanyTaxRegimeService.RegimeAt current = taxRegimeService.regimesAt(List.of(company), month).get(company.getId());
+        Map<br.com.cshub.taxify.enumerated.TaxRegime, List<TaxAssessmentDTO>> result = new java.util.LinkedHashMap<>();
+        for (br.com.cshub.taxify.enumerated.TaxRegime regime : regimes) {
+            CompanyTaxRegimeService.RegimeAt simulated = new CompanyTaxRegimeService.RegimeAt(regime,
+                    current == null ? null : current.activity(), current == null ? null : current.serviceAnnex(), regime.name());
+            List<TaxAssessmentDTO> months = new java.util.ArrayList<>();
+            for (YearMonth m = month.minusMonths(11); !m.isAfter(month); m = m.plusMonths(1)) {
+                months.add(TaxAssessmentCalculator.assess(new TaxAssessmentCalculator.Input(company, m, simulated, revenue, 1,
+                        activityStart, false)));
+            }
+            result.put(regime, months);
+        }
+        return result;
+    }
+
     /** The month recalculated from the notes, ignoring any closing - what a closing freezes. */
     TaxAssessmentDTO calculate(Company company, YearMonth month) {
         return calculateAll(List.of(company), month, true).getFirst();
