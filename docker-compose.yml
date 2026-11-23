@@ -66,7 +66,7 @@ services:
       SEFAZ_DIST_CRON: ${SEFAZ_DIST_CRON:-0 15 * * * *}
       # UFs com captura automática (vírgula; vazio = todas). Começa por PE.
       SEFAZ_DIST_UFS: ${SEFAZ_DIST_UFS:-PE}
-      # Chave que cifra os certificados A1 e as senhas (openssl rand -base64 32). Guarde uma cópia fora da EC2.
+      # Opcional: chave que cifra os certificados A1 e as senhas (openssl rand -base64 32). Vazia = sem essa criptografia.
       CERT_ENCRYPTION_KEY: ${CERT_ENCRYPTION_KEY:-}
       ACESSORIAS_SYNC_ENABLED: true
       ACESSORIAS_SYNC_CRON: 0 0 3 * * *

@@ -105,9 +105,11 @@ Junto com o SIEG, as notas são buscadas direto no Ambiente Nacional (**NFeDistr
 certificado A1 (e-CNPJ) de cada empresa — sem captcha nem navegador:
 
 - O certificado é enviado na tela da empresa. O backend confere a senha, a validade e a raiz do
-  CNPJ; o `.pfx` vai **cifrado** (AES-256-GCM) para o S3 em `certificados/` e a senha, cifrada, para o banco.
-  A chave fica só na variável `CERT_ENCRYPTION_KEY` (`openssl rand -base64 32`) — guarde uma cópia:
-  sem ela os certificados precisam ser reenviados.
+  CNPJ; o `.pfx` vai para o S3 em `certificados/` e a senha para o banco.
+  **Chave opcional** `CERT_ENCRYPTION_KEY` (`openssl rand -base64 32`): com ela, os dois são gravados
+  cifrados (AES-256-GCM); sem ela, só com a criptografia padrão do bucket e a senha em texto no banco.
+  Certificados guardados sem a chave continuam abrindo depois que ela for configurada. Guarde uma
+  cópia da chave: sem ela os certificados cifrados precisam ser reenviados.
 - Filiais usam o certificado da matriz (mesma raiz de CNPJ).
 - Começa por **Pernambuco**: só empresas das UFs em `SEFAZ_DIST_UFS` (padrão `PE`; vazio = todas)
   entram na captura automática. O botão "Capturar agora" da tela vale para qualquer UF.

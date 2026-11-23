@@ -112,8 +112,8 @@ sefaz:
     # UFs com captura automática (separadas por vírgula; vazio = todas). Começa por PE.
     ufs: ${SEFAZ_DIST_UFS:PE}
 
-# Chave AES-256 (base64, 32 bytes - openssl rand -base64 32) que cifra os certificados A1 e
-# suas senhas. Sem ela o envio de certificado é recusado. Perdê-la = reenviar os certificados.
+# Opcional: chave AES-256 (base64, 32 bytes - openssl rand -base64 32) que cifra os certificados
+# A1 e suas senhas. Vazia = guardados sem essa criptografia. Perdê-la = reenviar os cifrados.
 taxify:
   secrets:
     key: ${CERT_ENCRYPTION_KEY:}

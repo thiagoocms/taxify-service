@@ -10,9 +10,10 @@ import java.time.LocalDateTime;
 import java.util.UUID;
 
 /**
- * A company's A1 certificate (e-CNPJ). The .pfx sits in the XML storage (S3 or disk),
- * encrypted by {@link br.com.cshub.taxify.common.SecretCipher}; the password is kept here,
- * encrypted the same way. One per company - a new upload replaces it. A branch with no
+ * A company's A1 certificate (e-CNPJ). The .pfx sits in the XML storage (S3 or disk) and
+ * the password is kept here - both encrypted by {@link br.com.cshub.taxify.common.SecretCipher}
+ * when CERT_ENCRYPTION_KEY is set ("enc:" password, ".pfx.enc" file), as they are otherwise
+ * ("plain:" password, ".pfx" file). One per company - a new upload replaces it. A branch with no
  * certificate of its own uses one of the same CNPJ root (the matriz's), as SEFAZ allows.
  */
 @Entity

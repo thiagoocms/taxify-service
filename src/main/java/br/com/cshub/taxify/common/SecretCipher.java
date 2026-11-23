@@ -17,7 +17,8 @@ import java.util.Base64;
  * passwords. The key is {@code taxify.secrets.key} (env {@code CERT_ENCRYPTION_KEY}, 32 bytes
  * in base64 - {@code openssl rand -base64 32}) and never touches the database or the bucket,
  * so a leaked dump or bucket alone opens nothing. Output: 12-byte random IV + ciphertext + tag.
- * Losing the key means uploading the certificates again.
+ * Optional: without it the certificates are stored unencrypted. Losing it means uploading the
+ * certificates stored with it again.
  */
 @Component
 public class SecretCipher {

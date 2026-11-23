@@ -88,19 +88,19 @@ class CompanyCertificateServiceTest {
     void storesThePfxAndPasswordEncrypted() throws Exception {
         Company company = company("11222333000181");
         byte[] pfx = testPfx();
-        when(storage.storeCertificate(eq(company.getId()), any())).thenReturn("s3://bucket/certificados/a.pfx.enc");
+        when(storage.storeCertificate(eq(company.getId()), any(), eq(".pfx.enc"))).thenReturn("s3://bucket/certificados/a.pfx.enc");
 
         service.upload(company.getId(), pfx, "teste123");
 
         ArgumentCaptor<byte[]> stored = ArgumentCaptor.forClass(byte[].class);
-        verify(storage).storeCertificate(eq(company.getId()), stored.capture());
+        verify(storage).storeCertificate(eq(company.getId()), stored.capture(), eq(".pfx.enc"));
         assertThat(stored.getValue()).isNotEqualTo(pfx);
         assertThat(cipher.decrypt(stored.getValue())).isEqualTo(pfx);
 
         ArgumentCaptor<CompanyCertificate> saved = ArgumentCaptor.forClass(CompanyCertificate.class);
         verify(repository).save(saved.capture());
-        assertThat(saved.getValue().getPasswordEncrypted()).isNotEqualTo("teste123");
-        assertThat(cipher.decryptText(saved.getValue().getPasswordEncrypted())).isEqualTo("teste123");
+        assertThat(saved.getValue().getPasswordEncrypted()).startsWith("enc:").doesNotContain("teste123");
+        assertThat(cipher.decryptText(saved.getValue().getPasswordEncrypted().substring(4))).isEqualTo("teste123");
         assertThat(saved.getValue().getCnpj()).isEqualTo("11222333000181");
         assertThat(saved.getValue().getValidUntil()).isAfter(LocalDateTime.now());
     }
@@ -108,7 +108,7 @@ class CompanyCertificateServiceTest {
     @Test
     void branchMayUploadTheHeadOfficeCertificate() throws Exception {
         Company branch = company("11222333000262");
-        when(storage.storeCertificate(eq(branch.getId()), any())).thenReturn("x");
+        when(storage.storeCertificate(eq(branch.getId()), any(), any())).thenReturn("x");
 
         service.upload(branch.getId(), testPfx(), "teste123");
 
@@ -121,7 +121,7 @@ class CompanyCertificateServiceTest {
 
         assertThatThrownBy(() -> service.upload(company.getId(), testPfx(), "errada"))
                 .isInstanceOf(BadRequestException.class).hasMessage("error.certificate.invalid");
-        verify(storage, never()).storeCertificate(any(), any());
+        verify(storage, never()).storeCertificate(any(), any(), any());
     }
 
     @Test
@@ -130,17 +130,37 @@ class CompanyCertificateServiceTest {
 
         assertThatThrownBy(() -> service.upload(company.getId(), testPfx(), "teste123"))
                 .isInstanceOf(BadRequestException.class).hasMessage("error.certificate.other.company");
-        verify(storage, never()).storeCertificate(any(), any());
+        verify(storage, never()).storeCertificate(any(), any(), any());
     }
 
     @Test
-    void refusedWhenTheEncryptionKeyIsMissing() throws Exception {
+    void withoutTheKeyStoresAsIsAndStillOpens() throws Exception {
+        SecretCipher noKey = new SecretCipher("");
         service = new CompanyCertificateService(repository, controlRepository, companyValidation, storage,
-                new SecretCipher(""), messageService, subscriptionRepository);
+                noKey, messageService, subscriptionRepository);
         Company company = company("11222333000181");
+        byte[] pfx = testPfx();
+        when(storage.storeCertificate(eq(company.getId()), any(), eq(".pfx"))).thenReturn("s3://bucket/certificados/a.pfx");
 
-        assertThatThrownBy(() -> service.upload(company.getId(), testPfx(), "teste123"))
-                .hasMessage("error.certificate.encryption.not.configured");
+        service.upload(company.getId(), pfx, "teste123");
+
+        verify(storage).storeCertificate(eq(company.getId()), eq(pfx), eq(".pfx"));
+        ArgumentCaptor<CompanyCertificate> saved = ArgumentCaptor.forClass(CompanyCertificate.class);
+        verify(repository).save(saved.capture());
+        assertThat(saved.getValue().getPasswordEncrypted()).isEqualTo("plain:teste123");
+
+        when(storage.read("s3://bucket/certificados/a.pfx")).thenReturn(pfx);
+        assertThat(service.open(saved.getValue()).cnpj()).isEqualTo("11222333000181");
+    }
+
+    @Test
+    void certificateStoredWithoutTheKeyStillOpensAfterAKeyIsSet() throws Exception {
+        CompanyCertificate stored = new CompanyCertificate();
+        stored.setFilePath("s3://bucket/certificados/a.pfx");
+        stored.setPasswordEncrypted("plain:teste123");
+        when(storage.read(stored.getFilePath())).thenReturn(testPfx());
+
+        assertThat(service.open(stored).cnpj()).isEqualTo("11222333000181"); // service has a key
     }
 
     @Test
@@ -159,7 +179,7 @@ class CompanyCertificateServiceTest {
     void openDecryptsWhatUploadStored() throws Exception {
         CompanyCertificate stored = new CompanyCertificate();
         stored.setFilePath("s3://bucket/certificados/a.pfx.enc");
-        stored.setPasswordEncrypted(cipher.encryptText("teste123"));
+        stored.setPasswordEncrypted("enc:" + cipher.encryptText("teste123"));
         when(storage.read(stored.getFilePath())).thenReturn(cipher.encrypt(testPfx()));
 
         A1Certificate opened = service.open(stored);

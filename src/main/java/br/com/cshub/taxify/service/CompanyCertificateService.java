@@ -31,14 +31,21 @@ import java.util.UUID;
 
 /**
  * Upload, lookup and opening of the companies' A1 certificates. The .pfx goes to the XML
- * storage (S3) encrypted, the password to the database encrypted - both with
- * {@link SecretCipher}. Only certificates that open with the given password, are still valid
- * and belong to the company's CNPJ root are accepted.
+ * storage (S3) and the password to the database. With {@code CERT_ENCRYPTION_KEY} set, both are
+ * encrypted by {@link SecretCipher}; without it they are stored as they are (the bucket's own
+ * server-side encryption only). Each record says how it was stored - the file by its suffix,
+ * the password by its prefix - so certificates stored without the key keep opening after a key
+ * is set, and new ones are encrypted from then on. Only certificates that open with the given
+ * password, are still valid and belong to the company's CNPJ root are accepted.
  */
 @Service
 public class CompanyCertificateService {
 
     private static final Logger log = LoggerFactory.getLogger(CompanyCertificateService.class);
+    static final String ENCRYPTED_FILE_SUFFIX = ".pfx.enc";
+    static final String PLAIN_FILE_SUFFIX = ".pfx";
+    static final String ENCRYPTED_PASSWORD_PREFIX = "enc:";
+    static final String PLAIN_PASSWORD_PREFIX = "plain:";
 
     private final CompanyCertificateRepository repository;
     private final SefazDistControlRepository controlRepository;
@@ -82,9 +89,6 @@ public class CompanyCertificateService {
     @Transactional
     public CompanyCertificateDTO upload(UUID companyId, byte[] pfx, String password) {
         Company company = companyValidation.checkExist(companyId);
-        if (!cipher.isConfigured()) {
-            throw new BadRequestException(messageService.getMessage("error.certificate.encryption.not.configured"));
-        }
         if (pfx == null || pfx.length == 0) {
             throw new BadRequestException(messageService.getMessage("error.certificate.empty"));
         }
@@ -102,9 +106,15 @@ public class CompanyCertificateService {
             throw new BadRequestException(messageService.getMessage("error.certificate.other.company", certificate.cnpj()));
         }
 
+        boolean encrypt = cipher.isConfigured();
+        if (!encrypt) {
+            log.warn("Storing the A1 certificate of company {} WITHOUT encryption - CERT_ENCRYPTION_KEY is not set", companyId);
+        }
         String location;
         try {
-            location = storage.storeCertificate(company.getId(), cipher.encrypt(pfx));
+            location = encrypt
+                    ? storage.storeCertificate(company.getId(), cipher.encrypt(pfx), ENCRYPTED_FILE_SUFFIX)
+                    : storage.storeCertificate(company.getId(), pfx, PLAIN_FILE_SUFFIX);
         } catch (IOException e) {
             throw new IllegalStateException("Could not store the certificate", e);
         }
@@ -113,7 +123,7 @@ public class CompanyCertificateService {
         entity.setCompany(company);
         entity.setDeleted(false);
         entity.setFilePath(location);
-        entity.setPasswordEncrypted(cipher.encryptText(password == null ? "" : password));
+        entity.setPasswordEncrypted(sealPassword(password == null ? "" : password, encrypt));
         entity.setCnpj(certificate.cnpj());
         entity.setSubjectName(truncate(certificate.subjectName(), 300));
         entity.setValidFrom(certificate.validFrom());
@@ -158,10 +168,24 @@ public class CompanyCertificateService {
                         .thenComparing(CompanyCertificate::getValidUntil));
     }
 
-    /** Reads and decrypts the .pfx and its password. */
+    /** Reads the .pfx and its password, decrypting whichever was stored encrypted. */
     public A1Certificate open(CompanyCertificate certificate) throws IOException, GeneralSecurityException {
-        byte[] pfx = cipher.decrypt(storage.read(certificate.getFilePath()));
-        return A1Certificate.open(pfx, cipher.decryptText(certificate.getPasswordEncrypted()));
+        byte[] stored = storage.read(certificate.getFilePath());
+        byte[] pfx = certificate.getFilePath().endsWith(ENCRYPTED_FILE_SUFFIX) ? cipher.decrypt(stored) : stored;
+        return A1Certificate.open(pfx, openPassword(certificate.getPasswordEncrypted()));
+    }
+
+    private String sealPassword(String password, boolean encrypt) {
+        return encrypt ? ENCRYPTED_PASSWORD_PREFIX + cipher.encryptText(password) : PLAIN_PASSWORD_PREFIX + password;
+    }
+
+    private String openPassword(String stored) {
+        if (stored.startsWith(PLAIN_PASSWORD_PREFIX)) {
+            return stored.substring(PLAIN_PASSWORD_PREFIX.length());
+        }
+        // "enc:" - or no prefix at all: the first certificates were always encrypted
+        return cipher.decryptText(stored.startsWith(ENCRYPTED_PASSWORD_PREFIX)
+                ? stored.substring(ENCRYPTED_PASSWORD_PREFIX.length()) : stored);
     }
 
     /** Only-digits CNPJ of the company, or null when its document isn't a CNPJ. */
