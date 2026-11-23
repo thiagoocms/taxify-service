@@ -54,6 +54,23 @@ class SefazEventClientTest {
     }
 
     @Test
+    void aConclusiveManifestationCarriesItsCodeAndTheJustificationEscaped() throws Exception {
+        A1Certificate certificate = A1Certificate.open(A1CertificateTest.testPfx(), "teste123");
+        String xml = SefazEventClient.signedEvents(certificate, "1", "11222333000181", List.of(
+                        new SefazEventClient.EventRequest(KEY_1, SefazEventClient.Manifestation.NAO_REALIZADA,
+                                "Mercadoria  devolvida\n& recusada <na entrega>"),
+                        new SefazEventClient.EventRequest(KEY_2, SefazEventClient.Manifestation.CONFIRMACAO, "ignorada")),
+                OffsetDateTime.of(2026, 11, 23, 10, 0, 0, 0, ZoneOffset.ofHours(-3)), "1");
+
+        assertThat(xml).contains("<infEvento Id=\"ID210240" + KEY_1 + "01\">")
+                .contains("<tpEvento>210240</tpEvento>")
+                .contains("<descEvento>Operacao nao Realizada</descEvento><xJust>Mercadoria devolvida &amp; recusada &lt;na entrega&gt;</xJust>")
+                .contains("<infEvento Id=\"ID210200" + KEY_2 + "01\">")
+                .contains("<descEvento>Confirmacao da Operacao</descEvento></detEvento>")
+                .doesNotContain("ignorada");
+    }
+
+    @Test
     void readsEachEventResultOfAProcessedBatch() throws Exception {
         String body = """
                 <soap:Envelope xmlns:soap="http://www.w3.org/2003/05/soap-envelope"><soap:Body>

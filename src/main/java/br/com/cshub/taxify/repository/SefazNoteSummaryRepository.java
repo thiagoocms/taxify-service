@@ -41,4 +41,14 @@ public interface SefazNoteSummaryRepository extends AbstractJpaRepository<SefazN
                                                @Param("fetchedBefore") LocalDateTime fetchedBefore, Pageable pageable);
 
     long countByCompany_IdAndCompletedAtIsNullAndCienciaStatus(UUID companyId, CienciaStatus status);
+
+    /** Summaries (no XML yet) of authorized notes issued since {@code since} without a conclusive manifestation. */
+    @Query("select s from SefazNoteSummary s where s.company.id = :companyId and s.completedAt is null"
+            + " and (s.situation is null or s.situation = '1') and s.issueDate >= :since"
+            + " and not exists (select e.id from FiscalXmlEvent e where e.company.id = :companyId"
+            + "      and e.accessKey = s.accessKey and e.registered = true and e.eventType in :conclusive)"
+            + " order by s.issueDate asc")
+    List<SefazNoteSummary> findAwaitingManifestation(@Param("companyId") UUID companyId, @Param("since") LocalDateTime since,
+                                                     @Param("conclusive") java.util.Collection<String> conclusive,
+                                                     Pageable pageable);
 }

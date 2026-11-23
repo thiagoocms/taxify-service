@@ -39,6 +39,8 @@ import org.springframework.web.multipart.MultipartFile;
 import java.io.IOException;
 import java.util.List;
 import java.util.UUID;
+import br.com.cshub.taxify.dto.fiscalxml.ManifestationDTOs;
+import br.com.cshub.taxify.service.SefazManifestationScreenService;
 
 @RequiresPermission(Permission.INVOICES_VIEW)
 @RestController
@@ -50,16 +52,31 @@ public class FiscalXmlResource {
     private final FiscalXmlQueryService queryService;
     private final DanfePdfService danfePdfService;
     private final FiscalXmlReviewService reviewService;
+    private final SefazManifestationScreenService manifestationService;
 
     @Autowired
     public FiscalXmlResource(FiscalXmlIntegrationService service, FiscalXmlRectificationService rectificationService,
                              FiscalXmlQueryService queryService, DanfePdfService danfePdfService,
-                             FiscalXmlReviewService reviewService) {
+                             FiscalXmlReviewService reviewService, SefazManifestationScreenService manifestationService) {
+        this.manifestationService = manifestationService;
         this.reviewService = reviewService;
         this.service = service;
         this.rectificationService = rectificationService;
         this.queryService = queryService;
         this.danfePdfService = danfePdfService;
+    }
+
+    /** Entries that still owe a conclusive manifestation (confirmation, unknown or not performed), nearest deadline first. */
+    @GetMapping("/manifestacao")
+    public ResponseEntity<ManifestationDTOs.Pending> manifestacaoPendente(@RequestParam String companyId) {
+        return ResponseEntity.ok(manifestationService.pending(companyId));
+    }
+
+    /** Sends one manifestation for several notes (signed with the company's A1) and returns SEFAZ's answer per note. */
+    @RequiresPermission(Permission.INVOICES_AUDIT)
+    @PostMapping("/manifestacao")
+    public ResponseEntity<ManifestationDTOs.Result> manifestar(@Valid @RequestBody ManifestationDTOs.Request request) {
+        return ResponseEntity.ok(manifestationService.send(request));
     }
 
     /** List rows only (DB columns, no XML file read) - see FiscalXmlQueryService#search. */

@@ -15,4 +15,7 @@ public interface FiscalXmlEventRepository extends AbstractJpaRepository<FiscalXm
     List<FiscalXmlEvent> findByCompany_IdAndAccessKeyAndDocumentIsNull(UUID companyId, String accessKey);
 
     List<FiscalXmlEvent> findByDocument_IdOrderByEventAtAscSequenceNumberAsc(UUID documentId);
+
+    /** Registered events of these notes - which manifestations each one already has. */
+    List<FiscalXmlEvent> findByCompany_IdAndAccessKeyInAndRegisteredIsTrue(UUID companyId, java.util.Collection<String> accessKeys);
 }

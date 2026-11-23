@@ -51,6 +51,43 @@ public class SefazEventClient {
     public static final String CIENCIA = "210210";
     public static final String CIENCIA_DESCRIPTION = "Ciencia da Operacao";
 
+    /**
+     * The recipient's manifestation events (NT 2012.002): the ciência and the three conclusive ones.
+     * descEvento has to be exactly these words, without accents.
+     */
+    public enum Manifestation {
+        CIENCIA("210210", "Ciencia da Operacao", "Ciência da Operação", false),
+        CONFIRMACAO("210200", "Confirmacao da Operacao", "Confirmação da Operação", true),
+        DESCONHECIMENTO("210220", "Desconhecimento da Operacao", "Desconhecimento da Operação", true),
+        NAO_REALIZADA("210240", "Operacao nao Realizada", "Operação não Realizada", true);
+
+        public final String code;
+        public final String sefazDescription;
+        public final String label;
+        /** Confirmation, unknown or not performed - the answer the recipient owes; the ciência isn't one. */
+        public final boolean conclusive;
+
+        Manifestation(String code, String sefazDescription, String label, boolean conclusive) {
+            this.code = code;
+            this.sefazDescription = sefazDescription;
+            this.label = label;
+            this.conclusive = conclusive;
+        }
+
+        /** "Operação não Realizada" must say why (xJust, 15 to 255 characters). */
+        public boolean needsJustification() {
+            return this == NAO_REALIZADA;
+        }
+
+        public static java.util.Optional<Manifestation> ofCode(String code) {
+            return java.util.Arrays.stream(values()).filter(value -> value.code.equals(code)).findFirst();
+        }
+    }
+
+    /** One event to send: the note, the manifestation and, for "não realizada", the reason. */
+    public record EventRequest(String accessKey, Manifestation type, String justification) {
+    }
+
     private static final String NS_NFE = SefazDistClient.NS_NFE;
     private static final String WSDL = "http://www.portalfiscal.inf.br/nfe/wsdl/NFeRecepcaoEvento4";
     /** cOrgao 91 = Ambiente Nacional, where the recipient's manifestation goes. */
@@ -67,12 +104,18 @@ public class SefazEventClient {
 
     public SefazEventResponse sendCiencia(A1Certificate certificate, String cnpj, List<String> accessKeys)
             throws IOException, GeneralSecurityException {
-        if (accessKeys.isEmpty() || accessKeys.size() > MAX_PER_BATCH) {
+        return send(certificate, cnpj, accessKeys.stream().map(key -> new EventRequest(key, Manifestation.CIENCIA, null)).toList());
+    }
+
+    /** Sends 1 to 20 manifestation events in one envEvento. */
+    public SefazEventResponse send(A1Certificate certificate, String cnpj, List<EventRequest> events)
+            throws IOException, GeneralSecurityException {
+        if (events.isEmpty() || events.size() > MAX_PER_BATCH) {
             throw new IllegalArgumentException("1 to " + MAX_PER_BATCH + " notes per batch");
         }
         // a minute back: SEFAZ refuses a dhEvento ahead of its own clock
         OffsetDateTime when = OffsetDateTime.now(BRASILIA).minusMinutes(1);
-        String envEvento = signedEnvEvento(certificate, properties.tpAmb(), cnpj, accessKeys, when,
+        String envEvento = signedEvents(certificate, properties.tpAmb(), cnpj, events, when,
                 String.valueOf(System.currentTimeMillis()));
         try (HttpClient http = SefazDistClient.httpClient(certificate.sslContext())) {
             HttpRequest request = HttpRequest.newBuilder(URI.create(properties.eventEndpoint()))
@@ -100,25 +143,43 @@ public class SefazEventClient {
 
     /** infEvento Id: "ID" + tpEvento + chave + nSeqEvento in 2 digits. */
     static String eventId(String accessKey) {
-        return "ID" + CIENCIA + accessKey + "01";
+        return eventId(Manifestation.CIENCIA, accessKey);
+    }
+
+    static String eventId(Manifestation type, String accessKey) {
+        return "ID" + type.code + accessKey + "01";
     }
 
     /** The envEvento with one signed ciência per key - no XML declaration, no whitespace between tags. */
     static String signedEnvEvento(A1Certificate certificate, String tpAmb, String cnpj, List<String> accessKeys,
                                   OffsetDateTime when, String lote) throws GeneralSecurityException {
+        return signedEvents(certificate, tpAmb, cnpj,
+                accessKeys.stream().map(key -> new EventRequest(key, Manifestation.CIENCIA, null)).toList(), when, lote);
+    }
+
+    /**
+     * The envEvento with one signed event per request. nSeqEvento is always 1: each manifestation type
+     * has its own sequence and a note takes only one of each.
+     */
+    static String signedEvents(A1Certificate certificate, String tpAmb, String cnpj, List<EventRequest> events,
+                               OffsetDateTime when, String lote) throws GeneralSecurityException {
         StringBuilder xml = new StringBuilder("<envEvento xmlns=\"").append(NS_NFE).append("\" versao=\"1.00\"><idLote>")
                 .append(lote).append("</idLote>");
-        for (String key : accessKeys) {
-            xml.append("<evento versao=\"1.00\"><infEvento Id=\"").append(eventId(key)).append("\">")
+        for (EventRequest event : events) {
+            Manifestation type = event.type();
+            xml.append("<evento versao=\"1.00\"><infEvento Id=\"").append(eventId(type, event.accessKey())).append("\">")
                     .append("<cOrgao>").append(ORGAO_AN).append("</cOrgao>")
                     .append("<tpAmb>").append(tpAmb).append("</tpAmb>")
                     .append("<CNPJ>").append(cnpj).append("</CNPJ>")
-                    .append("<chNFe>").append(key).append("</chNFe>")
+                    .append("<chNFe>").append(event.accessKey()).append("</chNFe>")
                     .append("<dhEvento>").append(DH_EVENTO.format(when)).append("</dhEvento>")
-                    .append("<tpEvento>").append(CIENCIA).append("</tpEvento>")
+                    .append("<tpEvento>").append(type.code).append("</tpEvento>")
                     .append("<nSeqEvento>1</nSeqEvento><verEvento>1.00</verEvento>")
-                    .append("<detEvento versao=\"1.00\"><descEvento>").append(CIENCIA_DESCRIPTION).append("</descEvento></detEvento>")
-                    .append("</infEvento></evento>");
+                    .append("<detEvento versao=\"1.00\"><descEvento>").append(type.sefazDescription).append("</descEvento>");
+            if (type.needsJustification()) {
+                xml.append("<xJust>").append(escape(event.justification())).append("</xJust>");
+            }
+            xml.append("</detEvento></infEvento></evento>");
         }
         xml.append("</envEvento>");
 
@@ -144,6 +205,12 @@ public class SefazEventClient {
             }
         }
         return serialize(doc);
+    }
+
+    /** Text for an element: one line, single spaces, XML-escaped. */
+    static String escape(String text) {
+        String clean = text == null ? "" : text.replaceAll("\\s+", " ").strip();
+        return clean.replace("&", "&amp;").replace("<", "&lt;").replace(">", "&gt;").replace("\"", "&quot;").replace("'", "&apos;");
     }
 
     /** Enveloped signature of infEvento, appended to evento - RSA-SHA1 and C14N as the NF-e layout asks. */

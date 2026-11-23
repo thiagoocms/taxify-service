@@ -72,6 +72,24 @@ public interface FiscalXmlDocumentRepository extends AbstractJpaRepository<Fisca
                                    @Param("onlySefazBefore") LocalDateTime onlySefazBefore,
                                    Pageable pageable);
 
+    /**
+     * Entries the company still owes a conclusive manifestation for: NF-e (model 55) addressed to its
+     * CNPJ, not canceled, issued since {@code since}, without a registered confirmation, unknown or
+     * not-performed event.
+     */
+    @Query("select d from FiscalXmlDocument d where d.company.id = :companyId and d.deleted = false"
+            + " and d.ownIssue = false and d.recipientCnpj = :cnpj and d.documentType = 'NFE'"
+            + " and (d.modelo is null or d.modelo = '55')"
+            + " and (d.status is null or d.status <> br.com.cshub.taxify.enumerated.FiscalDocumentStatus.CANCELED)"
+            + " and d.issueDate >= :since and d.accessKey is not null"
+            + " and not exists (select e.id from FiscalXmlEvent e where e.company.id = :companyId"
+            + "      and e.accessKey = d.accessKey and e.registered = true and e.eventType in :conclusive)"
+            + " order by d.issueDate asc")
+    List<FiscalXmlDocument> findAwaitingManifestation(@Param("companyId") UUID companyId, @Param("cnpj") String cnpj,
+                                                      @Param("since") LocalDateTime since,
+                                                      @Param("conclusive") java.util.Collection<String> conclusive,
+                                                      Pageable pageable);
+
     /** SIEG x SEFAZ: third-party notes SIEG brought before {@code before}, issued since {@code issuedSince}, never seen by SEFAZ. */
     @Query("select count(d) from FiscalXmlDocument d where d.company.id = :companyId and d.deleted = false"
             + " and d.ownIssue = false and d.foundInSiegAt < :before and d.foundInSefazAt is null"
