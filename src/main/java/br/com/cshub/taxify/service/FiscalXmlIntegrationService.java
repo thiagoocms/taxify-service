@@ -47,6 +47,12 @@ import java.util.zip.ZipOutputStream;
 @Service
 public class FiscalXmlIntegrationService {
 
+    /** Manual uploads are stored in batches of this many XMLs, the persistence context cleared in between. */
+    static final int UPLOAD_BATCH = 100;
+
+    @jakarta.persistence.PersistenceContext
+    private jakarta.persistence.EntityManager entityManager;
+
     private static final Logger log = LoggerFactory.getLogger(FiscalXmlIntegrationService.class);
     private static final int TIPO_XML_NFE = 1;
     /** SIEG's maximum notes per baixar-xmls page. */
@@ -259,18 +265,70 @@ public class FiscalXmlIntegrationService {
      */
     @Transactional
     public XmlDownloadResultDTO importManual(String companyId, byte[] uploadedBytes) {
-        Company company = findCompanyWithCnpj(companyId);
-
         if (uploadedBytes == null || uploadedBytes.length == 0) {
+            findCompanyWithCnpj(companyId);
             throw new BadRequestException(messageService.getMessage("error.fiscalXml.import.empty.file"));
         }
+        return importManual(companyId, new java.io.ByteArrayInputStream(uploadedBytes));
+    }
 
-        List<byte[]> xmlContents = packageExtractor.extract(uploadedBytes);
-        if (xmlContents.isEmpty()) {
+    /**
+     * The upload read as a stream - one XML in memory at a time, stored in batches of
+     * {@link #UPLOAD_BATCH} with the persistence context cleared in between, so a big zip doesn't
+     * pile up in the heap. The answer carries the counts and keys, not the XMLs themselves.
+     */
+    @Transactional
+    public XmlDownloadResultDTO importManual(String companyId, java.io.InputStream upload) {
+        Company company = findCompanyWithCnpj(companyId);
+        UUID id = company.getId();
+        List<byte[]> batch = new ArrayList<>();
+        XmlDownloadResultDTO[] total = {null};
+        int found;
+        try {
+            found = packageExtractor.forEachXml(upload, xml -> {
+                batch.add(xml);
+                if (batch.size() >= UPLOAD_BATCH) {
+                    total[0] = plus(total[0], persistAll(companyForBatch(id), batch, FiscalXmlSource.UPLOAD, false));
+                    batch.clear();
+                    releaseMemory();
+                }
+            });
+        } catch (java.io.IOException e) {
             throw new BadRequestException(messageService.getMessage("error.fiscalXml.import.no.xml.found"));
         }
+        if (found == 0) {
+            throw new BadRequestException(messageService.getMessage("error.fiscalXml.import.no.xml.found"));
+        }
+        if (!batch.isEmpty()) {
+            total[0] = plus(total[0], persistAll(companyForBatch(id), batch, FiscalXmlSource.UPLOAD, false));
+        }
+        return total[0];
+    }
 
-        return persistAll(company, xmlContents, FiscalXmlSource.UPLOAD);
+    /** The company again after a {@link #releaseMemory} - the old instance is detached. */
+    private Company companyForBatch(UUID companyId) {
+        return companyValidation.checkExist(companyId);
+    }
+
+    /** Writes what's pending and forgets the entities loaded so far (only the persistence context, not the data). */
+    private void releaseMemory() {
+        if (entityManager != null) {
+            entityManager.flush();
+            entityManager.clear();
+        }
+    }
+
+    private static XmlDownloadResultDTO plus(XmlDownloadResultDTO a, XmlDownloadResultDTO b) {
+        if (a == null) {
+            return b;
+        }
+        List<String> keys = new ArrayList<>(a.persistedAccessKeys());
+        keys.addAll(b.persistedAccessKeys());
+        List<FiscalXmlItemDTO> items = new ArrayList<>(a.xmls());
+        items.addAll(b.xmls());
+        return new XmlDownloadResultDTO(a.totalItemsFromSieg() + b.totalItemsFromSieg(), a.totalXmlsCounted() + b.totalXmlsCounted(),
+                a.totalPersistedNew() + b.totalPersistedNew(), a.totalDuplicatedSkipped() + b.totalDuplicatedSkipped(),
+                a.totalParseErrors() + b.totalParseErrors(), keys, items, a.totalEventsRecorded() + b.totalEventsRecorded());
     }
 
     /**
@@ -291,6 +349,11 @@ public class FiscalXmlIntegrationService {
      * source has it (the SIEG x SEFAZ comparison); a SEFAZ summary of the note is completed.
      */
     private XmlDownloadResultDTO persistAll(Company company, List<byte[]> xmlContents, FiscalXmlSource source) {
+        return persistAll(company, xmlContents, source, true);
+    }
+
+    /** @param withItems whether the answer lists each note with its XML (the SIEG search screen) or only counts and keys */
+    private XmlDownloadResultDTO persistAll(Company company, List<byte[]> xmlContents, FiscalXmlSource source, boolean withItems) {
         int persistedNew = 0;
         int duplicated = 0;
         int parseErrors = 0;
@@ -331,7 +394,9 @@ public class FiscalXmlIntegrationService {
                 xmlDocumentRepository.findFirstByCompany_IdAndAccessKey(company.getId(), metadata.accessKey())
                         .filter(known -> markFoundIn(known, source))
                         .ifPresent(xmlDocumentRepository::save);
-                xmls.add(toItemDTO(metadata, xmlContent));
+                if (withItems) {
+                    xmls.add(toItemDTO(metadata, xmlContent));
+                }
                 continue;
             }
 
@@ -347,7 +412,9 @@ public class FiscalXmlIntegrationService {
             if (metadata.accessKey() != null) {
                 persistedKeys.add(metadata.accessKey());
             }
-            xmls.add(toItemDTO(metadata, xmlContent));
+            if (withItems) {
+                xmls.add(toItemDTO(metadata, xmlContent));
+            }
         }
 
         return new XmlDownloadResultDTO(

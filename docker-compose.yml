@@ -3,6 +3,9 @@ services:
     image: mysql:8.4
     container_name: taxify-mysql
     restart: unless-stopped
+    # InnoDB cache capped (MySQL's own default is 128M, but it grows with tuning scripts); 256M
+    # is plenty for the Taxify's tables and keeps memory for the backend on a 2-4 GB machine.
+    command: [ "--innodb-buffer-pool-size=${MYSQL_INNODB_BUFFER_POOL:-256M}" ]
     environment:
       MYSQL_ROOT_PASSWORD: ${MYSQL_ROOT_PASSWORD:-root}
       MYSQL_DATABASE: ${DB_NAME:-taxify_dev}
@@ -30,6 +33,8 @@ services:
       mysql:
         condition: service_healthy
     environment:
+      # heap at 45% of the RAM; on a 2 GB machine with MySQL beside it don't go above 45
+      JAVA_OPTS: ${JAVA_OPTS:--XX:MaxRAMPercentage=45 -XX:+ExitOnOutOfMemoryError}
       SERVER_PORT: 5000
       SPRING_PROFILES_ACTIVE: test
       DB_HOST: mysql

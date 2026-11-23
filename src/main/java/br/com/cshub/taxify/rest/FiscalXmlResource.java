@@ -171,7 +171,13 @@ public class FiscalXmlResource {
             @RequestParam String companyId,
             @RequestParam("file") MultipartFile file) {
         try {
-            return ResponseEntity.ok(service.importManual(companyId, file.getBytes()));
+            if (file.isEmpty()) {
+                return ResponseEntity.ok(service.importManual(companyId, new byte[0]));
+            }
+            // streamed from the multipart temp file - a big zip never sits whole in memory
+            try (java.io.InputStream upload = file.getInputStream()) {
+                return ResponseEntity.ok(service.importManual(companyId, upload));
+            }
         } catch (IOException e) {
             throw new BadRequestException();
         }

@@ -60,4 +60,40 @@ class FiscalXmlPackageExtractorTest {
     void returnsEmptyListForEmptyInput() {
         assertThat(extractor.extract(new byte[0])).isEmpty();
     }
+
+    @org.junit.jupiter.api.Test
+    void streamsTheZipOneXmlAtATimeAndSkipsAnOversizedEntry() throws Exception {
+        java.io.ByteArrayOutputStream zip = new java.io.ByteArrayOutputStream();
+        try (java.util.zip.ZipOutputStream out = new java.util.zip.ZipOutputStream(zip)) {
+            for (int i = 0; i < 250; i++) {
+                out.putNextEntry(new java.util.zip.ZipEntry("nota-" + i + ".xml"));
+                out.write(("<nfeProc>" + i + "</nfeProc>").getBytes(java.nio.charset.StandardCharsets.UTF_8));
+                out.closeEntry();
+            }
+            out.putNextEntry(new java.util.zip.ZipEntry("enorme.xml"));
+            out.write(new byte[FiscalXmlPackageExtractor.MAX_XML_BYTES + 1]);
+            out.closeEntry();
+            out.putNextEntry(new java.util.zip.ZipEntry("leia-me.txt"));
+            out.write("x".getBytes(java.nio.charset.StandardCharsets.UTF_8));
+            out.closeEntry();
+        }
+        java.util.List<Integer> sizes = new java.util.ArrayList<>();
+
+        int count = extractor.forEachXml(new java.io.ByteArrayInputStream(zip.toByteArray()), xml -> sizes.add(xml.length));
+
+        org.assertj.core.api.Assertions.assertThat(count).isEqualTo(250);
+        org.assertj.core.api.Assertions.assertThat(sizes).hasSize(250).allMatch(size -> size < 100);
+    }
+
+    @org.junit.jupiter.api.Test
+    void aPlainXmlStreamIsHandedOverWhole() throws Exception {
+        java.util.List<String> xmls = new java.util.ArrayList<>();
+
+        int count = extractor.forEachXml(new java.io.ByteArrayInputStream("<nfeProc/>".getBytes(java.nio.charset.StandardCharsets.UTF_8)),
+                xml -> xmls.add(new String(xml, java.nio.charset.StandardCharsets.UTF_8)));
+
+        org.assertj.core.api.Assertions.assertThat(count).isEqualTo(1);
+        org.assertj.core.api.Assertions.assertThat(xmls).containsExactly("<nfeProc/>");
+        org.assertj.core.api.Assertions.assertThat(extractor.forEachXml(new java.io.ByteArrayInputStream(new byte[0]), xml -> { })).isZero();
+    }
 }

@@ -107,8 +107,9 @@ class SiegXmlIntegrationServiceImportTest {
 
         assertThat(result.totalPersistedNew()).isEqualTo(1);
         assertThat(result.totalDuplicatedSkipped()).isZero();
-        assertThat(result.xmls()).hasSize(1);
-        assertThat(result.xmls().get(0).accessKey()).isEqualTo("35240112345678000199550010000000011000000010");
+        // the upload answers with counts and keys - the XMLs themselves stay out of the response
+        assertThat(result.xmls()).isEmpty();
+        assertThat(result.persistedAccessKeys()).containsExactly("35240112345678000199550010000000011000000010");
     }
 
     @Test
@@ -209,5 +210,26 @@ class SiegXmlIntegrationServiceImportTest {
 
         assertThat(result.totalParseErrors()).isEqualTo(1);
         assertThat(result.totalPersistedNew()).isEqualTo(1);
+    }
+
+    @Test
+    void aBigZipIsStoredInBatchesAndTheCountsAddUp() throws Exception {
+        ByteArrayOutputStream zipBytes = new ByteArrayOutputStream();
+        try (ZipOutputStream zos = new ZipOutputStream(zipBytes)) {
+            for (int i = 0; i < 250; i++) {
+                String key = String.format("352401123456780001995500100000%04d1000000010", i);
+                zos.putNextEntry(new ZipEntry("nota-" + i + ".xml"));
+                zos.write(NFE_XML.replace("35240112345678000199550010000000011000000010", key).getBytes(StandardCharsets.UTF_8));
+                zos.closeEntry();
+            }
+        }
+
+        XmlDownloadResultDTO result = service.importManual(companyId.toString(), new java.io.ByteArrayInputStream(zipBytes.toByteArray()));
+
+        // 3 batches (100 + 100 + 50) summed into one answer
+        assertThat(result.totalXmlsCounted()).isEqualTo(250);
+        assertThat(result.totalPersistedNew()).isEqualTo(250);
+        assertThat(result.persistedAccessKeys()).hasSize(250).doesNotHaveDuplicates();
+        assertThat(result.xmls()).isEmpty();
     }
 }
