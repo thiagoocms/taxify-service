@@ -145,7 +145,10 @@ public class FiscalXmlIntegrationService {
             log.info("Skipping contar-xmls for company {} ({}) - already known pending from a previous check", company.getId(), side);
             List<byte[]> xmlContents = siegClient.baixarXmls(request, apiKey);
             XmlDownloadResultDTO result = persistAll(company, xmlContents);
-            updateSyncControl(company, side, filter.dataEmissaoInicio(), filter.dataEmissaoFim(), null);
+            // An empty page means the "still pending" from the last count no longer holds (notes
+            // gone from SIEG, or counted but never downloadable): drop it, so the next tick counts
+            // again instead of asking for this empty page forever.
+            updateSyncControl(company, side, filter.dataEmissaoInicio(), filter.dataEmissaoFim(), null, xmlContents.isEmpty());
             return result;
         }
 
@@ -197,6 +200,12 @@ public class FiscalXmlIntegrationService {
      */
     private void updateSyncControl(Company company, FiscalXmlSide side, LocalDate dataEmissaoInicio, LocalDate dataEmissaoFim,
                                    Integer totalSieg) {
+        updateSyncControl(company, side, dataEmissaoInicio, dataEmissaoFim, totalSieg, false);
+    }
+
+    /** @param clearPending sets SIEG's total to what is imported - nothing known pending anymore */
+    private void updateSyncControl(Company company, FiscalXmlSide side, LocalDate dataEmissaoInicio, LocalDate dataEmissaoFim,
+                                   Integer totalSieg, boolean clearPending) {
         FiscalXmlSyncControl control = syncControlRepository.findByCompany_Id(company.getId())
                 .orElseGet(() -> {
                     FiscalXmlSyncControl created = new FiscalXmlSyncControl();
@@ -212,6 +221,9 @@ public class FiscalXmlIntegrationService {
                 company.getId(), side.ownIssue(), from, to);
         control.setDataEmissaoInicio(dataEmissaoInicio);
         control.setDataEmissaoFim(dataEmissaoFim);
+        if (clearPending) {
+            totalSieg = imported;
+        }
         if (side == FiscalXmlSide.ISSUED) {
             if (totalSieg != null) {
                 control.setIssuedTotalSieg(totalSieg);

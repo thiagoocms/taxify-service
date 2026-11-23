@@ -148,6 +148,23 @@ class SiegClientTest {
                 .isInstanceOf(SiegIntegrationException.class);
     }
 
+    @Test
+    void notFoundWithNoXmlMessageIsAnEmptyPageNotAFailure() {
+        when(feignClient.baixarXmls(any(), any())).thenReturn(jsonResponse(404,
+                "{\"IsSuccess\":false,\"ErrorMessage\":\"Nenhum arquivo XML localizado.\",\"StatusCode\":404}"
+                        .getBytes(StandardCharsets.UTF_8)));
+
+        assertThat(client.baixarXmls(sampleRequest(), API_KEY)).isEmpty();
+    }
+
+    @Test
+    void otherNotFoundIsStillAFailure() {
+        when(feignClient.baixarXmls(any(), any())).thenReturn(jsonResponse(404,
+                "{\"ErrorMessage\":\"Rota inexistente\"}".getBytes(StandardCharsets.UTF_8)));
+
+        assertThatThrownBy(() -> client.baixarXmls(sampleRequest(), API_KEY)).isInstanceOf(SiegIntegrationException.class);
+    }
+
     private Response jsonResponse(int status, byte[] body) {
         Request request = Request.create(Request.HttpMethod.POST, "/api/v1/baixar-xmls",
                 Map.of(), null, new RequestTemplate());

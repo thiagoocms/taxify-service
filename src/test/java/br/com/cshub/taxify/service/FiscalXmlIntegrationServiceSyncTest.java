@@ -205,7 +205,9 @@ class FiscalXmlIntegrationServiceSyncTest {
     }
 
     @Test
-    void skippingTheCountCheckLeavesTheExistingTotalSiegUntouchedButRefreshesTotalImportado() {
+    void emptyPageWhenSkippingTheCountClearsThePendingSoTheNextTickCountsAgain() {
+        // SIEG said 200, 120 imported, but the page after the 120 is empty (its 404
+        // "Nenhum arquivo XML localizado"): without clearing, every tick would ask for it again.
         FiscalXmlSyncControl existing = new FiscalXmlSyncControl();
         existing.setId(UUID.randomUUID());
         existing.setTotalSieg(200);
@@ -218,7 +220,7 @@ class FiscalXmlIntegrationServiceSyncTest {
         ArgumentCaptor<FiscalXmlSyncControl> captor = ArgumentCaptor.forClass(FiscalXmlSyncControl.class);
         verify(syncControlRepository).save(captor.capture());
         FiscalXmlSyncControl control = captor.getValue();
-        assertThat(control.getTotalSieg()).isEqualTo(200);
+        assertThat(control.getTotalSieg()).isEqualTo(120);
         assertThat(control.getTotalImportado()).isEqualTo(120);
         assertThat(control.getUltimaVerificacaoEm()).isNotNull();
     }

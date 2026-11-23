@@ -112,6 +112,15 @@ public class SefazDistService {
         A1Certificate certificate;
         try {
             certificate = certificateService.open(stored.get());
+        } catch (java.nio.file.NoSuchFileException e) {
+            // e.g. uploaded by a backend with another storage (a local run on disk) - not a SEFAZ problem
+            log.warn("Certificate file of company {} not found in the storage: {}", company.getId(), e.getMessage());
+            run.error("Arquivo do certificado não encontrado no armazenamento - envie o certificado novamente.");
+            return;
+        } catch (IOException e) {
+            log.warn("Could not read the certificate file of company {}", company.getId(), e);
+            run.error("Não foi possível ler o arquivo do certificado: " + e.getMessage());
+            return;
         } catch (GeneralSecurityException | IllegalStateException e) {
             run.error("Não foi possível abrir o certificado: " + e.getMessage());
             return;

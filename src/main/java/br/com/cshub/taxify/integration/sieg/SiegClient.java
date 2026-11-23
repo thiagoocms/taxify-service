@@ -67,6 +67,11 @@ public class SiegClient {
 
         try (Response response = feignClient.baixarXmls(apiKey, request)) {
             byte[] body = readBody(response);
+            if (response.status() == 404 && errorSnippet(body).contains("Nenhum arquivo XML localizado")) {
+                // SIEG's way of saying "this page is empty" - not a failure
+                log.info("SIEG baixar-xmls: no XML for this request (skip {})", request.skip());
+                return List.of();
+            }
             if (response.status() >= 400) {
                 log.warn("SIEG baixar-xmls returned HTTP {}: {}", response.status(), errorSnippet(body));
                 throw new SiegIntegrationException(messageService.getMessage("error.sieg.integration.failed"));

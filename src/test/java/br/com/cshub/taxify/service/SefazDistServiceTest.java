@@ -154,6 +154,20 @@ class SefazDistServiceTest {
     }
 
     @Test
+    void missingCertificateFileAsksToUploadAgainInsteadOfBlamingSefaz() throws Exception {
+        CompanyCertificate stored = new CompanyCertificate();
+        stored.setValidUntil(LocalDateTime.now().plusYears(1));
+        when(certificateService.resolve(company)).thenReturn(Optional.of(stored));
+        when(certificateService.open(stored)).thenThrow(new java.nio.file.NoSuchFileException(".\\data\\fiscal-xml\\certificados\\a.pfx"));
+
+        SefazDistControl control = service.capture(company);
+
+        assertThat(control.getLastStatus()).isEqualTo(SefazDistControl.Status.ERRO);
+        assertThat(control.getLastDetail()).isEqualTo("Arquivo do certificado não encontrado no armazenamento - envie o certificado novamente.");
+        verifyNoInteractions(client);
+    }
+
+    @Test
     void expiredCertificateIsNotUsed() throws Exception {
         CompanyCertificate expired = new CompanyCertificate();
         expired.setValidUntil(LocalDateTime.of(2026, 1, 10, 0, 0));
