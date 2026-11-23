@@ -136,7 +136,22 @@ public class SefazDistService {
             }
             if ("656".equals(response.cStat())) {
                 control.setNextQueryAt(LocalDateTime.now().plusMinutes(WAIT_MINUTES));
-                run.note("SEFAZ pediu pausa de 1h (656).");
+                String motivo = response.xMotivo() == null ? "" : " " + response.xMotivo();
+                // "Deve ser utilizado o ultNSU nas solicitações subsequentes": SEFAZ already delivered up
+                // to that NSU for this CNPJ (another system read it) - continue from there after the pause.
+                if (isAhead(response.ultNsu(), control.getUltNsu())) {
+                    log.info("SEFAZ 656 for company {}: NSU moved from {} to {} as SEFAZ informed", company.getId(),
+                            control.getUltNsu(), response.ultNsu());
+                    run.note("SEFAZ pediu pausa de 1h (656" + motivo + "). NSU ajustado de " + control.getUltNsu()
+                            + " para " + response.ultNsu() + " conforme a SEFAZ - documentos anteriores a ele não vêm"
+                            + " por aqui (use o SIEG ou a importação manual).");
+                    control.setUltNsu(response.ultNsu());
+                    if (response.maxNsu() != null && !response.maxNsu().isBlank()) {
+                        control.setMaxNsu(response.maxNsu());
+                    }
+                } else {
+                    run.note("SEFAZ pediu pausa de 1h (656" + motivo + ").");
+                }
                 return;
             }
             if (!"137".equals(response.cStat()) && !"138".equals(response.cStat())) {
@@ -168,6 +183,15 @@ public class SefazDistService {
             run.newNotes += result.totalPersistedNew();
             run.events += result.totalEventsRecorded();
         }
+    }
+
+    /** Whether NSU {@code candidate} (15 digits) is after {@code current}. */
+    static boolean isAhead(String candidate, String current) {
+        if (candidate == null || !candidate.strip().matches("\\d{1,15}")) {
+            return false;
+        }
+        long now = current == null || !current.strip().matches("\\d{1,15}") ? 0 : Long.parseLong(current.strip());
+        return Long.parseLong(candidate.strip()) > now;
     }
 
     private void pause() {

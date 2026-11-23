@@ -119,6 +119,44 @@ class SefazDistServiceTest {
     }
 
     @Test
+    void consumoIndevidoWithTheNsuSefazExpectsContinuesFromItAfterThePause() throws Exception {
+        when(client.fetch(any(), anyString(), anyString(), anyString())).thenReturn(new SefazDistResponse("656",
+                "Rejeicao: Consumo Indevido (Deve ser utilizado o ultNSU nas solicitacoes subsequentes. Tente apos 1 hora)",
+                "000000000004321", "000000000004400", List.of()));
+
+        SefazDistControl control = service.capture(company);
+
+        assertThat(control.getUltNsu()).isEqualTo("000000000004321");
+        assertThat(control.getMaxNsu()).isEqualTo("000000000004400");
+        assertThat(control.getNextQueryAt()).isAfter(LocalDateTime.now().plusMinutes(60));
+        assertThat(control.getLastStatus()).isEqualTo(SefazDistControl.Status.SEM_MOVIMENTO);
+        assertThat(control.getLastDetail()).contains("NSU ajustado de 000000000000000 para 000000000004321")
+                .contains("Consumo Indevido");
+    }
+
+    @Test
+    void consumoIndevidoNeverMovesTheNsuBack() throws Exception {
+        SefazDistControl ahead = new SefazDistControl();
+        ahead.setUltNsu("000000000005000");
+        when(controlRepository.findByCompany_Id(company.getId())).thenReturn(Optional.of(ahead));
+        when(client.fetch(any(), anyString(), anyString(), anyString()))
+                .thenReturn(new SefazDistResponse("656", "Consumo Indevido", "000000000004321", null, List.of()));
+
+        SefazDistControl control = service.capture(company);
+
+        assertThat(control.getUltNsu()).isEqualTo("000000000005000");
+    }
+
+    @Test
+    void nsuComparison() {
+        assertThat(SefazDistService.isAhead("000000000000010", "000000000000009")).isTrue();
+        assertThat(SefazDistService.isAhead("000000000000009", "000000000000010")).isFalse();
+        assertThat(SefazDistService.isAhead(null, "0")).isFalse();
+        assertThat(SefazDistService.isAhead("", "0")).isFalse();
+        assertThat(SefazDistService.isAhead("12", null)).isTrue();
+    }
+
+    @Test
     void doesNotAskBeforeTheWaitingHourIsOver() {
         SefazDistControl waiting = new SefazDistControl();
         waiting.setNextQueryAt(LocalDateTime.now().plusMinutes(30));
