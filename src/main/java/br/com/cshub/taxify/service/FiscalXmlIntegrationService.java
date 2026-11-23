@@ -252,6 +252,16 @@ public class FiscalXmlIntegrationService {
     }
 
     /**
+     * Full notes (procNFe) and events (procEventoNFe) brought by the SEFAZ distribution
+     * ({@link SefazDistService}) - same persistence as SIEG and manual uploads, so a note
+     * that came from more than one source is stored once.
+     */
+    @Transactional
+    public XmlDownloadResultDTO importFromSefaz(UUID companyId, List<byte[]> xmlContents) {
+        return persistAll(findCompanyWithCnpj(companyId.toString()), xmlContents);
+    }
+
+    /**
      * Stores what a provider page (or a manual upload) brought: SEFAZ events go to
      * FiscalXmlEventService, notes are persisted once per company - the same note may
      * legitimately belong to two clients of the firm (one's exit, the other's entry).

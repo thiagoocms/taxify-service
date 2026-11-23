@@ -61,6 +61,13 @@ services:
       FISCAL_XML_PURGE_ENABLED: true
       FISCAL_XML_PURGE_CRON: 0 0 4 1 * *
       FISCAL_XML_PURGE_RETENTION_MONTHS: 3
+      # Captura direto da SEFAZ (NFeDistribuicaoDFe) com o certificado A1 de cada empresa, de hora em hora.
+      SEFAZ_DIST_ENABLED: ${SEFAZ_DIST_ENABLED:-true}
+      SEFAZ_DIST_CRON: ${SEFAZ_DIST_CRON:-0 15 * * * *}
+      # UFs com captura automática (vírgula; vazio = todas). Começa por PE.
+      SEFAZ_DIST_UFS: ${SEFAZ_DIST_UFS:-PE}
+      # Chave que cifra os certificados A1 e as senhas (openssl rand -base64 32). Guarde uma cópia fora da EC2.
+      CERT_ENCRYPTION_KEY: ${CERT_ENCRYPTION_KEY:-}
       ACESSORIAS_SYNC_ENABLED: true
       ACESSORIAS_SYNC_CRON: 0 0 3 * * *
       BILLING_SYNC_ENABLED: true

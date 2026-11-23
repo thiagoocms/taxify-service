@@ -101,6 +101,23 @@ fiscal-xml:
     cron: ${FISCAL_XML_PURGE_CRON}
     retention-months: ${FISCAL_XML_PURGE_RETENTION_MONTHS}
 
+# Captura de XML direto da SEFAZ (NFeDistribuicaoDFe) com o certificado A1 de cada empresa, junto com o SIEG.
+# Só roda para empresas com certificado enviado e o serviço de importação de XML no plano.
+sefaz:
+  dist:
+    enabled: ${SEFAZ_DIST_ENABLED:true}
+    cron: ${SEFAZ_DIST_CRON:0 15 * * * *}
+    production: ${SEFAZ_DIST_PRODUCTION:true}
+    max-batches-per-company: ${SEFAZ_DIST_MAX_BATCHES:40}
+    # UFs com captura automática (separadas por vírgula; vazio = todas). Começa por PE.
+    ufs: ${SEFAZ_DIST_UFS:PE}
+
+# Chave AES-256 (base64, 32 bytes - openssl rand -base64 32) que cifra os certificados A1 e
+# suas senhas. Sem ela o envio de certificado é recusado. Perdê-la = reenviar os certificados.
+taxify:
+  secrets:
+    key: ${CERT_ENCRYPTION_KEY:}
+
 feign:
   client:
     config:

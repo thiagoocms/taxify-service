@@ -75,6 +75,14 @@ public class FiscalXmlFileStorage {
     }
 
     /** @throws java.nio.file.NoSuchFileException when the file is gone (purged) */
+    /**
+     * An A1 certificate, already encrypted by the caller (SecretCipher) - same backend as the
+     * XMLs (the bucket in production), under "certificados/".
+     */
+    public String storeCertificate(UUID companyId, byte[] encryptedPfx) throws IOException {
+        return writer.write("certificados/" + companyId + "-" + System.currentTimeMillis() + ".pfx.enc", encryptedPfx);
+    }
+
     public byte[] read(String location) throws IOException {
         return backendOf(location).read(location);
     }

@@ -91,7 +91,7 @@ Base: `/taxify-service/api/v1`
 |---|---|
 | `/auth` | Login, retorna JWT |
 | `/accounting-firms`, `/users`, `/users/{userId}/companies` | Escritórios, usuários e vínculos com empresas |
-| `/companies` | Empresas clientes |
+| `/companies` | Empresas clientes; `/{id}/certificado` (A1) e `/{id}/sefaz/capturar` |
 | `/plans`, `/subscriptions` | Planos e assinaturas |
 | `/integrations/xmls` | Busca, detalhe, produtos, XML bruto, **sincronizar**, **importar**, **retificar**, **exportar** (lista/ZIP) |
 | `/fiscal-xml-sync-control` | Status de importação por empresa |
@@ -99,6 +99,24 @@ Base: `/taxify-service/api/v1`
 | `/invoice-audit-log` | Trilha de auditoria das notas |
 
 Swagger: `/taxify-service/swagger-ui.html`
+
+### 🔐 Captura pela SEFAZ (certificado A1)
+Junto com o SIEG, as notas são buscadas direto no Ambiente Nacional (**NFeDistribuicaoDFe**) com o
+certificado A1 (e-CNPJ) de cada empresa — sem captcha nem navegador:
+
+- O certificado é enviado na tela da empresa. O backend confere a senha, a validade e a raiz do
+  CNPJ; o `.pfx` vai **cifrado** (AES-256-GCM) para o S3 em `certificados/` e a senha, cifrada, para o banco.
+  A chave fica só na variável `CERT_ENCRYPTION_KEY` (`openssl rand -base64 32`) — guarde uma cópia:
+  sem ela os certificados precisam ser reenviados.
+- Filiais usam o certificado da matriz (mesma raiz de CNPJ).
+- Começa por **Pernambuco**: só empresas das UFs em `SEFAZ_DIST_UFS` (padrão `PE`; vazio = todas)
+  entram na captura automática. O botão "Capturar agora" da tela vale para qualquer UF.
+- De hora em hora (`SEFAZ_DIST_CRON`), para empresas com certificado e o serviço de importação de
+  XML no plano: lê a partir do último NSU, grava as notas completas e os eventos pelo mesmo caminho
+  do SIEG (sem duplicar) e respeita a pausa de 1h da SEFAZ (cStat 656). A SEFAZ guarda os
+  documentos por 90 dias.
+- Entradas que ainda não tiveram "Ciência da Operação" chegam só como resumo (`resNFe`): são
+  contadas na tela, mas não importadas.
 
 ---
 

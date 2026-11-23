@@ -1,5 +1,15 @@
 package br.com.cshub.taxify.rest;
 
+import br.com.cshub.taxify.dto.company.CompanyCertificateDTO;
+import br.com.cshub.taxify.service.CompanyCertificateService;
+import br.com.cshub.taxify.service.SefazDistService;
+import br.com.cshub.taxify.validation.CompanyValidation;
+import org.springframework.http.MediaType;
+import org.springframework.web.bind.annotation.RequestParam;
+import org.springframework.web.multipart.MultipartFile;
+
+import java.io.IOException;
+
 import java.util.List;
 import org.springframework.web.bind.annotation.RequestBody;
 import org.springframework.web.bind.annotation.PostMapping;
@@ -33,13 +43,46 @@ public class CompanyResource extends AbstractCrudResource<UUID, CompanyDTO, Comp
 
     private final CompanyTaxRegimeService taxRegimeService;
     private final CompanyRegistrationService registrationService;
+    private final CompanyCertificateService certificateService;
+    private final SefazDistService sefazDistService;
+    private final CompanyValidation companyValidation;
 
     @Autowired
     protected CompanyResource(CompanyService service, CompanyTaxRegimeService taxRegimeService,
-                              CompanyRegistrationService registrationService) {
+                              CompanyRegistrationService registrationService, CompanyCertificateService certificateService,
+                              SefazDistService sefazDistService, CompanyValidation companyValidation) {
         super(service);
         this.taxRegimeService = taxRegimeService;
         this.registrationService = registrationService;
+        this.certificateService = certificateService;
+        this.sefazDistService = sefazDistService;
+        this.companyValidation = companyValidation;
+    }
+
+    /** The A1 certificate used for the SEFAZ capture (own or the CNPJ root's) and how the last capture went. */
+    @GetMapping("/{id}/certificado")
+    public ResponseEntity<CompanyCertificateDTO> certificate(@PathVariable UUID id) {
+        return ResponseEntity.ok(certificateService.status(id));
+    }
+
+    /** Uploads (or replaces) the company's A1: validated with the password, then stored encrypted. */
+    @PostMapping(value = "/{id}/certificado", consumes = MediaType.MULTIPART_FORM_DATA_VALUE)
+    public ResponseEntity<CompanyCertificateDTO> uploadCertificate(@PathVariable UUID id,
+                                                                   @RequestParam("file") MultipartFile file,
+                                                                   @RequestParam("password") String password) throws IOException {
+        return ResponseEntity.ok(certificateService.upload(id, file.getBytes(), password));
+    }
+
+    @DeleteMapping("/{id}/certificado")
+    public ResponseEntity<CompanyCertificateDTO> deleteCertificate(@PathVariable UUID id) {
+        return ResponseEntity.ok(certificateService.delete(id));
+    }
+
+    /** Runs the SEFAZ capture now (still respecting SEFAZ's one-hour wait). */
+    @PostMapping("/{id}/sefaz/capturar")
+    public ResponseEntity<CompanyCertificateDTO> captureFromSefaz(@PathVariable UUID id) {
+        sefazDistService.capture(companyValidation.checkExist(id));
+        return ResponseEntity.ok(certificateService.status(id));
     }
 
     /** Regime periods of the company, oldest first. */
