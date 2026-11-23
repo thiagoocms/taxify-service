@@ -72,6 +72,8 @@ class SiegXmlIntegrationServiceImportTest {
     private FirmIntegrationService firmIntegrationService;
     @Mock
     private br.com.cshub.taxify.repository.SefazNoteSummaryRepository summaryRepository;
+    @Mock
+    private ServiceInvoiceService serviceInvoiceService;
 
     private FiscalXmlIntegrationService service;
     private UUID companyId;
@@ -95,7 +97,7 @@ class SiegXmlIntegrationServiceImportTest {
         service = new FiscalXmlIntegrationService(siegClient, new FiscalXmlMetadataParser(),
                 new FiscalXmlFileStorage(syncProperties, messageService), new FiscalXmlPackageExtractor(),
                 xmlDocumentRepository, syncControlRepository, companyValidation, messageService, properties, firmIntegrationService,
-                new FiscalEventParser(), eventService, summaryRepository);
+                new FiscalEventParser(), eventService, summaryRepository, serviceInvoiceService);
         lenient().when(xmlDocumentRepository.save(any())).thenAnswer(invocation -> invocation.getArgument(0));
     }
 

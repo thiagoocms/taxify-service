@@ -70,6 +70,10 @@ public class FiscalXmlSyncControl extends AbstractAuditingEntity {
     @Column(name = "issued_events_checked_on")
     private LocalDate issuedEventsCheckedOn;
 
+    /** Day the company's NFS-e were last fetched from SIEG - once a day. */
+    @Column(name = "service_invoices_checked_on")
+    private LocalDate serviceInvoicesCheckedOn;
+
     public UUID getId() {
         return id;
     }
@@ -164,5 +168,13 @@ public class FiscalXmlSyncControl extends AbstractAuditingEntity {
 
     public void setIssuedEventsCheckedOn(LocalDate issuedEventsCheckedOn) {
         this.issuedEventsCheckedOn = issuedEventsCheckedOn;
+    }
+
+    public LocalDate getServiceInvoicesCheckedOn() {
+        return serviceInvoicesCheckedOn;
+    }
+
+    public void setServiceInvoicesCheckedOn(LocalDate serviceInvoicesCheckedOn) {
+        this.serviceInvoicesCheckedOn = serviceInvoicesCheckedOn;
     }
 }

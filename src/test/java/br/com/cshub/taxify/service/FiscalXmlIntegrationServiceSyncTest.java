@@ -88,7 +88,8 @@ class FiscalXmlIntegrationServiceSyncTest {
                 new FiscalXmlFileStorage(syncProperties, messageService), new FiscalXmlPackageExtractor(),
                 xmlDocumentRepository, syncControlRepository, companyValidation, messageService, properties, firmIntegrationService,
                 new FiscalEventParser(), eventService,
-                org.mockito.Mockito.mock(br.com.cshub.taxify.repository.SefazNoteSummaryRepository.class));
+                org.mockito.Mockito.mock(br.com.cshub.taxify.repository.SefazNoteSummaryRepository.class),
+                org.mockito.Mockito.mock(ServiceInvoiceService.class));
     }
 
     @Test

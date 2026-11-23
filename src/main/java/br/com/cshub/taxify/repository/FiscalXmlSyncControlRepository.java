@@ -43,4 +43,9 @@ public interface FiscalXmlSyncControlRepository extends AbstractJpaRepository<Fi
     @Transactional
     @Query("update FiscalXmlSyncControl c set c.issuedEventsCheckedOn = :day where c.id = :id")
     void markIssuedEventsChecked(@Param("id") UUID id, @Param("day") LocalDate day);
+
+    @Modifying
+    @Transactional
+    @Query("update FiscalXmlSyncControl c set c.serviceInvoicesCheckedOn = :day where c.id = :id")
+    void markServiceInvoicesChecked(@Param("id") UUID id, @Param("day") LocalDate day);
 }

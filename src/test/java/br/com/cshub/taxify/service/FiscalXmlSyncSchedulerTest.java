@@ -213,6 +213,7 @@ class FiscalXmlSyncSchedulerTest {
         caughtUp.setIssuedCheckedAt(LocalDate.of(2026, 8, 15).atTime(9, 0));
         caughtUp.setReceivedEventsCheckedOn(LocalDate.of(2026, 8, 15));
         caughtUp.setIssuedEventsCheckedOn(LocalDate.of(2026, 8, 15));
+        caughtUp.setServiceInvoicesCheckedOn(LocalDate.of(2026, 8, 15));
         when(companyRepository.findAll()).thenReturn(List.of(companyA));
         when(syncControlRepository.findAllCompanyIds()).thenReturn(List.of(companyA.getId()));
         when(syncControlRepository.findAllWithCompany()).thenReturn(List.of(caughtUp));
@@ -220,6 +221,27 @@ class FiscalXmlSyncSchedulerTest {
         scheduler.syncAllCompanies();
 
         verifyNoInteractions(provider);
+    }
+
+    @Test
+    void serviceInvoicesOnceADayThreeMonthsBackTheFirstTime() {
+        LocalDate today = LocalDate.of(2026, 8, 15);
+        FiscalXmlSyncControl never = controlFor(companyA, 0);
+
+        scheduler.syncServiceInvoicesOncePerDay(provider, never, today);
+
+        verify(provider).syncServiceInvoices(companyA.getId(), LocalDate.of(2026, 5, 1), today);
+        verify(syncControlRepository).markServiceInvoicesChecked(never.getId(), today);
+
+        FiscalXmlSyncControl checkedYesterday = controlFor(companyA, 0);
+        checkedYesterday.setServiceInvoicesCheckedOn(today.minusDays(1));
+        scheduler.syncServiceInvoicesOncePerDay(provider, checkedYesterday, today);
+        verify(provider).syncServiceInvoices(companyA.getId(), today.minusDays(35), today);
+
+        FiscalXmlSyncControl checkedToday = controlFor(companyA, 0);
+        checkedToday.setServiceInvoicesCheckedOn(today);
+        scheduler.syncServiceInvoicesOncePerDay(provider, checkedToday, today);
+        verify(provider, org.mockito.Mockito.times(2)).syncServiceInvoices(any(), any(), any());
     }
 
     @Test

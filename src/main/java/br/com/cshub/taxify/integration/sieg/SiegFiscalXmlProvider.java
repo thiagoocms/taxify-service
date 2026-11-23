@@ -22,8 +22,11 @@ public class SiegFiscalXmlProvider implements FiscalXmlProvider {
 
     private final FiscalXmlIntegrationService integrationService;
     private final SiegProperties properties;
+    private final br.com.cshub.taxify.service.ServiceInvoiceService serviceInvoiceService;
 
-    public SiegFiscalXmlProvider(FiscalXmlIntegrationService integrationService, SiegProperties properties) {
+    public SiegFiscalXmlProvider(FiscalXmlIntegrationService integrationService, SiegProperties properties,
+                                 br.com.cshub.taxify.service.ServiceInvoiceService serviceInvoiceService) {
+        this.serviceInvoiceService = serviceInvoiceService;
         this.integrationService = integrationService;
         this.properties = properties;
     }
@@ -48,5 +51,10 @@ public class SiegFiscalXmlProvider implements FiscalXmlProvider {
     @Override
     public int refreshEvents(UUID companyId, FiscalXmlSide side, LocalDate from, LocalDate to) {
         return integrationService.refreshRecentEvents(companyId, side, from, to);
+    }
+
+    @Override
+    public int syncServiceInvoices(UUID companyId, LocalDate from, LocalDate to) {
+        return serviceInvoiceService.syncFromSieg(companyId, from, to).persistedNew();
     }
 }

@@ -24,6 +24,7 @@ import br.com.cshub.taxify.repository.FiscalXmlDocumentRepository;
 import br.com.cshub.taxify.repository.FiscalXmlSyncControlRepository;
 import br.com.cshub.taxify.repository.SefazNoteSummaryRepository;
 import br.com.cshub.taxify.enumerated.FiscalXmlSource;
+import br.com.cshub.taxify.integration.nfse.NfseXml;
 import br.com.cshub.taxify.validation.CompanyValidation;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
@@ -65,13 +66,16 @@ public class FiscalXmlIntegrationService {
     private final FiscalEventParser eventParser;
     private final FiscalXmlEventService eventService;
     private final SefazNoteSummaryRepository summaryRepository;
+    private final ServiceInvoiceService serviceInvoiceService;
 
     public FiscalXmlIntegrationService(SiegClient siegClient, FiscalXmlMetadataParser metadataParser,
                                        FiscalXmlFileStorage fileStorage, FiscalXmlPackageExtractor packageExtractor,
                                        FiscalXmlDocumentRepository xmlDocumentRepository, FiscalXmlSyncControlRepository syncControlRepository,
                                        CompanyValidation companyValidation, MessageService messageService, SiegProperties properties,
                                        FirmIntegrationService firmIntegrationService, FiscalEventParser eventParser,
-                                       FiscalXmlEventService eventService, SefazNoteSummaryRepository summaryRepository) {
+                                       FiscalXmlEventService eventService, SefazNoteSummaryRepository summaryRepository,
+                                       ServiceInvoiceService serviceInvoiceService) {
+        this.serviceInvoiceService = serviceInvoiceService;
         this.summaryRepository = summaryRepository;
         this.firmIntegrationService = firmIntegrationService;
         this.eventParser = eventParser;
@@ -303,6 +307,16 @@ public class FiscalXmlIntegrationService {
                 continue;
             }
             notes++;
+
+            // a service invoice (NFS-e) goes to its own table - it has no NF-e fields to fill
+            if (NfseXml.looksLikeNfse(xmlBytes)) {
+                switch (serviceInvoiceService.store(company, xmlBytes, source.name())) {
+                    case NEW -> persistedNew++;
+                    case DUPLICATE -> duplicated++;
+                    case INVALID -> parseErrors++;
+                }
+                continue;
+            }
 
             FiscalXmlMetadata metadata = metadataParser.parse(xmlBytes);
             String xmlContent = new String(xmlBytes, StandardCharsets.UTF_8);

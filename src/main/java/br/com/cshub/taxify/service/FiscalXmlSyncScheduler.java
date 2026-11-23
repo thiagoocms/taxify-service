@@ -74,6 +74,9 @@ public class FiscalXmlSyncScheduler {
     private static final Logger log = LoggerFactory.getLogger(FiscalXmlSyncScheduler.class);
     /** Today plus the 2 previous days: covers the 24h cancellation window with margin for late uploads. */
     static final int EVENT_LOOKBACK_DAYS = 2;
+    /** NFS-e can be issued days after the service and some cities send them late - a month and a bit. */
+    static final int SERVICE_INVOICE_LOOKBACK_DAYS = 35;
+    static final int SERVICE_INVOICE_FIRST_MONTHS = 3;
 
     private final CompanyRepository companyRepository;
     private final FiscalXmlSyncControlRepository syncControlRepository;
@@ -192,11 +195,37 @@ public class FiscalXmlSyncScheduler {
         return batch;
     }
 
-    /** Received notes first (what most fiscal work starts from), then the company's own. */
+    /** Received notes first (what most fiscal work starts from), then the company's own; NFS-e once a day. */
     private void syncCompany(FiscalXmlProvider provider, FiscalXmlSyncControl control, LocalDate today) {
         for (FiscalXmlSide side : FiscalXmlSide.values()) {
             syncSide(provider, control, side, today);
             refreshEventsOncePerDay(provider, control, side, today);
+        }
+        syncServiceInvoicesOncePerDay(provider, control, today);
+    }
+
+    /**
+     * Service invoices (NFS-e), provided and taken: once a day per company, the last
+     * {@link #SERVICE_INVOICE_LOOKBACK_DAYS} days; the first time, the last
+     * {@link #SERVICE_INVOICE_FIRST_MONTHS} months. Known notes are skipped, so the overlap only costs requests.
+     */
+    void syncServiceInvoicesOncePerDay(FiscalXmlProvider provider, FiscalXmlSyncControl control, LocalDate today) {
+        if (today.equals(control.getServiceInvoicesCheckedOn())) {
+            return;
+        }
+        UUID companyId = control.getCompany().getId();
+        LocalDate from = control.getServiceInvoicesCheckedOn() == null
+                ? today.minusMonths(SERVICE_INVOICE_FIRST_MONTHS).withDayOfMonth(1)
+                : today.minusDays(SERVICE_INVOICE_LOOKBACK_DAYS);
+        try {
+            int created = provider.syncServiceInvoices(companyId, from, today);
+            syncControlRepository.markServiceInvoicesChecked(control.getId(), today);
+            if (created > 0) {
+                log.info("Service invoices for company {}: {} new", companyId, created);
+            }
+        } catch (Exception e) {
+            // not marked - the next tick tries again
+            log.warn("Service invoice sync failed for company {}", companyId, e);
         }
     }
 

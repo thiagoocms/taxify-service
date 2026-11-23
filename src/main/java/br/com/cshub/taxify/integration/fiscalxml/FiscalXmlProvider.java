@@ -23,4 +23,14 @@ public interface FiscalXmlProvider {
     default int refreshEvents(UUID companyId, FiscalXmlSide side, LocalDate from, LocalDate to) {
         return 0;
     }
+
+    /**
+     * The company's service invoices (NFS-e) issued in [from, to], provided and taken. Providers
+     * without NFS-e do nothing.
+     *
+     * @return new notes stored
+     */
+    default int syncServiceInvoices(UUID companyId, LocalDate from, LocalDate to) {
+        return 0;
+    }
 }
