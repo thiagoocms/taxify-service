@@ -25,7 +25,7 @@ import static org.mockito.Mockito.when;
 class FronteiraCargaLiquidaDefaultTest {
 
     private final FronteiraRuleRepository repository = mock(FronteiraRuleRepository.class);
-    private final FronteiraRuleService service = new FronteiraRuleService(repository, null, null, null);
+    private final FronteiraRuleService service = new FronteiraRuleService(repository, null, null, null, null);
     private final Company company = new Company(UUID.randomUUID());
 
     @Test

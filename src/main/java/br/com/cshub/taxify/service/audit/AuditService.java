@@ -1,6 +1,7 @@
 package br.com.cshub.taxify.service.audit;
 
 import br.com.cshub.taxify.common.MessageService;
+import br.com.cshub.taxify.common.PlatformAdminService;
 import br.com.cshub.taxify.domain.audit.AuditRule;
 import br.com.cshub.taxify.domain.audit.AuditRun;
 import br.com.cshub.taxify.domain.company.Company;
@@ -64,10 +65,13 @@ public class AuditService {
     private final CompanyValidation companyValidation;
     private final MessageService messageService;
     private final AuditorAware<String> auditorAware;
+    private final PlatformAdminService platformAdminService;
 
     public AuditService(AuditEngine engine, AuditRuleRepository ruleRepository, AuditRunRepository runRepository,
                         PendencyRepository pendencyRepository, PendencyService pendencyService,
-                        CompanyValidation companyValidation, MessageService messageService, AuditorAware<String> auditorAware) {
+                        CompanyValidation companyValidation, MessageService messageService, AuditorAware<String> auditorAware,
+                        PlatformAdminService platformAdminService) {
+        this.platformAdminService = platformAdminService;
         this.engine = engine;
         this.ruleRepository = ruleRepository;
         this.runRepository = runRepository;
@@ -89,6 +93,7 @@ public class AuditService {
     /** The fiscal team checked the rule (or takes the check back): from now on its findings are indications, not "a conferir". */
     @Transactional
     public AuditDTOs.Rule review(String code, boolean reviewed) {
+        platformAdminService.assertCanManageGlobalRules(); // as regras da auditoria valem para todos os escritórios
         AuditRule rule = rule(code);
         rule.setReviewedBy(reviewed ? who() : null);
         rule.setReviewedAt(reviewed ? LocalDateTime.now() : null);
@@ -97,6 +102,7 @@ public class AuditService {
 
     @Transactional
     public AuditDTOs.Rule enable(String code, boolean enabled) {
+        platformAdminService.assertCanManageGlobalRules();
         AuditRule rule = rule(code);
         rule.setEnabled(enabled);
         return toDto(ruleRepository.save(rule));

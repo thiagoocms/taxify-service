@@ -11,7 +11,7 @@ import static org.assertj.core.api.Assertions.assertThat;
 /** "Testar fórmula": the result with the note item's own values, or with sample ones. */
 class FronteiraRuleServiceTest {
 
-    private final FronteiraRuleService service = new FronteiraRuleService(null, null, null, null);
+    private final FronteiraRuleService service = new FronteiraRuleService(null, null, null, null, null);
 
     @Test
     void withTheNoteItemsValues() {

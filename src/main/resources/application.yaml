@@ -142,6 +142,10 @@ pendencies:
 taxify:
   secrets:
     key: ${CERT_ENCRYPTION_KEY:}
+  platform:
+    # Logins (vírgula) da CS Hub que alteram as regras gerais (tabela de ICMS do Fronteira, regras da auditoria),
+    # que valem para todos os escritórios. Precisa ter o perfil ADMIN. Vazio = ninguém altera.
+    admin-logins: ${PLATFORM_ADMIN_LOGINS:}
 
 # Timeouts of the Feign clients. OpenFeign 4+ reads only "spring.cloud.openfeign.client.config" - under the old
 # "feign.client.config" prefix these were ignored and every client ran on the defaults (10s connect, 60s read),

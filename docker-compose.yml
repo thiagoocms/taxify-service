@@ -92,6 +92,9 @@ services:
       AUDIT_CRON: ${AUDIT_CRON:-0 30 5 * * *}
       # Opcional: chave que cifra os certificados A1 e as senhas (openssl rand -base64 32). Vazia = sem essa criptografia.
       CERT_ENCRYPTION_KEY: ${CERT_ENCRYPTION_KEY:-}
+      # Logins da CS Hub (vírgula, perfil ADMIN) que alteram as regras gerais - tabela de ICMS do Fronteira e regras
+      # da auditoria, que valem para todos os escritórios. Os demais escritórios só leem essas regras.
+      PLATFORM_ADMIN_LOGINS: ${PLATFORM_ADMIN_LOGINS:-admin}
       ACESSORIAS_SYNC_ENABLED: true
       ACESSORIAS_SYNC_CRON: 0 0 3 * * *
       BILLING_SYNC_ENABLED: true

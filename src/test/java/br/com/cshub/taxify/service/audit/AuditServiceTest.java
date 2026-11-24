@@ -57,13 +57,15 @@ class AuditServiceTest {
     private MessageService messageService;
 
     private AuditService service;
+    @Mock
+    private br.com.cshub.taxify.common.PlatformAdminService platformAdminService;
     private Company company;
     private final List<AuditRule> stored = new ArrayList<>();
 
     @BeforeEach
     void setUp() {
         service = new AuditService(engine, ruleRepository, runRepository, pendencyRepository, pendencyService, companyValidation,
-                messageService, () -> Optional.of("fiscal"));
+                messageService, () -> Optional.of("fiscal"), platformAdminService);
         company = new Company(UUID.randomUUID());
         when(ruleRepository.findAll()).thenReturn(stored);
         when(ruleRepository.save(any())).thenAnswer(invocation -> {
@@ -135,5 +137,17 @@ class AuditServiceTest {
         assertThat(rule.reviewed()).isTrue();
         assertThat(rule.reviewedBy()).isEqualTo("fiscal");
         assertThat(service.review("CRT_CST", false).reviewed()).isFalse();
+    }
+
+    @Test
+    void onlyThePlatformAdminChangesTheRulesEveryFirmUses() {
+        org.mockito.Mockito.doThrow(new org.springframework.security.access.AccessDeniedException("só a CS Hub"))
+                .when(platformAdminService).assertCanManageGlobalRules();
+
+        org.assertj.core.api.Assertions.assertThatThrownBy(() -> service.review("crt_cst", true))
+                .isInstanceOf(org.springframework.security.access.AccessDeniedException.class);
+        org.assertj.core.api.Assertions.assertThatThrownBy(() -> service.enable("crt_cst", false))
+                .isInstanceOf(org.springframework.security.access.AccessDeniedException.class);
+        org.mockito.Mockito.verify(ruleRepository, org.mockito.Mockito.never()).save(any());
     }
 }

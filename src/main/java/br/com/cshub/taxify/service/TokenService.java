@@ -1,5 +1,6 @@
 package br.com.cshub.taxify.service;
 
+import br.com.cshub.taxify.common.PlatformAdminService;
 import br.com.cshub.taxify.domain.auth.Auth;
 import br.com.cshub.taxify.exception.UnauthorizedException;
 import org.springframework.security.core.GrantedAuthority;
@@ -17,8 +18,10 @@ public class TokenService {
 
     private final JwtEncoder encoder;
     private final JwtDecoder decoder;
+    private final PlatformAdminService platformAdminService;
 
-    public TokenService(JwtEncoder encoder, JwtDecoder decoder) {
+    public TokenService(JwtEncoder encoder, JwtDecoder decoder, PlatformAdminService platformAdminService) {
+        this.platformAdminService = platformAdminService;
         this.encoder = encoder;
         this.decoder = decoder;
     }
@@ -42,7 +45,9 @@ public class TokenService {
                 // what the front-end uses to show only the modules the user can access
                 .claim("accessProfiles", auth.getAccessProfiles().stream().map(Enum::name).sorted().toList())
                 .claim("permissions", auth.getPermissions().stream().map(Enum::name).sorted().toList())
-                .claim("tenantId", auth.getAccountingFirm().getId());
+                .claim("tenantId", auth.getAccountingFirm().getId())
+                // CS Hub: altera as regras que valem para todos os escritórios (ver PlatformAdminService)
+                .claim("platformAdmin", platformAdminService.isPlatformAdmin(auth.getUsername(), auth.getProfile()));
 
 
         return encoder.encode(

@@ -1,6 +1,7 @@
 package br.com.cshub.taxify.service.fronteira;
 
 import br.com.cshub.taxify.common.MessageService;
+import br.com.cshub.taxify.common.PlatformAdminService;
 import br.com.cshub.taxify.domain.company.Company;
 import br.com.cshub.taxify.domain.fronteira.FronteiraRule;
 import br.com.cshub.taxify.dto.fronteira.FronteiraRuleDTOs;
@@ -36,9 +37,12 @@ public class FronteiraRuleService {
     private final CompanyValidation companyValidation;
     private final MessageService messageService;
     private final AuditorAware<String> auditorAware;
+    private final PlatformAdminService platformAdminService;
 
     public FronteiraRuleService(FronteiraRuleRepository repository, CompanyValidation companyValidation,
-                                MessageService messageService, AuditorAware<String> auditorAware) {
+                                MessageService messageService, AuditorAware<String> auditorAware,
+                                PlatformAdminService platformAdminService) {
+        this.platformAdminService = platformAdminService;
         this.repository = repository;
         this.companyValidation = companyValidation;
         this.messageService = messageService;
@@ -64,6 +68,9 @@ public class FronteiraRuleService {
     /** {@code global}: the endpoint for rules of every company (another permission) - the input's companyId must match it. */
     @Transactional
     public FronteiraRuleDTOs.Rule create(FronteiraRuleDTOs.RuleInput input, boolean global) {
+        if (global) {
+            platformAdminService.assertCanManageGlobalRules();
+        }
         FronteiraRule rule = new FronteiraRule();
         rule.setDeleted(false);
         rule.setEnabled(true);
@@ -194,6 +201,10 @@ public class FronteiraRuleService {
         }
         if (global != null && global != (rule.getCompany() == null)) {
             throw invalid(global ? "Esta regra é de uma empresa." : "Esta regra é geral - altere pela tabela geral.");
+        }
+        if (rule.getCompany() == null) {
+            // a regra geral vale para todos os escritórios: alterar, excluir, conferir ou ligar é só da CS Hub
+            platformAdminService.assertCanManageGlobalRules();
         }
         return rule;
     }
