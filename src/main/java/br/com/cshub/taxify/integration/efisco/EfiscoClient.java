@@ -1,6 +1,8 @@
 package br.com.cshub.taxify.integration.efisco;
 
 import br.com.cshub.taxify.integration.sefaz.A1Certificate;
+import org.slf4j.Logger;
+import org.slf4j.LoggerFactory;
 
 import java.io.IOException;
 import java.net.CookieManager;
@@ -47,7 +49,11 @@ public final class EfiscoClient {
     static final String MEMORY = HOST + "/sfi_trb_cmt/PRConsultarNotaFiscalMemoria";
     static final String MEMORY_MENU = "190701";
 
+    private static final Logger log = LoggerFactory.getLogger(EfiscoClient.class);
     private static final Charset PAGE_CHARSET = Charset.forName("ISO-8859-1");
+    private static final Pattern CONTENT_CHARSET = Pattern.compile("charset\\s*=\\s*[\"']?([\\w-]+)", Pattern.CASE_INSENSITIVE);
+    /** Each diagnostic log line carries at most this much HTML (CloudWatch events have a size limit). */
+    private static final int LOG_CHUNK = 8000;
     private static final Pattern FORM = Pattern.compile("<form[^>]*name=\"?frm_principal\"?[^>]*>(.*?)</form>",
             Pattern.CASE_INSENSITIVE | Pattern.DOTALL);
     private static final Pattern INPUT = Pattern.compile("<input\\b[^>]*>", Pattern.CASE_INSENSITIVE);
@@ -120,7 +126,7 @@ public final class EfiscoClient {
         String type = pdf.headers().firstValue("Content-Type").orElse("");
         byte[] body = pdf.body();
         if (!type.toLowerCase(Locale.ROOT).contains("pdf") && !(body.length > 4 && body[0] == '%' && body[1] == 'P')) {
-            Page page = new Page(new String(body, PAGE_CHARSET));
+            Page page = new Page(decode(pdf));
             checkChallenge(pdf.statusCode(), page.html());
             throw new EfiscoException(EfiscoException.Reason.PAGINA_INESPERADA,
                     "O e-Fisco não devolveu o PDF do extrato" + page.messageSuffix());
@@ -149,10 +155,25 @@ public final class EfiscoClient {
         fields.put("evento", "processarFiltroConsulta");
         Page result = post(MEMORY, fields);
         form = result.form().isEmpty() ? form : result.form();
-        if (!result.html().contains("Cálculo de Nota Fiscal") && !result.html().contains("C&aacute;lculo de Nota Fiscal")) {
+        // the detail itself: items "Cálculo Mercadoria: ..." with the variables (accent written or as an entity)
+        String html = result.html();
+        boolean detail = html.contains("lculo Mercadoria") || html.contains("ICMSAntecipadoItem[");
+        if (!detail) {
+            logDiagnostic("registro " + registro + " - tela do filtro (campos " + fields.keySet() + ")", screen.html());
+            logDiagnostic("registro " + registro + " - resposta do filtro", html);
             return new MemoryPage(null, result.message() == null ? "O e-Fisco não tem memória de cálculo para esse registro." : result.message());
         }
-        return new MemoryPage(result.html(), null);
+        return new MemoryPage(html, null);
+    }
+
+    /** The page as it came, in a few log lines, to map what e-Fisco answered when it wasn't the expected one. */
+    private static void logDiagnostic(String what, String html) {
+        String flat = html.replaceAll("\\s+", " ");
+        int parts = Math.max(1, (flat.length() + LOG_CHUNK - 1) / LOG_CHUNK);
+        for (int i = 0; i < parts; i++) {
+            log.warn("e-Fisco diagnóstico [{}] parte {}/{}: {}", what, i + 1, parts,
+                    flat.substring(i * LOG_CHUNK, Math.min(flat.length(), (i + 1) * LOG_CHUNK)));
+        }
     }
 
     /** The memória page, or why there is none. */
@@ -172,7 +193,7 @@ public final class EfiscoClient {
 
     private Page post(String url, Map<String, String> fields) throws IOException, InterruptedException {
         HttpResponse<byte[]> response = postRaw(url, fields);
-        Page page = new Page(new String(response.body(), PAGE_CHARSET));
+        Page page = new Page(decode(response));
         checkChallenge(response.statusCode(), page.html());
         if (response.statusCode() >= 400) {
             throw new EfiscoException(EfiscoException.Reason.ERRO_HTTP, "O e-Fisco respondeu HTTP " + response.statusCode() + ".");
@@ -192,12 +213,32 @@ public final class EfiscoClient {
 
     private Page send(HttpRequest.Builder request) throws IOException, InterruptedException {
         HttpResponse<byte[]> response = http.send(request.timeout(Duration.ofSeconds(60)).build(), HttpResponse.BodyHandlers.ofByteArray());
-        Page page = new Page(new String(response.body(), PAGE_CHARSET));
+        Page page = new Page(decode(response));
         checkChallenge(response.statusCode(), page.html());
         if (response.statusCode() >= 400) {
             throw new EfiscoException(EfiscoException.Reason.ERRO_HTTP, "O e-Fisco respondeu HTTP " + response.statusCode() + ".");
         }
         return page;
+    }
+
+    /** The page text in the charset e-Fisco declares (header, then the page's meta), ISO-8859-1 otherwise. */
+    static String decode(HttpResponse<byte[]> response) {
+        byte[] body = response.body();
+        String declared = response.headers().firstValue("Content-Type").map(EfiscoClient::charsetOf).orElse(null);
+        if (declared == null) {
+            String head = new String(body, 0, Math.min(body.length, 4096), StandardCharsets.US_ASCII);
+            declared = charsetOf(head.replaceAll("(?is).*?(<meta[^>]*charset[^>]*>).*", "$1"));
+        }
+        try {
+            return new String(body, declared == null ? PAGE_CHARSET : Charset.forName(declared));
+        } catch (IllegalArgumentException e) {
+            return new String(body, PAGE_CHARSET);
+        }
+    }
+
+    private static String charsetOf(String text) {
+        Matcher matcher = CONTENT_CHARSET.matcher(text);
+        return matcher.find() ? matcher.group(1) : null;
     }
 
     /**
