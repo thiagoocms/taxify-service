@@ -6,7 +6,10 @@ public enum FronteiraRuleKind {
     ALIQUOTA_INTERNA,
     /** Product under ST with encerramento (Anexo 37): NCM (prefix) and/or CEST with its original MVA. */
     ST_MVA,
-    /** Simples Nacional company, regular: the art. 363-A percentage over the starting value. */
+    /**
+     * Carga líquida over the starting value, no credit: the company's credenciamento (description = the
+     * credenciamento as the extract names it, any regime), or the art. 363-A of a Simples company (no description).
+     */
     SIMPLES_PERCENTUAL,
     /** The accountant's own formula - takes the place of the standard calculation for what it matches. */
     FORMULA

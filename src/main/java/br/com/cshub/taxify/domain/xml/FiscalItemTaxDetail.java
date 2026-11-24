@@ -40,6 +40,21 @@ public record FiscalItemTaxDetail(
         @Column(name = "base_calculo_pis", precision = 19, scale = 2) BigDecimal baseCalculoPis,
         @Column(name = "aliquota_pis", precision = 7, scale = 4) BigDecimal aliquotaPis,
         @Column(name = "base_calculo_cofins", precision = 19, scale = 2) BigDecimal baseCalculoCofins,
-        @Column(name = "aliquota_cofins", precision = 7, scale = 4) BigDecimal aliquotaCofins
+        @Column(name = "aliquota_cofins", precision = 7, scale = 4) BigDecimal aliquotaCofins,
+        /** pCredSN: the credit rate a Simples Nacional supplier may pass on (LC 123/2006, art. 23, § 1º). */
+        @Column(name = "aliquota_credito_sn", precision = 7, scale = 4) BigDecimal aliquotaCreditoSn,
+        /** vCredICMSSN: the credit value a Simples Nacional supplier passes on. */
+        @Column(name = "valor_credito_sn", precision = 19, scale = 2) BigDecimal valorCreditoSn
 ) {
+
+    /** Without the Simples credit (notes parsed before version 6, and tests). */
+    public FiscalItemTaxDetail(String cest, String codigoBeneficio, String origemMercadoria, String csosn, String modalidadeBcIcms,
+                               BigDecimal reducaoBcIcms, BigDecimal valorIcmsDesonerado, String modalidadeBcIcmsSt,
+                               BigDecimal mvaIcmsSt, BigDecimal baseCalculoIcmsSt, BigDecimal aliquotaIcmsSt, BigDecimal valorIcmsSt,
+                               BigDecimal baseCalculoIpi, BigDecimal aliquotaIpi, BigDecimal baseCalculoPis, BigDecimal aliquotaPis,
+                               BigDecimal baseCalculoCofins, BigDecimal aliquotaCofins) {
+        this(cest, codigoBeneficio, origemMercadoria, csosn, modalidadeBcIcms, reducaoBcIcms, valorIcmsDesonerado,
+                modalidadeBcIcmsSt, mvaIcmsSt, baseCalculoIcmsSt, aliquotaIcmsSt, valorIcmsSt, baseCalculoIpi, aliquotaIpi,
+                baseCalculoPis, aliquotaPis, baseCalculoCofins, aliquotaCofins, null, null);
+    }
 }

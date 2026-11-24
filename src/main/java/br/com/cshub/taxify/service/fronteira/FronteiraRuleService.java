@@ -175,6 +175,7 @@ public class FronteiraRuleService {
         rule.setMva(null);
         rule.setPercentual(null);
         rule.setFormula(null);
+        rule.setAplicaEm(null);
         switch (input.kind()) {
             case ALIQUOTA_INTERNA -> rule.setAliquota(percent(input.aliquota(), "a alíquota interna"));
             case ST_MVA -> {
@@ -186,7 +187,7 @@ public class FronteiraRuleService {
                 }
                 rule.setMva(input.mva());
             }
-            case SIMPLES_PERCENTUAL -> rule.setPercentual(percent(input.percentual(), "o percentual do art. 363-A"));
+            case SIMPLES_PERCENTUAL -> rule.setPercentual(percent(input.percentual(), "a carga líquida"));
             case FORMULA -> {
                 try {
                     FormulaEvaluator.validate(input.formula());
@@ -194,9 +195,26 @@ public class FronteiraRuleService {
                     throw invalid(e.getMessage());
                 }
                 rule.setFormula(input.formula().strip());
+                rule.setAplicaEm(aplicaEm(input.aplicaEm()));
             }
         }
     }
+
+    /** Blank or TODOS = any standard treatment; devolução, remessa and ST already withheld can't be replaced. */
+    private String aplicaEm(String value) {
+        if (value == null || value.isBlank() || "TODOS".equalsIgnoreCase(value.strip())) {
+            return null;
+        }
+        String treatment = value.strip().toUpperCase(java.util.Locale.ROOT);
+        if (!REPLACEABLE.contains(treatment)) {
+            throw invalid("A fórmula pode substituir: sem encerramento, ST, carga líquida ou uso e consumo.");
+        }
+        return treatment;
+    }
+
+    private static final java.util.Set<String> REPLACEABLE = java.util.Set.of(
+            FronteiraCalculator.Treatment.SEM_ENCERRAMENTO.name(), FronteiraCalculator.Treatment.ST.name(),
+            FronteiraCalculator.Treatment.CARGA_LIQUIDA.name(), FronteiraCalculator.Treatment.USO_CONSUMO.name());
 
     private BigDecimal percent(BigDecimal value, String what) {
         if (value == null || value.signum() < 0 || value.compareTo(BigDecimal.valueOf(100)) > 0) {
@@ -233,7 +251,7 @@ public class FronteiraRuleService {
     static FronteiraRuleDTOs.Rule toDto(FronteiraRule rule) {
         return new FronteiraRuleDTOs.Rule(rule.getId(), rule.getCompany() == null ? null : rule.getCompany().getId(), rule.getKind(),
                 rule.getDescricao(), rule.getNcm(), rule.getCest(), rule.getCodigoProduto(), rule.getCnpjFornecedor(), rule.getAliquota(),
-                rule.getMva(), rule.getPercentual(), rule.getFormula(), rule.getFundamento(), rule.getLink(), rule.getValidFrom(),
+                rule.getMva(), rule.getPercentual(), rule.getFormula(), rule.getAplicaEm(), rule.getFundamento(), rule.getLink(), rule.getValidFrom(),
                 rule.getValidUntil(), rule.isEnabled(), rule.isReviewed(), rule.getReviewedBy(), rule.getReviewedAt(),
                 rule.getCreatedBy(), rule.getCreatedDate());
     }

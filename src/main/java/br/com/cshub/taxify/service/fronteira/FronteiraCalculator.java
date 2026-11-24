@@ -29,18 +29,23 @@ import java.util.function.UnaryOperator;
  * <p>
  * Each item is classified by its CFOP and the table, then calculated:
  * <ol>
- *   <li>a FORMULA rule that matches the item (product, supplier, NCM, company) takes the place of
- *       everything else - the accountant's own way, kept for the next notes;</li>
+ *   <li>devolução, remessa and ST already withheld are no antecipação - never replaced;</li>
+ *   <li>a FORMULA rule that matches the item (product, supplier, NCM, company) and the treatment it
+ *       replaces ({@code aplicaEm}, blank = any) takes the place of the standard calculation - the
+ *       accountant's own way, kept for the next notes;</li>
  *   <li>otherwise the standard calculation, with the rates of the table:
  *     <ul>
- *       <li>devolução, remessa, outras saídas → no antecipação;</li>
- *       <li>ST already withheld by the supplier → nothing more (encerrada na origem);</li>
  *       <li>product under ST (ST_MVA rule) → MVA ajustada = [(1 + MVA) × (1 − inter) ÷ (1 − interna)] − 1 and
- *           ICMS-ST = partida × (1 + MVA ajustada) × interna − ICMS de origem;</li>
- *       <li>Simples Nacional company with the art. 363-A percentage (SIMPLES_PERCENTUAL) → partida × percentual;</li>
+ *           ICMS-ST = partida × (1 + MVA ajustada) × interna − crédito de origem;</li>
+ *       <li>carga líquida (SIMPLES_PERCENTUAL rule) → partida × percentual, no credit: the company's
+ *           credenciamento (matched by the extract's name, any regime - e-Fisco's "tipo de cálculo"), or the
+ *           art. 363-A for a Simples company;</li>
  *       <li>otherwise (sem encerramento, and uso e consumo) → base = (partida − ICMS destacado) ÷ (1 − interna),
- *           ICMS = base × interna − ICMS de origem.</li>
- *     </ul></li>
+ *           ICMS = base × interna − crédito de origem.</li>
+ *     </ul>
+ *     The crédito de origem is the ICMS destacado or, from a Simples supplier, the credit it passes on
+ *     (vCredICMSSN); when that can't be told yet the item is "sem regra".
+ *   </li>
  * </ol>
  * SEFAZ-PE rounds in its own way, so every item is calculated in four ways (A: no rounding until
  * the end; B: each step rounded; C: MVA ajustada to 4 places then each step rounded; D: each step
@@ -57,7 +62,7 @@ public final class FronteiraCalculator {
         FORMULA("Fórmula própria"),
         ST("Com encerramento (ST)"),
         ST_RETIDO("ST retido na origem"),
-        SIMPLES("Simples Nacional - art. 363-A"),
+        CARGA_LIQUIDA("Carga líquida (credenciamento / Simples)"),
         SEM_ENCERRAMENTO("Sem encerramento"),
         USO_CONSUMO("Uso e consumo / ativo - diferencial"),
         SEM_ANTECIPACAO("Sem antecipação (devolução, remessa ou outras)"),
@@ -125,13 +130,29 @@ public final class FronteiraCalculator {
         memoria.add("Partida: produto %s + IPI %s + despesas rateadas %s = %s".formatted(money(v.valorProduto), money(v.ipi),
                 money(v.despesas), money(v.partida)));
 
-        // the accountant's own formula wins over the standard calculation
-        Optional<FronteiraRule> formula = bestMatch(context.rules(), FronteiraRuleKind.FORMULA, document, item, day);
         Optional<FronteiraRule> interna = bestMatch(context.rules(), FronteiraRuleKind.ALIQUOTA_INTERNA, document, item, day);
         Optional<FronteiraRule> st = bestMatch(context.rules(), FronteiraRuleKind.ST_MVA, document, item, day);
-        Optional<FronteiraRule> simples = context.simplesCompany()
-                ? simplesRule(context.rules(), document, item, day, context.credenciamento()) : Optional.empty();
+        Optional<FronteiraRule> carga = cargaLiquidaRule(context, document, item, day);
         BigDecimal inter = interstateRate(document, item);
+
+        // devolução, remessa and ST already withheld are never antecipação - no formula changes that
+        String entry = EntryCfops.fromSupplier(item.getCfop());
+        String operation = entry != null && entry.length() == 4 ? entry.substring(1) : "";
+        if (operation.startsWith("2") || operation.startsWith("9") || Set.of("410", "411").contains(operation)) {
+            memoria.add("CFOP %s (entrada %s): devolução, remessa ou outras - sem antecipação".formatted(item.getCfop(), entry));
+            return result(item, Treatment.SEM_ANTECIPACAO, v.partida, BigDecimal.ZERO, BigDecimal.ZERO, BigDecimal.ZERO, true, used, memoria, null);
+        }
+        if (v.stRetido.signum() > 0) {
+            memoria.add("ICMS-ST de %s já retido pelo fornecedor - antecipação encerrada na origem".formatted(money(v.stRetido)));
+            return result(item, Treatment.ST_RETIDO, v.partida, BigDecimal.ZERO, BigDecimal.ZERO, BigDecimal.ZERO, true, used, memoria, null);
+        }
+
+        // the standard treatment of the item - what a formula may take the place of
+        boolean usoConsumo = Set.of("551", "552", "553", "555", "556", "557").contains(operation);
+        Treatment standard = st.isPresent() ? Treatment.ST
+                : carga.isPresent() || context.simplesCompany() ? Treatment.CARGA_LIQUIDA
+                : usoConsumo ? Treatment.USO_CONSUMO
+                : Treatment.SEM_ENCERRAMENTO;
 
         Map<String, BigDecimal> variables = new LinkedHashMap<>();
         variables.put("partida", v.partida);
@@ -139,6 +160,8 @@ public final class FronteiraCalculator {
         variables.put("ipi", v.ipi);
         variables.put("despesas", v.despesas);
         variables.put("icms_origem", v.icmsOrigem);
+        variables.put("credito_sn", v.creditoSn == null ? BigDecimal.ZERO : v.creditoSn);
+        variables.put("credito", v.credito);
         variables.put("aliquota_origem", fraction(item.getAliquotaIcms()));
         variables.put("inter", inter == null ? BigDecimal.ZERO : inter);
         variables.put("interna", interna.map(rule -> fraction(rule.getAliquota())).orElse(BigDecimal.ZERO));
@@ -147,12 +170,16 @@ public final class FronteiraCalculator {
                 ? mvaAjustada(fraction(st.get().getMva()), inter, fraction(interna.get().getAliquota()), UnaryOperator.identity())
                 : BigDecimal.ZERO);
         variables.put("st_retido", v.stRetido);
-        variables.put("percentual", simples.map(rule -> fraction(rule.getPercentual())).orElse(BigDecimal.ZERO));
+        variables.put("percentual", carga.map(rule -> fraction(rule.getPercentual())).orElse(BigDecimal.ZERO));
 
+        // the accountant's own formula for this treatment (or for all of them) wins over the standard calculation
+        Optional<FronteiraRule> formula = bestMatch(context.rules().stream()
+                .filter(rule -> rule.getAplicaEm() == null || rule.getAplicaEm().isBlank() || rule.getAplicaEm().equals(standard.name()))
+                .toList(), FronteiraRuleKind.FORMULA, document, item, day);
         if (formula.isPresent()) {
             FronteiraRule rule = formula.get();
             used.add(rule.getId());
-            memoria.add("Fórmula própria (%s): %s".formatted(scope(rule), rule.getFormula()));
+            memoria.add("Fórmula própria no lugar de \"%s\" (%s): %s".formatted(standard.label, scope(rule), rule.getFormula()));
             for (String name : FormulaEvaluator.variablesIn(rule.getFormula())) {
                 memoria.add("  %s = %s".formatted(name, plain(variables.get(name))));
             }
@@ -167,29 +194,20 @@ public final class FronteiraCalculator {
             }
         }
 
-        String entry = EntryCfops.fromSupplier(item.getCfop());
-        String operation = entry != null && entry.length() == 4 ? entry.substring(1) : "";
-        if (operation.startsWith("2") || operation.startsWith("9") || Set.of("410", "411").contains(operation)) {
-            memoria.add("CFOP %s (entrada %s): devolução, remessa ou outras - sem antecipação".formatted(item.getCfop(), entry));
-            return result(item, Treatment.SEM_ANTECIPACAO, v.partida, BigDecimal.ZERO, BigDecimal.ZERO, BigDecimal.ZERO, true, used, memoria, null);
-        }
-        if (v.stRetido.signum() > 0) {
-            memoria.add("ICMS-ST de %s já retido pelo fornecedor - antecipação encerrada na origem".formatted(money(v.stRetido)));
-            return result(item, Treatment.ST_RETIDO, v.partida, BigDecimal.ZERO, BigDecimal.ZERO, BigDecimal.ZERO, true, used, memoria, null);
-        }
-        if (st.isEmpty() && context.simplesCompany()) {
-            if (simples.isEmpty()) {
-                return semRegra(item, v.partida, used, memoria, "Empresa do Simples sem o percentual do art. 363-A na tabela"
+        if (standard == Treatment.CARGA_LIQUIDA) {
+            if (carga.isEmpty()) {
+                return semRegra(item, v.partida, used, memoria, "Empresa do Simples sem a carga líquida (art. 363-A) na tabela"
                         + (context.credenciamento() == null ? "." : " para o credenciamento \"" + context.credenciamento() + "\"."));
             }
-            FronteiraRule rule = simples.get();
+            FronteiraRule rule = carga.get();
             used.add(rule.getId());
             BigDecimal percentual = fraction(rule.getPercentual());
             BigDecimal raw = v.partida.multiply(percentual, MC);
             BigDecimal up = raw.setScale(2, RoundingMode.HALF_UP);
             BigDecimal down = raw.setScale(2, RoundingMode.DOWN);
-            memoria.add("Simples Nacional, art. 363-A (%s): %s × %s = %s".formatted(scope(rule), money(v.partida), percent(percentual), money(up)));
-            return result(item, Treatment.SIMPLES, v.partida, up, down, up, rule.isReviewed(), used, memoria, null);
+            memoria.add("Carga líquida (%s%s): base de partida %s × %s = %s - sem abater crédito".formatted(
+                    blank(rule.getDescricao()) ? "" : rule.getDescricao() + ", ", scope(rule), money(v.partida), percent(percentual), money(up)));
+            return result(item, Treatment.CARGA_LIQUIDA, v.partida, up, down, up, rule.isReviewed(), used, memoria, null);
         }
         if (inter == null) {
             return semRegra(item, v.partida, used, memoria, "Alíquota interestadual desconhecida (UF do emitente ou origem da mercadoria em branco).");
@@ -199,12 +217,22 @@ public final class FronteiraCalculator {
         if (interna.isEmpty()) {
             return semRegra(item, v.partida, used, memoria, "Sem alíquota interna de PE na tabela de ICMS para o NCM " + item.getNcm() + ".");
         }
+        if (v.creditUnknown) {
+            return semRegra(item, v.partida, used, memoria, "Fornecedor do Simples sem ICMS destacado e o crédito que ele transfere "
+                    + "(pCredSN/vCredICMSSN) ainda não foi lido do XML - aguarde a releitura das notas ou use uma fórmula própria.");
+        }
         BigDecimal internalRate = fraction(interna.get().getAliquota());
         used.add(interna.get().getId());
         memoria.add("Alíquota interna de PE: %s (%s)".formatted(percent(internalRate), scope(interna.get())));
         boolean reviewed = interna.get().isReviewed();
+        if (v.supplierSimples && v.icmsOrigem.signum() == 0) {
+            memoria.add(v.credito.signum() > 0
+                    ? "Fornecedor do Simples: crédito transferido de %s (LC 123/2006, art. 23, § 1º)".formatted(money(v.credito))
+                    : "Fornecedor do Simples sem crédito transferido na nota: crédito de origem R$ 0,00 - confira");
+            reviewed &= v.credito.signum() > 0;
+        }
 
-        if (st.isPresent()) {
+        if (standard == Treatment.ST) {
             FronteiraRule rule = st.get();
             used.add(rule.getId());
             reviewed &= rule.isReviewed();
@@ -214,35 +242,33 @@ public final class FronteiraCalculator {
             memoria.add("Produto com ST (%s): MVA original %s".formatted(scope(rule), percent(mva)));
             memoria.add("MVA ajustada = [(1 + %s) × (1 − %s) ÷ (1 − %s)] − 1 = %s".formatted(plain(mva), plain(inter), plain(internalRate),
                     percent(mvaAjustada(mva, inter, internalRate, r4()))));
-            memoria.add("ICMS-ST = %s × (1 + MVA ajustada) × %s − ICMS de origem %s = %s".formatted(money(v.partida), plain(internalRate),
-                    money(v.icmsOrigem), money(range[2])));
+            memoria.add("ICMS-ST = %s × (1 + MVA ajustada) × %s − crédito de origem %s = %s".formatted(money(v.partida), plain(internalRate),
+                    money(v.credito), money(range[2])));
             return result(item, Treatment.ST, v.partida, range[2], range[0], range[1], reviewed, used, memoria, null);
         }
 
-        boolean usoConsumo = Set.of("551", "552", "553", "555", "556", "557").contains(operation);
         BigDecimal[] range = range(r -> diferencial(v, internalRate, r), r -> diferencial(v, internalRate, r));
-        memoria.add("Base = (%s − %s) ÷ (1 − %s); ICMS = base × %s − %s = %s".formatted(money(v.partida), money(v.icmsOrigem),
-                plain(internalRate), plain(internalRate), money(v.icmsOrigem), money(range[2])));
-        return result(item, usoConsumo ? Treatment.USO_CONSUMO : Treatment.SEM_ENCERRAMENTO, v.partida, range[2], range[0], range[1],
-                reviewed, used, memoria, null);
+        memoria.add("Base = (%s − ICMS destacado %s) ÷ (1 − %s); ICMS = base × %s − crédito de origem %s = %s".formatted(money(v.partida),
+                money(v.icmsOrigem), plain(internalRate), plain(internalRate), money(v.credito), money(range[2])));
+        return result(item, standard, v.partida, range[2], range[0], range[1], reviewed, used, memoria, null);
     }
 
     // ---------------------------------------------------------------- formulas
 
-    /** ICMS-ST = partida × (1 + MVA ajustada) × interna − ICMS de origem; {@code adjustedTo4} rounds the MVA first (method C). */
+    /** ICMS-ST = partida × (1 + MVA ajustada) × interna − crédito de origem; {@code adjustedTo4} rounds the MVA first (method C). */
     private static BigDecimal stValue(Values v, BigDecimal mva, BigDecimal inter, BigDecimal interna, UnaryOperator<BigDecimal> round,
                                       boolean adjustedTo4) {
         BigDecimal adjusted = mvaAjustada(mva, inter, interna, adjustedTo4 ? r4() : UnaryOperator.identity());
         BigDecimal base = round.apply(v.partida.multiply(BigDecimal.ONE.add(adjusted), MC));
         BigDecimal tax = round.apply(base.multiply(interna, MC));
-        return tax.subtract(v.icmsOrigem).max(BigDecimal.ZERO);
+        return tax.subtract(v.credito).max(BigDecimal.ZERO);
     }
 
-    /** base = (partida − ICMS destacado) ÷ (1 − interna); ICMS = base × interna − ICMS de origem. */
+    /** base = (partida − ICMS destacado) ÷ (1 − interna); ICMS = base × interna − crédito de origem. */
     private static BigDecimal diferencial(Values v, BigDecimal interna, UnaryOperator<BigDecimal> round) {
         BigDecimal base = round.apply(v.partida.subtract(v.icmsOrigem).divide(BigDecimal.ONE.subtract(interna), MC));
         BigDecimal tax = round.apply(base.multiply(interna, MC));
-        return tax.subtract(v.icmsOrigem).max(BigDecimal.ZERO);
+        return tax.subtract(v.credito).max(BigDecimal.ZERO);
     }
 
     static BigDecimal mvaAjustada(BigDecimal mva, BigDecimal inter, BigDecimal interna, UnaryOperator<BigDecimal> round) {
@@ -306,19 +332,28 @@ public final class FronteiraCalculator {
         return score;
     }
 
-    /** The art. 363-A rule whose description is the extract's credenciamento; otherwise the only one there is. */
-    private static Optional<FronteiraRule> simplesRule(List<FronteiraRule> rules, FiscalXmlDocument document, FiscalXmlDocumentItem item,
-                                                       LocalDate day, String credenciamento) {
-        List<FronteiraRule> candidates = rules.stream()
+    /**
+     * The carga líquida of the item, as e-Fisco's "tipo de cálculo": the rule whose description is the
+     * company's credenciamento (from the extract) applies whatever the company's regime - it is the
+     * credenciamento that gives it; a Simples company with no credenciamento match takes the rule
+     * without description (art. 363-A), or the only one there is.
+     */
+    private static Optional<FronteiraRule> cargaLiquidaRule(Context context, FiscalXmlDocument document, FiscalXmlDocumentItem item,
+                                                            LocalDate day) {
+        List<FronteiraRule> candidates = context.rules().stream()
                 .filter(rule -> rule.getKind() == FronteiraRuleKind.SIMPLES_PERCENTUAL && rule.isEnabled() && !rule.isDeleted() && rule.validOn(day))
                 .toList();
-        if (credenciamento != null) {
-            String wanted = plainText(credenciamento);
+        if (context.credenciamento() != null) {
+            String wanted = plainText(context.credenciamento());
             List<FronteiraRule> named = candidates.stream()
                     .filter(rule -> !blank(rule.getDescricao()) && plainText(rule.getDescricao()).equals(wanted)).toList();
-            if (!named.isEmpty()) {
-                return bestMatch(named, FronteiraRuleKind.SIMPLES_PERCENTUAL, document, item, day);
+            Optional<FronteiraRule> match = bestMatch(named, FronteiraRuleKind.SIMPLES_PERCENTUAL, document, item, day);
+            if (match.isPresent()) {
+                return match;
             }
+        }
+        if (!context.simplesCompany()) {
+            return Optional.empty();
         }
         List<FronteiraRule> unnamed = candidates.stream().filter(rule -> blank(rule.getDescricao())).toList();
         return bestMatch(unnamed.isEmpty() && candidates.size() == 1 ? candidates : unnamed,
@@ -327,9 +362,20 @@ public final class FronteiraCalculator {
 
     // ---------------------------------------------------------------- values
 
+    /**
+     * @param credito        what the supplier's note credits: the ICMS destacado or, from a Simples supplier,
+     *                       the credit it passes on (vCredICMSSN)
+     * @param creditUnknown  Simples supplier without ICMS destacado on a note read before the parser stored
+     *                       its credit - the credit can't be told yet
+     */
     private record Values(BigDecimal valorProduto, BigDecimal ipi, BigDecimal despesas, BigDecimal partida,
-                          BigDecimal icmsOrigem, BigDecimal stRetido) {
+                          BigDecimal icmsOrigem, BigDecimal stRetido, BigDecimal creditoSn, BigDecimal credito,
+                          boolean supplierSimples, boolean creditUnknown) {
     }
+
+    /** First parser version that stores the Simples supplier's credit (pCredSN / vCredICMSSN). */
+    static final int SIMPLES_CREDIT_VERSION = 6;
+    private static final Set<String> SIMPLES_CRT = Set.of("1", "2", "4");
 
     /** The note's freight, insurance and other expenses go to the items by product value; the discount doesn't reduce. */
     private static Values values(FiscalXmlDocument document, FiscalXmlDocumentItem item) {
@@ -341,7 +387,15 @@ public final class FronteiraCalculator {
                 : expenses.multiply(produto, MC).divide(products, 2, RoundingMode.HALF_UP);
         FiscalItemTaxDetail detail = item.getTaxDetail();
         BigDecimal st = detail == null ? BigDecimal.ZERO : zero(detail.valorIcmsSt());
-        return new Values(produto, ipi, despesas, produto.add(ipi).add(despesas), zero(item.getValorIcms()), st);
+        BigDecimal icmsOrigem = zero(item.getValorIcms());
+        BigDecimal creditoSn = detail == null ? null : detail.valorCreditoSn();
+        String crt = document.getEmitenteRegimeTributario() == null ? "" : document.getEmitenteRegimeTributario().strip();
+        boolean supplierSimples = (detail != null && detail.csosn() != null && !detail.csosn().isBlank()) || SIMPLES_CRT.contains(crt);
+        boolean readCredit = document.getMetadataVersion() != null && document.getMetadataVersion() >= SIMPLES_CREDIT_VERSION;
+        boolean creditUnknown = supplierSimples && icmsOrigem.signum() == 0 && creditoSn == null && !readCredit;
+        BigDecimal credito = icmsOrigem.signum() > 0 ? icmsOrigem : zero(creditoSn);
+        return new Values(produto, ipi, despesas, produto.add(ipi).add(despesas), icmsOrigem, st, creditoSn, credito,
+                supplierSimples, creditUnknown);
     }
 
     /** By origin and UF (Res. Senado 22/1989 and 13/2012); the item's own rate when that can't be told. */

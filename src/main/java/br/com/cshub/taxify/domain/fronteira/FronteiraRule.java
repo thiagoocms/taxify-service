@@ -68,6 +68,13 @@ public class FronteiraRule extends AbstractAuditingEntity {
     @Column(name = "formula", length = 500)
     private String formula;
 
+    /**
+     * FORMULA only: the standard treatment it takes the place of (SEM_ENCERRAMENTO, ST, CARGA_LIQUIDA,
+     * USO_CONSUMO - see FronteiraCalculator.Treatment); blank = any of them.
+     */
+    @Column(name = "aplica_em", length = 30)
+    private String aplicaEm;
+
     @Column(name = "fundamento", length = 500)
     private String fundamento;
 
@@ -122,6 +129,8 @@ public class FronteiraRule extends AbstractAuditingEntity {
     public void setPercentual(BigDecimal percentual) { this.percentual = percentual; }
     public String getFormula() { return formula; }
     public void setFormula(String formula) { this.formula = formula; }
+    public String getAplicaEm() { return aplicaEm; }
+    public void setAplicaEm(String aplicaEm) { this.aplicaEm = aplicaEm; }
     public String getFundamento() { return fundamento; }
     public void setFundamento(String fundamento) { this.fundamento = fundamento; }
     public String getLink() { return link; }

@@ -208,8 +208,12 @@ public class FronteiraService {
         List<FiscalXmlDocument> all = new ArrayList<>(documents.values());
         all.addAll(entries);
 
+        // the month's credenciamento, or - for the prévia - the latest one the company had
+        String credenciamento = extract != null ? extract.getCredenciamentoInterno()
+                : extractRepository.findByCompany_IdAndDeletedIsFalseOrderByPeriodoDesc(company.getId()).stream()
+                        .map(EfiscoExtract::getCredenciamentoInterno).filter(java.util.Objects::nonNull).findFirst().orElse(null);
         FronteiraCalculator.Context context = new FronteiraCalculator.Context(ruleService.rulesFor(company.getId()),
-                company.getTaxRegimeType() == TaxRegime.SIMPLES_NACIONAL, extract == null ? null : extract.getCredenciamentoInterno());
+                company.getTaxRegimeType() == TaxRegime.SIMPLES_NACIONAL, credenciamento);
         Map<UUID, List<FiscalXmlDocumentItem>> itemsByDocument = itemsOf(all);
         Map<UUID, FronteiraRuleDTOs.NoteCalc> calcs = new HashMap<>();
         for (FiscalXmlDocument document : all) {

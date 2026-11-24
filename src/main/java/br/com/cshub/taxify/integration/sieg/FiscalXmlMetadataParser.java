@@ -54,8 +54,11 @@ public class FiscalXmlMetadataParser {
      *       longer reads its file.</li>
      * </ul>
      */
-    /** 5: the federal retentions (retTrib) are stored too - see NfeRetentions. */
-    public static final int CURRENT_VERSION = 5;
+    /**
+     * 5: the federal retentions (retTrib) are stored too - see NfeRetentions.
+     * 6: the credit a Simples Nacional supplier passes on (pCredSN / vCredICMSSN) - the Fronteira PE uses it.
+     */
+    public static final int CURRENT_VERSION = 6;
 
     private static final Logger log = LoggerFactory.getLogger(FiscalXmlMetadataParser.class);
     private static final DateTimeFormatter DATE_ONLY = DateTimeFormatter.ISO_LOCAL_DATE;
@@ -305,7 +308,9 @@ public class FiscalXmlMetadataParser {
                 decimalOf(pis, "vBC"),
                 decimalOf(pis, "pPIS"),
                 decimalOf(cofins, "vBC"),
-                decimalOf(cofins, "pCOFINS")
+                decimalOf(cofins, "pCOFINS"),
+                decimalOf(icms, "pCredSN"),
+                decimalOf(icms, "vCredICMSSN")
         );
     }
 

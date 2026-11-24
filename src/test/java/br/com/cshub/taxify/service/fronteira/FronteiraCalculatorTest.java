@@ -92,20 +92,60 @@ class FronteiraCalculatorTest {
         assertThat(result.memoria()).anySatisfy(line -> assertThat(line).contains("80,15%"));
     }
 
-    /** Simples company credenciada (art. 363-A at 5,5%): the R$ 887,00 note of the extract was charged R$ 48,78. */
+    private static FronteiraRule cargaTecidos() {
+        FronteiraRule carga = rule(FronteiraRuleKind.SIMPLES_PERCENTUAL);
+        carga.setDescricao("Tecidos e armarinho (indústria)");
+        carga.setPercentual(new BigDecimal("5.5"));
+        return carga;
+    }
+
+    /**
+     * Regime normal company credenciada (e-Fisco: ContribuinteRegimeSimples = 0, credenciamento 26 "IND TEC
+     * CREDENCIADA", carga líquida 5,5%): the R$ 887,00 note of the extract was charged R$ 48,78.
+     */
     @Test
-    void simplesPercentageOverTheStartingValue() {
+    void credenciamentoCargaLiquidaWhateverTheRegime() {
         FiscalXmlDocument document = note("SP", "887.00");
         FiscalXmlDocumentItem item = item(document, "TEC-01", "52083200", "6102", "887.00", "7", "62.09", "0", null);
-        FronteiraRule simples = rule(FronteiraRuleKind.SIMPLES_PERCENTUAL);
-        simples.setDescricao("Tecidos e armarinho (indústria)");
-        simples.setPercentual(new BigDecimal("5.5"));
 
         ItemResult result = FronteiraCalculator.item(document, item,
-                new Context(List.of(simples), true, "TECIDOS E ARMARINHO (INDUSTRIA)"));
+                new Context(List.of(interna(null, "20.5"), cargaTecidos()), false, "TECIDOS E ARMARINHO (INDUSTRIA)"));
 
-        assertThat(result.treatment()).isEqualTo(Treatment.SIMPLES);
+        assertThat(result.treatment()).isEqualTo(Treatment.CARGA_LIQUIDA);
         assertThat(inRange(result, "48.78")).isTrue();
+    }
+
+    /**
+     * e-Fisco's own memory of NF 473 (RN, R$ 2.400,00, supplier of the Simples, no ICMS destacado):
+     * ICMSAntecipadoItemCL = BaseCalculoItemAntecipado 2.400,00 × PercentualCargaLiquida 5,5% = 132,00.
+     * The carga líquida takes no credit, so the Simples supplier's credit doesn't matter.
+     */
+    @Test
+    void efiscoMemoryOfNote473() {
+        FiscalXmlDocument document = note("RN", "2400.00");
+        document.setMetadataVersion(5); // read before the Simples credit was stored
+        FiscalXmlDocumentItem item = item(document, "P1", "52083200", "6101", "2400.00", null, null, "0", null);
+        item.setTaxDetail(new FiscalItemTaxDetail(null, null, "0", "102", null, null, null, null, null, null, null, null,
+                null, null, null, null, null, null));
+
+        ItemResult result = FronteiraCalculator.item(document, item,
+                new Context(List.of(interna(null, "20.5"), cargaTecidos()), false, "TECIDOS E ARMARINHO (INDUSTRIA)"));
+
+        assertThat(result.treatment()).isEqualTo(Treatment.CARGA_LIQUIDA);
+        assertThat(result.value()).isEqualByComparingTo("132.00");
+        assertThat(inRange(result, "132.00")).isTrue();
+    }
+
+    /** Without the credenciamento, a regime normal company doesn't take a carga líquida meant for one. */
+    @Test
+    void aCargaLiquidaOfAnotherCredenciamentoIsNotUsed() {
+        FiscalXmlDocument document = note("CE", "1000.00");
+        FiscalXmlDocumentItem item = item(document, "P1", "61091000", "6102", "1000.00", "12", "120.00", "0", null);
+
+        ItemResult result = FronteiraCalculator.item(document, item,
+                new Context(List.of(interna(null, "20.5"), cargaTecidos()), false, "OUTRO CREDENCIAMENTO"));
+
+        assertThat(result.treatment()).isEqualTo(Treatment.SEM_ENCERRAMENTO);
     }
 
     @Test
@@ -204,5 +244,92 @@ class FronteiraCalculatorTest {
                 new Context(List.of(interna(null, "20.5"), global, own), false, null));
 
         assertThat(result.rulesUsed()).contains(own.getId());
+    }
+
+    private static FiscalXmlDocumentItem simplesSupplierItem(FiscalXmlDocument document, String valor, String credito) {
+        FiscalXmlDocumentItem item = item(document, "P1", "61091000", "6102", valor, null, null, "0", null);
+        item.setTaxDetail(new FiscalItemTaxDetail(null, null, "0", credito == null ? "102" : "101", null, null, null, null, null,
+                null, null, null, null, null, null, null, null, null, credito == null ? null : new BigDecimal("2.56"),
+                credito == null ? null : new BigDecimal(credito)));
+        return item;
+    }
+
+    /** NF 485 (RN, R$ 7.728,00): a general formula "interna − interestadual" for the regime normal only. */
+    @Test
+    void aGeneralFormulaReplacesOnlyTheTreatmentItIsFor() {
+        FronteiraRule diferencial = rule(FronteiraRuleKind.FORMULA);
+        diferencial.setFormula("partida * (interna - inter)");
+        diferencial.setAplicaEm("SEM_ENCERRAMENTO");
+        FronteiraRule st = rule(FronteiraRuleKind.ST_MVA);
+        st.setNcm("83014000");
+        st.setMva(new BigDecimal("54"));
+        Context context = new Context(List.of(interna(null, "20.5"), diferencial, st), false, null);
+
+        FiscalXmlDocument rn = note("RN", "7728.00");
+        ItemResult normal = FronteiraCalculator.item(rn, item(rn, "P1", "61091000", "6102", "7728.00", "12", "927.36", "0", null), context);
+        FiscalXmlDocument rj = note("RJ", "11704.33");
+        ItemResult withSt = FronteiraCalculator.item(rj, item(rj, "FECH-01", "83014000", "6102", "11704.33", "7", "819.30", "0", null), context);
+        ItemResult devolucao = FronteiraCalculator.item(rn, item(rn, "P1", "61091000", "6202", "7728.00", "12", "927.36", "0", null), context);
+
+        assertThat(normal.treatment()).isEqualTo(Treatment.FORMULA);
+        assertThat(normal.value()).isEqualByComparingTo("656.88"); // 7.728,00 × (20,5% − 12%)
+        assertThat(withSt.treatment()).isEqualTo(Treatment.ST);
+        assertThat(devolucao.treatment()).isEqualTo(Treatment.SEM_ANTECIPACAO);
+    }
+
+    @Test
+    void aFormulaForAnyTreatmentStillLeavesDevolutionAndWithheldStAlone() {
+        FronteiraRule everything = rule(FronteiraRuleKind.FORMULA);
+        everything.setFormula("partida * 1%");
+        Context context = new Context(List.of(interna(null, "20.5"), everything), false, null);
+        FiscalXmlDocument document = note("SP", "1000.00");
+
+        ItemResult devolucao = FronteiraCalculator.item(document, item(document, "P1", "61091000", "6202", "1000.00", "7", "70.00", "0", null), context);
+        ItemResult retido = FronteiraCalculator.item(document, item(document, "P2", "83014000", "6403", "1000.00", "7", "70.00", "0", "150.00"), context);
+        ItemResult compra = FronteiraCalculator.item(document, item(document, "P3", "61091000", "6102", "1000.00", "7", "70.00", "0", null), context);
+
+        assertThat(devolucao.treatment()).isEqualTo(Treatment.SEM_ANTECIPACAO);
+        assertThat(retido.treatment()).isEqualTo(Treatment.ST_RETIDO);
+        assertThat(compra.treatment()).isEqualTo(Treatment.FORMULA);
+    }
+
+    /** A Simples supplier destaca no ICMS: without its credit read yet, no value instead of the full 20,5%. */
+    @Test
+    void simplesSupplierWithoutTheCreditReadIsSemRegra() {
+        FiscalXmlDocument document = note("RN", "7728.00");
+        document.setMetadataVersion(5);
+
+        ItemResult result = FronteiraCalculator.item(document, simplesSupplierItem(document, "7728.00", null),
+                new Context(List.of(interna(null, "20.5")), false, null));
+
+        assertThat(result.treatment()).isEqualTo(Treatment.SEM_REGRA);
+        assertThat(result.semRegraMotivo()).contains("Fornecedor do Simples");
+    }
+
+    @Test
+    void simplesSupplierCreditIsTheCreditDeOrigem() {
+        FiscalXmlDocument document = note("RN", "1000.00");
+        document.setMetadataVersion(6);
+
+        ItemResult result = FronteiraCalculator.item(document, simplesSupplierItem(document, "1000.00", "25.60"),
+                new Context(List.of(interna(null, "20.5")), false, null));
+
+        // base = (1000 − 0) ÷ 0,795 = 1.257,86; ICMS = 1.257,86 × 0,205 − 25,60 = 232,26
+        assertThat(result.treatment()).isEqualTo(Treatment.SEM_ENCERRAMENTO);
+        assertThat(result.value()).isEqualByComparingTo("232.26");
+        assertThat(result.memoria()).anySatisfy(line -> assertThat(line).contains("crédito transferido de R$ 25,60"));
+    }
+
+    /** Read with the current parser and no credit on the note (CSOSN 102): calculated with zero, but "a conferir". */
+    @Test
+    void simplesSupplierWithoutCreditIsCalculatedButToBeChecked() {
+        FiscalXmlDocument document = note("RN", "1000.00");
+        document.setMetadataVersion(6);
+
+        ItemResult result = FronteiraCalculator.item(document, simplesSupplierItem(document, "1000.00", null),
+                new Context(List.of(interna(null, "20.5")), false, null));
+
+        assertThat(result.treatment()).isEqualTo(Treatment.SEM_ENCERRAMENTO);
+        assertThat(result.reviewed()).isFalse();
     }
 }

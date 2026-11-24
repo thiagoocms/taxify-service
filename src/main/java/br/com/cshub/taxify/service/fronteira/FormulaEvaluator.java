@@ -34,6 +34,8 @@ public final class FormulaEvaluator {
         variables.put("ipi", "IPI do item");
         variables.put("despesas", "Frete, seguro e outras despesas da nota rateados para o item");
         variables.put("icms_origem", "ICMS destacado no item pelo fornecedor");
+        variables.put("credito_sn", "Crédito que o fornecedor do Simples transfere no item (vCredICMSSN; zero sem ele)");
+        variables.put("credito", "Crédito de origem: o ICMS destacado ou, sem ele, o crédito do fornecedor do Simples");
         variables.put("aliquota_origem", "Alíquota de ICMS destacada no item (fração: 12% = 0,12)");
         variables.put("inter", "Alíquota interestadual pela origem e pela UF (fração: 4%, 7% ou 12%)");
         variables.put("interna", "Alíquota interna de PE da tabela de ICMS (fração: 20,5% = 0,205)");

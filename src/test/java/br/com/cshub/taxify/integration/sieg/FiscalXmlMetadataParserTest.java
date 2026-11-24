@@ -324,6 +324,26 @@ class FiscalXmlMetadataParserTest {
         assertThat(totais.valorCbs()).isEqualByComparingTo("0.36");
     }
 
+    /** CSOSN 101: the credit the Simples supplier passes on (LC 123/2006, art. 23, § 1º) - the Fronteira PE uses it. */
+    @Test
+    void simplesSupplierCredit() {
+        String xml = """
+                <nfeProc xmlns="http://www.portalfiscal.inf.br/nfe"><NFe>
+                  <infNFe Id="NFe35240112345678000199550010000000011000000010" versao="4.00">
+                    <det nItem="1"><prod><cProd>P1</cProd><vProd>1000.00</vProd></prod>
+                      <imposto><ICMS><ICMSSN101><orig>0</orig><CSOSN>101</CSOSN><pCredSN>2.5600</pCredSN>
+                        <vCredICMSSN>25.60</vCredICMSSN></ICMSSN101></ICMS></imposto></det>
+                    <total><ICMSTot><vNF>1000.00</vNF></ICMSTot></total>
+                  </infNFe></NFe></nfeProc>
+                """;
+
+        var detalhe = parser.parse(xml.getBytes(StandardCharsets.UTF_8)).produtos().get(0).impostos().detalhe();
+
+        assertThat(detalhe.csosn()).isEqualTo("101");
+        assertThat(detalhe.aliquotaCreditoSn()).isEqualByComparingTo("2.56");
+        assertThat(detalhe.valorCreditoSn()).isEqualByComparingTo("25.60");
+    }
+
     @Test
     void noteWithoutIbsCbsHasNoIbsCbsGroups() {
         String xml = """
