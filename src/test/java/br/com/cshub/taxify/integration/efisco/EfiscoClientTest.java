@@ -73,4 +73,17 @@ class EfiscoClientTest {
                 .isInstanceOfSatisfying(EfiscoException.class, e -> assertThat(e.reason()).isEqualTo(EfiscoException.Reason.BLOQUEADO));
         assertThatThrownBy(() -> EfiscoClient.checkChallenge(403, "<html></html>")).isInstanceOf(EfiscoException.class);
     }
+
+    /** The memória list after the filter: one radio per memória - "Detalhar" goes with the newest one. */
+    @Test
+    void picksTheNewestMemoriaOfTheList() {
+        String list = """
+                <TR> <TD class="tabeladados"> <INPUT type="radio" id="rdb_consulta" name="chave_primaria" value="12[[*]]6[[*]]585302508[[*]]2026-11-18 23:17:34.729[[*]]1161054000000[[*]]0" > </TD>
+                <TD class="tabeladados">012.6.585302508-0</TD> </TR>
+                <TR> <TD class="tabeladados"> <INPUT type="radio" id="rdb_consulta" name="chave_primaria" value="12[[*]]6[[*]]585302508[[*]]2026-11-20 08:01:02.000[[*]]1161054000000[[*]]0" > </TD> </TR>
+                """;
+        assertThat(EfiscoClient.newestMemoryKey(list))
+                .isEqualTo("12[[*]]6[[*]]585302508[[*]]2026-11-20 08:01:02.000[[*]]1161054000000[[*]]0");
+        assertThat(EfiscoClient.newestMemoryKey("<TABLE><TR><TH>Registro de Nota</TH></TR></TABLE>")).isNull();
+    }
 }

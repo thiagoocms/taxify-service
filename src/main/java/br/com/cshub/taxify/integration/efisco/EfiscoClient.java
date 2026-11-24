@@ -54,6 +54,9 @@ public final class EfiscoClient {
     private static final Pattern CONTENT_CHARSET = Pattern.compile("charset\\s*=\\s*[\"']?([\\w-]+)", Pattern.CASE_INSENSITIVE);
     /** Each diagnostic log line carries at most this much HTML (CloudWatch events have a size limit). */
     private static final int LOG_CHUNK = 8000;
+    /** A row of the memória list: {@code <INPUT type="radio" id="rdb_consulta" name="chave_primaria" value="...">}. */
+    private static final Pattern MEMORY_ROW = Pattern.compile(
+            "<input\\b[^>]*name=\"chave_primaria\"[^>]*value=\"([^\"]*)\"", Pattern.CASE_INSENSITIVE);
     private static final Pattern FORM = Pattern.compile("<form[^>]*name=\"?frm_principal\"?[^>]*>(.*?)</form>",
             Pattern.CASE_INSENSITIVE | Pattern.DOTALL);
     private static final Pattern INPUT = Pattern.compile("<input\\b[^>]*>", Pattern.CASE_INSENSITIVE);
@@ -155,15 +158,49 @@ public final class EfiscoClient {
         fields.put("evento", "processarFiltroConsulta");
         Page result = post(MEMORY, fields);
         form = result.form().isEmpty() ? form : result.form();
-        // the detail itself: items "Cálculo Mercadoria: ..." with the variables (accent written or as an entity)
-        String html = result.html();
-        boolean detail = html.contains("lculo Mercadoria") || html.contains("ICMSAntecipadoItem[");
-        if (!detail) {
-            logDiagnostic("registro " + registro + " - tela do filtro (campos " + fields.keySet() + ")", screen.html());
-            logDiagnostic("registro " + registro + " - resposta do filtro", html);
+        if (isMemoryDetail(result.html())) {
+            return new MemoryPage(result.html(), null);
+        }
+
+        // the filter answers with the list ("Registro de Nota", "DH Geração Memória"...): one radio per memória;
+        // "Detalhar" posts the form with the chosen radio - the newest memória when the note was calculated again
+        String key = newestMemoryKey(result.html());
+        if (key == null) {
             return new MemoryPage(null, result.message() == null ? "O e-Fisco não tem memória de cálculo para esse registro." : result.message());
         }
-        return new MemoryPage(html, null);
+        Map<String, String> detailFields = new LinkedHashMap<>(result.form());
+        detailFields.put("chave_primaria", key);
+        detailFields.put("evento", "exibirDetalhamentoConsulta");
+        Page detail = post(MEMORY, detailFields);
+        form = detail.form().isEmpty() ? form : detail.form();
+        if (!isMemoryDetail(detail.html())) {
+            logDiagnostic("registro " + registro + " - detalhamento (chave " + key + ")", detail.html());
+            return new MemoryPage(null, detail.message() == null
+                    ? "O e-Fisco listou a memória de cálculo, mas não abriu o detalhamento." : detail.message());
+        }
+        return new MemoryPage(detail.html(), null);
+    }
+
+    /** The detail itself: items "Cálculo Mercadoria: ..." with the variables (accent written or as an entity). */
+    private static boolean isMemoryDetail(String html) {
+        return html.contains("lculo Mercadoria") || html.contains("ICMSAntecipadoItem[");
+    }
+
+    /** "12[[*]]6[[*]]585302508[[*]]2026-11-18 23:17:34.729[[*]]..." - the 4th part is when the memória was made. */
+    static String newestMemoryKey(String html) {
+        Matcher radio = MEMORY_ROW.matcher(html);
+        String newest = null;
+        String newestAt = null;
+        while (radio.find()) {
+            String key = Page.unescape(radio.group(1));
+            String[] parts = key.split("\\[\\[\\*]]");
+            String at = parts.length > 3 ? parts[3] : "";
+            if (newest == null || at.compareTo(newestAt) > 0) {
+                newest = key;
+                newestAt = at;
+            }
+        }
+        return newest;
     }
 
     /** The page as it came, in a few log lines, to map what e-Fisco answered when it wasn't the expected one. */
@@ -308,7 +345,7 @@ public final class EfiscoClient {
             return attrs;
         }
 
-        private static String unescape(String value) {
+        static String unescape(String value) {
             return value.replace("&amp;", "&").replace("&quot;", "\"").replace("&#39;", "'").replace("&lt;", "<").replace("&gt;", ">");
         }
     }
