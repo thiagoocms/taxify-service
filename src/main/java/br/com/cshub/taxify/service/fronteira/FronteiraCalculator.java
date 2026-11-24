@@ -284,7 +284,22 @@ public final class FronteiraCalculator {
         BigDecimal up = raw.setScale(2, RoundingMode.HALF_UP).max(BigDecimal.ZERO);
         BigDecimal down = raw.setScale(2, RoundingMode.DOWN).max(BigDecimal.ZERO);
         memoria.add("ICMS = base %s × interna %s − crédito %s = %s".formatted(money(base), percent(internalRate), money(credito), money(up)));
+        if (standard != Treatment.MERCADORIA) {
+            memoria.add(baseDuplaLine(v, internalRate, credito, up));
+        }
         return result(variables, item, standard, v.partida, up, down, up, reviewed, used, memoria, null);
+    }
+
+    /**
+     * Information only, the result stays e-Fisco's: the base dupla of arts. 333/336 - (partida − ICMS destacado) ÷
+     * (1 − interna) × interna − crédito - and how much more it would be, the exposure if the fisco charged it.
+     */
+    static String baseDuplaLine(Values v, BigDecimal internalRate, BigDecimal credito, BigDecimal efisco) {
+        BigDecimal base = v.partida.subtract(v.icmsOrigem, MC).divide(BigDecimal.ONE.subtract(internalRate), MC);
+        BigDecimal dupla = base.multiply(internalRate, MC).subtract(credito, MC).setScale(2, RoundingMode.HALF_UP).max(BigDecimal.ZERO);
+        return "Informativo - base dupla (arts. 333/336): (%s − %s) ÷ (1 − %s) = %s; × %s − crédito %s = %s (exposição de %s; não muda o resultado)"
+                .formatted(money(v.partida), money(v.icmsOrigem), plain(internalRate), money(base), percent(internalRate), money(credito),
+                        money(dupla), money(dupla.subtract(efisco)));
     }
 
     /** Entry operations (after the 1/2/3 of the place) of goods the company keeps: ativo imobilizado, uso e consumo. */

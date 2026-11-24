@@ -451,6 +451,8 @@ class FronteiraCalculatorTest {
         assertThat(result.treatment()).isEqualTo(Treatment.USO_CONSUMO);
         assertThat(result.value()).isEqualByComparingTo("575.32");
         assertThat(result.memoria()).anySatisfy(line -> assertThat(line).contains("CFOP de entrada 1551"));
+        // base dupla only informs: 4.261,61 ÷ 0,795 × 20,5% − 298,31 = 800,59, an exposure of 225,27
+        assertThat(result.memoria()).anySatisfy(line -> assertThat(line).contains("base dupla").contains("R$ 800,59").contains("R$ 225,27"));
     }
 
     /**
