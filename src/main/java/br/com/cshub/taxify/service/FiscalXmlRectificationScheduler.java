@@ -5,11 +5,9 @@ import br.com.cshub.taxify.enumerated.PlanServiceEnum;
 import br.com.cshub.taxify.repository.SubscriptionRepository;
 import br.com.cshub.taxify.domain.company.Company;
 import br.com.cshub.taxify.domain.xml.FiscalXmlDocument;
-import br.com.cshub.taxify.domain.xml.FiscalXmlSyncControl;
 import br.com.cshub.taxify.dto.fiscalrule.FiscalXmlRectificationResultDTO;
 import br.com.cshub.taxify.integration.fiscalxml.FiscalXmlRectificationProperties;
 import br.com.cshub.taxify.repository.FiscalXmlDocumentRepository;
-import br.com.cshub.taxify.repository.FiscalXmlSyncControlRepository;
 import br.com.cshub.taxify.repository.ProductFiscalRuleRepository;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
@@ -20,26 +18,21 @@ import java.time.LocalDate;
 import java.time.LocalDateTime;
 import java.time.LocalTime;
 import java.util.List;
-import java.util.Map;
-import java.util.UUID;
-import java.util.stream.Collectors;
 
 @Component
 public class FiscalXmlRectificationScheduler {
 
     private static final Logger log = LoggerFactory.getLogger(FiscalXmlRectificationScheduler.class);
 
-    private final FiscalXmlSyncControlRepository syncControlRepository;
     private final FiscalXmlDocumentRepository documentRepository;
     private final ProductFiscalRuleRepository ruleRepository;
     private final SubscriptionRepository subscriptionRepository;
     private final FiscalXmlRectificationService rectificationService;
     private final FiscalXmlRectificationProperties properties;
 
-    public FiscalXmlRectificationScheduler(FiscalXmlSyncControlRepository syncControlRepository, FiscalXmlDocumentRepository documentRepository,
+    public FiscalXmlRectificationScheduler(FiscalXmlDocumentRepository documentRepository,
                                             ProductFiscalRuleRepository ruleRepository, SubscriptionRepository subscriptionRepository,
                                             FiscalXmlRectificationService rectificationService, FiscalXmlRectificationProperties properties) {
-        this.syncControlRepository = syncControlRepository;
         this.subscriptionRepository = subscriptionRepository;
         this.documentRepository = documentRepository;
         this.ruleRepository = ruleRepository;
@@ -67,22 +60,14 @@ public class FiscalXmlRectificationScheduler {
 
     /**
      * Companies with rules (nothing to rectify without one) entitled today to the fiscal XML
-     * import, whatever the source - SIEG, SEFAZ or both. One still in the middle of a SIEG import
-     * waits for it to finish (its notes are still arriving); a company with no SIEG control
-     * (SEFAZ only) or one never checked against SIEG is not held back.
+     * import, whatever the source - SIEG, SEFAZ or both. A company whose SIEG import is incomplete is not held
+     * back: documents SIEG counts that never become an NF-e here (a CT-e, a parse error) would hold it forever.
      */
     List<Company> candidates() {
-        Map<UUID, FiscalXmlSyncControl> siegControls = syncControlRepository.findAllWithCompany().stream()
-                .collect(Collectors.toMap(control -> control.getCompany().getId(), control -> control, (first, second) -> first));
         LocalDate today = LocalDate.now();
         return ruleRepository.findCompaniesWithRules().stream()
-                .filter(company -> !midSiegImport(siegControls.get(company.getId())))
                 .filter(company -> entitled(company, today))
                 .toList();
-    }
-
-    private static boolean midSiegImport(FiscalXmlSyncControl control) {
-        return control != null && control.getTotalSieg() > 0 && control.getTotalImportado() < control.getTotalSieg();
     }
 
     private boolean entitled(Company company, LocalDate today) {

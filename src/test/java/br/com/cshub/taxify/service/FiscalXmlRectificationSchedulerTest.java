@@ -39,8 +39,6 @@ import static org.mockito.Mockito.when;
 class FiscalXmlRectificationSchedulerTest {
 
     @Mock
-    private FiscalXmlSyncControlRepository syncControlRepository;
-    @Mock
     private FiscalXmlDocumentRepository documentRepository;
     @Mock
     private ProductFiscalRuleRepository ruleRepository;
@@ -55,10 +53,9 @@ class FiscalXmlRectificationSchedulerTest {
     @BeforeEach
     void setUp() {
         properties = new FiscalXmlRectificationProperties();
-        scheduler = new FiscalXmlRectificationScheduler(syncControlRepository, documentRepository, ruleRepository,
+        scheduler = new FiscalXmlRectificationScheduler(documentRepository, ruleRepository,
                 subscriptionRepository, rectificationService, properties);
         when(ruleRepository.findMaxLastModifiedDateByCompanyId(any())).thenReturn(Optional.empty());
-        when(syncControlRepository.findAllWithCompany()).thenReturn(List.of());
         when(documentRepository.findByCompany_IdAndIssueDateBetweenOrderByIssueDateDesc(any(), any(), any())).thenReturn(List.of());
     }
 
@@ -68,7 +65,7 @@ class FiscalXmlRectificationSchedulerTest {
 
         scheduler.rectifyAllCompanies();
 
-        verifyNoInteractions(syncControlRepository, documentRepository, rectificationService);
+        verifyNoInteractions(documentRepository, rectificationService);
     }
 
     @Test
@@ -89,13 +86,10 @@ class FiscalXmlRectificationSchedulerTest {
     }
 
     @Test
-    void aCompanyStillMidSiegImportWaits() {
-        Company midImport = entitledCompanyWithRules(PlanServiceEnum.FISCAL_XML_IMPORT, PlanServiceEnum.SIEG_INTEGRATION);
-        when(syncControlRepository.findAllWithCompany()).thenReturn(List.of(controlFor(midImport, 200, 100)));
+    void aCompanyWithAnIncompleteSiegImportIsNotHeldBack() {
+        Company incomplete = entitledCompanyWithRules(PlanServiceEnum.FISCAL_XML_IMPORT, PlanServiceEnum.SIEG_INTEGRATION);
 
-        scheduler.rectifyAllCompanies();
-
-        verifyNoInteractions(documentRepository, rectificationService);
+        assertThat(scheduler.candidates()).containsExactly(incomplete);
     }
 
     @Test
@@ -104,8 +98,6 @@ class FiscalXmlRectificationSchedulerTest {
         Company neverChecked = companyWith();
         subscribe(neverChecked, PlanServiceEnum.FISCAL_XML_IMPORT, PlanServiceEnum.SEFAZ_INTEGRATION);
         when(ruleRepository.findCompaniesWithRules()).thenReturn(List.of(fullySynced, neverChecked));
-        when(syncControlRepository.findAllWithCompany())
-                .thenReturn(List.of(controlFor(fullySynced, 200, 200), controlFor(neverChecked, 0, 0)));
 
         assertThat(scheduler.candidates()).containsExactly(fullySynced, neverChecked);
     }
