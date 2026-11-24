@@ -53,7 +53,9 @@ public final class FronteiraDTOs {
                           LocalDate dataVencimento, LocalDateTime emitidoEm,
                           BigDecimal icmsARecolher, BigDecimal icmsPago, BigDecimal icmsEmProcesso, BigDecimal icmsAutuado,
                           BigDecimal icmsMandadoSeguranca, BigDecimal icmsAnistiado, BigDecimal icmsRegDebito,
-                          String fileName, LocalDateTime importedAt, String importedBy) {
+                          String fileName, LocalDateTime importedAt, String importedBy,
+                          /** The PDF is kept: "Ver PDF" opens it. */
+                          boolean temPdf) {
     }
 
     /**

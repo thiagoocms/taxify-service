@@ -80,13 +80,17 @@ public class FronteiraService {
     private final CompanyValidation companyValidation;
     private final MessageService messageService;
     private final AuditorAware<String> auditorAware;
+    private final br.com.cshub.taxify.integration.sieg.FiscalXmlFileStorage storage;
+    private static final org.slf4j.Logger log = org.slf4j.LoggerFactory.getLogger(FronteiraService.class);
 
     public FronteiraService(EfiscoExtractParser parser, EfiscoExtractRepository extractRepository,
                             FiscalXmlDocumentRepository documentRepository, FiscalXmlDocumentItemRepository itemRepository,
                             DocumentDivergenceService divergenceService, FronteiraRuleService ruleService,
                             SefazNoteSummaryRepository summaryRepository,
                             br.com.cshub.taxify.repository.ProductFiscalRuleRepository productRuleRepository,
-                            CompanyValidation companyValidation, MessageService messageService, AuditorAware<String> auditorAware) {
+                            CompanyValidation companyValidation, MessageService messageService, AuditorAware<String> auditorAware,
+                            br.com.cshub.taxify.integration.sieg.FiscalXmlFileStorage storage) {
+        this.storage = storage;
         this.productRuleRepository = productRuleRepository;
         this.ruleService = ruleService;
         this.summaryRepository = summaryRepository;
@@ -176,6 +180,7 @@ public class FronteiraService {
             notes.add(row);
         }
         extract.replaceNotes(notes);
+        keepPdf(extract, company, pdf);
         extractRepository.save(extract);
         return report(company, read.periodo());
     }
@@ -561,6 +566,58 @@ public class FronteiraService {
         return (a == null ? BigDecimal.ZERO : a).compareTo(b == null ? BigDecimal.ZERO : b) == 0;
     }
 
+    /** The kept PDF of a company's extract of a period - for "Ver PDF"; the user's access to the company checked. */
+    @Transactional(readOnly = true)
+    public byte[] extractPdf(String companyId, String periodo) {
+        Company company = company(companyId);
+        EfiscoExtract extract = extractRepository.findByCompany_IdAndPeriodoAndDeletedIsFalse(company.getId(), month(periodo).toString())
+                .filter(found -> found.getPdfPath() != null)
+                .orElseThrow(() -> new br.com.cshub.taxify.exception.ResourceNotFoundException(messageService.getMessage("error.entity.not.found")));
+        try {
+            return storage.read(extract.getPdfPath());
+        } catch (java.io.IOException e) {
+            throw new br.com.cshub.taxify.exception.ResourceNotFoundException(messageService.getMessage("error.entity.not.found"));
+        }
+    }
+
+    /**
+     * The e-Fisco sync found the same extract already imported, but imported before PDFs were kept: keeps this one,
+     * so "Ver PDF" works without importing it again.
+     */
+    @Transactional
+    public void attachPdfIfMissing(Company company, byte[] pdf) {
+        EfiscoExtractParser.Extract read;
+        try {
+            read = parser.parse(pdf);
+        } catch (EfiscoExtractParser.InvalidExtractException e) {
+            return;
+        }
+        extractRepository.findByCompany_IdAndPeriodoAndDeletedIsFalse(company.getId(), read.periodo().toString())
+                .filter(extract -> extract.getPdfPath() == null)
+                .ifPresent(extract -> {
+                    keepPdf(extract, company, pdf);
+                    extractRepository.save(extract);
+                });
+    }
+
+    /** Stores the PDF beside the extract (replacing the previous one); a storage failure doesn't fail the import. */
+    private void keepPdf(EfiscoExtract extract, Company company, byte[] pdf) {
+        String previous = extract.getPdfPath();
+        try {
+            extract.setPdfPath(storage.storeExtractPdf(company.getId(), extract.getPeriodo(), pdf));
+        } catch (java.io.IOException | RuntimeException e) {
+            log.warn("Could not keep the extract PDF of company {} ({})", company.getId(), extract.getPeriodo(), e);
+            return;
+        }
+        if (previous != null) {
+            try {
+                storage.delete(previous);
+            } catch (java.io.IOException | RuntimeException e) {
+                log.warn("Could not delete the previous extract PDF {}", previous, e);
+            }
+        }
+    }
+
     /** The company the screen asks to sync with e-Fisco - the user's access checked, and it must be from PE. */
     public Company companyOfPernambuco(String companyId) {
         Company company = company(companyId);
@@ -597,6 +654,6 @@ public class FronteiraService {
                 extract.getCredenciamentoInterno(), extract.getDataVencimento(), extract.getEmitidoEm(),
                 extract.getIcmsARecolher(), extract.getIcmsPago(), extract.getIcmsEmProcesso(), extract.getIcmsAutuado(),
                 extract.getIcmsMandadoSeguranca(), extract.getIcmsAnistiado(), extract.getIcmsRegDebito(),
-                extract.getFileName(), extract.getImportedAt(), extract.getImportedBy());
+                extract.getFileName(), extract.getImportedAt(), extract.getImportedBy(), extract.getPdfPath() != null);
     }
 }

@@ -134,6 +134,7 @@ public class EfiscoSyncService {
                     extract.message() == null ? "O e-Fisco não gerou extrato para o período." : extract.message());
         }
         if (fronteiraService.sameAsImported(company, extract.pdf())) {
+            fronteiraService.attachPdfIfMissing(company, extract.pdf());
             return new CompanyResult(company.getId(), company.getName(), period, Status.SEM_MUDANCA,
                     "Conferido no e-Fisco: o extrato é o mesmo já importado.");
         }

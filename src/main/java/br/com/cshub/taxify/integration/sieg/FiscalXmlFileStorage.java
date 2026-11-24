@@ -85,6 +85,11 @@ public class FiscalXmlFileStorage {
         return writer.write("certificados/" + companyId + "-" + System.currentTimeMillis() + suffix, content);
     }
 
+    /** The Fronteira extract PDF of a company and period ("2026-11") - one file per import. */
+    public String storeExtractPdf(UUID companyId, String periodo, byte[] pdf) throws IOException {
+        return writer.write("fronteira/" + companyId + "-" + periodo + "-" + System.currentTimeMillis() + ".pdf", pdf);
+    }
+
     public byte[] read(String location) throws IOException {
         return backendOf(location).read(location);
     }

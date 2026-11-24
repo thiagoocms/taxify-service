@@ -87,6 +87,10 @@ public class EfiscoExtract extends AbstractAuditingEntity {
     @Column(name = "file_name")
     private String fileName;
 
+    /** Where the extract's PDF is kept (FiscalXmlFileStorage) - null for extracts imported before it was kept. */
+    @Column(name = "pdf_path", length = 500)
+    private String pdfPath;
+
     @Column(name = "imported_at", nullable = false)
     private LocalDateTime importedAt;
 
@@ -145,6 +149,8 @@ public class EfiscoExtract extends AbstractAuditingEntity {
     public BigDecimal getIcmsRegDebito() { return icmsRegDebito; }
     public void setIcmsRegDebito(BigDecimal icmsRegDebito) { this.icmsRegDebito = icmsRegDebito; }
     public String getFileName() { return fileName; }
+    public String getPdfPath() { return pdfPath; }
+    public void setPdfPath(String pdfPath) { this.pdfPath = pdfPath; }
     public void setFileName(String fileName) { this.fileName = fileName; }
     public LocalDateTime getImportedAt() { return importedAt; }
     public void setImportedAt(LocalDateTime importedAt) { this.importedAt = importedAt; }

@@ -80,7 +80,8 @@ class FronteiraServiceTest {
     @BeforeEach
     void setUp() {
         service = new FronteiraService(parser, extractRepository, documentRepository, itemRepository, divergenceService,
-                ruleService, summaryRepository, productRuleRepository, companyValidation, messageService, auditorAware);
+                ruleService, summaryRepository, productRuleRepository, companyValidation, messageService, auditorAware,
+                org.mockito.Mockito.mock(br.com.cshub.taxify.integration.sieg.FiscalXmlFileStorage.class));
         company = new Company(UUID.randomUUID());
         company.setName("Confecções Exemplo");
         company.setUf("PE");

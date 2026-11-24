@@ -22,6 +22,9 @@ public class CompanySpecification extends AbstractsSpecification<Company> {
         if ("search".equals(criteria.getKey())) {
             predicates.add(searchPredicate(root, builder, criteria.getValue().toString()));
         }
+        if ("uf".equals(criteria.getKey())) {
+            predicates.add(builder.equal(builder.upper(builder.trim(root.get("uf"))), criteria.getValue().toString().strip().toUpperCase(Locale.ROOT)));
+        }
     }
 
     /**

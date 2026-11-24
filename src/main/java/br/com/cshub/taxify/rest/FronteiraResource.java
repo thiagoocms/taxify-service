@@ -62,6 +62,15 @@ public class FronteiraResource {
         return ResponseEntity.ok(service.report(companyId, periodo));
     }
 
+    /** The kept PDF of the period's extract, to open in the browser ("Ver PDF"). */
+    @GetMapping(value = "/extrato/pdf", produces = MediaType.APPLICATION_PDF_VALUE)
+    public ResponseEntity<byte[]> extractPdf(@RequestParam String companyId, @RequestParam String periodo) {
+        return ResponseEntity.ok()
+                .header("Content-Disposition", "inline; filename=\"extrato-" + periodo + ".pdf\"")
+                .contentType(MediaType.APPLICATION_PDF)
+                .body(service.extractPdf(companyId, periodo));
+    }
+
     /** The extract PDF as downloaded from e-Fisco; the period comes from the file and replaces an earlier import. */
     @RequiresPermission(Permission.INVOICES_AUDIT)
     @PostMapping(value = "/importar", consumes = MediaType.MULTIPART_FORM_DATA_VALUE)
