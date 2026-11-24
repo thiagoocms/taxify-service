@@ -22,8 +22,11 @@ public final class EfiscoMemoryParser {
     /** "CREDENCIAMENTO (26) 2 2 + 25 = 27 S 26 S IND TEC CREDENCIADA S" */
     private static final Pattern TYPE = Pattern.compile(
             "^([A-ZÀ-Ú ]+?)\\s*\\(([^)]*)\\)\\s+(\\d+)\\s+(\\d+)\\s*\\+\\s*(\\d+)\\s*=\\s*(\\d+)\\s+([SN])\\s+(\\d+)\\s+([SN])\\s+(.*?)\\s+([SN])$");
-    /** "ValorPartidaAntecipado[2400.0000000000]" - also names with spaces ("CoefAgregacaoNorteNE da Mercadoria"). */
-    private static final Pattern VALUE = Pattern.compile("([A-Za-zÀ-ú][\\wÀ-ú ]*?)\\[(-?\\d+(?:\\.\\d+)?)\\]");
+    /**
+     * "ValorPartidaAntecipado[2400.0000000000]" or, as the detail page writes it, "ICMSAntecipadoItem[ 1180.46 ]" - also
+     * names with spaces ("CoefAgregacaoNorteNE da Mercadoria").
+     */
+    private static final Pattern VALUE = Pattern.compile("([A-Za-zÀ-ú][\\wÀ-ú ]*?)\\[\\s*(-?\\d+(?:\\.\\d+)?)\\s*\\]");
     private static final Pattern ITEM = Pattern.compile("^Cálculo Mercadoria:\\s*(.+)$");
     private static final Pattern ICMS_KIND = Pattern.compile("^ICMS Antecipado do Item\\s*\\((.+)\\)\\s*$");
 

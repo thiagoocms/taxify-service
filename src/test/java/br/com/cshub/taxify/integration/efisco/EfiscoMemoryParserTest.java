@@ -66,6 +66,43 @@ class EfiscoMemoryParserTest {
         assertThat(memory.icmsTotal()).isEqualByComparingTo("132");
     }
 
+    /**
+     * The detail page as e-Fisco serves it (NF 752080): values with spaces inside the brackets, and one "Cálculo
+     * Mercadoria" for the whole note - e-Fisco groups the items by its own mercadoria code, not by the note's items.
+     */
+    @Test
+    void readsTheDetailPageWithSpacedValuesAndTheMercadoriaGroup() {
+        String detail = """
+                Cálculo de Nota Fiscal - 012.6.585967968-6
+                CNAE (051412601 - 051412603) 0 0 + 20 = 20 N 7 S INDÚSTRIA ANTECIPADA S
+                CREDENCIAMENTO (26) 2 2 + 25 = 27 S 26 S IND TEC CREDENCIADA S
+                ICMSCalculado[ 1502.4100000000 ] = (ValorTotalProdutos[ 21463.0000000000 ] + ValorFrete[ 0.0000000000 ]) * ValorAliquotaEmitente[ 7.0000000000 ] / 100
+                Cálculo Mercadoria: 258 - ICMS-OP. INTERESTADU
+                ValorItemAntesDoDesconto[ 21462.9999999900 ] = QuantidadeMercadoria[ 300.0000000000 ] * ValorUnitarioMerc[ 71.5433333333 ]
+                ICMSNormalItem[ 1502.4099999993 ] = BaseCalculoItemNormal[ 21462.9999999900 ] * AliquotaInterEstadual[ 0.0700000000 ]
+                CreditoUtilizado[ 1502.4099999993 ] = CFLAItem[ 1502.4099999993 ]
+                BaseCalculoItemAntecipado[ 21462.9999999900 ] = ValorPartidaAntecipado[ 21462.9999999900 ]
+                BaseCalculoItemAntecipado[ 21462.9999999900 ] = BaseCalculoItemAntecipado[ 21462.9999999900 ] * CoefAgregacaoSulSudeste da Mercadoria[ 1.0000000000 ]
+                ICMS Antecipado do Item (Mercadoria com Carga Liquida e sem Direito a Credito Presumido)
+                ICMSAntecipadoItemCL[ 1180.4649999995 ] = BaseCalculoItemAntecipado[ 21462.9999999900 ] * (PercentualCargaLiquida do TipoCalculo[ 5.5000000000 ] / 100)
+                ICMSAntecipadoItem[ 1180.4649999995 ] = ICMSAntecipadoItemCL[ 1180.4649999995 ]
+                """;
+
+        EfiscoMemoryParser.Memory memory = EfiscoMemoryParser.parse(detail);
+
+        assertThat(memory.itens()).hasSize(1);
+        EfiscoMemoryParser.Item group = memory.itens().get(0);
+        assertThat(group.mercadoria()).isEqualTo("258 - ICMS-OP. INTERESTADU");
+        assertThat(group.valorItem()).isEqualByComparingTo("21462.99999999");
+        assertThat(group.partida()).isEqualByComparingTo("21462.99999999");
+        assertThat(group.coefAgregacao()).isEqualByComparingTo("1");
+        assertThat(group.aliquotaInterestadual()).isEqualByComparingTo("0.07");
+        assertThat(group.percentualCargaLiquida()).isEqualByComparingTo("5.5");
+        assertThat(group.credito()).isEqualByComparingTo("1502.4099999993");
+        assertThat(group.icms()).isEqualByComparingTo("1180.4649999995");
+        assertThat(memory.icmsTotal()).isEqualByComparingTo("1180.4649999995");
+    }
+
     @Test
     void theHtmlBecomesTheSameLines() {
         String html = "<html><body><script>var x=1;</script><div>Menu</div><table><tr><td>Cálculo de Nota Fiscal - 012</td></tr>"
