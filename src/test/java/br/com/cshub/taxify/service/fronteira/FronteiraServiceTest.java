@@ -65,6 +65,8 @@ class FronteiraServiceTest {
     @Mock
     private SefazNoteSummaryRepository summaryRepository;
     @Mock
+    private br.com.cshub.taxify.repository.ProductFiscalRuleRepository productRuleRepository;
+    @Mock
     private CompanyValidation companyValidation;
     @Mock
     private MessageService messageService;
@@ -78,7 +80,7 @@ class FronteiraServiceTest {
     @BeforeEach
     void setUp() {
         service = new FronteiraService(parser, extractRepository, documentRepository, itemRepository, divergenceService,
-                ruleService, summaryRepository, companyValidation, messageService, auditorAware);
+                ruleService, summaryRepository, productRuleRepository, companyValidation, messageService, auditorAware);
         company = new Company(UUID.randomUUID());
         company.setName("Confecções Exemplo");
         company.setUf("PE");

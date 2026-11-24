@@ -65,12 +65,24 @@ public class FronteiraRule extends AbstractAuditingEntity {
     @Column(name = "percentual", precision = 9, scale = 4)
     private BigDecimal percentual;
 
+    /** AGREGACAO: the agregação of the base, in percent (20 = coefficient 1,20). */
+    @Column(name = "agregacao", precision = 9, scale = 4)
+    private BigDecimal agregacao;
+
+    /** AGREGACAO: SUL_SUDESTE or DEMAIS (Norte, Nordeste, Centro-Oeste); null = any origin. */
+    @Column(name = "regiao_origem", length = 20)
+    private String regiaoOrigem;
+
+    /** AGREGACAO: only for a supplier of the Simples (true), only for one that isn't (false); null = any. */
+    @Column(name = "fornecedor_simples")
+    private Boolean fornecedorSimples;
+
     @Column(name = "formula", length = 500)
     private String formula;
 
     /**
-     * FORMULA only: the standard treatment it takes the place of (SEM_ENCERRAMENTO, ST, CARGA_LIQUIDA,
-     * USO_CONSUMO - see FronteiraCalculator.Treatment); blank = any of them.
+     * FORMULA only: the standard treatment it takes the place of (SEM_ENCERRAMENTO, ST, MERCADORIA,
+     * CARGA_LIQUIDA, USO_CONSUMO - see FronteiraCalculator.Treatment); blank = any of them.
      */
     @Column(name = "aplica_em", length = 30)
     private String aplicaEm;
@@ -127,6 +139,12 @@ public class FronteiraRule extends AbstractAuditingEntity {
     public void setMva(BigDecimal mva) { this.mva = mva; }
     public BigDecimal getPercentual() { return percentual; }
     public void setPercentual(BigDecimal percentual) { this.percentual = percentual; }
+    public BigDecimal getAgregacao() { return agregacao; }
+    public void setAgregacao(BigDecimal agregacao) { this.agregacao = agregacao; }
+    public String getRegiaoOrigem() { return regiaoOrigem; }
+    public void setRegiaoOrigem(String regiaoOrigem) { this.regiaoOrigem = regiaoOrigem; }
+    public Boolean getFornecedorSimples() { return fornecedorSimples; }
+    public void setFornecedorSimples(Boolean fornecedorSimples) { this.fornecedorSimples = fornecedorSimples; }
     public String getFormula() { return formula; }
     public void setFormula(String formula) { this.formula = formula; }
     public String getAplicaEm() { return aplicaEm; }

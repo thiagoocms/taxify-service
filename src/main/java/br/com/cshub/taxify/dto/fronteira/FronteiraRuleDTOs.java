@@ -18,7 +18,7 @@ public final class FronteiraRuleDTOs {
     /** Rates in percent (20.5 = 20,5%); {@code companyId} null = every company. */
     public record Rule(UUID id, UUID companyId, FronteiraRuleKind kind, String descricao, String ncm, String cest,
                        String codigoProduto, String cnpjFornecedor, BigDecimal aliquota, BigDecimal mva, BigDecimal percentual,
-                       String formula, String aplicaEm, String fundamento, String link, LocalDate validFrom, LocalDate validUntil,
+                       BigDecimal agregacao, String regiaoOrigem, Boolean fornecedorSimples, String formula, String aplicaEm, String fundamento, String link, LocalDate validFrom, LocalDate validUntil,
                        boolean enabled, boolean reviewed, String reviewedBy, LocalDateTime reviewedAt,
                        String createdBy, LocalDateTime createdDate) {
     }
@@ -26,7 +26,8 @@ public final class FronteiraRuleDTOs {
     /** What the screen sends to create or change a rule. */
     public record RuleInput(UUID companyId, FronteiraRuleKind kind, String descricao, String ncm, String cest,
                             String codigoProduto, String cnpjFornecedor, BigDecimal aliquota, BigDecimal mva,
-                            BigDecimal percentual, String formula, String aplicaEm, String fundamento, String link,
+                            BigDecimal percentual, BigDecimal agregacao, String regiaoOrigem, Boolean fornecedorSimples,
+                            String formula, String aplicaEm, String fundamento, String link,
                             LocalDate validFrom, LocalDate validUntil) {
     }
 

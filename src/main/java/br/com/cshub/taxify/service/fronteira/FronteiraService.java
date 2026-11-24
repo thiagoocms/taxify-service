@@ -73,6 +73,7 @@ public class FronteiraService {
     private final DocumentDivergenceService divergenceService;
     private final FronteiraRuleService ruleService;
     private final SefazNoteSummaryRepository summaryRepository;
+    private final br.com.cshub.taxify.repository.ProductFiscalRuleRepository productRuleRepository;
     private final CompanyValidation companyValidation;
     private final MessageService messageService;
     private final AuditorAware<String> auditorAware;
@@ -80,8 +81,10 @@ public class FronteiraService {
     public FronteiraService(EfiscoExtractParser parser, EfiscoExtractRepository extractRepository,
                             FiscalXmlDocumentRepository documentRepository, FiscalXmlDocumentItemRepository itemRepository,
                             DocumentDivergenceService divergenceService, FronteiraRuleService ruleService,
-                            SefazNoteSummaryRepository summaryRepository, CompanyValidation companyValidation,
-                            MessageService messageService, AuditorAware<String> auditorAware) {
+                            SefazNoteSummaryRepository summaryRepository,
+                            br.com.cshub.taxify.repository.ProductFiscalRuleRepository productRuleRepository,
+                            CompanyValidation companyValidation, MessageService messageService, AuditorAware<String> auditorAware) {
+        this.productRuleRepository = productRuleRepository;
         this.ruleService = ruleService;
         this.summaryRepository = summaryRepository;
         this.parser = parser;
@@ -213,7 +216,8 @@ public class FronteiraService {
                 : extractRepository.findByCompany_IdAndDeletedIsFalseOrderByPeriodoDesc(company.getId()).stream()
                         .map(EfiscoExtract::getCredenciamentoInterno).filter(java.util.Objects::nonNull).findFirst().orElse(null);
         FronteiraCalculator.Context context = new FronteiraCalculator.Context(ruleService.rulesFor(company.getId()),
-                company.getTaxRegimeType() == TaxRegime.SIMPLES_NACIONAL, credenciamento);
+                company.getTaxRegimeType() == TaxRegime.SIMPLES_NACIONAL, credenciamento,
+                br.com.cshub.taxify.domain.fiscalrule.ProductRules.of(productRuleRepository.findByCompany_IdAndDeletedIsFalse(company.getId())));
         Map<UUID, List<FiscalXmlDocumentItem>> itemsByDocument = itemsOf(all);
         Map<UUID, FronteiraRuleDTOs.NoteCalc> calcs = new HashMap<>();
         for (FiscalXmlDocument document : all) {

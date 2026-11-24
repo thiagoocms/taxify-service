@@ -4,6 +4,12 @@ package br.com.cshub.taxify.enumerated;
 public enum FronteiraRuleKind {
     /** Internal ICMS rate of PE - without NCM it is the modal one, with NCM (prefix) an exception. */
     ALIQUOTA_INTERNA,
+    /**
+     * Mercadoria sem carga líquida, as e-Fisco's "Cálculo Mercadoria" chosen by the NCM: the base gets the
+     * agregação (20% = CoefAgregacao 1,20), by origin region and whether the supplier is of the Simples;
+     * ICMS = partida × (1 + agregação) × interna − crédito.
+     */
+    AGREGACAO,
     /** Product under ST with encerramento (Anexo 37): NCM (prefix) and/or CEST with its original MVA. */
     ST_MVA,
     /**

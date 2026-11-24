@@ -136,6 +136,76 @@ class FronteiraCalculatorTest {
         assertThat(inRange(result, "132.00")).isTrue();
     }
 
+    /**
+     * e-Fisco's own memory of NF 22799 (SC, produto R$ 576,61 + frete R$ 134,29, ICMS destacado R$ 49,77 at 7%):
+     * ValorPartidaAntecipado = 576,61 + frete 134,29 = 710,90; ICMSAntecipadoItemCL = 710,90 × 5,5% = 39,0995 → 39,10,
+     * the value of the extract. The freight goes into the base; the credit (CFLA 40,36) doesn't count for a carga líquida.
+     */
+    @Test
+    void efiscoMemoryOfNote22799WithFreight() {
+        FiscalXmlDocument document = note("SC", "576.61");
+        document.setValorFrete(new BigDecimal("134.29"));
+        FiscalXmlDocumentItem item = item(document, "P1", "52083200", "6101", "576.61", "7", "49.77", "0", null);
+
+        ItemResult result = FronteiraCalculator.item(document, item,
+                new Context(List.of(interna(null, "20.5"), cargaTecidos()), false, "TECIDOS E ARMARINHO (INDUSTRIA)"));
+
+        assertThat(result.treatment()).isEqualTo(Treatment.CARGA_LIQUIDA);
+        assertThat(result.partida()).isEqualByComparingTo("710.90");
+        assertThat(result.value()).isEqualByComparingTo("39.10");
+        assertThat(inRange(result, "39.10")).isTrue();
+        assertThat(result.memoria().get(0)).contains("frete R$ 134,29");
+        assertThat(result.variables().get("frete")).isEqualByComparingTo("134.29");
+    }
+
+    /**
+     * e-Fisco's own memory of NF 973 (RN, R$ 14.018,40, supplier of the Simples, no ICMS destacado, no freight):
+     * ICMSAntecipadoItemCL = 14.018,40 × 5,5% = 771,012 → 771,01, the value of the extract.
+     */
+    @Test
+    void efiscoMemoryOfNote973() {
+        FiscalXmlDocument document = note("RN", "14018.40");
+        FiscalXmlDocumentItem item = item(document, "P1", "52083200", "6101", "14018.40", null, null, "0", null);
+        item.setTaxDetail(new FiscalItemTaxDetail(null, null, "0", "102", null, null, null, null, null, null, null, null,
+                null, null, null, null, null, null));
+
+        ItemResult result = FronteiraCalculator.item(document, item,
+                new Context(List.of(interna(null, "20.5"), cargaTecidos()), false, "TECIDOS E ARMARINHO (INDUSTRIA)"));
+
+        assertThat(result.treatment()).isEqualTo(Treatment.CARGA_LIQUIDA);
+        assertThat(result.value()).isEqualByComparingTo("771.01");
+        assertThat(inRange(result, "771.01")).isTrue();
+    }
+
+    /** e-Fisco's own memory of NF 475 (RN, R$ 13.720,00, Simples supplier): 13.720,00 × 5,5% = 754,60, the value of the extract. */
+    @Test
+    void efiscoMemoryOfNote475() {
+        FiscalXmlDocument document = note("RN", "13720.00");
+        FiscalXmlDocumentItem item = item(document, "P1", "52083200", "6101", "13720.00", null, null, "0", null);
+        item.setTaxDetail(new FiscalItemTaxDetail(null, null, "0", "102", null, null, null, null, null, null, null, null,
+                null, null, null, null, null, null));
+
+        ItemResult result = FronteiraCalculator.item(document, item,
+                new Context(List.of(interna(null, "20.5"), cargaTecidos()), false, "TECIDOS E ARMARINHO (INDUSTRIA)"));
+
+        assertThat(result.value()).isEqualByComparingTo("754.60");
+        assertThat(inRange(result, "754.60")).isTrue();
+    }
+
+    /** Freight of a note with two items goes by product value, unrounded until the end (as e-Fisco keeps it). */
+    @Test
+    void freightIsSharedByProductValue() {
+        FiscalXmlDocument document = note("SC", "300.00");
+        document.setValorFrete(new BigDecimal("100.00"));
+        FiscalXmlDocumentItem first = item(document, "P1", "52083200", "6101", "100.00", "7", "7.00", "0", null);
+
+        ItemResult result = FronteiraCalculator.item(document, first,
+                new Context(List.of(interna(null, "20.5"), cargaTecidos()), false, "TECIDOS E ARMARINHO (INDUSTRIA)"));
+
+        // frete do item = 100 × 100 ÷ 300 = 33,333...; partida = 133,333...; × 5,5% = 7,3333 → 7,33
+        assertThat(result.value()).isEqualByComparingTo("7.33");
+    }
+
     /** Without the credenciamento, a regime normal company doesn't take a carga líquida meant for one. */
     @Test
     void aCargaLiquidaOfAnotherCredenciamentoIsNotUsed() {
@@ -316,42 +386,110 @@ class FronteiraCalculatorTest {
         assertThat(result.variables().get("inter")).isEqualByComparingTo("0.12");
     }
 
-    /** Under ST, a Simples supplier with no ICMS destacado and its credit not read yet: no value instead of a wrong one. */
+    /** Under ST, a Simples supplier with no ICMS destacado gets e-Fisco's crédito outorgado: the interstate rate over the product. */
     @Test
-    void stFromASimplesSupplierWithoutTheCreditReadIsSemRegra() {
+    void stFromASimplesSupplierTakesTheCreditoOutorgado() {
         FiscalXmlDocument document = note("RN", "1000.00");
-        document.setMetadataVersion(5);
 
         ItemResult result = FronteiraCalculator.item(document, simplesSupplierItem(document, "1000.00", null),
                 new Context(List.of(interna(null, "20.5"), stLocks()), false, null));
 
-        assertThat(result.treatment()).isEqualTo(Treatment.SEM_REGRA);
-        assertThat(result.semRegraMotivo()).contains("Fornecedor do Simples");
+        // MVA ajustada = 1,40 × 0,88 ÷ 0,795 − 1 = 54,97%; 1.000 × 1,5497 × 0,205 − crédito 1.000 × 12% = 197,69
+        assertThat(result.treatment()).isEqualTo(Treatment.ST);
+        assertThat(result.value()).isBetween(new BigDecimal("197.65"), new BigDecimal("197.72"));
+        assertThat(result.memoria()).anySatisfy(line -> assertThat(line).contains("Crédito outorgado"));
     }
 
-    @Test
-    void stFromASimplesSupplierUsesTheCreditItPassesOn() {
-        FiscalXmlDocument document = note("RN", "1000.00");
-        document.setMetadataVersion(6);
-
-        ItemResult result = FronteiraCalculator.item(document, simplesSupplierItem(document, "1000.00", "25.60"),
-                new Context(List.of(interna(null, "20.5"), stLocks()), false, null));
-
-        assertThat(result.treatment()).isEqualTo(Treatment.ST);
-        assertThat(result.memoria()).anySatisfy(line -> assertThat(line).contains("crédito transferido de R$ 25,60"));
-        // MVA ajustada = 1,40 × 0,88 ÷ 0,795 − 1 = 54,97%; 1.000 × 1,5497 × 0,205 − 25,60 = 292,09
-        assertThat(result.value()).isBetween(new BigDecimal("292.05"), new BigDecimal("292.12"));
+    private static FronteiraRule nobreakAgregacao() {
+        FronteiraRule rule = rule(FronteiraRuleKind.AGREGACAO);
+        rule.setNcm("8504");
+        rule.setAgregacao(new BigDecimal("20"));
+        rule.setRegiaoOrigem(FronteiraCalculator.SUL_SUDESTE);
+        rule.setFornecedorSimples(true);
+        return rule;
     }
 
+    private static FiscalXmlDocumentItem nobreak(FiscalXmlDocument document) {
+        FiscalXmlDocumentItem item = item(document, "11204481", "85044040", "6108", "4261.61", null, null, "0", null);
+        item.setTaxDetail(new FiscalItemTaxDetail(null, null, "0", "102", null, null, null, null, null, null, null, null,
+                null, null, null, null, null, null));
+        return item;
+    }
+
+    /**
+     * e-Fisco's own memory of NF 1810 (MG, nobreak NCM 8504.40.40, supplier of the Simples): "Mercadoria 1061 - ELETR-ELETRON",
+     * no carga líquida although the company is credenciada; base = 4.261,61 × CoefAgregacaoSulSudeste para Simples 1,20 =
+     * 5.113,93; crédito outorgado = 4.261,61 × 7% = 298,31; ICMS = 5.113,93 × 20,5% − 298,31 = 750,04, the value of the extract.
+     */
     @Test
-    void stFromASimplesSupplierWithoutCreditIsCalculatedButToBeChecked() {
-        FiscalXmlDocument document = note("RN", "1000.00");
-        document.setMetadataVersion(6);
+    void efiscoMemoryOfNote1810Agregacao() {
+        FiscalXmlDocument document = note("MG", "4261.61");
 
-        ItemResult result = FronteiraCalculator.item(document, simplesSupplierItem(document, "1000.00", null),
-                new Context(List.of(interna(null, "20.5"), stLocks()), false, null));
+        ItemResult result = FronteiraCalculator.item(document, nobreak(document),
+                new Context(List.of(interna(null, "20.5"), cargaTecidos(), nobreakAgregacao()), false, "TECIDOS E ARMARINHO (INDUSTRIA)"));
 
-        assertThat(result.treatment()).isEqualTo(Treatment.ST);
-        assertThat(result.reviewed()).isFalse();
+        assertThat(result.treatment()).isEqualTo(Treatment.MERCADORIA);
+        assertThat(result.value()).isEqualByComparingTo("750.04");
+        assertThat(inRange(result, "750.04")).isTrue();
+    }
+
+    /**
+     * The same nobreak booked by the company as ativo imobilizado (its product fiscal rule: CFOP 1551): only the
+     * diferencial - 4.261,61 × 20,5% − 298,31 = 575,32. e-Fisco charged 750,04 as goods for resale: 174,72 more.
+     */
+    @Test
+    void anAtivoByTheProductRuleIsOnlyTheDiferencial() {
+        FiscalXmlDocument document = note("MG", "4261.61");
+        br.com.cshub.taxify.domain.fiscalrule.ProductFiscalRule ativo = new br.com.cshub.taxify.domain.fiscalrule.ProductFiscalRule(UUID.randomUUID());
+        ativo.setCodigoProduto("11204481");
+        ativo.setCfopCorreto("1551");
+
+        ItemResult result = FronteiraCalculator.item(document, nobreak(document),
+                new Context(List.of(interna(null, "20.5"), cargaTecidos(), nobreakAgregacao()), false, "TECIDOS E ARMARINHO (INDUSTRIA)",
+                        br.com.cshub.taxify.domain.fiscalrule.ProductRules.of(List.of(ativo))));
+
+        assertThat(result.treatment()).isEqualTo(Treatment.USO_CONSUMO);
+        assertThat(result.value()).isEqualByComparingTo("575.32");
+        assertThat(result.memoria()).anySatisfy(line -> assertThat(line).contains("CFOP de entrada 1551"));
+    }
+
+    /**
+     * NF 29086 (SP, mini prensa térmica NCM 8516.60.00, imported - origin 1 -, Simples supplier): e-Fisco charged 28,06 =
+     * 136,19 × 1,20 × 20,5% − 136,19 × 4%. As the ativo the company books it as: 136,19 × 20,5% − 5,45 = 22,47.
+     */
+    @Test
+    void importedGoodsTakeTheFourPercentCredit() {
+        FiscalXmlDocument document = note("SP", "136.19");
+        FiscalXmlDocumentItem item = item(document, "TW6527", "85166000", "6106", "136.19", null, null, "1", null);
+        item.setTaxDetail(new FiscalItemTaxDetail(null, null, "1", "102", null, null, null, null, null, null, null, null,
+                null, null, null, null, null, null));
+        FronteiraRule eletro = nobreakAgregacao();
+        eletro.setNcm("8516");
+        Context asEfisco = new Context(List.of(interna(null, "20.5"), cargaTecidos(), eletro), false, "TECIDOS E ARMARINHO (INDUSTRIA)");
+        br.com.cshub.taxify.domain.fiscalrule.ProductFiscalRule ativo = new br.com.cshub.taxify.domain.fiscalrule.ProductFiscalRule(UUID.randomUUID());
+        ativo.setCodigoProduto("TW6527");
+        ativo.setDocumentoFornecedor("11111111000111");
+        ativo.setCfopCorreto("1551");
+        Context asAtivo = new Context(asEfisco.rules(), false, asEfisco.credenciamento(),
+                br.com.cshub.taxify.domain.fiscalrule.ProductRules.of(List.of(ativo)));
+
+        assertThat(FronteiraCalculator.item(document, item, asEfisco).value()).isEqualByComparingTo("28.06");
+        assertThat(FronteiraCalculator.item(document, item, asAtivo).value()).isEqualByComparingTo("22.47");
+    }
+
+    /** An agregação for the other region (or for non-Simples suppliers) is not used. */
+    @Test
+    void anAgregacaoOfAnotherRegionIsNotUsed() {
+        FiscalXmlDocument document = note("MG", "4261.61");
+        FronteiraRule northeast = nobreakAgregacao();
+        northeast.setRegiaoOrigem(FronteiraCalculator.DEMAIS_REGIOES);
+        FronteiraRule notSimples = nobreakAgregacao();
+        notSimples.setFornecedorSimples(false);
+
+        ItemResult result = FronteiraCalculator.item(document, nobreak(document),
+                new Context(List.of(interna(null, "20.5"), northeast, notSimples), false, null));
+
+        assertThat(result.treatment()).isEqualTo(Treatment.SEM_ENCERRAMENTO);
+        assertThat(result.value()).isEqualByComparingTo("575.32");
     }
 }

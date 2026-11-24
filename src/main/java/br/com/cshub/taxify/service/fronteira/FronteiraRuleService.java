@@ -190,6 +190,9 @@ public class FronteiraRuleService {
         rule.setPercentual(null);
         rule.setFormula(null);
         rule.setAplicaEm(null);
+        rule.setAgregacao(null);
+        rule.setRegiaoOrigem(null);
+        rule.setFornecedorSimples(null);
         switch (input.kind()) {
             case ALIQUOTA_INTERNA -> rule.setAliquota(percent(input.aliquota(), "a alíquota interna"));
             case ST_MVA -> {
@@ -202,6 +205,21 @@ public class FronteiraRuleService {
                 rule.setMva(input.mva());
             }
             case SIMPLES_PERCENTUAL -> rule.setPercentual(percent(input.percentual(), "a carga líquida"));
+            case AGREGACAO -> {
+                if (rule.getNcm() == null && rule.getCest() == null && rule.getCodigoProduto() == null) {
+                    throw invalid("Uma mercadoria com agregação precisa de NCM, CEST ou código do produto.");
+                }
+                if (input.agregacao() == null || input.agregacao().signum() < 0 || input.agregacao().compareTo(new BigDecimal("1000")) > 0) {
+                    throw invalid("Informe a agregação em % (de 0 a 1000; 20 = coeficiente 1,20).");
+                }
+                String regiao = input.regiaoOrigem() == null || input.regiaoOrigem().isBlank() ? null : input.regiaoOrigem().strip().toUpperCase(java.util.Locale.ROOT);
+                if (regiao != null && !java.util.Set.of(FronteiraCalculator.SUL_SUDESTE, FronteiraCalculator.DEMAIS_REGIOES).contains(regiao)) {
+                    throw invalid("Região de origem: SUL_SUDESTE, DEMAIS ou em branco (qualquer).");
+                }
+                rule.setAgregacao(input.agregacao());
+                rule.setRegiaoOrigem(regiao);
+                rule.setFornecedorSimples(input.fornecedorSimples());
+            }
             case FORMULA -> {
                 try {
                     FormulaEvaluator.validate(input.formula());
@@ -221,14 +239,15 @@ public class FronteiraRuleService {
         }
         String treatment = value.strip().toUpperCase(java.util.Locale.ROOT);
         if (!REPLACEABLE.contains(treatment)) {
-            throw invalid("A fórmula pode substituir: sem encerramento, ST, carga líquida ou uso e consumo.");
+            throw invalid("A fórmula pode substituir: sem encerramento, mercadoria com agregação, ST, carga líquida ou uso e consumo.");
         }
         return treatment;
     }
 
     private static final java.util.Set<String> REPLACEABLE = java.util.Set.of(
             FronteiraCalculator.Treatment.SEM_ENCERRAMENTO.name(), FronteiraCalculator.Treatment.ST.name(),
-            FronteiraCalculator.Treatment.CARGA_LIQUIDA.name(), FronteiraCalculator.Treatment.USO_CONSUMO.name());
+            FronteiraCalculator.Treatment.CARGA_LIQUIDA.name(), FronteiraCalculator.Treatment.USO_CONSUMO.name(),
+            FronteiraCalculator.Treatment.MERCADORIA.name());
 
     private BigDecimal percent(BigDecimal value, String what) {
         if (value == null || value.signum() < 0 || value.compareTo(BigDecimal.valueOf(100)) > 0) {
@@ -265,7 +284,8 @@ public class FronteiraRuleService {
     static FronteiraRuleDTOs.Rule toDto(FronteiraRule rule) {
         return new FronteiraRuleDTOs.Rule(rule.getId(), rule.getCompany() == null ? null : rule.getCompany().getId(), rule.getKind(),
                 rule.getDescricao(), rule.getNcm(), rule.getCest(), rule.getCodigoProduto(), rule.getCnpjFornecedor(), rule.getAliquota(),
-                rule.getMva(), rule.getPercentual(), rule.getFormula(), rule.getAplicaEm(), rule.getFundamento(), rule.getLink(), rule.getValidFrom(),
+                rule.getMva(), rule.getPercentual(), rule.getAgregacao(), rule.getRegiaoOrigem(), rule.getFornecedorSimples(),
+                rule.getFormula(), rule.getAplicaEm(), rule.getFundamento(), rule.getLink(), rule.getValidFrom(),
                 rule.getValidUntil(), rule.isEnabled(), rule.isReviewed(), rule.getReviewedBy(), rule.getReviewedAt(),
                 rule.getCreatedBy(), rule.getCreatedDate());
     }

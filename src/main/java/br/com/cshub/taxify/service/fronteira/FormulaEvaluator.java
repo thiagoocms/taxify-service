@@ -33,14 +33,17 @@ public final class FormulaEvaluator {
         variables.put("valor_produto", "Valor do produto no item (vProd)");
         variables.put("ipi", "IPI do item");
         variables.put("despesas", "Frete, seguro e outras despesas da nota rateados para o item");
+        variables.put("frete", "Só o frete da nota rateado para o item (já está em despesas e em partida)");
         variables.put("icms_origem", "ICMS destacado no item pelo fornecedor");
         variables.put("credito_sn", "Crédito que o fornecedor do Simples transfere no item (vCredICMSSN; zero sem ele)");
-        variables.put("credito", "Crédito de origem: o ICMS destacado ou, sem ele, o crédito do fornecedor do Simples");
+        variables.put("credito", "Crédito do e-Fisco: o ICMS destacado limitado à interestadual sobre o produto; do fornecedor do Simples, "
+                + "a interestadual sobre o produto (crédito outorgado)");
         variables.put("aliquota_origem", "Alíquota de ICMS destacada no item (fração: 12% = 0,12)");
         variables.put("inter", "Alíquota interestadual pela origem e pela UF (fração: 4%, 7% ou 12%)");
         variables.put("interna", "Alíquota interna de PE da tabela de ICMS (fração: 20,5% = 0,205)");
         variables.put("mva", "MVA original da regra de ST do item (fração: 54% = 0,54; zero sem regra)");
         variables.put("mva_ajustada", "MVA ajustada: [(1 + mva) × (1 − inter) ÷ (1 − interna)] − 1");
+        variables.put("agregacao", "Agregação da mercadoria (fração: 20% = 0,20; zero sem regra) - a base é partida × (1 + agregacao)");
         variables.put("st_retido", "ICMS-ST já retido pelo fornecedor no item");
         variables.put("percentual", "Percentual do art. 363-A da regra do Simples (fração: 5,5% = 0,055; zero sem regra)");
         VARIABLES = java.util.Collections.unmodifiableMap(variables);
@@ -58,6 +61,7 @@ public final class FormulaEvaluator {
         sample.put("valor_produto", new BigDecimal("1000.00"));
         sample.put("ipi", BigDecimal.ZERO);
         sample.put("despesas", BigDecimal.ZERO);
+        sample.put("frete", BigDecimal.ZERO);
         sample.put("icms_origem", new BigDecimal("120.00"));
         sample.put("credito_sn", BigDecimal.ZERO);
         sample.put("credito", new BigDecimal("120.00"));
@@ -66,6 +70,7 @@ public final class FormulaEvaluator {
         sample.put("interna", new BigDecimal("0.205"));
         sample.put("mva", new BigDecimal("0.40"));
         sample.put("mva_ajustada", new BigDecimal("0.549686"));
+        sample.put("agregacao", BigDecimal.ZERO);
         sample.put("st_retido", BigDecimal.ZERO);
         sample.put("percentual", new BigDecimal("0.055"));
         SAMPLE = java.util.Collections.unmodifiableMap(sample);
