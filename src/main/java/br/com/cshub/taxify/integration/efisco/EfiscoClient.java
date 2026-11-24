@@ -44,6 +44,8 @@ public final class EfiscoClient {
     static final String LOGIN = HOST + "/sfi_com_sca/PRGerenciarLoginUsuario";
     static final String EXTRACT = HOST + "/sfi_trb_cmt/PREmitirExtratosContribuinte";
     static final String EXTRACT_MENU = "190696";
+    static final String MEMORY = HOST + "/sfi_trb_cmt/PRConsultarNotaFiscalMemoria";
+    static final String MEMORY_MENU = "190701";
 
     private static final Charset PAGE_CHARSET = Charset.forName("ISO-8859-1");
     private static final Pattern FORM = Pattern.compile("<form[^>]*name=\"?frm_principal\"?[^>]*>(.*?)</form>",
@@ -124,6 +126,40 @@ public final class EfiscoClient {
                     "O e-Fisco não devolveu o PDF do extrato" + page.messageSuffix());
         }
         return Extract.of(body);
+    }
+
+    /**
+     * e-Fisco's "Memória de Cálculo" of one note, by its registro (the extract's "Registro" column): the service
+     * ({@code cd_menu=190701}) and the filter with the registro - one note, so e-Fisco answers with the detail itself.
+     * {@code null} when e-Fisco has no memória for it (with its message in the exception-free result).
+     */
+    public MemoryPage calculationMemory(String registro) throws IOException, InterruptedException {
+        Map<String, String> open = new LinkedHashMap<>(form);
+        open.put("cd_menu", MEMORY_MENU);
+        open.put("evento", "");
+        Page screen = post(MEMORY, open);
+        Map<String, String> fields = screen.form();
+        if (!fields.containsKey("NumeroRegistroNotaFiscal")) {
+            throw new EfiscoException(EfiscoException.Reason.PAGINA_INESPERADA,
+                    "O e-Fisco não abriu a consulta de memória de cálculo" + screen.messageSuffix());
+        }
+        fields.put("NumeroRegistroNotaFiscal", registro);
+        fields.put("NumeroNotaFiscal", "");
+        fields.put("qt_registros_pagina", "20");
+        fields.put("evento", "processarFiltroConsulta");
+        Page result = post(MEMORY, fields);
+        form = result.form().isEmpty() ? form : result.form();
+        if (!result.html().contains("Cálculo de Nota Fiscal") && !result.html().contains("C&aacute;lculo de Nota Fiscal")) {
+            return new MemoryPage(null, result.message() == null ? "O e-Fisco não tem memória de cálculo para esse registro." : result.message());
+        }
+        return new MemoryPage(result.html(), null);
+    }
+
+    /** The memória page, or why there is none. */
+    public record MemoryPage(String html, String message) {
+        public boolean found() {
+            return html != null;
+        }
     }
 
     /** "039469751" → "0394697-51" (the 9-digit PE IE as the screen takes it); other layouts go as they are. */

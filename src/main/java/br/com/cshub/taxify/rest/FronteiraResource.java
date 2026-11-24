@@ -5,6 +5,7 @@ import br.com.cshub.taxify.dto.fronteira.FronteiraDTOs;
 import br.com.cshub.taxify.dto.fronteira.FronteiraRuleDTOs;
 import br.com.cshub.taxify.enumerated.Permission;
 import br.com.cshub.taxify.security.RequiresPermission;
+import br.com.cshub.taxify.service.fronteira.EfiscoMemoryService;
 import br.com.cshub.taxify.service.fronteira.EfiscoSyncService;
 import br.com.cshub.taxify.service.fronteira.FronteiraRuleService;
 import br.com.cshub.taxify.service.fronteira.FronteiraService;
@@ -32,11 +33,29 @@ public class FronteiraResource {
     private final FronteiraService service;
     private final FronteiraRuleService ruleService;
     private final EfiscoSyncService efiscoSyncService;
+    private final EfiscoMemoryService efiscoMemoryService;
 
-    public FronteiraResource(FronteiraService service, FronteiraRuleService ruleService, EfiscoSyncService efiscoSyncService) {
+    public FronteiraResource(FronteiraService service, FronteiraRuleService ruleService, EfiscoSyncService efiscoSyncService,
+                             EfiscoMemoryService efiscoMemoryService) {
         this.service = service;
         this.ruleService = ruleService;
         this.efiscoSyncService = efiscoSyncService;
+        this.efiscoMemoryService = efiscoMemoryService;
+    }
+
+    /** e-Fisco's memória of a note already fetched (by the extract's registro); 204 when never fetched. */
+    @GetMapping("/memoria")
+    public ResponseEntity<EfiscoMemoryService.MemoryDTO> efiscoMemory(@RequestParam String companyId, @RequestParam String registro) {
+        return efiscoMemoryService.kept(service.companyOfPernambuco(companyId), registro)
+                .map(ResponseEntity::ok)
+                .orElseGet(() -> ResponseEntity.noContent().build());
+    }
+
+    /** Fetches the note's memória from e-Fisco now, with the accountant's certificate, and keeps it. */
+    @RequiresPermission(Permission.INVOICES_AUDIT)
+    @PostMapping("/memoria/buscar")
+    public ResponseEntity<EfiscoMemoryService.MemoryDTO> fetchEfiscoMemory(@RequestParam String companyId, @RequestParam String registro) {
+        return ResponseEntity.ok(efiscoMemoryService.fetch(service.companyOfPernambuco(companyId), registro));
     }
 
     /** What the "Sincronizar com e-Fisco" button gets back: how the run went and the comparison after it. */
