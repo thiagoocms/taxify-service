@@ -66,6 +66,9 @@ public class FronteiraService {
     private static final String SYSTEM = "sistema";
     private static final BigDecimal HUNDRED = BigDecimal.valueOf(100);
 
+    /** Who "imported" an extract the e-Fisco sync fetched. */
+    public static final String EFISCO_IMPORTER = "e-Fisco (automático)";
+
     private final EfiscoExtractParser parser;
     private final EfiscoExtractRepository extractRepository;
     private final FiscalXmlDocumentRepository documentRepository;
@@ -102,7 +105,19 @@ public class FronteiraService {
     /** Reads the PDF and stores it as the company's extract of its period (replacing an earlier import). */
     @Transactional
     public FronteiraDTOs.Report importExtract(String companyId, String fileName, byte[] pdf) {
-        Company company = company(companyId);
+        return importExtract(company(companyId), fileName, pdf, null);
+    }
+
+    /**
+     * The extract the e-Fisco sync fetched (EfiscoSyncService) - no user here: the company comes from the firm whose
+     * accountant's certificate logged in, and the import is signed "e-Fisco (automático)".
+     */
+    @Transactional
+    public FronteiraDTOs.Report importFromEfisco(Company company, byte[] pdf) {
+        return importExtract(company, "e-Fisco-extrato.pdf", pdf, EFISCO_IMPORTER);
+    }
+
+    private FronteiraDTOs.Report importExtract(Company company, String fileName, byte[] pdf, String importedBy) {
         if (company.getUf() != null && !UF.equalsIgnoreCase(company.getUf().strip())) {
             throw new BadRequestException(messageService.getMessage("error.fronteira.company.not.pe"));
         }
@@ -144,7 +159,7 @@ public class FronteiraService {
         extract.setIcmsRegDebito(read.totals().get(EfiscoExtractParser.REG_DEBITO));
         extract.setFileName(fileName == null ? null : fileName.length() > 255 ? fileName.substring(0, 255) : fileName);
         extract.setImportedAt(LocalDateTime.now());
-        extract.setImportedBy(auditorAware.getCurrentAuditor().orElse(SYSTEM));
+        extract.setImportedBy(importedBy != null ? importedBy : auditorAware.getCurrentAuditor().orElse(SYSTEM));
 
         List<EfiscoExtractNote> notes = new ArrayList<>();
         for (EfiscoExtractParser.Note note : read.notes()) {
@@ -503,6 +518,20 @@ public class FronteiraService {
 
     private static String stripZeros(String digits) {
         return digits.replaceFirst("^0+(?=\\d)", "");
+    }
+
+    /** The company the screen asks to sync with e-Fisco - the user's access checked, and it must be from PE. */
+    public Company companyOfPernambuco(String companyId) {
+        Company company = company(companyId);
+        if (company.getUf() != null && !UF.equalsIgnoreCase(company.getUf().strip())) {
+            throw new BadRequestException(messageService.getMessage("error.fronteira.company.not.pe"));
+        }
+        return company;
+    }
+
+    /** "2026-11", or the current month. */
+    public YearMonth periodOrCurrent(String periodo) {
+        return periodo == null || periodo.isBlank() ? YearMonth.now() : month(periodo);
     }
 
     private Company company(String companyId) {

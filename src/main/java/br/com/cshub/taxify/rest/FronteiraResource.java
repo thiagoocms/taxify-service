@@ -5,6 +5,7 @@ import br.com.cshub.taxify.dto.fronteira.FronteiraDTOs;
 import br.com.cshub.taxify.dto.fronteira.FronteiraRuleDTOs;
 import br.com.cshub.taxify.enumerated.Permission;
 import br.com.cshub.taxify.security.RequiresPermission;
+import br.com.cshub.taxify.service.fronteira.EfiscoSyncService;
 import br.com.cshub.taxify.service.fronteira.FronteiraRuleService;
 import br.com.cshub.taxify.service.fronteira.FronteiraService;
 import org.springframework.http.MediaType;
@@ -30,10 +31,29 @@ public class FronteiraResource {
 
     private final FronteiraService service;
     private final FronteiraRuleService ruleService;
+    private final EfiscoSyncService efiscoSyncService;
 
-    public FronteiraResource(FronteiraService service, FronteiraRuleService ruleService) {
+    public FronteiraResource(FronteiraService service, FronteiraRuleService ruleService, EfiscoSyncService efiscoSyncService) {
         this.service = service;
         this.ruleService = ruleService;
+        this.efiscoSyncService = efiscoSyncService;
+    }
+
+    /** What the "Sincronizar com e-Fisco" button gets back: how the run went and the comparison after it. */
+    public record EfiscoSync(EfiscoSyncService.SyncResult sync, FronteiraDTOs.Report report) {
+    }
+
+    /**
+     * Fetches the period's extract of the company from e-Fisco now, with the firm's accountant's certificate, and
+     * imports it - the same the scheduled run does, for the company and month on screen.
+     */
+    @RequiresPermission(Permission.INVOICES_AUDIT)
+    @PostMapping("/sincronizar")
+    public ResponseEntity<EfiscoSync> syncWithEfisco(@RequestParam String companyId, @RequestParam(required = false) String periodo) {
+        var company = service.companyOfPernambuco(companyId);
+        var period = service.periodOrCurrent(periodo);
+        EfiscoSyncService.SyncResult result = efiscoSyncService.syncCompany(company, period);
+        return ResponseEntity.ok(new EfiscoSync(result, service.report(companyId, period.toString())));
     }
 
     /** The comparison of a period ("2026-11"); blank = the latest imported. */
