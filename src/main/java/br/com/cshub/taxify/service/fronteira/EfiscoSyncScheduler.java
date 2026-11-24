@@ -14,9 +14,10 @@ import java.util.List;
 import java.util.concurrent.atomic.AtomicBoolean;
 
 /**
- * The e-Fisco sync on its own: a few times a day ({@code efisco.sync.cron}, 7h, 13h and 19h by default), every firm
- * with the accountant's certificate gets the extract of the current and the previous month of each PE company -
- * the previous one keeps changing while notes are still being calculated. Off with {@code efisco.sync.enabled=false}.
+ * The e-Fisco sync on its own: once a day ({@code efisco.sync.cron}, 7h by default), every firm with the
+ * accountant's certificate gets the extract of the current month of each PE company, and of the previous one while
+ * it is still open (until its due date, or paid) - the "Sincronizar com e-Fisco" button is there for anything newer.
+ * An extract equal to the one imported is kept as it is. Off with {@code efisco.sync.enabled=false}.
  * Runs on a virtual thread; a run still going when the next fires is not doubled.
  */
 @Component
@@ -36,7 +37,7 @@ public class EfiscoSyncScheduler {
         this.enabled = enabled;
     }
 
-    @Scheduled(cron = "${efisco.sync.cron:0 0 7,13,19 * * *}")
+    @Scheduled(cron = "${efisco.sync.cron:0 0 7 * * *}")
     public void tick() {
         if (!enabled) {
             return;

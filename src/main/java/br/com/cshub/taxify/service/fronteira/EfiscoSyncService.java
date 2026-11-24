@@ -51,18 +51,21 @@ public class EfiscoSyncService {
     public record CompanyResult(UUID companyId, String companyName, YearMonth period, Status status, String detail) {
     }
 
-    public enum Status { IMPORTADO, SEM_EXTRATO, SEM_IE, ERRO }
+    public enum Status { IMPORTADO, SEM_MUDANCA, SEM_EXTRATO, SEM_IE, ERRO }
 
     /** The whole run: OK / PARCIAL / ERRO / BLOQUEADO / SEM_CERTIFICADO / EM_ANDAMENTO, and each company's result. */
     public record SyncResult(String status, String detail, List<CompanyResult> companies) {
     }
 
-    /** Every PE company of the firm, for each period - the scheduled run. */
+    /**
+     * Every PE company of the firm, for each period - the scheduled run. A past month whose extract is already closed
+     * (past its due date, or paid) isn't asked again: it doesn't change any more.
+     */
     public SyncResult syncFirm(UUID accountingFirmId, List<YearMonth> periods) {
         List<Company> companies = companyRepository.findByAccountingFirm_IdAndDeletedIsFalseOrderByNameAsc(accountingFirmId).stream()
                 .filter(EfiscoSyncService::isPernambuco)
                 .toList();
-        return run(accountingFirmId, companies, periods);
+        return run(accountingFirmId, companies, periods, true);
     }
 
     /** One company and period - the "Sincronizar com e-Fisco" of the Fronteira screen. */
@@ -70,10 +73,10 @@ public class EfiscoSyncService {
         if (company.getAccountingFirm() == null) {
             return new SyncResult("SEM_CERTIFICADO", "A empresa não pertence a um escritório.", List.of());
         }
-        return run(company.getAccountingFirm().getId(), List.of(company), List.of(period));
+        return run(company.getAccountingFirm().getId(), List.of(company), List.of(period), false);
     }
 
-    private SyncResult run(UUID firmId, List<Company> companies, List<YearMonth> periods) {
+    private SyncResult run(UUID firmId, List<Company> companies, List<YearMonth> periods, boolean skipClosed) {
         Optional<FirmCertificate> found = certificateService.find(firmId);
         if (found.isEmpty()) {
             return new SyncResult("SEM_CERTIFICADO",
@@ -98,6 +101,9 @@ public class EfiscoSyncService {
                         results.add(new CompanyResult(company.getId(), company.getName(), period, Status.SEM_IE,
                                 "Empresa sem inscrição estadual de PE no cadastro."));
                         continue;
+                    }
+                    if (skipClosed && period.isBefore(YearMonth.now()) && fronteiraService.extractClosed(company, period)) {
+                        continue; // closed: due date passed or paid - nothing left to change
                     }
                     results.add(fetch(client, company, ie, period));
                     Thread.sleep(PAUSE_MS);
@@ -127,6 +133,10 @@ public class EfiscoSyncService {
             return new CompanyResult(company.getId(), company.getName(), period, Status.SEM_EXTRATO,
                     extract.message() == null ? "O e-Fisco não gerou extrato para o período." : extract.message());
         }
+        if (fronteiraService.sameAsImported(company, extract.pdf())) {
+            return new CompanyResult(company.getId(), company.getName(), period, Status.SEM_MUDANCA,
+                    "Conferido no e-Fisco: o extrato é o mesmo já importado.");
+        }
         try {
             var report = fronteiraService.importFromEfisco(company, extract.pdf());
             String detail = report.summary() == null ? "Extrato importado."
@@ -142,8 +152,10 @@ public class EfiscoSyncService {
     private static SyncResult summary(List<CompanyResult> results) {
         long imported = results.stream().filter(r -> r.status() == Status.IMPORTADO).count();
         long none = results.stream().filter(r -> r.status() == Status.SEM_EXTRATO).count();
+        long unchanged = results.stream().filter(r -> r.status() == Status.SEM_MUDANCA).count();
         long failed = results.stream().filter(r -> r.status() == Status.ERRO || r.status() == Status.SEM_IE).count();
-        String detail = imported + " extrato(s) importado(s), " + none + " sem extrato no e-Fisco" + (failed > 0 ? ", " + failed + " com problema" : "") + ".";
+        String detail = imported + " extrato(s) importado(s), " + unchanged + " sem mudança, " + none + " sem extrato no e-Fisco"
+                + (failed > 0 ? ", " + failed + " com problema" : "") + ".";
         return new SyncResult(failed > 0 ? "PARCIAL" : "OK", detail, results);
     }
 

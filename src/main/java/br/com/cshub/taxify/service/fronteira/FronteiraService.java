@@ -520,6 +520,47 @@ public class FronteiraService {
         return digits.replaceFirst("^0+(?=\\d)", "");
     }
 
+    /**
+     * The extract e-Fisco gave is the one already imported - same number, notes, ICMS devido, a recolher and pago:
+     * the e-Fisco sync keeps what it has instead of importing it again.
+     */
+    @Transactional(readOnly = true)
+    public boolean sameAsImported(Company company, byte[] pdf) {
+        EfiscoExtractParser.Extract read;
+        try {
+            read = parser.parse(pdf);
+        } catch (EfiscoExtractParser.InvalidExtractException e) {
+            return false; // the import says why
+        }
+        BigDecimal readDevido = read.notes().stream().map(EfiscoExtractParser.Note::icmsDevido).filter(java.util.Objects::nonNull)
+                .reduce(BigDecimal.ZERO, BigDecimal::add);
+        return extractRepository.findByCompany_IdAndPeriodoAndDeletedIsFalse(company.getId(), read.periodo().toString())
+                .filter(existing -> java.util.Objects.equals(existing.getNumeroExtrato(), read.numeroExtrato())
+                        && existing.getNotes().size() == read.notes().size()
+                        && sameValue(existing.getIcmsARecolher(), read.total(EfiscoExtractParser.A_RECOLHER))
+                        && sameValue(existing.getIcmsPago(), read.total(EfiscoExtractParser.PAGO))
+                        && sameValue(existing.getNotes().stream().map(EfiscoExtractNote::getIcmsDevido).filter(java.util.Objects::nonNull)
+                        .reduce(BigDecimal.ZERO, BigDecimal::add), readDevido))
+                .isPresent();
+    }
+
+    /**
+     * The month's extract is closed - past its due date, or paid in full: it doesn't change any more, so the scheduled
+     * e-Fisco sync stops asking for it.
+     */
+    @Transactional(readOnly = true)
+    public boolean extractClosed(Company company, YearMonth period) {
+        return extractRepository.findByCompany_IdAndPeriodoAndDeletedIsFalse(company.getId(), period.toString())
+                .filter(extract -> (extract.getDataVencimento() != null && extract.getDataVencimento().isBefore(java.time.LocalDate.now()))
+                        || (extract.getIcmsPago() != null && extract.getIcmsPago().signum() > 0
+                        && (extract.getIcmsARecolher() == null || extract.getIcmsARecolher().signum() == 0)))
+                .isPresent();
+    }
+
+    private static boolean sameValue(BigDecimal a, BigDecimal b) {
+        return (a == null ? BigDecimal.ZERO : a).compareTo(b == null ? BigDecimal.ZERO : b) == 0;
+    }
+
     /** The company the screen asks to sync with e-Fisco - the user's access checked, and it must be from PE. */
     public Company companyOfPernambuco(String companyId) {
         Company company = company(companyId);
