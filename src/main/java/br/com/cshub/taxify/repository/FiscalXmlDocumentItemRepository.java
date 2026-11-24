@@ -23,6 +23,20 @@ public interface FiscalXmlDocumentItemRepository extends JpaRepository<FiscalXml
 
     List<FiscalXmlDocumentItem> findByDocument_IdOrderByNumeroItemAsc(UUID documentId);
 
+    /**
+     * The notes a product rule can rectify: the company's NF-e received since {@code since}, not canceled,
+     * with an item of that product code - from that supplier when {@code supplier} is given.
+     */
+    @Query("select distinct i.document.id from FiscalXmlDocumentItem i where i.document.company.id = :companyId"
+            + " and i.document.deleted = false and i.codigo = :codigo and i.document.issueDate >= :since"
+            + " and (i.document.ownIssue is null or i.document.ownIssue = false)"
+            + " and (i.document.status is null or i.document.status <> br.com.cshub.taxify.enumerated.FiscalDocumentStatus.CANCELED)"
+            + " and (i.document.documentType is null or i.document.documentType = 'NFE')"
+            + " and (:supplier is null or i.document.issuerCnpj = :supplier or i.document.emitenteCpf = :supplier)")
+    List<UUID> findRectifiableDocumentIdsWithProduct(@Param("companyId") UUID companyId, @Param("codigo") String codigo,
+                                                     @Param("supplier") String supplier,
+                                                     @Param("since") java.time.LocalDateTime since);
+
     /** The items of several notes, each with its note - the list's divergence badge checks a page (or a period) at once. */
     @EntityGraph(attributePaths = "document")
     List<FiscalXmlDocumentItem> findByDocument_IdIn(Collection<UUID> documentIds);
