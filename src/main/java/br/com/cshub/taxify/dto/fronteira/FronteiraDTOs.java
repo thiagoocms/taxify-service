@@ -64,12 +64,15 @@ public final class FronteiraDTOs {
      * @param cobradoAMais     sum of what e-Fisco charged beyond Taxify's calculation (COBROU_A_MAIS)
      * @param cobradoAMenos    sum of what e-Fisco charged below it (COBROU_A_MENOS and NAO_CALCULOU) - a risk, not a saving
      * @param aConferir        notes whose result used a rule nobody has checked yet
+     * @param valorGuia        the guide after the adjustments: what e-Fisco charged minus what it charged beyond Taxify's
+     *                         calculation (to be asked in revision) - the notes charged below stay as charged (a risk)
      */
     public record Summary(int notas, BigDecimal valorNotas, BigDecimal icmsDevido, BigDecimal taxaPredominante,
                           int foraDaTaxa, BigDecimal icmsForaDaTaxa, BigDecimal diferencaForaDaTaxa,
                           int semXml, int valorDiferente, int canceladas, int comDivergencia, int semCobranca,
                           BigDecimal icmsCalculado, BigDecimal cobradoAMais, BigDecimal cobradoAMenos,
-                          int confere, int aMais, int aMenos, int naoCalculou, int semRegra, int pendentes, int aConferir) {
+                          int confere, int aMais, int aMenos, int naoCalculou, int semRegra, int pendentes, int aConferir,
+                          BigDecimal valorGuia) {
     }
 
     /** The Taxify note behind a line of the extract. */

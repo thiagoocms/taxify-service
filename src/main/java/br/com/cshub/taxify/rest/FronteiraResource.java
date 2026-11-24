@@ -81,6 +81,24 @@ public class FronteiraResource {
         return ResponseEntity.ok(service.report(companyId, periodo));
     }
 
+    /** The month's report (PDF): summary with the guide after the adjustments, the notes to revise and the rules used. */
+    @GetMapping(value = "/relatorio.pdf", produces = MediaType.APPLICATION_PDF_VALUE)
+    public ResponseEntity<byte[]> reportPdf(@RequestParam String companyId, @RequestParam(required = false) String periodo) {
+        return ResponseEntity.ok()
+                .header("Content-Disposition", "attachment; filename=\"fronteira-" + (periodo == null ? "" : periodo) + ".pdf\"")
+                .contentType(MediaType.APPLICATION_PDF)
+                .body(service.reportPdf(companyId, periodo));
+    }
+
+    /** The month's notes as a spreadsheet, with the calculation and the rules of each one. */
+    @GetMapping("/relatorio.csv")
+    public ResponseEntity<byte[]> reportCsv(@RequestParam String companyId, @RequestParam(required = false) String periodo) {
+        return ResponseEntity.ok()
+                .header("Content-Disposition", "attachment; filename=\"fronteira-" + (periodo == null ? "" : periodo) + ".csv\"")
+                .contentType(MediaType.parseMediaType("text/csv; charset=UTF-8"))
+                .body(service.reportCsv(companyId, periodo));
+    }
+
     /** The kept PDF of the period's extract, to open in the browser ("Ver PDF"). */
     @GetMapping(value = "/extrato/pdf", produces = MediaType.APPLICATION_PDF_VALUE)
     public ResponseEntity<byte[]> extractPdf(@RequestParam String companyId, @RequestParam String periodo) {

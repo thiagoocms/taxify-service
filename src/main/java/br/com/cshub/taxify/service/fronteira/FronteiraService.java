@@ -200,6 +200,28 @@ public class FronteiraService {
         }
     }
 
+    // ---------------------------------------------------------------- relatório (PDF / CSV)
+
+    /** The month's report to keep and to send: the guide after the adjustments, the notes to revise, the rules used. */
+    @Transactional
+    public byte[] reportPdf(String companyId, String periodo) {
+        Company company = company(companyId);
+        FronteiraDTOs.Report report = report(companyId, periodo);
+        return FronteiraReportPdf.pdf(report, documentOf(company), FronteiraReportPdf.rulesInfo(ruleService.rulesFor(company.getId())));
+    }
+
+    /** The same notes as a spreadsheet (opens in Excel in Portuguese). */
+    @Transactional
+    public byte[] reportCsv(String companyId, String periodo) {
+        Company company = company(companyId);
+        FronteiraDTOs.Report report = report(companyId, periodo);
+        return FronteiraReportPdf.csv(report, documentOf(company), FronteiraReportPdf.rulesInfo(ruleService.rulesFor(company.getId())));
+    }
+
+    private static String documentOf(Company company) {
+        return company.getDocument() == null ? null : company.getDocument().getNumber();
+    }
+
     // ---------------------------------------------------------------- report
 
     /** Below this (R$) a difference between e-Fisco and Taxify is rounding, not a charge. */
@@ -324,7 +346,7 @@ public class FronteiraService {
                 tally.foraDaTaxa, tally.icmsForaDaTaxa, tally.diferencaForaDaTaxa, tally.semXml, tally.valorDiferente,
                 tally.canceladas, tally.comDivergencia, uncharged.size(), tally.icmsCalculado, tally.cobradoAMais,
                 tally.cobradoAMenos, tally.confere, tally.aMais, tally.aMenos, tally.naoCalculou, tally.semRegra,
-                tally.pendentes, tally.aConferir);
+                tally.pendentes, tally.aConferir, tally.icmsDevido.subtract(tally.cobradoAMais));
         return new FronteiraDTOs.Report(company.getId(), company.getName(), month.toString(), toDto(extract), summary,
                 lines, uncharged, previa, periods);
     }
