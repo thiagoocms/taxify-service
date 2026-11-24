@@ -30,14 +30,20 @@ public final class FronteiraRuleDTOs {
                             LocalDate validFrom, LocalDate validUntil) {
     }
 
-    /** A formula checked before saving: {@code ok} false comes with the message. */
-    public record FormulaCheck(boolean ok, String message, Map<String, String> variables) {
+    /**
+     * A formula checked before saving: {@code ok} false comes with the message. {@code resultado} is the
+     * formula's value with {@code valores} - the note item's own values when they were sent, otherwise
+     * sample ones ({@code exemplo} true).
+     */
+    public record FormulaCheck(boolean ok, String message, Map<String, String> variables, BigDecimal resultado,
+                               Map<String, BigDecimal> valores, boolean exemplo) {
     }
 
     /** One item's calculation, with its memory. */
     public record ItemCalc(int numeroItem, String codigo, String descricao, String ncm, String cfop, String tratamento,
                            String tratamentoLabel, BigDecimal partida, BigDecimal valor, BigDecimal minimo, BigDecimal maximo,
-                           boolean conferido, List<UUID> regras, List<String> memoria, String semRegraMotivo) {
+                           boolean conferido, List<UUID> regras, List<String> memoria, String semRegraMotivo,
+                           Map<String, BigDecimal> variaveis) {
     }
 
     /**

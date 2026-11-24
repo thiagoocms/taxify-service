@@ -216,9 +216,9 @@ class FronteiraServiceTest {
         interna.setEnabled(true);
         interna.setReviewedAt(LocalDateTime.now());
         when(ruleService.rulesFor(company.getId())).thenReturn(List.of(interna));
-        // each note from CE: R$ 1.000,00, ICMS 12% → Taxify: 106,92
+        // each note from CE: R$ 1.000,00, ICMS 12% → Taxify: 1.000,00 × (20,5% − 12%) = 85,00
         extract.replaceNotes(new ArrayList<>(List.of(
-                note(1, "111", "1", "1000.00", "106.93"),   // confere (rounding)
+                note(1, "111", "1", "1000.00", "85.02"),    // confere (rounding)
                 note(2, "111", "2", "1000.00", "150.00"),   // a mais
                 note(3, "111", "3", "1000.00", "50.00"),    // a menos
                 note(4, "111", "4", "1000.00", "0.00"))));  // e-Fisco didn't calculate
@@ -239,10 +239,10 @@ class FronteiraServiceTest {
 
         assertThat(report.lines()).extracting(FronteiraDTOs.Line::resultado)
                 .containsExactly(Resultado.CONFERE, Resultado.COBROU_A_MAIS, Resultado.COBROU_A_MENOS, Resultado.NAO_CALCULOU);
-        assertThat(report.lines().get(1).diferenca()).isEqualByComparingTo("43.08");
-        assertThat(report.summary().cobradoAMais()).isEqualByComparingTo("43.08");
-        assertThat(report.summary().cobradoAMenos()).isEqualByComparingTo("163.84"); // 56,92 + 106,92
-        assertThat(report.summary().icmsCalculado()).isEqualByComparingTo("427.68");
+        assertThat(report.lines().get(1).diferenca()).isEqualByComparingTo("65.00");
+        assertThat(report.summary().cobradoAMais()).isEqualByComparingTo("65.00");
+        assertThat(report.summary().cobradoAMenos()).isEqualByComparingTo("120.00"); // 35,00 + 85,00
+        assertThat(report.summary().icmsCalculado()).isEqualByComparingTo("340.00");
         assertThat(report.lines().get(0).calculo().itens().get(0).memoria()).isNotEmpty();
     }
 
@@ -266,7 +266,7 @@ class FronteiraServiceTest {
 
         assertThat(report.extract()).isNull();
         assertThat(report.semCobranca()).hasSize(1);
-        assertThat(report.previaIcms()).isEqualByComparingTo("106.92");
+        assertThat(report.previaIcms()).isEqualByComparingTo("85.00");
         assertThat(report.semCobranca().get(0).calculo().conferido()).isFalse(); // the modal rate is still "a conferir"
     }
 }

@@ -64,9 +64,13 @@ public class FronteiraResource {
         return ResponseEntity.ok(br.com.cshub.taxify.service.fronteira.FormulaEvaluator.VARIABLES);
     }
 
+    /** Checks a formula and works it out - with a note item's values ({@code variaveis}) or with sample ones. */
     @PostMapping("/regras/testar")
-    public ResponseEntity<FronteiraRuleDTOs.FormulaCheck> check(@RequestBody Map<String, String> body) {
-        return ResponseEntity.ok(ruleService.check(body.get("formula")));
+    public ResponseEntity<FronteiraRuleDTOs.FormulaCheck> check(@RequestBody FormulaTest body) {
+        return ResponseEntity.ok(ruleService.check(body.formula(), body.variaveis()));
+    }
+
+    public record FormulaTest(String formula, Map<String, java.math.BigDecimal> variaveis) {
     }
 
     @RequiresPermission(Permission.INVOICES_AUDIT)

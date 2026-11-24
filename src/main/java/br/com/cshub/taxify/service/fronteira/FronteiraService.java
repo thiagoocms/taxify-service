@@ -443,7 +443,8 @@ public class FronteiraService {
         return new FronteiraRuleDTOs.NoteCalc(result.value(), result.min(), result.max(), result.reviewed(), result.semRegra(),
                 result.items().stream().map(item -> new FronteiraRuleDTOs.ItemCalc(item.numeroItem(), item.codigo(), item.descricao(),
                         item.ncm(), item.cfop(), item.treatment().name(), item.treatment().label, item.partida(), item.value(),
-                        item.min(), item.max(), item.reviewed(), item.rulesUsed(), item.memoria(), item.semRegraMotivo())).toList());
+                        item.min(), item.max(), item.reviewed(), item.rulesUsed(), item.memoria(), item.semRegraMotivo(),
+                        item.variables())).toList());
     }
 
     // ---------------------------------------------------------------- rates

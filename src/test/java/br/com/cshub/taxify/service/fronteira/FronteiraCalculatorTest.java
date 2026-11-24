@@ -155,9 +155,9 @@ class FronteiraCalculatorTest {
 
         ItemResult result = FronteiraCalculator.item(document, item, new Context(List.of(interna(null, "20.5")), false, null));
 
-        // base = (1000 − 120) ÷ (1 − 0,205) = 1.106,92; ICMS = 1.106,92 × 0,205 − 120 = 106,92
+        // diferencial = 20,5% − 12% = 8,5%; ICMS = 1.000,00 × 8,5% = 85,00
         assertThat(result.treatment()).isEqualTo(Treatment.SEM_ENCERRAMENTO);
-        assertThat(result.value()).isEqualByComparingTo("106.92");
+        assertThat(result.value()).isEqualByComparingTo("85.00");
     }
 
     @Test
@@ -293,43 +293,65 @@ class FronteiraCalculatorTest {
         assertThat(compra.treatment()).isEqualTo(Treatment.FORMULA);
     }
 
-    /** A Simples supplier destaca no ICMS: without its credit read yet, no value instead of the full 20,5%. */
+    private static FronteiraRule stLocks() {
+        FronteiraRule st = rule(FronteiraRuleKind.ST_MVA);
+        st.setNcm("61091000");
+        st.setMva(new BigDecimal("40"));
+        return st;
+    }
+
+    /** NF 485 from a Simples supplier with no ICMS destacado: the regime normal diferencial needs no credit. */
     @Test
-    void simplesSupplierWithoutTheCreditReadIsSemRegra() {
+    void theDiferencialIsTheStandardAndNeedsNoCredit() {
         FiscalXmlDocument document = note("RN", "7728.00");
         document.setMetadataVersion(5);
 
         ItemResult result = FronteiraCalculator.item(document, simplesSupplierItem(document, "7728.00", null),
                 new Context(List.of(interna(null, "20.5")), false, null));
 
+        assertThat(result.treatment()).isEqualTo(Treatment.SEM_ENCERRAMENTO);
+        assertThat(result.value()).isEqualByComparingTo("656.88"); // 7.728,00 × (20,5% − 12%)
+        // the item's values go back with it - the screen tests a formula on this very item
+        assertThat(result.variables()).containsEntry("partida", new BigDecimal("7728.00"));
+        assertThat(result.variables().get("inter")).isEqualByComparingTo("0.12");
+    }
+
+    /** Under ST, a Simples supplier with no ICMS destacado and its credit not read yet: no value instead of a wrong one. */
+    @Test
+    void stFromASimplesSupplierWithoutTheCreditReadIsSemRegra() {
+        FiscalXmlDocument document = note("RN", "1000.00");
+        document.setMetadataVersion(5);
+
+        ItemResult result = FronteiraCalculator.item(document, simplesSupplierItem(document, "1000.00", null),
+                new Context(List.of(interna(null, "20.5"), stLocks()), false, null));
+
         assertThat(result.treatment()).isEqualTo(Treatment.SEM_REGRA);
         assertThat(result.semRegraMotivo()).contains("Fornecedor do Simples");
     }
 
     @Test
-    void simplesSupplierCreditIsTheCreditDeOrigem() {
+    void stFromASimplesSupplierUsesTheCreditItPassesOn() {
         FiscalXmlDocument document = note("RN", "1000.00");
         document.setMetadataVersion(6);
 
         ItemResult result = FronteiraCalculator.item(document, simplesSupplierItem(document, "1000.00", "25.60"),
-                new Context(List.of(interna(null, "20.5")), false, null));
+                new Context(List.of(interna(null, "20.5"), stLocks()), false, null));
 
-        // base = (1000 − 0) ÷ 0,795 = 1.257,86; ICMS = 1.257,86 × 0,205 − 25,60 = 232,26
-        assertThat(result.treatment()).isEqualTo(Treatment.SEM_ENCERRAMENTO);
-        assertThat(result.value()).isEqualByComparingTo("232.26");
+        assertThat(result.treatment()).isEqualTo(Treatment.ST);
         assertThat(result.memoria()).anySatisfy(line -> assertThat(line).contains("crédito transferido de R$ 25,60"));
+        // MVA ajustada = 1,40 × 0,88 ÷ 0,795 − 1 = 54,97%; 1.000 × 1,5497 × 0,205 − 25,60 = 292,09
+        assertThat(result.value()).isBetween(new BigDecimal("292.05"), new BigDecimal("292.12"));
     }
 
-    /** Read with the current parser and no credit on the note (CSOSN 102): calculated with zero, but "a conferir". */
     @Test
-    void simplesSupplierWithoutCreditIsCalculatedButToBeChecked() {
+    void stFromASimplesSupplierWithoutCreditIsCalculatedButToBeChecked() {
         FiscalXmlDocument document = note("RN", "1000.00");
         document.setMetadataVersion(6);
 
         ItemResult result = FronteiraCalculator.item(document, simplesSupplierItem(document, "1000.00", null),
-                new Context(List.of(interna(null, "20.5")), false, null));
+                new Context(List.of(interna(null, "20.5"), stLocks()), false, null));
 
-        assertThat(result.treatment()).isEqualTo(Treatment.SEM_ENCERRAMENTO);
+        assertThat(result.treatment()).isEqualTo(Treatment.ST);
         assertThat(result.reviewed()).isFalse();
     }
 }

@@ -46,6 +46,31 @@ public final class FormulaEvaluator {
         VARIABLES = java.util.Collections.unmodifiableMap(variables);
     }
 
+    /**
+     * Values for testing a formula when there is no note at hand: a R$ 1.000,00 item from SP (7%) or the
+     * Northeast (12%), here 12%, internal rate 20,5%, MVA 40%, carga líquida 5,5%.
+     */
+    public static final Map<String, BigDecimal> SAMPLE;
+
+    static {
+        Map<String, BigDecimal> sample = new LinkedHashMap<>();
+        sample.put("partida", new BigDecimal("1000.00"));
+        sample.put("valor_produto", new BigDecimal("1000.00"));
+        sample.put("ipi", BigDecimal.ZERO);
+        sample.put("despesas", BigDecimal.ZERO);
+        sample.put("icms_origem", new BigDecimal("120.00"));
+        sample.put("credito_sn", BigDecimal.ZERO);
+        sample.put("credito", new BigDecimal("120.00"));
+        sample.put("aliquota_origem", new BigDecimal("0.12"));
+        sample.put("inter", new BigDecimal("0.12"));
+        sample.put("interna", new BigDecimal("0.205"));
+        sample.put("mva", new BigDecimal("0.40"));
+        sample.put("mva_ajustada", new BigDecimal("0.549686"));
+        sample.put("st_retido", BigDecimal.ZERO);
+        sample.put("percentual", new BigDecimal("0.055"));
+        SAMPLE = java.util.Collections.unmodifiableMap(sample);
+    }
+
     private static final Set<String> FUNCTIONS = Set.of("min", "max", "arred");
 
     public static class FormulaException extends RuntimeException {

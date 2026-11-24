@@ -104,12 +104,26 @@ public class FronteiraRuleService {
         return toDto(repository.save(rule));
     }
 
-    public FronteiraRuleDTOs.FormulaCheck check(String formula) {
+    /**
+     * Checks the formula and works it out: with {@code values} (a note item's own, from its calculation memory)
+     * when given, otherwise with {@link FormulaEvaluator#SAMPLE}. Unknown names in {@code values} are ignored.
+     */
+    public FronteiraRuleDTOs.FormulaCheck check(String formula, java.util.Map<String, BigDecimal> values) {
+        boolean sample = values == null || values.isEmpty();
+        java.util.Map<String, BigDecimal> used = new java.util.LinkedHashMap<>(FormulaEvaluator.SAMPLE);
+        if (!sample) {
+            values.forEach((name, value) -> {
+                if (FormulaEvaluator.VARIABLES.containsKey(name) && value != null) {
+                    used.put(name, value);
+                }
+            });
+        }
         try {
             FormulaEvaluator.validate(formula);
-            return new FronteiraRuleDTOs.FormulaCheck(true, null, FormulaEvaluator.VARIABLES);
+            BigDecimal result = FormulaEvaluator.evaluate(formula, used).setScale(2, java.math.RoundingMode.HALF_UP);
+            return new FronteiraRuleDTOs.FormulaCheck(true, null, FormulaEvaluator.VARIABLES, result, used, sample);
         } catch (FormulaEvaluator.FormulaException e) {
-            return new FronteiraRuleDTOs.FormulaCheck(false, e.getMessage(), FormulaEvaluator.VARIABLES);
+            return new FronteiraRuleDTOs.FormulaCheck(false, e.getMessage(), FormulaEvaluator.VARIABLES, null, used, sample);
         }
     }
 
