@@ -90,7 +90,7 @@ public class OperationCheck implements FiscalCheck {
     }
 
     /** Null when it can't be told (UF or origin unknown, same UF on both sides). */
-    static BigDecimal expectedInterstateRate(String origin, String fromUf, String toUf) {
+    public static BigDecimal expectedInterstateRate(String origin, String fromUf, String toUf) {
         if (origin == null || fromUf == null || toUf == null || fromUf.equals(toUf)) {
             return null;
         }

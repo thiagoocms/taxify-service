@@ -38,6 +38,10 @@ public interface FiscalXmlDocumentRepository extends AbstractJpaRepository<Fisca
     long countByCompany_IdAndOwnIssueAndIssueDateBetween(UUID companyId, Boolean ownIssue,
                                                          LocalDateTime issueDateFrom, LocalDateTime issueDateTo);
 
+    /** Fronteira PE: the notes an e-Fisco extract lists, found by issuer + number (the extract has no access key). */
+    List<FiscalXmlDocument> findByCompany_IdAndIssuerCnpjInAndNumeroInAndDeletedIsFalse(
+            UUID companyId, Collection<String> issuerCnpjs, Collection<String> numeros);
+
     /** Rows imported before the direction column existed - FiscalDirectionBackfill fills them. */
     List<FiscalXmlDocument> findTop500ByDirectionIsNull();
 
