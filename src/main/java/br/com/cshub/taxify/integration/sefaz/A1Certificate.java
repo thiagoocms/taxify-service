@@ -20,6 +20,8 @@ public final class A1Certificate {
 
     /** ICP-Brasil e-CNPJ subject CN: "RAZAO SOCIAL:12345678000199". */
     private static final Pattern CNPJ_IN_CN = Pattern.compile(":(\\d{14})\\b");
+    /** ICP-Brasil e-CPF subject CN: "NOME DO TITULAR:12345678901". */
+    private static final Pattern CPF_IN_CN = Pattern.compile(":(\\d{11})\\b");
 
     private final KeyStore keyStore;
     private final char[] password;
@@ -77,6 +79,12 @@ public final class A1Certificate {
     /** The holder's CNPJ, from the CN - null for certificates that don't follow the e-CNPJ layout. */
     public String cnpj() {
         Matcher matcher = CNPJ_IN_CN.matcher(subjectName());
+        return matcher.find() ? matcher.group(1) : null;
+    }
+
+    /** The holder's CPF, from the CN of an e-CPF ("NOME:12345678901") - null for an e-CNPJ or another layout. */
+    public String cpf() {
+        Matcher matcher = CPF_IN_CN.matcher(subjectName());
         return matcher.find() ? matcher.group(1) : null;
     }
 
