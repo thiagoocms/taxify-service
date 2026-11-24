@@ -143,7 +143,10 @@ taxify:
   secrets:
     key: ${CERT_ENCRYPTION_KEY:}
 
-feign:
+# Timeouts of the Feign clients. OpenFeign 4+ reads only "spring.cloud.openfeign.client.config" - under the old
+# "feign.client.config" prefix these were ignored and every client ran on the defaults (10s connect, 60s read),
+# which cut SIEG's batch downloads ("Read timed out") well before the 180s meant for them.
+spring.cloud.openfeign:
   client:
     config:
       siegClient:
