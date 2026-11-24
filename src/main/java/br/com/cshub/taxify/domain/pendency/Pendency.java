@@ -21,7 +21,10 @@ import java.util.UUID;
 @Entity
 @Table(name = "pendencies",
         uniqueConstraints = @UniqueConstraint(name = "uk_pendencies_company_key", columnNames = {"company_id", "natural_key"}),
-        indexes = @Index(name = "idx_pendencies_status_severity", columnList = "status, severity"))
+        indexes = {
+                @Index(name = "idx_pendencies_status_severity", columnList = "status, severity"),
+                @Index(name = "idx_pendencies_company_status", columnList = "company_id, status, deleted")
+        })
 public class Pendency extends AbstractAuditingEntity {
 
     /** What {@link #objectId} points to - the screen links to it. */

@@ -204,10 +204,11 @@ public class RetentionService {
         }
         UUID firmId = tenantAccessService.getCurrentAccountingFirmId()
                 .orElseThrow(() -> new BadRequestException(messageService.getMessage("error.pendency.firm.required")));
-        return companyRepository.findByAccountingFirm_IdAndDeletedIsFalseOrderByNameAsc(firmId).stream()
-                .filter(company -> !Boolean.FALSE.equals(company.getActive()))
-                .filter(company -> tenantAccessService.canAccessCompany(company.getId()))
-                .toList();
+        return tenantAccessService.filterAccessible(
+                companyRepository.findByAccountingFirm_IdAndDeletedIsFalseOrderByNameAsc(firmId).stream()
+                        .filter(company -> !Boolean.FALSE.equals(company.getActive()))
+                        .toList(),
+                Company::getId);
     }
 
     /** "2026-10"; blank = the previous month (the one usually being closed). */

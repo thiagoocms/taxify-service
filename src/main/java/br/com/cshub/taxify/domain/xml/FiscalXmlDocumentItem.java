@@ -8,7 +8,8 @@ import java.math.BigDecimal;
 import java.util.UUID;
 
 @Entity
-@Table(name = "fiscal_xml_document_items")
+@Table(name = "fiscal_xml_document_items",
+        indexes = @Index(name = "idx_fxdi_document_cfop_valor", columnList = "document_id, cfop, valor_total"))
 public class FiscalXmlDocumentItem {
 
     @Id

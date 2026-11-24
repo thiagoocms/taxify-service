@@ -27,9 +27,11 @@ public class FiscalXmlSyncControlService {
     @Transactional(readOnly = true)
     public List<FiscalXmlSyncControlDTO> findAll() {
         var firmId = tenantAccessService.getCurrentAccountingFirmId();
-        return repository.findAll().stream()
-                .filter(control -> firmId.isEmpty() || firmId.get().equals(control.getCompany().getAccountingFirm().getId()))
-                .filter(control -> tenantAccessService.canAccessCompany(control.getCompany().getId()))
+        return tenantAccessService.filterAccessible(repository.findAll().stream()
+                        .filter(control -> firmId.isEmpty() || firmId.get().equals(control.getCompany().getAccountingFirm().getId()))
+                        .toList(),
+                        control -> control.getCompany().getId())
+                .stream()
                 .map(this::toDTO)
                 .toList();
     }

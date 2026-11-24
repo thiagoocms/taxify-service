@@ -44,6 +44,8 @@ spring:
         schema_update:
           unique_constraint_strategy: SKIP
         enable_lazy_load_no_trans: true
+        # lazy/eager associations of a list load in IN batches instead of one select per row (e.g. the company's CNPJ)
+        default_batch_fetch_size: 50
 
   servlet:
     multipart:

@@ -12,7 +12,10 @@ import jakarta.persistence.criteria.Subquery;
 import org.springframework.data.jpa.domain.Specification;
 import org.springframework.stereotype.Component;
 
+import java.util.Collection;
+import java.util.List;
 import java.util.Optional;
+import java.util.Set;
 import java.util.UUID;
 import java.util.function.Function;
 
@@ -72,6 +75,29 @@ public class TenantAccessService {
         return currentUserService.getCurrentUser()
                 .filter(user -> user.getProfile() != UserProfileEnum.ADMIN)
                 .map(User::getId);
+    }
+
+    /**
+     * The ids among {@code companyIds} the current user can see, in their order - one query for a non-admin
+     * (their portfolio), none for an admin. Use it for lists instead of {@link #canAccessCompany} per company.
+     */
+    public List<UUID> accessibleCompanyIds(Collection<UUID> companyIds) {
+        Optional<UUID> userId = getRestrictedUserId();
+        if (userId.isEmpty()) {
+            return List.copyOf(companyIds);
+        }
+        Set<UUID> portfolio = userCompanyRepository.findCompanyIdsByUser(userId.get());
+        return companyIds.stream().filter(portfolio::contains).toList();
+    }
+
+    /** The items whose company the current user can see, in their order - same single query as {@link #accessibleCompanyIds}. */
+    public <T> List<T> filterAccessible(List<T> items, Function<T, UUID> companyId) {
+        Optional<UUID> userId = getRestrictedUserId();
+        if (userId.isEmpty()) {
+            return items;
+        }
+        Set<UUID> portfolio = userCompanyRepository.findCompanyIdsByUser(userId.get());
+        return items.stream().filter(item -> portfolio.contains(companyId.apply(item))).toList();
     }
 
     public boolean canAccessCompany(UUID companyId) {

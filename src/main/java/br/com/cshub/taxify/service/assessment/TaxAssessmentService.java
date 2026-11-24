@@ -53,11 +53,14 @@ public class TaxAssessmentService {
     private final MessageService messageService;
     private final CompanyTaxRegimeService taxRegimeService;
     private final ObjectMapper objectMapper;
+    private final TaxAssessmentCache cache;
 
     public TaxAssessmentService(CompanyValidation companyValidation, CompanyRepository companyRepository,
                                 FiscalXmlDocumentItemRepository itemRepository, FiscalXmlDocumentRepository documentRepository,
                                 FiscalPeriodClosingRepository closingRepository, TenantAccessService tenantAccessService,
-                                MessageService messageService, CompanyTaxRegimeService taxRegimeService, ObjectMapper objectMapper) {
+                                MessageService messageService, CompanyTaxRegimeService taxRegimeService, ObjectMapper objectMapper,
+                                TaxAssessmentCache cache) {
+        this.cache = cache;
         this.companyValidation = companyValidation;
         this.companyRepository = companyRepository;
         this.itemRepository = itemRepository;
@@ -82,10 +85,11 @@ public class TaxAssessmentService {
         UUID firmId = tenantAccessService.getCurrentAccountingFirmId()
                 .orElseThrow(() -> new BadRequestException(messageService.getMessage("error.assessment.firm.required")));
         YearMonth period = parseMonth(month);
-        List<Company> companies = companyRepository.findByAccountingFirm_IdAndDeletedIsFalseOrderByNameAsc(firmId).stream()
-                .filter(company -> !Boolean.FALSE.equals(company.getActive()))
-                .filter(company -> tenantAccessService.canAccessCompany(company.getId()))
-                .toList();
+        List<Company> companies = tenantAccessService.filterAccessible(
+                companyRepository.findByAccountingFirm_IdAndDeletedIsFalseOrderByNameAsc(firmId).stream()
+                        .filter(company -> !Boolean.FALSE.equals(company.getActive()))
+                        .toList(),
+                Company::getId);
         return companies.isEmpty() ? List.of() : assessAll(companies, period, false);
     }
 
@@ -170,10 +174,18 @@ public class TaxAssessmentService {
             }
         }
         List<Company> toCalculate = companies.stream().filter(company -> !frozen.containsKey(company.getId())).toList();
-        Map<UUID, TaxAssessmentDTO> calculated = new HashMap<>();
-        if (!toCalculate.isEmpty()) {
-            for (TaxAssessmentDTO dto : calculateAll(toCalculate, month, withHistory)) {
-                calculated.put(UUID.fromString(dto.companyId()), dto);
+        Map<UUID, TaxAssessmentDTO> calculated = withHistory ? new HashMap<>() : cached(toCalculate, month);
+        List<Company> missing = toCalculate.stream().filter(company -> !calculated.containsKey(company.getId())).toList();
+        if (!missing.isEmpty()) {
+            // versions read before the queries: a note arriving meanwhile keeps the result out of the cache
+            Map<UUID, Long> versions = new HashMap<>();
+            missing.forEach(company -> versions.put(company.getId(), cache.version(company.getId())));
+            for (TaxAssessmentDTO dto : calculateAll(missing, month, withHistory)) {
+                UUID id = UUID.fromString(dto.companyId());
+                calculated.put(id, dto);
+                if (!withHistory) {
+                    cache.put(id, month, dto, versions.get(id));
+                }
             }
         }
 
@@ -182,6 +194,15 @@ public class TaxAssessmentService {
             TaxAssessmentDTO base = frozen.containsKey(id) ? frozen.get(id) : calculated.get(id);
             return base.withClosing(toClosingDto(closings.get(id), pending.getOrDefault(id, 0L)), withHistory);
         }).toList();
+    }
+
+    /** The firm-wide rows (no history) already calculated for the month - see {@link TaxAssessmentCache}. */
+    private Map<UUID, TaxAssessmentDTO> cached(List<Company> companies, YearMonth month) {
+        Map<UUID, TaxAssessmentDTO> found = new HashMap<>();
+        for (Company company : companies) {
+            cache.get(company.getId(), month).ifPresent(dto -> found.put(company.getId(), dto));
+        }
+        return found;
     }
 
     private List<TaxAssessmentDTO> calculateAll(List<Company> companies, YearMonth month, boolean withHistory) {

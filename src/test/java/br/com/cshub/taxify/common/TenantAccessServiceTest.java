@@ -9,7 +9,9 @@ import org.junit.jupiter.api.extension.ExtendWith;
 import org.mockito.Mock;
 import org.mockito.junit.jupiter.MockitoExtension;
 
+import java.util.List;
 import java.util.Optional;
+import java.util.Set;
 import java.util.UUID;
 
 import static org.assertj.core.api.Assertions.assertThat;
@@ -69,5 +71,29 @@ class TenantAccessServiceTest {
         assertThat(service.getRestrictedUserId()).contains(employee.getId());
         assertThat(service.canAccessCompany(associated)).isTrue();
         assertThat(service.canAccessCompany(other)).isFalse();
+    }
+
+    @Test
+    void listsAreFilteredWithOneQueryForTheUsersPortfolio() {
+        User user = user(UserProfileEnum.USER);
+        UUID mine = UUID.randomUUID();
+        UUID other = UUID.randomUUID();
+        UUID alsoMine = UUID.randomUUID();
+        when(currentUserService.getCurrentUser()).thenReturn(Optional.of(user));
+        when(userCompanyRepository.findCompanyIdsByUser(user.getId())).thenReturn(Set.of(mine, alsoMine));
+
+        assertThat(service.accessibleCompanyIds(List.of(mine, other, alsoMine))).containsExactly(mine, alsoMine);
+        assertThat(service.filterAccessible(List.of("a", "b"), s -> s.equals("a") ? mine : other)).containsExactly("a");
+        verify(userCompanyRepository, never()).existsByUser_IdAndCompany_IdAndDeletedIsFalse(any(), any());
+    }
+
+    @Test
+    void adminListsAreNotFiltered() {
+        when(currentUserService.getCurrentUser()).thenReturn(Optional.of(user(UserProfileEnum.ADMIN)));
+        UUID a = UUID.randomUUID();
+        UUID b = UUID.randomUUID();
+
+        assertThat(service.accessibleCompanyIds(List.of(a, b))).containsExactly(a, b);
+        verify(userCompanyRepository, never()).findCompanyIdsByUser(any());
     }
 }

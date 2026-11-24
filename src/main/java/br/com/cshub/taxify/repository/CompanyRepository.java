@@ -1,5 +1,6 @@
 package br.com.cshub.taxify.repository;
 
+import org.springframework.data.jpa.repository.EntityGraph;
 import org.springframework.data.jpa.repository.Query;
 import br.com.cshub.taxify.common.AbstractJpaRepository;
 import br.com.cshub.taxify.domain.company.Company;
@@ -22,7 +23,8 @@ public interface CompanyRepository extends AbstractJpaRepository<Company, UUID> 
             + " (select 1 from CompanyTaxRegime r where r.company = c and r.deleted = false)")
     List<Company> findWithRegimeAndNoHistory();
 
-    /** Active (not deleted) companies of a firm, by name - the firm-wide assessment rows. */
+    /** Active (not deleted) companies of a firm, by name - the firm-wide assessment rows. The CNPJ comes in the same query. */
+    @EntityGraph(attributePaths = "document")
     List<Company> findByAccountingFirm_IdAndDeletedIsFalseOrderByNameAsc(UUID accountingFirmId);
 
 }

@@ -5,6 +5,8 @@ import br.com.cshub.taxify.repository.UserRepository;
 import org.springframework.security.core.Authentication;
 import org.springframework.security.core.context.SecurityContextHolder;
 import org.springframework.stereotype.Component;
+import org.springframework.web.context.request.RequestAttributes;
+import org.springframework.web.context.request.RequestContextHolder;
 
 import java.util.Optional;
 
@@ -22,7 +24,37 @@ public class CurrentUserService {
         this.userRepository = userRepository;
     }
 
+    private static final String REQUEST_KEY = CurrentUserService.class.getName() + ".user";
+
+    /**
+     * The user is read once per HTTP request (the lists check access company by company - each call
+     * used to query the user again); background work without a request still reads it every time.
+     */
+    @SuppressWarnings("unchecked")
     public Optional<User> getCurrentUser() {
+        RequestAttributes request = RequestContextHolder.getRequestAttributes();
+        String login = currentLogin();
+        if (request == null || login == null) {
+            return loadCurrentUser();
+        }
+        Object cached = request.getAttribute(REQUEST_KEY, RequestAttributes.SCOPE_REQUEST);
+        if (cached instanceof CachedUser(String cachedLogin, Optional<?> user) && cachedLogin.equals(login)) {
+            return (Optional<User>) user;
+        }
+        Optional<User> user = loadCurrentUser();
+        request.setAttribute(REQUEST_KEY, new CachedUser(login, user), RequestAttributes.SCOPE_REQUEST);
+        return user;
+    }
+
+    private record CachedUser(String login, Optional<?> user) {
+    }
+
+    private static String currentLogin() {
+        Authentication authentication = SecurityContextHolder.getContext().getAuthentication();
+        return authentication == null || !authentication.isAuthenticated() ? null : authentication.getName();
+    }
+
+    private Optional<User> loadCurrentUser() {
         try {
             Authentication authentication = SecurityContextHolder.getContext().getAuthentication();
             if (authentication == null || !authentication.isAuthenticated() || authentication.getName() == null) {

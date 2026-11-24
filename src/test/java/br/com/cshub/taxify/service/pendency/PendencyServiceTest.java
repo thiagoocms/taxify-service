@@ -187,7 +187,7 @@ class PendencyServiceTest {
     void countersAddUpPerTypeAndSeverity() {
         UUID firm = UUID.randomUUID();
         when(tenantAccessService.getCurrentAccountingFirmId()).thenReturn(Optional.of(firm));
-        when(tenantAccessService.canAccessCompany(company.getId())).thenReturn(true);
+        when(tenantAccessService.accessibleCompanyIds(List.of(company.getId()))).thenReturn(List.of(company.getId()));
         when(companyRepository.findByAccountingFirm_IdAndDeletedIsFalseOrderByNameAsc(firm)).thenReturn(List.of(company));
         when(repository.countOpen(List.of(company.getId()))).thenReturn(List.of(
                 new Object[]{PendencyType.SOURCE_ONLY_SIEG, PendencySeverity.BAIXA, 7L},

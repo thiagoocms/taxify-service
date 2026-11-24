@@ -276,11 +276,11 @@ public class PendencyService {
         }
         UUID firmId = tenantAccessService.getCurrentAccountingFirmId()
                 .orElseThrow(() -> new BadRequestException(messageService.getMessage("error.pendency.firm.required")));
-        return companyRepository.findByAccountingFirm_IdAndDeletedIsFalseOrderByNameAsc(firmId).stream()
-                .filter(company -> !Boolean.FALSE.equals(company.getActive()))
-                .map(Company::getId)
-                .filter(tenantAccessService::canAccessCompany)
-                .toList();
+        return tenantAccessService.accessibleCompanyIds(
+                companyRepository.findByAccountingFirm_IdAndDeletedIsFalseOrderByNameAsc(firmId).stream()
+                        .filter(company -> !Boolean.FALSE.equals(company.getActive()))
+                        .map(Company::getId)
+                        .toList());
     }
 
     private static PendencyDTOs.Pendency toDto(Pendency pendency) {

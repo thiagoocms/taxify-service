@@ -33,7 +33,8 @@ class TaxAssessmentServiceIbsCbsTest {
     private final FiscalXmlDocumentItemRepository itemRepository = mock(FiscalXmlDocumentItemRepository.class);
     private final TaxAssessmentService service = new TaxAssessmentService(companyValidation, mock(CompanyRepository.class),
             itemRepository, mock(FiscalXmlDocumentRepository.class), mock(FiscalPeriodClosingRepository.class),
-            mock(TenantAccessService.class), mock(MessageService.class), mock(CompanyTaxRegimeService.class), mock(ObjectMapper.class));
+            mock(TenantAccessService.class), mock(MessageService.class), mock(CompanyTaxRegimeService.class), mock(ObjectMapper.class),
+            new TaxAssessmentCache());
 
     @Test
     void debitsFromSalesCreditsFromPurchasesAndTheBalance() {
