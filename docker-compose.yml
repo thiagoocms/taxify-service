@@ -5,7 +5,8 @@ services:
     restart: unless-stopped
     # InnoDB cache capped (MySQL's own default is 128M, but it grows with tuning scripts); 256M
     # is plenty for the Taxify's tables and keeps memory for the backend on a 2-4 GB machine.
-    command: [ "--innodb-buffer-pool-size=${MYSQL_INNODB_BUFFER_POOL:-256M}" ]
+    # performance_schema desligado: sozinho ocupa 100-200 MB e o Taxify não usa.
+    command: [ "--innodb-buffer-pool-size=${MYSQL_INNODB_BUFFER_POOL:-256M}", "--performance-schema=${MYSQL_PERFORMANCE_SCHEMA:-OFF}" ]
     environment:
       MYSQL_ROOT_PASSWORD: ${MYSQL_ROOT_PASSWORD:-root}
       MYSQL_DATABASE: ${DB_NAME:-taxify_dev}
@@ -33,8 +34,13 @@ services:
       mysql:
         condition: service_healthy
     environment:
-      # heap at 45% of the RAM; on a 2 GB machine with MySQL beside it don't go above 45
-      JAVA_OPTS: ${JAVA_OPTS:--XX:MaxRAMPercentage=45 -XX:+ExitOnOutOfMemoryError}
+      # Memória fixa para uma máquina de 2 GB com o MySQL ao lado: heap 512 MB e os pedaços fora do heap
+      # limitados (metaspace, code cache, buffers diretos, pilha das threads); SerialGC e cabeçalhos compactos
+      # (Java 25) gastam menos que o G1 padrão. Faltou memória (OutOfMemoryError no log)? Suba o -Xmx no .env.
+      JAVA_OPTS: ${JAVA_OPTS:--Xms256m -Xmx512m -XX:MaxMetaspaceSize=192m -XX:ReservedCodeCacheSize=64m -XX:MaxDirectMemorySize=64m -Xss512k -XX:+UseSerialGC -XX:+UseCompactObjectHeaders -XX:+ExitOnOutOfMemoryError}
+      # Padrão do Spring é 200 threads no Tomcat e 10 conexões no banco: muito para esse uso.
+      SERVER_TOMCAT_THREADS_MAX: ${SERVER_TOMCAT_THREADS_MAX:-40}
+      SPRING_DATASOURCE_HIKARI_MAXIMUM_POOL_SIZE: ${SPRING_DATASOURCE_HIKARI_MAXIMUM_POOL_SIZE:-6}
       SERVER_PORT: 5000
       SPRING_PROFILES_ACTIVE: test
       DB_HOST: mysql
