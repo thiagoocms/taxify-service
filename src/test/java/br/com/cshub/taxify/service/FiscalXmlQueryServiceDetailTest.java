@@ -66,7 +66,7 @@ class FiscalXmlQueryServiceDetailTest {
     @BeforeEach
     void setUp() {
         service = new FiscalXmlQueryService(documentRepository, itemRepository, new FiscalXmlMetadataParser(), companyValidation,
-                tenantAccessService, messageService, eventService, fileStorage, ruleRepository);
+                tenantAccessService, messageService, eventService, fileStorage, ruleRepository, null);
         document = new FiscalXmlDocument();
         document.setId(UUID.randomUUID());
         document.setCompany(new Company(UUID.randomUUID()));

@@ -44,7 +44,7 @@ public interface FiscalXmlDocumentRepository extends AbstractJpaRepository<Fisca
     /**
      * The notes screen. Every filter is optional (null = not applied): {@code numero} exact,
      * {@code direction} entry/exit, {@code participant} a lower-case piece of the issuer's or
-     * recipient's name, or digits of their CNPJ/CPF.
+     * recipient's name, or digits of their CNPJ/CPF, {@code cfop} some item issued with it.
      */
     @Query("select d from FiscalXmlDocument d where d.company.id = :companyId and d.deleted = false"
             + " and d.issueDate between :issueDateFrom and :issueDateTo"
@@ -59,7 +59,8 @@ public interface FiscalXmlDocumentRepository extends AbstractJpaRepository<Fisca
             + " and (:origem is null or d.sourceSystem = :origem)"
             + " and (:onlySiegBefore is null or (d.foundInSiegAt < :onlySiegBefore and d.foundInSefazAt is null"
             + "      and d.ownIssue = false))"
-            + " and (:onlySefazBefore is null or (d.foundInSefazAt < :onlySefazBefore and d.foundInSiegAt is null))")
+            + " and (:onlySefazBefore is null or (d.foundInSefazAt < :onlySefazBefore and d.foundInSiegAt is null))"
+            + " and (:cfop is null or exists (select i.id from FiscalXmlDocumentItem i where i.document = d and trim(i.cfop) = :cfop))")
     Page<FiscalXmlDocument> search(@Param("companyId") UUID companyId,
                                    @Param("issueDateFrom") LocalDateTime issueDateFrom,
                                    @Param("issueDateTo") LocalDateTime issueDateTo,
@@ -70,6 +71,7 @@ public interface FiscalXmlDocumentRepository extends AbstractJpaRepository<Fisca
                                    @Param("origem") String origem,
                                    @Param("onlySiegBefore") LocalDateTime onlySiegBefore,
                                    @Param("onlySefazBefore") LocalDateTime onlySefazBefore,
+                                   @Param("cfop") String cfop,
                                    Pageable pageable);
 
     /**

@@ -23,6 +23,10 @@ public interface FiscalXmlDocumentItemRepository extends JpaRepository<FiscalXml
 
     List<FiscalXmlDocumentItem> findByDocument_IdOrderByNumeroItemAsc(UUID documentId);
 
+    /** The items of several notes, each with its note - the list's divergence badge checks a page (or a period) at once. */
+    @EntityGraph(attributePaths = "document")
+    List<FiscalXmlDocumentItem> findByDocument_IdIn(Collection<UUID> documentIds);
+
     long countByDocument_Id(UUID documentId);
 
     /** Each row is {documentId, itemCount} - one query for a whole page instead of N lazy loads. */

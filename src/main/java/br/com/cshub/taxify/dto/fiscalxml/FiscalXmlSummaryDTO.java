@@ -40,6 +40,12 @@ public record FiscalXmlSummaryDTO(
         /** Distinct CFOPs of the items, sorted - one = the whole note uses it; more = "segmentado". */
         java.util.List<String> cfops,
         /** SIEG, SEFAZ_DIST or UPLOAD - where the note came from first. */
-        String origem
+        String origem,
+        /** What the fiscal checks found on the note; null = nothing (or canceled - never checked). */
+        DivergenceSummary divergencias
 ) {
+
+    /** {@code messages}: the first few, distinct - for the badge tooltip. */
+    public record DivergenceSummary(int errors, int warnings, java.util.List<String> messages) {
+    }
 }

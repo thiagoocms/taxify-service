@@ -35,7 +35,11 @@ public record XmlSearchFilterDTO(
          * over (third-party notes only - SEFAZ doesn't distribute the company's own); SO_SEFAZ = the
          * other way round. Blank = no comparison.
          */
-        String fonte
+        String fonte,
+        /** Notes with some item issued with this CFOP (4 digits); blank = any. */
+        String cfop,
+        /** true = only notes the fiscal checks found something on, or marked "com divergência"; null/false = all. */
+        Boolean divergencia
 ) {
 
     public static final String ONLY_SIEG = "SO_SIEG";
@@ -45,6 +49,10 @@ public record XmlSearchFilterDTO(
     public XmlSearchFilterDTO(String companyId, LocalDate dataEmissaoInicio, LocalDate dataEmissaoFim, String numero,
                               FiscalDirection direction, String participant, ReviewStatus reviewStatus,
                               PageRequestDTO pagination) {
-        this(companyId, dataEmissaoInicio, dataEmissaoFim, numero, direction, participant, reviewStatus, pagination, null, null);
+        this(companyId, dataEmissaoInicio, dataEmissaoFim, numero, direction, participant, reviewStatus, pagination, null, null, null, null);
+    }
+
+    public boolean onlyDivergent() {
+        return Boolean.TRUE.equals(divergencia);
     }
 }

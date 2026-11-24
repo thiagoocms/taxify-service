@@ -39,7 +39,10 @@ import br.com.cshub.taxify.repository.FiscalXmlDocumentRepository;
 import br.com.cshub.taxify.validation.CompanyValidation;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
+import br.com.cshub.taxify.enumerated.ReviewStatus;
+import br.com.cshub.taxify.service.fiscalcheck.DocumentDivergenceService;
 import org.springframework.data.domain.Page;
+import org.springframework.data.domain.PageImpl;
 import org.springframework.data.domain.Pageable;
 import org.springframework.data.domain.Sort;
 import org.springframework.stereotype.Service;
@@ -66,6 +69,7 @@ public class FiscalXmlQueryService {
     private final FiscalXmlEventService eventService;
     private final FiscalXmlFileStorage fileStorage;
     private final ProductFiscalRuleRepository ruleRepository;
+    private final DocumentDivergenceService divergenceService;
 
     private final FiscalXmlDocumentRepository documentRepository;
     private final FiscalXmlDocumentItemRepository itemRepository;
@@ -78,8 +82,9 @@ public class FiscalXmlQueryService {
                                  FiscalXmlMetadataParser metadataParser, CompanyValidation companyValidation,
                                  TenantAccessService tenantAccessService, MessageService messageService,
                                  FiscalXmlEventService eventService, FiscalXmlFileStorage fileStorage,
-                                 ProductFiscalRuleRepository ruleRepository) {
+                                 ProductFiscalRuleRepository ruleRepository, DocumentDivergenceService divergenceService) {
         this.ruleRepository = ruleRepository;
+        this.divergenceService = divergenceService;
         this.fileStorage = fileStorage;
         this.eventService = eventService;
         this.documentRepository = documentRepository;
@@ -152,12 +157,32 @@ public class FiscalXmlQueryService {
 
         LocalDateTime comparisonCutoff = LocalDateTime.now().minusHours(SOURCE_COMPARISON_HOURS);
         String origem = filter.origem() == null || filter.origem().isBlank() ? null : filter.origem().strip();
-        Page<FiscalXmlDocument> documents = documentRepository.search(company.getId(), from, to,
+        String cfopFilter = filter.cfop() == null ? "" : filter.cfop().replaceAll("\\D", "");
+        java.util.function.Function<Pageable, Page<FiscalXmlDocument>> query = page -> documentRepository.search(company.getId(), from, to,
                 numero.isEmpty() ? null : numero, filter.direction(), participantPattern(filter.participant()),
                 filter.reviewStatus(), origem,
                 XmlSearchFilterDTO.ONLY_SIEG.equals(filter.fonte()) ? comparisonCutoff : null,
                 XmlSearchFilterDTO.ONLY_SEFAZ.equals(filter.fonte()) ? comparisonCutoff : null,
-                pageable);
+                cfopFilter.isEmpty() ? null : cfopFilter,
+                page);
+
+        Page<FiscalXmlDocument> documents;
+        Map<UUID, FiscalXmlSummaryDTO.DivergenceSummary> divergences;
+        if (filter.onlyDivergent()) {
+            // The checks run in memory, so the filter does too: every note matching the other
+            // filters is checked, the divergent ones are kept and paged here.
+            List<FiscalXmlDocument> all = query.apply(Pageable.unpaged(pageable.getSort())).getContent();
+            divergences = divergenceService.summarize(company.getId(), all);
+            List<FiscalXmlDocument> divergent = all.stream()
+                    .filter(document -> divergences.containsKey(document.getId()) || document.getReviewStatus() == ReviewStatus.DIVERGENT)
+                    .toList();
+            int start = (int) Math.min(pageable.getOffset(), divergent.size());
+            int end = Math.min(divergent.size(), start + pageable.getPageSize());
+            documents = new PageImpl<>(divergent.subList(start, end), pageable, divergent.size());
+        } else {
+            documents = query.apply(pageable);
+            divergences = divergenceService.summarize(company.getId(), documents.getContent());
+        }
 
         Map<UUID, Long> itemCounts = new HashMap<>();
         Map<UUID, java.util.SortedSet<String>> cfops = new HashMap<>();
@@ -180,7 +205,7 @@ public class FiscalXmlQueryService {
         }
 
         return documents.map(document -> toSummary(document, itemCounts.getOrDefault(document.getId(), 0L),
-                List.copyOf(cfops.getOrDefault(document.getId(), new java.util.TreeSet<>()))));
+                List.copyOf(cfops.getOrDefault(document.getId(), new java.util.TreeSet<>())), divergences.get(document.getId())));
     }
 
     /** The company's rules by product code - only read when some note of the page has a rectified version. */
@@ -356,7 +381,8 @@ public class FiscalXmlQueryService {
                 d.getSourceSystem(), d.getFoundInSiegAt(), d.getFoundInSefazAt());
     }
 
-    private FiscalXmlSummaryDTO toSummary(FiscalXmlDocument document, long quantidadeItens, List<String> cfops) {
+    private FiscalXmlSummaryDTO toSummary(FiscalXmlDocument document, long quantidadeItens, List<String> cfops,
+                                          FiscalXmlSummaryDTO.DivergenceSummary divergencias) {
         return new FiscalXmlSummaryDTO(
                 document.getId(),
                 document.getAccessKey(),
@@ -381,7 +407,8 @@ public class FiscalXmlQueryService {
                 document.getStatus(),
                 document.getReviewStatus(),
                 cfops,
-                document.getSourceSystem()
+                document.getSourceSystem(),
+                divergencias
         );
     }
 
