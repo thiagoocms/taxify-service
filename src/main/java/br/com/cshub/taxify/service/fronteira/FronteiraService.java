@@ -205,6 +205,9 @@ public class FronteiraService {
         EfiscoExtract extract = extractRepository
                 .findByCompany_IdAndPeriodoAndDeletedIsFalse(company.getId(), month.toString()).orElse(null);
         List<EfiscoExtractNote> notes = extract == null ? List.of() : extract.getNotes();
+        if (extract != null) {
+            ruleService.ensureCargaLiquida(company, extract.getCredenciamentoInterno(), predominantRate(notes), extract.getNumeroExtrato());
+        }
 
         Map<String, FiscalXmlDocument> documents = documentsOf(company.getId(), notes);
         List<FiscalXmlDocument> entries = interstateEntries(company.getId(), month, new HashSet<>(documents.keySet()));

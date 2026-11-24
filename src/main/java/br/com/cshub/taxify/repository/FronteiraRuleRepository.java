@@ -21,6 +21,10 @@ public interface FronteiraRuleRepository extends AbstractJpaRepository<Fronteira
     @Query("select r from FronteiraRule r where r.deleted = false and r.company is null order by r.kind, r.ncm, r.createdDate")
     List<FronteiraRule> findGlobal();
 
+    /** The rules of a kind, global or the company's - deleted ones too (someone removed it on purpose). */
+    @Query("select r from FronteiraRule r left join r.company c where r.kind = :kind and (c is null or c.id = :companyId)")
+    List<FronteiraRule> findAnyOfKind(@Param("kind") FronteiraRuleKind kind, @Param("companyId") UUID companyId);
+
     /** Whether the modal internal rate was ever created (deleted counts: then someone removed it on purpose). */
     boolean existsByKindAndCompanyIsNullAndNcmIsNull(FronteiraRuleKind kind);
 }

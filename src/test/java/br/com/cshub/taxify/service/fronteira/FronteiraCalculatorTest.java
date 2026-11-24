@@ -291,6 +291,25 @@ class FronteiraCalculatorTest {
         assertThat(result.value()).isEqualByComparingTo("0");
     }
 
+    /**
+     * The extract charges bonificação and "outras" like a purchase: NF 234489 (SC, CFOP 6910, R$ 115,60) 6,36 and
+     * NF 1182625 (SP, CFOP 6949, R$ 2,00) 0,11 - the carga líquida of 5,5%. A remessa (6915, conserto) still is not.
+     */
+    @Test
+    void bonificacaoAndOutrasAreChargedLikeAPurchase() {
+        Context context = new Context(List.of(interna(null, "20.5"), cargaTecidos()), false, "TECIDOS E ARMARINHO (INDUSTRIA)");
+        FiscalXmlDocument sc = note("SC", "115.60");
+        FiscalXmlDocument sp = note("SP", "2.00");
+
+        ItemResult bonificacao = FronteiraCalculator.item(sc, item(sc, "P1", "61091000", "6910", "115.60", "12", "13.87", "0", null), context);
+        ItemResult outras = FronteiraCalculator.item(sp, item(sp, "P1", "61091000", "6949", "2.00", "7", "0.14", "0", null), context);
+        ItemResult conserto = FronteiraCalculator.item(sp, item(sp, "P1", "61091000", "6915", "2.00", "7", "0.14", "0", null), context);
+
+        assertThat(bonificacao.value()).isEqualByComparingTo("6.36");
+        assertThat(outras.value()).isEqualByComparingTo("0.11");
+        assertThat(conserto.treatment()).isEqualTo(Treatment.SEM_ANTECIPACAO);
+    }
+
     @Test
     void importedGoodsUseFourPercent() {
         FiscalXmlDocument document = note("SP", "1000.00");

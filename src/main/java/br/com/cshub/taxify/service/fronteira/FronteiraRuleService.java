@@ -129,6 +129,36 @@ public class FronteiraRuleService {
 
     // ---------------------------------------------------------------- helpers
 
+    /**
+     * The company's credenciamento (from the extract) with no carga líquida in the table: without it every note
+     * falls to the regime normal and looks "cobrou a menos". A company rule with the rate e-Fisco charges on most
+     * of the extract's notes, "a conferir" - never again once someone has the rule, global or the company's, even
+     * deleted (then it was removed on purpose).
+     */
+    @Transactional
+    public void ensureCargaLiquida(Company company, String credenciamento, BigDecimal percentual, String numeroExtrato) {
+        if (credenciamento == null || credenciamento.isBlank() || percentual == null || percentual.signum() <= 0) {
+            return;
+        }
+        String wanted = FronteiraCalculator.plainText(credenciamento);
+        boolean known = repository.findAnyOfKind(FronteiraRuleKind.SIMPLES_PERCENTUAL, company.getId()).stream()
+                .anyMatch(rule -> rule.getDescricao() != null && FronteiraCalculator.plainText(rule.getDescricao()).equals(wanted));
+        if (known) {
+            return;
+        }
+        FronteiraRule rule = new FronteiraRule();
+        rule.setCompany(company);
+        rule.setKind(FronteiraRuleKind.SIMPLES_PERCENTUAL);
+        rule.setDescricao(credenciamento.strip());
+        rule.setPercentual(percentual);
+        rule.setFundamento(("Carga líquida do credenciamento: %s%% é o que o e-Fisco aplica na maioria das notas do extrato%s."
+                + " Criada na importação - a conferir.").formatted(percentual.stripTrailingZeros().toPlainString().replace('.', ','),
+                numeroExtrato == null ? "" : " nº " + numeroExtrato));
+        rule.setEnabled(true);
+        rule.setDeleted(false);
+        repository.save(rule);
+    }
+
     private void ensureDefaults() {
         if (!repository.existsByKindAndCompanyIsNullAndNcmIsNull(FronteiraRuleKind.ALIQUOTA_INTERNA)) {
             FronteiraRule modal = new FronteiraRule();

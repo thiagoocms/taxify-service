@@ -167,7 +167,8 @@ public final class FronteiraCalculator {
         }
 
         // devolução, remessa and ST already withheld are never antecipação - no formula changes that
-        if (operation.startsWith("2") || operation.startsWith("9") || Set.of("410", "411").contains(operation)) {
+        if (operation.startsWith("2") || (operation.startsWith("9") && !TAXED_OTHERS.contains(operation))
+                || Set.of("410", "411").contains(operation)) {
             memoria.add("CFOP %s (entrada %s): devolução, remessa ou outras - sem antecipação".formatted(item.getCfop(), entry));
             return result(variables, item, Treatment.SEM_ANTECIPACAO, v.partida, BigDecimal.ZERO, BigDecimal.ZERO, BigDecimal.ZERO, true, used, memoria, null);
         }
@@ -301,6 +302,12 @@ public final class FronteiraCalculator {
                 .formatted(money(v.partida), money(v.icmsOrigem), plain(internalRate), money(base), percent(internalRate), money(credito),
                         money(dupla), money(dupla.subtract(efisco)));
     }
+
+    /**
+     * "Outras entradas" e-Fisco still charges: bonificação (x910) is goods for resale given for free, and x949 is
+     * whatever the supplier did not name - the extract charges both, so they are not taken for a remessa.
+     */
+    static final Set<String> TAXED_OTHERS = Set.of("910", "949");
 
     /** Entry operations (after the 1/2/3 of the place) of goods the company keeps: ativo imobilizado, uso e consumo. */
     static final Set<String> USO_CONSUMO_OPERATIONS = Set.of("551", "552", "553", "555", "556", "557", "406", "407");
@@ -544,7 +551,7 @@ public final class FronteiraCalculator {
         return value == null ? "" : value.replaceAll("\\D", "");
     }
 
-    private static String plainText(String value) {
+    static String plainText(String value) {
         return Normalizer.normalize(value, Normalizer.Form.NFD).replaceAll("\\p{M}", "").replaceAll("\\s+", " ")
                 .strip().toUpperCase(Locale.ROOT);
     }
