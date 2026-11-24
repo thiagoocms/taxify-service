@@ -9,13 +9,15 @@ import static org.assertj.core.api.Assertions.assertThat;
 class SefazPropertiesTest {
 
     @Test
-    void startsWithPernambucoOnly() {
+    void everyUfByDefaultButNeverACompanyWithoutAValidOne() {
         SefazProperties properties = new SefazProperties();
 
         assertThat(properties.coversUf("PE")).isTrue();
-        assertThat(properties.coversUf(" pe ")).isTrue();
-        assertThat(properties.coversUf("SP")).isFalse();
+        assertThat(properties.coversUf(" sp ")).isTrue();
+        assertThat(properties.coversUf("RS")).isTrue();
         assertThat(properties.coversUf(null)).isFalse();
+        assertThat(properties.coversUf("")).isFalse();
+        assertThat(properties.coversUf("XX")).isFalse();
     }
 
     @Test
@@ -26,6 +28,9 @@ class SefazPropertiesTest {
         assertThat(properties.coversUf("SP")).isFalse();
 
         properties.setUfs(List.of());
+        assertThat(properties.coversUf("SP")).isTrue();
+
+        properties.setUfs(List.of(""));  // SEFAZ_DIST_UFS set but blank
         assertThat(properties.coversUf("SP")).isTrue();
     }
 }

@@ -23,7 +23,7 @@ import java.util.stream.Collectors;
 
 /**
  * Hourly SEFAZ capture, alongside SIEG: every company of the configured UFs
- * ({@code sefaz.dist.ufs}, PE to start) with an A1 certificate (its own or one of the same
+ * ({@code sefaz.dist.ufs}, every UF by default) with an A1 certificate (its own or one of the same
  * CNPJ root in the firm) and, on its current plan, the fiscal XML import service with
  * SEFAZ as a source (SEFAZ_INTEGRATION; with SIEG_INTEGRATION too, both sources run). Runs on a
  * virtual thread so the shared scheduler thread (the SIEG sync ticks every minute) is

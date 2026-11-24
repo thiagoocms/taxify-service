@@ -34,12 +34,18 @@ public class SefazProperties {
     private int cienciaMaxAttempts = 3;
     /** Full notes asked by key (consChNFe) per company per run, after the ciência. */
     private int fetchPerRun = 20;
-    /** UFs whose companies are captured automatically - starting with PE; empty = every UF. */
-    private java.util.List<String> ufs = java.util.List.of("PE");
+    /** UFs whose companies are captured automatically; empty (the default) = every UF. */
+    private java.util.List<String> ufs = java.util.List.of();
 
-    /** Whether a company of this UF is in the automatic capture. */
+    /**
+     * Whether a company of this UF is in the automatic capture. A company without a valid UF never
+     * is: the request carries it as cUFAutor and SEFAZ refuses one without it.
+     */
     public boolean coversUf(String uf) {
-        if (ufs == null || ufs.isEmpty()) {
+        if (SefazDistClient.ufCode(uf) == null) {
+            return false;
+        }
+        if (ufs == null || ufs.stream().allMatch(item -> item == null || item.isBlank())) {
             return true;
         }
         return uf != null && ufs.stream().anyMatch(item -> item.strip().equalsIgnoreCase(uf.strip()));

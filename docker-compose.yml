@@ -69,8 +69,8 @@ services:
       # Captura direto da SEFAZ (NFeDistribuicaoDFe) com o certificado A1 de cada empresa, de hora em hora.
       SEFAZ_DIST_ENABLED: ${SEFAZ_DIST_ENABLED:-true}
       SEFAZ_DIST_CRON: ${SEFAZ_DIST_CRON:-0 15 * * * *}
-      # UFs com captura automática (vírgula; vazio = todas). Começa por PE.
-      SEFAZ_DIST_UFS: ${SEFAZ_DIST_UFS:-PE}
+      # UFs com captura automática (vírgula, ex. PE,PB); vazio = todas.
+      SEFAZ_DIST_UFS: ${SEFAZ_DIST_UFS:-}
       # Ciência da Operação automática (só para planos com "Manifestação do destinatário").
       SEFAZ_AUTO_CIENCIA: ${SEFAZ_AUTO_CIENCIA:-true}
       # NFS-e pelo Ambiente Nacional (só para planos com "Integração NFS-e Nacional").

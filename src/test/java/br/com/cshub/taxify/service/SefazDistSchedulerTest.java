@@ -97,6 +97,7 @@ class SefazDistSchedulerTest {
 
     @Test
     void onlyTheCoveredUfs() {
+        properties.setUfs(List.of("PE"));
         branch.setUf("SP");
 
         assertThat(scheduler.candidates()).containsExactly(headOffice);

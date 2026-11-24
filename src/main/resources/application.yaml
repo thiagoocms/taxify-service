@@ -111,8 +111,8 @@ sefaz:
     cron: ${SEFAZ_DIST_CRON:0 15 * * * *}
     production: ${SEFAZ_DIST_PRODUCTION:true}
     max-batches-per-company: ${SEFAZ_DIST_MAX_BATCHES:40}
-    # UFs com captura automática (separadas por vírgula; vazio = todas). Começa por PE.
-    ufs: ${SEFAZ_DIST_UFS:PE}
+    # UFs com captura automática (separadas por vírgula, ex. PE,PB); vazio = todas.
+    ufs: ${SEFAZ_DIST_UFS:}
     # Envia a Ciência da Operação (evento 210210, assinado com o A1) para as entradas que a SEFAZ
     # entrega só como resumo, e busca o XML completo pela chave na consulta seguinte.
     auto-ciencia: ${SEFAZ_AUTO_CIENCIA:true}
