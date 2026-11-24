@@ -136,6 +136,11 @@ docker compose up -d
 ```bash
 docker compose -f docker-compose.yml -f docker-compose.aws.yml up -d
 ```
+Na EC2 o acesso é por **HTTPS** via [Caddy](Caddyfile), com certificado do Let's Encrypt renovado sozinho:
+- `DOMAIN` no `.env`, com o registro A do domínio apontando para o Elastic IP da instância;
+- Security Group com 80 e 443 abertas (5000 e 8080 deixam de ser expostas);
+- o `Caddyfile` na mesma pasta do compose;
+- `CONTA_AZUL_REDIRECT_URI=https://SEU_DOMINIO/integracoes/conta-azul/callback`.
 
 **Local:**
 ```bash

@@ -1,0 +1,16 @@
+# HTTPS na EC2: o Caddy obtém e renova sozinho o certificado do Let's Encrypt para o $DOMAIN
+# (o DNS do domínio tem que apontar para o Elastic IP da instância e as portas 80/443 abertas).
+# Front e API passam pelo nginx do front, que já encaminha /taxify-service/ para o backend.
+{$DOMAIN} {
+	encode zstd gzip
+
+	header {
+		# Depois de confirmar que o HTTPS está estável, descomente (o navegador passa a recusar HTTP no domínio):
+		# Strict-Transport-Security "max-age=31536000"
+		X-Content-Type-Options "nosniff"
+		Referrer-Policy "strict-origin-when-cross-origin"
+		-Server
+	}
+
+	reverse_proxy frontend:80
+}

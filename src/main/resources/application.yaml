@@ -1,5 +1,7 @@
 server:
   port: ${SERVER_PORT}
+  # Atrás do Caddy/nginx: usa X-Forwarded-Proto/Host para que redirects e URLs saiam com https
+  forward-headers-strategy: framework
   servlet:
     context-path: /taxify-service
 spring:

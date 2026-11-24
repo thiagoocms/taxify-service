@@ -12,5 +12,34 @@ services:
     logging: *cloudwatch-logs
   backend:
     logging: *cloudwatch-logs
+    # Na EC2 o backend só é acessado pelo nginx do front (rede interna do compose).
+    # "!reset" precisa do Docker Compose 2.24+.
+    ports: !reset []
   frontend:
     logging: *cloudwatch-logs
+    # O front também deixa de ser exposto: quem atende o público é o Caddy, em 80/443.
+    ports: !reset []
+
+  # HTTPS (Let's Encrypt automático). Requer DOMAIN no .env - ver Caddyfile.
+  caddy:
+    image: caddy:2.8
+    container_name: taxify-caddy
+    restart: unless-stopped
+    depends_on:
+      - frontend
+    environment:
+      DOMAIN: ${DOMAIN:?defina DOMAIN no .env (ex. app.seudominio.com.br)}
+    ports:
+      - "80:80"
+      - "443:443"
+      - "443:443/udp"
+    volumes:
+      - ./Caddyfile:/etc/caddy/Caddyfile:ro
+      # Certificados e chaves da conta ACME - não apague (o Let's Encrypt limita reemissões)
+      - caddy_data:/data
+      - caddy_config:/config
+    logging: *cloudwatch-logs
+
+volumes:
+  caddy_data:
+  caddy_config:
