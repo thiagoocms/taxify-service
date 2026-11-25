@@ -17,6 +17,10 @@ public enum PendencyType {
     REGIME_MISSING(PendencySeverity.MEDIA, "Regime tributário não informado"),
     RETENTION_UNDUE(PendencySeverity.MEDIA, "Provável retenção indevida"),
     ISS_RETAINED_WITHOUT_VALUE(PendencySeverity.BAIXA, "ISS retido sem valor"),
+    /** Certidão SEFAZ-PE (M5): the newest certidão is positiva (ALTA) or positiva com efeito de negativa (BAIXA). */
+    CERTIDAO_PE_POSITIVA(PendencySeverity.ALTA, "Certidão estadual (PE) positiva"),
+    CERTIDAO_PE_VENCENDO(PendencySeverity.MEDIA, "Certidão estadual (PE) vencendo"),
+    CERTIDAO_PE_VENCIDA(PendencySeverity.ALTA, "Certidão estadual (PE) vencida"),
     /** A finding of the Auditoria tipo malha (M9) - written by AuditService per company and competence. */
     AUDIT_FINDING(PendencySeverity.MEDIA, "Auditoria tipo malha");
 

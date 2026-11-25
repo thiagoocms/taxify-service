@@ -18,6 +18,7 @@ import br.com.cshub.taxify.repository.SefazNoteSummaryRepository;
 import org.springframework.data.domain.Pageable;
 import br.com.cshub.taxify.enumerated.FiscalDirection;
 import br.com.cshub.taxify.exception.BadRequestException;
+import br.com.cshub.taxify.exception.ConflictException;
 import br.com.cshub.taxify.repository.EfiscoExtractRepository;
 import br.com.cshub.taxify.repository.FiscalXmlDocumentItemRepository;
 import br.com.cshub.taxify.repository.FiscalXmlDocumentRepository;
@@ -29,6 +30,7 @@ import org.springframework.transaction.annotation.Transactional;
 
 import java.math.BigDecimal;
 import java.math.RoundingMode;
+import java.time.LocalDate;
 import java.time.LocalDateTime;
 import java.time.YearMonth;
 import java.time.format.DateTimeParseException;
@@ -218,6 +220,33 @@ public class FronteiraService {
         return FronteiraReportPdf.csv(report, documentOf(company), FronteiraReportPdf.rulesInfo(ruleService.rulesFor(company.getId())));
     }
 
+    /** The draft of the revision request (PDF) of the notes e-Fisco charged beyond Taxify's calculation. */
+    @Transactional
+    public byte[] revisionRequestPdf(String companyId, String periodo) {
+        return FronteiraRevisionRequestPdf.pdf(revisionDraft(companyId, periodo));
+    }
+
+    /** The same draft as plain text, to paste in e-Fisco's form. */
+    @Transactional
+    public byte[] revisionRequestText(String companyId, String periodo) {
+        return FronteiraRevisionRequestPdf.textBytes(revisionDraft(companyId, periodo));
+    }
+
+    private FronteiraRevisionRequestPdf.Draft revisionDraft(String companyId, String periodo) {
+        Company company = company(companyId);
+        FronteiraDTOs.Report report = report(companyId, periodo);
+        if (report.extract() == null) {
+            throw new ConflictException(messageService.getMessage("error.fronteira.revision.no.extract"));
+        }
+        if (!FronteiraRevisionRequestPdf.hasItems(report)) {
+            throw new ConflictException(messageService.getMessage("error.fronteira.revision.none"));
+        }
+        FronteiraRevisionRequestPdf.Taxpayer taxpayer = new FronteiraRevisionRequestPdf.Taxpayer(company.getName(),
+                documentOf(company), company.getStateRegistration(), company.getAddressCity());
+        return FronteiraRevisionRequestPdf.draft(report, taxpayer,
+                FronteiraReportPdf.rulesInfo(ruleService.rulesFor(company.getId())), LocalDate.now());
+    }
+
     private static String documentOf(Company company) {
         return company.getDocument() == null ? null : company.getDocument().getNumber();
     }
@@ -329,7 +358,8 @@ public class FronteiraService {
                 }
                 ref = new FronteiraDTOs.NoteRef(document.getId(), document.getEmitenteNome(), document.getIssueDate(),
                         document.getValorTotalNota(), document.getNaturezaOperacao(),
-                        cfops.getOrDefault(document.getId(), List.of()), document.isCanceled(), divergence);
+                        cfops.getOrDefault(document.getId(), List.of()), document.isCanceled(), divergence,
+                        document.getAccessKey());
                 calc = calcs.get(document.getId());
             }
             Resultado resultado = resultado(note.getIcmsDevido(), document, calc);

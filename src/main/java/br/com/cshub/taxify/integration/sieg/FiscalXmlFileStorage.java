@@ -90,6 +90,11 @@ public class FiscalXmlFileStorage {
         return writer.write("fronteira/" + companyId + "-" + periodo + "-" + System.currentTimeMillis() + ".pdf", pdf);
     }
 
+    /** A state certidão PDF (Certidão SEFAZ-PE) of a company - one file per certidão, beside the Fronteira extracts. */
+    public String storeCertidaoPdf(UUID companyId, String uf, byte[] pdf) throws IOException {
+        return writer.write("certidoes/" + companyId + "-" + uf + "-" + System.currentTimeMillis() + ".pdf", pdf);
+    }
+
     public byte[] read(String location) throws IOException {
         return backendOf(location).read(location);
     }

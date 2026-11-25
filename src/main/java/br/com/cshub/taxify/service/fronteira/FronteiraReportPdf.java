@@ -277,7 +277,7 @@ public final class FronteiraReportPdf {
 
     // ---------------------------------------------------------------- lines
 
-    private static String supplier(FronteiraDTOs.Line line) {
+    static String supplier(FronteiraDTOs.Line line) {
         String name = line.nota() == null ? null : line.nota().emitenteNome();
         return name == null ? text(line.cnpjEmitente()) : name;
     }
@@ -296,7 +296,7 @@ public final class FronteiraReportPdf {
         return labels.isEmpty() || labels.equals(treatments) ? treatments : treatments + " · " + labels;
     }
 
-    private static String treatments(FronteiraDTOs.Line line) {
+    static String treatments(FronteiraDTOs.Line line) {
         if (line.calculo() == null) {
             return "";
         }
@@ -306,7 +306,7 @@ public final class FronteiraReportPdf {
         return String.join(" + ", labels);
     }
 
-    private static String ruleLabels(FronteiraDTOs.Line line, Map<UUID, RuleInfo> rules) {
+    static String ruleLabels(FronteiraDTOs.Line line, Map<UUID, RuleInfo> rules) {
         if (line.calculo() == null) {
             return "";
         }

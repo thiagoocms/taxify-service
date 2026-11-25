@@ -99,6 +99,27 @@ public class FronteiraResource {
                 .body(service.reportCsv(companyId, periodo));
     }
 
+    /**
+     * The draft of the revision request to SEFAZ-PE (PDF) with the notes charged beyond Taxify's calculation;
+     * 409 when there is none.
+     */
+    @GetMapping("/pedido-revisao.pdf")
+    public ResponseEntity<byte[]> revisionRequestPdf(@RequestParam String companyId, @RequestParam(required = false) String periodo) {
+        return ResponseEntity.ok()
+                .header("Content-Disposition", "attachment; filename=\"pedido-revisao-fronteira-" + (periodo == null ? "" : periodo) + ".pdf\"")
+                .contentType(MediaType.APPLICATION_PDF)
+                .body(service.revisionRequestPdf(companyId, periodo));
+    }
+
+    /** The same draft as plain text, to paste in e-Fisco's form. */
+    @GetMapping("/pedido-revisao.txt")
+    public ResponseEntity<byte[]> revisionRequestText(@RequestParam String companyId, @RequestParam(required = false) String periodo) {
+        return ResponseEntity.ok()
+                .header("Content-Disposition", "inline; filename=\"pedido-revisao-fronteira-" + (periodo == null ? "" : periodo) + ".txt\"")
+                .contentType(MediaType.parseMediaType("text/plain; charset=UTF-8"))
+                .body(service.revisionRequestText(companyId, periodo));
+    }
+
     /** The kept PDF of the period's extract, to open in the browser ("Ver PDF"). */
     @GetMapping(value = "/extrato/pdf", produces = MediaType.APPLICATION_PDF_VALUE)
     public ResponseEntity<byte[]> extractPdf(@RequestParam String companyId, @RequestParam String periodo) {

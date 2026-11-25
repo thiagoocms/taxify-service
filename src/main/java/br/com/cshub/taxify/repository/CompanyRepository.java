@@ -27,4 +27,8 @@ public interface CompanyRepository extends AbstractJpaRepository<Company, UUID> 
     @EntityGraph(attributePaths = "document")
     List<Company> findByAccountingFirm_IdAndDeletedIsFalseOrderByNameAsc(UUID accountingFirmId);
 
+
+    /** Every company of a UF, all firms - the weekly certidão SEFAZ-PE job goes through them. */
+    @Query("select c from Company c join fetch c.document where c.deleted = false and upper(trim(c.uf)) = upper(:uf)")
+    List<Company> findAllOfUf(@org.springframework.data.repository.query.Param("uf") String uf);
 }

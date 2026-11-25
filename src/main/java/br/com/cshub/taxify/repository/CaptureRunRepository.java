@@ -25,4 +25,9 @@ public interface CaptureRunRepository extends AbstractJpaRepository<CaptureRun, 
     @Transactional
     @Query("delete from CaptureRun r where r.startedAt < :before")
     int deleteOlderThan(@Param("before") LocalDateTime before);
+
+    /** The newest run of a service per company - the integrations' health of a collector without a control table. */
+    @Query("select r from CaptureRun r join fetch r.company where r.service = :service and r.company.id in :companyIds"
+            + " and r.startedAt = (select max(o.startedAt) from CaptureRun o where o.company = r.company and o.service = :service)")
+    List<CaptureRun> findLatestOf(@Param("companyIds") Collection<UUID> companyIds, @Param("service") String service);
 }

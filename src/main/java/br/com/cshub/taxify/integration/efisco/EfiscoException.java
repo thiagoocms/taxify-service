@@ -10,6 +10,8 @@ public class EfiscoException extends RuntimeException {
         LOGIN_RECUSADO,
         /** e-Fisco changed or answered something else than the mapped flow. */
         PAGINA_INESPERADA,
+        /** The page asks a person to prove they are human (captcha / Cloudflare Turnstile): never solved by Taxify. */
+        CAPTCHA,
         ERRO_HTTP
     }
 

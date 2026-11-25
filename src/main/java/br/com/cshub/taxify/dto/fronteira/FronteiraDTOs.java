@@ -75,9 +75,10 @@ public final class FronteiraDTOs {
                           BigDecimal valorGuia) {
     }
 
-    /** The Taxify note behind a line of the extract. */
+    /** The Taxify note behind a line of the extract; {@code chaveAcesso} the NF-e's 44-digit key. */
     public record NoteRef(UUID documentId, String emitenteNome, LocalDateTime issueDate, BigDecimal valorTotalNota,
-                          String naturezaOperacao, List<String> cfops, boolean cancelada, DivergenceSummary divergencias) {
+                          String naturezaOperacao, List<String> cfops, boolean cancelada, DivergenceSummary divergencias,
+                          String chaveAcesso) {
     }
 
     /**

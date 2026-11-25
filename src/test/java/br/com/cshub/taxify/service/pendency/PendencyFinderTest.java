@@ -69,7 +69,7 @@ class PendencyFinderTest {
     void setUp() {
         finder = new PendencyFinder(certificateService, controlRepository, summaryRepository, documentRepository,
                 regimeRepository, subscriptionRepository, manifestationService, new SefazProperties(), retentionCalculator,
-                adnControlRepository);
+                adnControlRepository, org.mockito.Mockito.mock(br.com.cshub.taxify.service.certidao.CertidaoPendencies.class));
         when(adnControlRepository.findByCompany_Id(any())).thenReturn(Optional.empty());
         when(retentionCalculator.compute(any(), any()))
                 .thenReturn(new br.com.cshub.taxify.service.retention.RetentionCalculator.Result(List.of(), List.of()));

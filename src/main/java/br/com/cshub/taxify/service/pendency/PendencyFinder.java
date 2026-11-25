@@ -69,14 +69,17 @@ public class PendencyFinder {
     private final SefazProperties sefazProperties;
     private final br.com.cshub.taxify.service.retention.RetentionCalculator retentionCalculator;
     private final br.com.cshub.taxify.repository.NfseAdnControlRepository adnControlRepository;
+    private final br.com.cshub.taxify.service.certidao.CertidaoPendencies certidaoPendencies;
 
     public PendencyFinder(CompanyCertificateService certificateService, SefazDistControlRepository controlRepository,
                           SefazNoteSummaryRepository summaryRepository, FiscalXmlDocumentRepository documentRepository,
                           CompanyTaxRegimeRepository regimeRepository, SubscriptionRepository subscriptionRepository,
                           SefazManifestationScreenService manifestationService, SefazProperties sefazProperties,
                           br.com.cshub.taxify.service.retention.RetentionCalculator retentionCalculator,
-                          br.com.cshub.taxify.repository.NfseAdnControlRepository adnControlRepository) {
+                          br.com.cshub.taxify.repository.NfseAdnControlRepository adnControlRepository,
+                          br.com.cshub.taxify.service.certidao.CertidaoPendencies certidaoPendencies) {
         this.adnControlRepository = adnControlRepository;
+        this.certidaoPendencies = certidaoPendencies;
         this.retentionCalculator = retentionCalculator;
         this.certificateService = certificateService;
         this.controlRepository = controlRepository;
@@ -119,6 +122,7 @@ public class PendencyFinder {
         divergent(company, now, findings);
         regime(company, findings);
         retentions(company, findings);
+        findings.addAll(certidaoPendencies.find(company));
         return findings;
     }
 

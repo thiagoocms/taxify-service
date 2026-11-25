@@ -16,6 +16,8 @@ public class CaptureRun extends AbstractAuditingEntity {
 
     public static final String SEFAZ_DIST = "SEFAZ_DIST";
     public static final String NFSE_ADN = "NFSE_ADN";
+    /** Certidão SEFAZ-PE (M5): each issue attempt, scheduled or by the button. */
+    public static final String CERTIDAO_PE = "CERTIDAO_PE";
 
     @Id
     @GeneratedValue(strategy = GenerationType.UUID)

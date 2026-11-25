@@ -192,7 +192,7 @@ public class PendencyService {
         return new PendencyDTOs.Summary(counters, total);
     }
 
-    /** The collectors (SEFAZ and NFS-e Nacional) of every company in scope that has one: last run and the last 7 days. */
+    /** The collectors (SEFAZ, NFS-e Nacional and the certidão SEFAZ-PE) of every company in scope that has one: last run and the last 7 days. */
     @Transactional(readOnly = true)
     public List<PendencyDTOs.IntegrationHealth> health(String companyId) {
         Collection<UUID> scope = scope(companyId);
@@ -219,6 +219,12 @@ public class PendencyService {
             health.add(new PendencyDTOs.IntegrationHealth(control.getCompany().getId(), control.getCompany().getName(),
                     "NFS-e Nacional", control.getLastRunAt(), control.getLastStatus() == null ? null : control.getLastStatus().name(),
                     control.getLastDetail(), control.getNextQueryAt(), counts[0], counts[1]));
+        }
+        // Certidão SEFAZ-PE: no control table - its newest attempt per company
+        for (CaptureRun run : captureRunRepository.findLatestOf(scope, CaptureRun.CERTIDAO_PE)) {
+            long[] counts = runs.getOrDefault(run.getCompany().getId() + "|" + CaptureRun.CERTIDAO_PE, new long[2]);
+            health.add(new PendencyDTOs.IntegrationHealth(run.getCompany().getId(), run.getCompany().getName(),
+                    "Certidão SEFAZ-PE", run.getStartedAt(), run.getStatus(), run.getDetail(), null, counts[0], counts[1]));
         }
         health.sort(Comparator.comparing((PendencyDTOs.IntegrationHealth item) -> !"ERRO".equals(item.lastStatus()))
                 .thenComparing(PendencyDTOs.IntegrationHealth::companyName, Comparator.nullsLast(String::compareToIgnoreCase)));
