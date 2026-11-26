@@ -1,5 +1,6 @@
 package br.com.cshub.taxify.service;
 
+import br.com.cshub.taxify.common.DuplicateKeys;
 import br.com.cshub.taxify.integration.fiscalxml.FiscalXmlSide;
 import br.com.cshub.taxify.domain.company.Company;
 import br.com.cshub.taxify.domain.subscription.Subscription;
@@ -14,19 +15,24 @@ import br.com.cshub.taxify.repository.FiscalXmlSyncControlRepository;
 import br.com.cshub.taxify.repository.SubscriptionRepository;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
+import org.springframework.beans.factory.annotation.Autowired;
+import org.springframework.dao.DataIntegrityViolationException;
 import org.springframework.scheduling.annotation.Scheduled;
 import org.springframework.stereotype.Component;
 
+import java.time.Clock;
 import java.time.LocalDate;
 import java.time.LocalDateTime;
 import java.time.YearMonth;
+import java.time.ZoneId;
+import java.time.temporal.ChronoUnit;
 import java.util.ArrayList;
+import java.util.Comparator;
 import java.util.HashSet;
 import java.util.List;
 import java.util.Map;
 import java.util.Set;
 import java.util.UUID;
-import java.util.concurrent.atomic.AtomicInteger;
 
 /**
  * Periodically pulls new fiscal XMLs for companies, so the search endpoint can serve
@@ -39,7 +45,7 @@ import java.util.concurrent.atomic.AtomicInteger;
  * that row already carries {@link FiscalXmlSyncControl#getTotalImportado()}, which feeds
  * {@link FiscalXmlSyncRequest#alreadyImportedCount()} so a paginating provider (SIEG's
  * {@code skip}) resumes after what's already persisted instead of re-requesting the same
- * page every tick. {@link #ensureControlRowsExist()} keeps that table complete by
+ * page every tick. {@link #ensureControlRowsExist} keeps that table complete by
  * creating a zeroed row for any company that doesn't have one yet, so a brand new
  * company is never permanently left out of the rotation.
  *
@@ -55,18 +61,22 @@ import java.util.concurrent.atomic.AtomicInteger;
  * synced: {@link #hasFiscalXmlImportEntitlement} requires a currently "vigente" (active -
  * {@code startDate <= today <= endDate}) {@link Subscription} whose {@link
  * br.com.cshub.taxify.domain.plan.Plan} includes that service. {@link
- * #ensureControlRowsExist()} still seeds a control row for every company regardless -
+ * #ensureControlRowsExist} still seeds a control row for every company regardless -
  * the control table stays a complete picture of every company, it's only the actual
  * provider call that's gated by the plan.
  *
  * <p>A provider's rate limit is account-wide, not per company (SIEG: 2 requests/minute
  * total), so once there are more companies than that limit allows per tick, trying to
  * sync everyone in a single run would block this thread for minutes at a time. Instead,
- * each tick only syncs {@link FiscalXmlSyncProperties#getBatchSize()} companies, picked
- * round-robin from a rotating cursor so every company gets a turn over successive ticks
- * - {@code cron} is meant to fire often (each tick does bounded, fast work) rather than
- * rarely-but-long-running. The cursor lives in memory only: it resets to the start on
- * restart, which just means a partial extra cycle, not a correctness problem.
+ * each tick only syncs {@link FiscalXmlSyncProperties#getBatchSize()} companies - {@code cron} is meant to fire
+ * often (each tick does bounded, fast work) rather than rarely-but-long-running.
+ *
+ * <p>Which companies: a queue persisted on the control rows ({@link #queueOrder}) - the oldest last attempt first,
+ * never attempted before everything else; among those, the oldest real verification first (never verified first); then
+ * the id, so the order is stable. Every attempt - success, failure or skipped as up to date - moves the company to the
+ * end of the queue ({@code last_attempt_at}, reserved before the sync), so a company that always fails never holds the
+ * others back, and a restart or deploy does not send the queue back to the same few companies (the old in-memory
+ * cursor did, over a list read without ORDER BY).
  */
 @Component
 public class FiscalXmlSyncScheduler {
@@ -77,17 +87,28 @@ public class FiscalXmlSyncScheduler {
     /** NFS-e can be issued days after the service and some cities send them late - a month and a bit. */
     static final int SERVICE_INVOICE_LOOKBACK_DAYS = 35;
     static final int SERVICE_INVOICE_FIRST_MONTHS = 3;
+    static final ZoneId RECIFE = ZoneId.of("America/Recife");
 
     private final CompanyRepository companyRepository;
     private final FiscalXmlSyncControlRepository syncControlRepository;
     private final SubscriptionRepository subscriptionRepository;
     private final Map<String, FiscalXmlProvider> providers;
     private final FiscalXmlSyncProperties properties;
-    private final AtomicInteger cursor = new AtomicInteger(0);
+    /** America/Recife - the queue's last_attempt_at and the creation time of the control rows. */
+    private final Clock clock;
 
+    @Autowired
     public FiscalXmlSyncScheduler(CompanyRepository companyRepository, FiscalXmlSyncControlRepository syncControlRepository,
                                    SubscriptionRepository subscriptionRepository, Map<String, FiscalXmlProvider> providers,
                                    FiscalXmlSyncProperties properties) {
+        this(companyRepository, syncControlRepository, subscriptionRepository, providers, properties, Clock.system(RECIFE));
+    }
+
+    /** With a given clock (tests); production uses Recife's system clock. */
+    public FiscalXmlSyncScheduler(CompanyRepository companyRepository, FiscalXmlSyncControlRepository syncControlRepository,
+                                   SubscriptionRepository subscriptionRepository, Map<String, FiscalXmlProvider> providers,
+                                   FiscalXmlSyncProperties properties, Clock clock) {
+        this.clock = clock;
         this.companyRepository = companyRepository;
         this.syncControlRepository = syncControlRepository;
         this.subscriptionRepository = subscriptionRepository;
@@ -119,9 +140,11 @@ public class FiscalXmlSyncScheduler {
             return;
         }
 
-        List<FiscalXmlSyncControl> batch = nextBatch(controls, properties.getBatchSize());
-        log.info("Starting scheduled fiscal XML sync (provider={}): {} of {} entitled companies this tick",
-                properties.getProvider(), batch.size(), controls.size());
+        List<FiscalXmlSyncControl> queue = controls.stream().sorted(queueOrder()).toList();
+        LocalDateTime head = queue.getFirst().getLastAttemptAt();
+        List<FiscalXmlSyncControl> batch = nextBatch(queue, properties.getBatchSize());
+        log.info("Starting scheduled fiscal XML sync (provider={}): {} of {} entitled companies this tick, first in queue last attempted at {}",
+                properties.getProvider(), batch.size(), controls.size(), head == null ? "never" : head);
 
         for (FiscalXmlSyncControl control : batch) {
             try {
@@ -169,30 +192,87 @@ public class FiscalXmlSyncScheduler {
                 control.setDeleted(false);
                 control.setTotalSieg(0);
                 control.setTotalImportado(0);
-                control.setUltimaVerificacaoEm(LocalDateTime.now());
-                syncControlRepository.save(control);
+                // filled because the column is NOT NULL - not a verification (see FiscalXmlSyncControl#getVerifiedAt)
+                control.setUltimaVerificacaoEm(LocalDateTime.now(clock));
+                seed(control);
             }
         }
     }
 
     /**
-     * Picks the next {@code batchSize} controls starting at the rotating cursor,
-     * wrapping around to the front of the list when it runs past the end, and advances
-     * the cursor for the following tick. Re-reads {@code controls.size()} every call, so
-     * it tolerates companies being added/removed between ticks (at worst some skew in
-     * whose "turn" it is, never an out-of-bounds access).
+     * One row at a time: two instances seeding together - the loser's INSERT hits uk_fiscal_xml_sync_control_company,
+     * which only means the other one created it. Nothing here takes the tick down.
      */
-    private List<FiscalXmlSyncControl> nextBatch(List<FiscalXmlSyncControl> controls, int batchSize) {
-        int size = controls.size();
-        int effectiveBatchSize = Math.min(Math.max(batchSize, 1), size);
-        int start = cursor.get() % size;
-
-        List<FiscalXmlSyncControl> batch = new ArrayList<>(effectiveBatchSize);
-        for (int i = 0; i < effectiveBatchSize; i++) {
-            batch.add(controls.get((start + i) % size));
+    private void seed(FiscalXmlSyncControl control) {
+        UUID companyId = control.getCompany().getId();
+        try {
+            syncControlRepository.save(control);
+        } catch (DataIntegrityViolationException e) {
+            if (DuplicateKeys.isDuplicateKey(e)) {
+                log.info("Sync control row of company {} already created by another instance", companyId);
+            } else {
+                log.warn("Sync control row of company {} not created - tried again on the next tick: {}", companyId,
+                        e.getClass().getSimpleName());
+            }
+        } catch (RuntimeException e) {
+            log.warn("Sync control row of company {} not created - tried again on the next tick: {}", companyId,
+                    e.getClass().getSimpleName());
         }
-        cursor.set((start + effectiveBatchSize) % size);
+    }
+
+    /**
+     * The first {@code batchSize} companies of the queue that this instance manages to reserve ({@link #reserve}): one
+     * taken meanwhile by another instance is skipped and the next one in the queue is tried, until the batch is full.
+     */
+    private List<FiscalXmlSyncControl> nextBatch(List<FiscalXmlSyncControl> queue, int batchSize) {
+        int wanted = Math.min(Math.max(batchSize, 1), queue.size());
+        List<FiscalXmlSyncControl> batch = new ArrayList<>(wanted);
+        for (FiscalXmlSyncControl control : queue) {
+            if (batch.size() >= wanted) {
+                break;
+            }
+            if (reserve(control)) {
+                batch.add(control);
+            }
+        }
         return batch;
+    }
+
+    /**
+     * The queue: last attempt (never first), then the real verification (never first - see
+     * {@link FiscalXmlSyncControl#getVerifiedAt()}), then the row id and the company id - stable between ticks.
+     */
+    static Comparator<FiscalXmlSyncControl> queueOrder() {
+        return Comparator.comparing(FiscalXmlSyncControl::getLastAttemptAt, Comparator.nullsFirst(Comparator.naturalOrder()))
+                .thenComparing(FiscalXmlSyncControl::getVerifiedAt, Comparator.nullsFirst(Comparator.naturalOrder()))
+                .thenComparing(control -> control.getId() == null ? "" : control.getId().toString())
+                .thenComparing(control -> control.getCompany() == null ? "" : control.getCompany().getId().toString());
+    }
+
+    /**
+     * Before the sync, atomically: {@code last_attempt_at} moves to now (Recife, microseconds as in datetime(6)) only if
+     * it is still what was read. Whatever happens next (success, failure, skipped as up to date), the company is at the
+     * end of the queue. Not reserved (another instance took it, or the update failed) = not synced by this tick.
+     */
+    private boolean reserve(FiscalXmlSyncControl control) {
+        LocalDateTime read = control.getLastAttemptAt();
+        LocalDateTime now = LocalDateTime.now(clock).truncatedTo(ChronoUnit.MICROS);
+        if (control.getId() == null) {
+            // not persisted (never the case for rows read from the database): nothing to reserve against
+            control.setLastAttemptAt(now);
+            return true;
+        }
+        try {
+            if (syncControlRepository.reserve(control.getId(), read, now) == 1) {
+                control.setLastAttemptAt(now);
+                return true;
+            }
+            log.info("Company {} already taken by another instance this tick - skipped", control.getCompany().getId());
+            return false;
+        } catch (Exception e) {
+            log.warn("Could not reserve company {} for this tick - skipped", control.getCompany().getId(), e);
+            return false;
+        }
     }
 
     /** Received notes first (what most fiscal work starts from), then the company's own; NFS-e once a day. */

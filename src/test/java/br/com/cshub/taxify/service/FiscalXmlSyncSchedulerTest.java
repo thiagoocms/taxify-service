@@ -24,6 +24,7 @@ import org.mockito.junit.jupiter.MockitoExtension;
 
 import java.time.LocalDate;
 import java.time.LocalDateTime;
+import java.util.ArrayList;
 import java.util.List;
 import java.util.Map;
 import java.util.Optional;
@@ -193,6 +194,7 @@ class FiscalXmlSyncSchedulerTest {
         when(companyRepository.findAll()).thenReturn(List.of(companyA));
         when(syncControlRepository.findAllCompanyIds()).thenReturn(List.of(companyA.getId()));
         when(syncControlRepository.findAllWithCompany()).thenReturn(List.of(control));
+        when(syncControlRepository.reserve(eq(control.getId()), any(), any())).thenReturn(1); // a persisted row: reserved
         when(provider.sync(any())).thenReturn(new FiscalXmlSyncResult(0, 0, 0));
 
         scheduler.syncAllCompanies();
@@ -403,6 +405,246 @@ class FiscalXmlSyncSchedulerTest {
         verify(provider, times(1)).sync(argThatCompanyId(companyC.getId()));
         verify(provider, times(1)).sync(argThatCompanyId(companyD.getId()));
         verify(provider, times(1)).sync(argThatCompanyId(companyE.getId()));
+    }
+
+    /** A restart (a new scheduler over the same rows) goes on with the queue - no in-memory cursor back to zero. */
+    @Test
+    void aRestartDoesNotSendTheQueueBackToTheStart() {
+        when(companyRepository.findAll()).thenReturn(List.of(companyA, companyB, companyC, companyD, companyE));
+        when(syncControlRepository.findAllCompanyIds()).thenReturn(allIds());
+        List<FiscalXmlSyncControl> rows = allControls();
+        when(syncControlRepository.findAllWithCompany()).thenReturn(rows);
+        when(provider.sync(any())).thenReturn(new FiscalXmlSyncResult(0, 0, 0));
+
+        scheduler.syncAllCompanies(); // A, B
+        FiscalXmlSyncScheduler restarted = new FiscalXmlSyncScheduler(companyRepository, syncControlRepository, subscriptionRepository,
+                Map.of("sieg", provider), properties);
+        restarted.syncAllCompanies(); // C, D - not A, B again
+
+        verify(provider, times(1)).sync(argThatCompanyId(companyA.getId()));
+        verify(provider, times(1)).sync(argThatCompanyId(companyC.getId()));
+        verify(provider, times(1)).sync(argThatCompanyId(companyD.getId()));
+        verify(provider, never()).sync(argThatCompanyId(companyE.getId()));
+    }
+
+    /** The attempt is persisted before the sync, so it survives the restart (the row's last_attempt_at). */
+    @Test
+    void everyAttemptIsPersistedBeforeTheSync() {
+        when(companyRepository.findAll()).thenReturn(List.of(companyA));
+        when(syncControlRepository.findAllCompanyIds()).thenReturn(List.of(companyA.getId()));
+        FiscalXmlSyncControl row = controlFor(companyA, 0);
+        row.setId(UUID.randomUUID());
+        when(syncControlRepository.findAllWithCompany()).thenReturn(List.of(row));
+        when(syncControlRepository.reserve(eq(row.getId()), any(), any())).thenReturn(1);
+        when(provider.sync(any())).thenThrow(new RuntimeException("SIEG fora"));
+
+        scheduler.syncAllCompanies();
+
+        verify(syncControlRepository).reserve(eq(row.getId()), org.mockito.ArgumentMatchers.isNull(), any(LocalDateTime.class));
+        assertThat(row.getLastAttemptAt()).isNotNull();
+    }
+
+    /** A company that always fails goes to the end of the queue like any other - it never holds the rest back. */
+    @Test
+    void aCompanyThatAlwaysFailsDoesNotBlockTheOthers() {
+        properties.setBatchSize(1);
+        when(companyRepository.findAll()).thenReturn(List.of(companyA, companyB, companyC));
+        when(syncControlRepository.findAllCompanyIds()).thenReturn(List.of(companyA.getId(), companyB.getId(), companyC.getId()));
+        when(syncControlRepository.findAllWithCompany())
+                .thenReturn(List.of(controlFor(companyA, 0), controlFor(companyB, 0), controlFor(companyC, 0)));
+        lenient().when(provider.sync(argThatCompanyId(companyA.getId()))).thenThrow(new RuntimeException("erro permanente"));
+        lenient().when(provider.sync(argThatCompanyId(companyB.getId()))).thenReturn(new FiscalXmlSyncResult(0, 0, 0));
+        lenient().when(provider.sync(argThatCompanyId(companyC.getId()))).thenReturn(new FiscalXmlSyncResult(0, 0, 0));
+
+        scheduler.syncAllCompanies();
+        scheduler.syncAllCompanies();
+        scheduler.syncAllCompanies();
+
+        verify(provider).sync(argThatCompanyId(companyA.getId()));
+        verify(provider).sync(argThatCompanyId(companyB.getId()));
+        verify(provider).sync(argThatCompanyId(companyC.getId()));
+    }
+
+    /** The bug seen with 306 companies: with a batch of 2, every one of them is visited in 153 ticks. */
+    @Test
+    void threeHundredSixCompaniesWithABatchOfTwoAreAllVisitedIn153Ticks() {
+        properties.setBatchSize(2);
+        List<Company> companies = new ArrayList<>();
+        List<FiscalXmlSyncControl> rows = new ArrayList<>();
+        for (int i = 0; i < 306; i++) {
+            Company company = new Company(UUID.randomUUID());
+            company.setDocument(new Document("11594485000105", DocumentTypeEnum.CNPJ));
+            companies.add(company);
+            FiscalXmlSyncControl row = controlFor(company, 0);
+            row.setId(UUID.randomUUID());
+            rows.add(row);
+        }
+        java.util.Collections.shuffle(rows, new java.util.Random(7)); // the database returns them in no particular order
+        when(companyRepository.findAll()).thenReturn(companies);
+        when(syncControlRepository.findAllCompanyIds()).thenReturn(companies.stream().map(Company::getId).toList());
+        when(syncControlRepository.findAllWithCompany()).thenAnswer(invocation -> {
+            List<FiscalXmlSyncControl> copy = new ArrayList<>(rows);
+            java.util.Collections.shuffle(copy);
+            return copy;
+        });
+        when(subscriptionRepository.findFirstByCompanyIdAndDeletedIsFalseAndStartDateLessThanEqualAndEndDateGreaterThanEqualOrderByStartDateDesc(
+                any(), any(), any())).thenReturn(Optional.of(entitledSubscription()));
+        when(syncControlRepository.reserve(any(), any(), any())).thenReturn(1);
+        java.util.Set<UUID> visited = new java.util.HashSet<>();
+        when(provider.sync(any())).thenAnswer(invocation -> {
+            visited.add(invocation.<br.com.cshub.taxify.integration.fiscalxml.FiscalXmlSyncRequest>getArgument(0).companyId());
+            return new FiscalXmlSyncResult(0, 0, 0);
+        });
+
+        for (int tick = 0; tick < 153; tick++) {
+            scheduler.syncAllCompanies();
+        }
+
+        assertThat(visited).hasSize(306);
+    }
+
+    /**
+     * Two instances over the same table: the second reads the queue while the first is still choosing (both see A, B
+     * free). The conditional update lets only one of them have each company - the batches are disjoint.
+     */
+    @Test
+    void twoInstancesNeverTakeTheSameCompany() {
+        properties.setBatchSize(2);
+        List<FiscalXmlSyncControl> table = new ArrayList<>();
+        for (Company company : List.of(companyA, companyB, companyC, companyD, companyE)) {
+            FiscalXmlSyncControl row = controlFor(company, 0);
+            row.setId(UUID.fromString(company.getId().toString().replace("00000000-0000-0000-0000-0000000000", "10000000-0000-0000-0000-0000000000")));
+            table.add(row);
+        }
+        when(companyRepository.findAll()).thenReturn(List.of(companyA, companyB, companyC, companyD, companyE));
+        when(syncControlRepository.findAllCompanyIds()).thenReturn(allIds());
+        // the "database": each read is a snapshot; reserve is the conditional update on the shared rows
+        when(syncControlRepository.reserve(any(), any(), any())).thenAnswer(invocation -> {
+            synchronized (table) {
+                FiscalXmlSyncControl row = table.stream().filter(r -> r.getId().equals(invocation.getArgument(0))).findFirst().orElseThrow();
+                if (!java.util.Objects.equals(row.getLastAttemptAt(), invocation.getArgument(1))) {
+                    return 0;
+                }
+                row.setLastAttemptAt(invocation.getArgument(2));
+                return 1;
+            }
+        });
+        FiscalXmlSyncScheduler second = new FiscalXmlSyncScheduler(companyRepository, syncControlRepository, subscriptionRepository,
+                Map.of("sieg", provider), properties);
+        java.util.concurrent.atomic.AtomicBoolean interleaved = new java.util.concurrent.atomic.AtomicBoolean(false);
+        when(syncControlRepository.findAllWithCompany()).thenAnswer(invocation -> {
+            List<FiscalXmlSyncControl> snapshot = table.stream().map(this::copyOf).toList();
+            if (interleaved.compareAndSet(false, true)) {
+                second.syncAllCompanies(); // the other instance's tick runs between this read and the reservations
+            }
+            return snapshot;
+        });
+        java.util.List<UUID> synced = new java.util.concurrent.CopyOnWriteArrayList<>();
+        when(provider.sync(any())).thenAnswer(invocation -> {
+            synced.add(invocation.<br.com.cshub.taxify.integration.fiscalxml.FiscalXmlSyncRequest>getArgument(0).companyId());
+            return new FiscalXmlSyncResult(0, 0, 0);
+        });
+
+        scheduler.syncAllCompanies();
+
+        // received + issued per company: 2 calls each; 4 different companies, none twice
+        assertThat(synced.stream().distinct().count()).isEqualTo(4);
+        assertThat(synced).hasSize(8);
+        assertThat(synced).doesNotContain(companyE.getId());
+    }
+
+    private FiscalXmlSyncControl copyOf(FiscalXmlSyncControl row) {
+        FiscalXmlSyncControl copy = new FiscalXmlSyncControl();
+        copy.setId(row.getId());
+        copy.setCompany(row.getCompany());
+        copy.setTotalImportado(row.getTotalImportado());
+        copy.setUltimaVerificacaoEm(row.getUltimaVerificacaoEm());
+        copy.setIssuedCheckedAt(row.getIssuedCheckedAt());
+        copy.setLastAttemptAt(row.getLastAttemptAt());
+        return copy;
+    }
+
+    /**
+     * QA-05: another instance created company A's row first (Duplicate entry on uk_fiscal_xml_sync_control_company) -
+     * that row is just skipped, B's row is still created, and the tick goes on. The creation time is Recife's clock.
+     */
+    @Test
+    void aControlRowCreatedByAnotherInstanceDoesNotStopTheTick() {
+        java.time.Clock fixed = java.time.Clock.fixed(java.time.Instant.parse("2026-12-01T12:00:00Z"), java.time.ZoneId.of("America/Recife"));
+        FiscalXmlSyncScheduler clocked = new FiscalXmlSyncScheduler(companyRepository, syncControlRepository, subscriptionRepository,
+                Map.of("sieg", provider), properties, fixed);
+        when(companyRepository.findAll()).thenReturn(List.of(companyA, companyB));
+        when(syncControlRepository.findAllCompanyIds()).thenReturn(List.of());
+        when(syncControlRepository.save(org.mockito.ArgumentMatchers.argThat(row -> row != null && row.getCompany() == companyA)))
+                .thenThrow(new org.springframework.dao.DataIntegrityViolationException("dup",
+                        new java.sql.SQLIntegrityConstraintViolationException("Duplicate entry", "23000", 1062)));
+        when(syncControlRepository.findAllWithCompany()).thenReturn(List.of());
+
+        clocked.syncAllCompanies();
+
+        ArgumentCaptor<FiscalXmlSyncControl> saved = ArgumentCaptor.forClass(FiscalXmlSyncControl.class);
+        verify(syncControlRepository, times(2)).save(saved.capture());
+        assertThat(saved.getAllValues()).extracting(row -> row.getCompany().getId()).containsExactly(companyA.getId(), companyB.getId());
+        assertThat(saved.getAllValues().getLast().getUltimaVerificacaoEm()).isEqualTo(LocalDateTime.of(2026, 12, 1, 9, 0));
+        // the tick went on past the seeding
+        verify(syncControlRepository).findAllWithCompany();
+    }
+
+    /** last_attempt_at comes from the injected Recife clock, at datetime(6) precision. */
+    @Test
+    void theAttemptTimeComesFromTheRecifeClock() {
+        java.time.Clock fixed = java.time.Clock.fixed(java.time.Instant.parse("2026-12-01T12:00:00.123456789Z"),
+                java.time.ZoneId.of("America/Recife"));
+        FiscalXmlSyncScheduler clocked = new FiscalXmlSyncScheduler(companyRepository, syncControlRepository, subscriptionRepository,
+                Map.of("sieg", provider), properties, fixed);
+        when(companyRepository.findAll()).thenReturn(List.of(companyA));
+        when(syncControlRepository.findAllCompanyIds()).thenReturn(List.of(companyA.getId()));
+        FiscalXmlSyncControl row = controlFor(companyA, 0);
+        row.setId(UUID.randomUUID());
+        when(syncControlRepository.findAllWithCompany()).thenReturn(List.of(row));
+        when(syncControlRepository.reserve(any(), any(), any())).thenReturn(1);
+        when(provider.sync(any())).thenReturn(new FiscalXmlSyncResult(0, 0, 0));
+
+        clocked.syncAllCompanies();
+
+        LocalDateTime recifeNineAm = LocalDateTime.of(2026, 12, 1, 9, 0, 0, 123456000);
+        verify(syncControlRepository).reserve(row.getId(), null, recifeNineAm);
+        assertThat(row.getLastAttemptAt()).isEqualTo(recifeNineAm);
+    }
+
+    /** A brand-new row (ultima_verificacao_em filled on creation, issued side never checked) goes before the checked ones. */
+    @Test
+    void aNewCompanyGoesBeforeTheCheckedOnes() {
+        properties.setBatchSize(1);
+        FiscalXmlSyncControl checked = controlFor(companyA, 0);
+        checked.setIssuedCheckedAt(LocalDateTime.now().minusDays(3));
+        checked.setLastAttemptAt(LocalDateTime.now().minusDays(3));
+        FiscalXmlSyncControl brandNew = controlFor(companyB, 0); // only the creation's ultimaVerificacaoEm
+        when(companyRepository.findAll()).thenReturn(List.of(companyA, companyB));
+        when(syncControlRepository.findAllCompanyIds()).thenReturn(List.of(companyA.getId(), companyB.getId()));
+        when(syncControlRepository.findAllWithCompany()).thenReturn(List.of(checked, brandNew));
+        when(provider.sync(any())).thenReturn(new FiscalXmlSyncResult(0, 0, 0));
+
+        scheduler.syncAllCompanies();
+
+        verify(provider, never()).sync(argThatCompanyId(companyA.getId()));
+        verify(provider).sync(argThatCompanyId(companyB.getId()));
+        assertThat(brandNew.getVerifiedAt()).isNull();
+    }
+
+    /** Among rows never attempted (the ones that existed before V57), the oldest real verification goes first. */
+    @Test
+    void amongNeverAttemptedTheOldestVerificationGoesFirst() {
+        FiscalXmlSyncControl recent = controlFor(companyA, 0);
+        recent.setIssuedCheckedAt(LocalDateTime.now().minusHours(1));
+        FiscalXmlSyncControl old = controlFor(companyB, 0);
+        old.setIssuedCheckedAt(LocalDateTime.now().minusDays(5));
+        FiscalXmlSyncControl never = controlFor(companyC, 0);
+
+        List<FiscalXmlSyncControl> ordered = java.util.stream.Stream.of(recent, old, never)
+                .sorted(FiscalXmlSyncScheduler.queueOrder()).toList();
+
+        assertThat(ordered).containsExactly(never, old, recent);
     }
 
     @Test

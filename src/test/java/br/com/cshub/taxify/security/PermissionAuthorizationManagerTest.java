@@ -47,7 +47,9 @@ class PermissionAuthorizationManagerTest {
             "UserResource#getAll", "UserResource#getById", "UserResource#create",
             "UserCompanyResource#getAll", "UserCompanyResource#getById",
             "AccountingFirmResource#getAll", "AccountingFirmResource#getById",
-            "FirmIntegrationResource#list");
+            "FirmIntegrationResource#list",
+            // the accountant's e-CPF status - open to the firm's users on purpose (see its Javadoc)
+            "FirmCertificateResource#status");
 
     @AfterEach
     void clearContext() {
