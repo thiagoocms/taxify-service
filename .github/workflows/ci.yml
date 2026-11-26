@@ -1,0 +1,198 @@
+# CI do backend (taxify-service): testes contra um MySQL descartável -> build da imagem Docker.
+# NÃO faz deploy. Deploy na EC2 só com aprovação explícita do Tony (fora deste workflow).
+#
+# Isolamento do banco: o job usa o perfil "ci" (SPRING_PROFILES_ACTIVE), então o
+# application-default.yaml (que aponta para o MySQL da EC2) não é carregado; além disso o arquivo é
+# apagado do checkout antes do Maven, como já faz o Dockerfile. Toda a conexão vem do env abaixo e
+# aponta para o service container "mysql" em 127.0.0.1. Se faltar alguma variável, o contexto do
+# Spring falha em vez de cair num banco real.
+name: CI
+
+on:
+  pull_request:
+    branches: [master]
+  push:
+    branches: [master]
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: ${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  test:
+    name: Build e testes (mvn verify)
+    runs-on: ubuntu-24.04
+    timeout-minutes: 30
+
+    services:
+      mysql:
+        image: mysql:8.4
+        env:
+          MYSQL_ROOT_PASSWORD: ci_root
+          MYSQL_DATABASE: taxify_ci
+          MYSQL_USER: taxify_ci
+          MYSQL_PASSWORD: taxify_ci
+        ports:
+          - 3306:3306
+        options: >-
+          --health-cmd "mysqladmin ping -h 127.0.0.1 -uroot -pci_root"
+          --health-interval 5s
+          --health-timeout 5s
+          --health-retries 30
+
+    env:
+      # Perfil próprio: impede que o application-default.yaml (banco da EC2) seja carregado.
+      SPRING_PROFILES_ACTIVE: ci
+      SERVER_PORT: "5000"
+      # Banco descartável (service container acima). Credenciais fictícias, só existem neste job.
+      DB_HOST: 127.0.0.1
+      DB_PORT: "3306"
+      DB_NAME: taxify_ci
+      DB_USER: taxify_ci
+      DB_PASSWORD: taxify_ci
+      # Integrações externas: valores fictícios e tudo desligado (enabled=false e cron "-", que
+      # desativa o @Scheduled). Os testes de unidade usam mocks; os @SpringBootTest sobem o contexto
+      # inteiro e não podem disparar SIEG, SEFAZ, ADN, e-Fisco, Conta Azul, Acessórias nem S3.
+      SIEG_CLIENT_ID: ci-dummy
+      SIEG_CLIENT_SECRET: ci-dummy
+      FISCAL_XML_STORAGE_PATH: target/ci-fiscal-xml
+      FISCAL_XML_STORAGE_TYPE: local
+      FISCAL_XML_STORAGE_MIGRATE_LOCAL: "false"
+      FISCAL_XML_SYNC_ENABLED: "false"
+      FISCAL_XML_SYNC_CRON: "-"
+      FISCAL_XML_SYNC_BATCH_SIZE: "1"
+      FISCAL_XML_SYNC_PROVIDER: sieg
+      FISCAL_XML_RECTIFICATION_ENABLED: "false"
+      FISCAL_XML_RECTIFICATION_CRON: "-"
+      FISCAL_XML_RECTIFICATION_LOOKBACK_DAYS: "1"
+      FISCAL_XML_PURGE_ENABLED: "false"
+      FISCAL_XML_PURGE_CRON: "-"
+      FISCAL_XML_PURGE_RETENTION_MONTHS: "3"
+      SEFAZ_DIST_ENABLED: "false"
+      SEFAZ_DIST_CRON: "-"
+      SEFAZ_DIST_PRODUCTION: "false"
+      SEFAZ_AUTO_CIENCIA: "false"
+      NFSE_ADN_ENABLED: "false"
+      NFSE_ADN_CRON: "-"
+      NFSE_ADN_PRODUCTION: "false"
+      AUDIT_ENABLED: "false"
+      AUDIT_CRON: "-"
+      PENDENCIES_ENABLED: "false"
+      PENDENCIES_CRON: "-"
+      BILLING_SYNC_ENABLED: "false"
+      BILLING_SYNC_CRON: "-"
+      ACESSORIAS_SYNC_ENABLED: "false"
+      ACESSORIAS_SYNC_CRON: "-"
+      # efisco.* não tem placeholder no application.yaml: o Spring lê pelo nome relaxado do env.
+      EFISCO_CERTIDAO_ENABLED: "false"
+      EFISCO_CERTIDAO_CRON: "-"
+      EFISCO_SYNC_ENABLED: "false"
+      EFISCO_SYNC_CRON: "-"
+      CONTA_AZUL_CLIENT_ID: ""
+      CONTA_AZUL_CLIENT_SECRET: ""
+      CERT_ENCRYPTION_KEY: ""
+      PLATFORM_ADMIN_LOGINS: ""
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Setup Java 25 (Temurin) com cache do Maven
+        uses: actions/setup-java@v4
+        with:
+          distribution: temurin
+          java-version: "25"
+          cache: maven
+
+      - name: Garantir que os testes não alcançam o banco da EC2
+        run: |
+          # Mesmo tratamento do Dockerfile: o arquivo local (com o host da EC2) fica fora do classpath.
+          rm -f src/main/resources/application-default.yaml .env
+          if [ "$DB_HOST" != "127.0.0.1" ] || [ "$SPRING_PROFILES_ACTIVE" != "ci" ]; then
+            echo "::error::DB_HOST/SPRING_PROFILES_ACTIVE fora do esperado para o CI - abortando."
+            exit 1
+          fi
+          mysql --version || true
+          echo "Testes vão usar jdbc:mysql://$DB_HOST:$DB_PORT/$DB_NAME (service container)."
+
+      - name: mvn verify
+        run: |
+          chmod +x mvnw
+          ./mvnw -B -ntp verify
+
+      - name: Relatórios do Surefire (quando falhar)
+        if: failure()
+        uses: actions/upload-artifact@v4
+        with:
+          name: surefire-reports
+          path: |
+            target/surefire-reports/
+            target/failsafe-reports/
+          if-no-files-found: ignore
+          retention-days: 14
+
+  docker-build:
+    name: Build da imagem Docker (sem push)
+    needs: test
+    runs-on: ubuntu-24.04
+    timeout-minutes: 20
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Setup Buildx
+        uses: docker/setup-buildx-action@v3
+
+      - name: Build da imagem
+        uses: docker/build-push-action@v6
+        with:
+          context: .
+          push: false
+          tags: thiagoocms/taxify-service:ci-${{ github.sha }}
+          cache-from: type=gha,scope=taxify-service
+          cache-to: type=gha,mode=max,scope=taxify-service
+
+  # Push no Docker Hub: DESLIGADO por padrão. Só roda em push na master E com a variável de
+  # repositório DOCKERHUB_PUSH_ENABLED = "true" (Settings > Secrets and variables > Variables).
+  # Enquanto o Jenkins continuar publicando a imagem, deixe desligado para não haver dois
+  # publicadores da mesma tag "latest". Publicar a imagem NÃO faz deploy na EC2.
+  docker-push:
+    name: Push da imagem no Docker Hub (master)
+    needs: [test, docker-build]
+    if: >-
+      github.event_name == 'push' &&
+      github.ref == 'refs/heads/master' &&
+      vars.DOCKERHUB_PUSH_ENABLED == 'true'
+    runs-on: ubuntu-24.04
+    timeout-minutes: 20
+    environment: dockerhub
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Tag (mesmo esquema do Jenkins - data + nº da execução)
+        id: tag
+        run: echo "tag=$(date -u +%Y.%m.%d).${{ github.run_number }}" >> "$GITHUB_OUTPUT"
+
+      - name: Setup Buildx
+        uses: docker/setup-buildx-action@v3
+
+      - name: Login no Docker Hub
+        uses: docker/login-action@v3
+        with:
+          username: ${{ secrets.DOCKERHUB_USERNAME }}
+          password: ${{ secrets.DOCKERHUB_TOKEN }}
+
+      - name: Build e push
+        uses: docker/build-push-action@v6
+        with:
+          context: .
+          push: true
+          tags: |
+            thiagoocms/taxify-service:${{ steps.tag.outputs.tag }}
+            thiagoocms/taxify-service:latest
+          cache-from: type=gha,scope=taxify-service
