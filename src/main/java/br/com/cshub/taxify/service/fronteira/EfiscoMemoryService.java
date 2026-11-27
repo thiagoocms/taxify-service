@@ -21,7 +21,7 @@ import java.util.Optional;
 
 /**
  * e-Fisco's "Memória de Cálculo" of a note, for the accountant to compare with Taxify's and decide: fetched with the
- * firm's accountant's certificate by the extract's registro, kept, and read into steps (EfiscoMemoryParser).
+ * firm's accountant's certificate by the extract's recordNumber, kept, and read into steps (EfiscoMemoryParser).
  */
 @Service
 public class EfiscoMemoryService {
@@ -44,14 +44,14 @@ public class EfiscoMemoryService {
 
     /** The kept memória, if it was ever fetched. */
     @Transactional(readOnly = true)
-    public Optional<MemoryDTO> kept(Company company, String registro) {
-        return repository.findByCompany_IdAndRegistro(company.getId(), registro.strip()).map(EfiscoMemoryService::toDto);
+    public Optional<MemoryDTO> kept(Company company, String recordNumber) {
+        return repository.findByCompany_IdAndRecordNumber(company.getId(), recordNumber.strip()).map(EfiscoMemoryService::toDto);
     }
 
     /** Fetches it now from e-Fisco (and keeps it, replacing an older one). */
     @Transactional
-    public MemoryDTO fetch(Company company, String registro) {
-        if (registro == null || registro.isBlank()) {
+    public MemoryDTO fetch(Company company, String recordNumber) {
+        if (recordNumber == null || recordNumber.isBlank()) {
             throw new BadRequestException("A nota não tem registro no extrato do e-Fisco.");
         }
         if (company.getAccountingFirm() == null) {
@@ -67,25 +67,25 @@ public class EfiscoMemoryService {
         try {
             EfiscoClient client = new EfiscoClient(certificateService.open(certificate));
             client.login();
-            page = client.calculationMemory(registro.strip());
+            page = client.calculationMemory(recordNumber.strip());
         } catch (EfiscoException e) {
             throw new BadRequestException(e.getMessage());
         } catch (InterruptedException e) {
             Thread.currentThread().interrupt();
             throw new BadRequestException("A busca no e-Fisco foi interrompida.");
         } catch (Exception e) {
-            log.warn("e-Fisco memória of registro {} (company {}) failed", registro, company.getId(), e);
+            log.warn("e-Fisco memória of registro {} (company {}) failed", recordNumber, company.getId(), e);
             throw new BadRequestException("Falha ao falar com o e-Fisco: " + e.getMessage());
         }
         if (!page.found()) {
             throw new BadRequestException(page.message());
         }
         EfiscoMemoryParser.Memory memory = EfiscoMemoryParser.parseHtml(page.html());
-        EfiscoMemory entity = repository.findByCompany_IdAndRegistro(company.getId(), registro.strip()).orElseGet(EfiscoMemory::new);
+        EfiscoMemory entity = repository.findByCompany_IdAndRecordNumber(company.getId(), recordNumber.strip()).orElseGet(EfiscoMemory::new);
         entity.setCompany(company);
-        entity.setRegistro(registro.strip());
-        entity.setChaveAcesso(memory.chaveAcesso());
-        entity.setTexto(memory.texto());
+        entity.setRecordNumber(recordNumber.strip());
+        entity.setAccessKey(memory.accessKey());
+        entity.setText(memory.text());
         entity.setFetchedAt(LocalDateTime.now());
         entity.setDeleted(false);
         repository.save(entity);
@@ -93,8 +93,8 @@ public class EfiscoMemoryService {
     }
 
     private static MemoryDTO toDto(EfiscoMemory entity) {
-        EfiscoMemoryParser.Memory memory = EfiscoMemoryParser.parse(entity.getTexto());
-        return new MemoryDTO(entity.getRegistro(), entity.getChaveAcesso(), memory.regras(), entity.getFetchedAt(),
-                memory.tipos(), memory.itens(), memory.icmsTotal(), memory.texto());
+        EfiscoMemoryParser.Memory memory = EfiscoMemoryParser.parse(entity.getText());
+        return new MemoryDTO(entity.getRecordNumber(), entity.getAccessKey(), memory.rules(), entity.getFetchedAt(),
+                memory.types(), memory.items(), memory.icmsTotal(), memory.text());
     }
 }

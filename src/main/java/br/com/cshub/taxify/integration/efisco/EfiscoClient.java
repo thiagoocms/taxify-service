@@ -138,11 +138,11 @@ public final class EfiscoClient {
     }
 
     /**
-     * e-Fisco's "Memória de Cálculo" of one note, by its registro (the extract's "Registro" column): the service
-     * ({@code cd_menu=190701}) and the filter with the registro - one note, so e-Fisco answers with the detail itself.
+     * e-Fisco's "Memória de Cálculo" of one note, by its recordNumber (the extract's "Registro" column): the service
+     * ({@code cd_menu=190701}) and the filter with the recordNumber - one note, so e-Fisco answers with the detail itself.
      * {@code null} when e-Fisco has no memória for it (with its message in the exception-free result).
      */
-    public MemoryPage calculationMemory(String registro) throws IOException, InterruptedException {
+    public MemoryPage calculationMemory(String recordNumber) throws IOException, InterruptedException {
         Map<String, String> open = new LinkedHashMap<>(form);
         open.put("cd_menu", MEMORY_MENU);
         open.put("evento", "");
@@ -152,7 +152,7 @@ public final class EfiscoClient {
             throw new EfiscoException(EfiscoException.Reason.PAGINA_INESPERADA,
                     "O e-Fisco não abriu a consulta de memória de cálculo" + screen.messageSuffix());
         }
-        fields.put("NumeroRegistroNotaFiscal", registro);
+        fields.put("NumeroRegistroNotaFiscal", recordNumber);
         fields.put("NumeroNotaFiscal", "");
         fields.put("qt_registros_pagina", "20");
         fields.put("evento", "processarFiltroConsulta");
@@ -174,7 +174,7 @@ public final class EfiscoClient {
         Page detail = post(MEMORY, detailFields);
         form = detail.form().isEmpty() ? form : detail.form();
         if (!isMemoryDetail(detail.html())) {
-            logDiagnostic("registro " + registro + " - detalhamento (chave " + key + ")", detail.html());
+            logDiagnostic("registro " + recordNumber + " - detalhamento (chave " + key + ")", detail.html());
             return new MemoryPage(null, detail.message() == null
                     ? "O e-Fisco listou a memória de cálculo, mas não abriu o detalhamento." : detail.message());
         }

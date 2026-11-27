@@ -40,18 +40,18 @@ class EfiscoMemoryParserTest {
     void readsTheNoteTheTypesAndTheItem() {
         EfiscoMemoryParser.Memory memory = EfiscoMemoryParser.parse(NF_473);
 
-        assertThat(memory.chaveAcesso()).isEqualTo("24261156158753000184550010000004731958741256");
-        assertThat(memory.regras()).isEqualTo("Emitente com Regime Tributário Simples Nacional");
-        assertThat(memory.tipos()).extracting(EfiscoMemoryParser.CalculationType::tipo).containsExactly("CNAE", "CREDENCIAMENTO");
-        assertThat(memory.tipos().get(1)).satisfies(t -> {
+        assertThat(memory.accessKey()).isEqualTo("24261156158753000184550010000004731958741256");
+        assertThat(memory.rules()).isEqualTo("Emitente com Regime Tributário Simples Nacional");
+        assertThat(memory.types()).extracting(EfiscoMemoryParser.CalculationType::tipo).containsExactly("CNAE", "CREDENCIAMENTO");
+        assertThat(memory.types().get(1)).satisfies(t -> {
             assertThat(t.codigo()).isEqualTo("26");
             assertThat(t.prioridade()).isEqualTo(27);
             assertThat(t.interrompe()).isTrue();
             assertThat(t.descricao()).isEqualTo("IND TEC CREDENCIADA");
         });
 
-        assertThat(memory.itens()).hasSize(1);
-        EfiscoMemoryParser.Item item = memory.itens().get(0);
+        assertThat(memory.items()).hasSize(1);
+        EfiscoMemoryParser.Item item = memory.items().get(0);
         assertThat(item.mercadoria()).isEqualTo("258 - ICMS-OP. INTERESTADU");
         assertThat(item.calculo()).isEqualTo("Mercadoria com Carga Liquida e sem Direito a Credito Presumido");
         assertThat(item.valorItem()).isEqualByComparingTo("2400");
@@ -90,8 +90,8 @@ class EfiscoMemoryParserTest {
 
         EfiscoMemoryParser.Memory memory = EfiscoMemoryParser.parse(detail);
 
-        assertThat(memory.itens()).hasSize(1);
-        EfiscoMemoryParser.Item group = memory.itens().get(0);
+        assertThat(memory.items()).hasSize(1);
+        EfiscoMemoryParser.Item group = memory.items().get(0);
         assertThat(group.mercadoria()).isEqualTo("258 - ICMS-OP. INTERESTADU");
         assertThat(group.valorItem()).isEqualByComparingTo("21462.99999999");
         assertThat(group.partida()).isEqualByComparingTo("21462.99999999");

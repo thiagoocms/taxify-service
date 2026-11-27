@@ -38,7 +38,7 @@ class FronteiraCalculatorTest {
     private static FronteiraRule interna(String ncm, String rate) {
         FronteiraRule rule = rule(FronteiraRuleKind.ALIQUOTA_INTERNA);
         rule.setNcm(ncm);
-        rule.setAliquota(new BigDecimal(rate));
+        rule.setRate(new BigDecimal(rate));
         return rule;
     }
 
@@ -94,8 +94,8 @@ class FronteiraCalculatorTest {
 
     private static FronteiraRule cargaTecidos() {
         FronteiraRule carga = rule(FronteiraRuleKind.SIMPLES_PERCENTUAL);
-        carga.setDescricao("Tecidos e armarinho (indústria)");
-        carga.setPercentual(new BigDecimal("5.5"));
+        carga.setDescription("Tecidos e armarinho (indústria)");
+        carga.setPercentage(new BigDecimal("5.5"));
         return carga;
     }
 
@@ -238,7 +238,7 @@ class FronteiraCalculatorTest {
         byNcm.setNcm("6109");
         byNcm.setFormula("partida * 10%");
         FronteiraRule byProduct = rule(FronteiraRuleKind.FORMULA);
-        byProduct.setCodigoProduto("P1");
+        byProduct.setProductCode("P1");
         byProduct.setReviewedAt(null);
         byProduct.setFormula("(partida - icms_origem) * 5,5%");
 
@@ -256,7 +256,7 @@ class FronteiraCalculatorTest {
         FiscalXmlDocument document = note("SP", "1000.00");
         FiscalXmlDocumentItem item = item(document, "P1", "61091000", "6102", "1000.00", "7", "70.00", "0", null);
         FronteiraRule old = rule(FronteiraRuleKind.FORMULA);
-        old.setCodigoProduto("P1");
+        old.setProductCode("P1");
         old.setFormula("partida * 1%");
         old.setValidUntil(LocalDate.of(2026, 9, 30));
 
@@ -348,7 +348,7 @@ class FronteiraCalculatorTest {
     void aGeneralFormulaReplacesOnlyTheTreatmentItIsFor() {
         FronteiraRule diferencial = rule(FronteiraRuleKind.FORMULA);
         diferencial.setFormula("partida * (interna - inter)");
-        diferencial.setAplicaEm("SEM_ENCERRAMENTO");
+        diferencial.setAppliesTo("SEM_ENCERRAMENTO");
         FronteiraRule st = rule(FronteiraRuleKind.ST_MVA);
         st.setNcm("83014000");
         st.setMva(new BigDecimal("54"));
@@ -422,9 +422,9 @@ class FronteiraCalculatorTest {
     private static FronteiraRule nobreakAgregacao() {
         FronteiraRule rule = rule(FronteiraRuleKind.AGREGACAO);
         rule.setNcm("8504");
-        rule.setAgregacao(new BigDecimal("20"));
-        rule.setRegiaoOrigem(FronteiraCalculator.SUL_SUDESTE);
-        rule.setFornecedorSimples(true);
+        rule.setAggregationRate(new BigDecimal("20"));
+        rule.setOriginRegion(FronteiraCalculator.SUL_SUDESTE);
+        rule.setSimplesSupplier(true);
         return rule;
     }
 
@@ -503,9 +503,9 @@ class FronteiraCalculatorTest {
     void anAgregacaoOfAnotherRegionIsNotUsed() {
         FiscalXmlDocument document = note("MG", "4261.61");
         FronteiraRule northeast = nobreakAgregacao();
-        northeast.setRegiaoOrigem(FronteiraCalculator.DEMAIS_REGIOES);
+        northeast.setOriginRegion(FronteiraCalculator.DEMAIS_REGIOES);
         FronteiraRule notSimples = nobreakAgregacao();
-        notSimples.setFornecedorSimples(false);
+        notSimples.setSimplesSupplier(false);
 
         ItemResult result = FronteiraCalculator.item(document, nobreak(document),
                 new Context(List.of(interna(null, "20.5"), northeast, notSimples), false, null));

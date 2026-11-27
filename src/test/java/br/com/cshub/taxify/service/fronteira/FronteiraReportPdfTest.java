@@ -2,7 +2,7 @@ package br.com.cshub.taxify.service.fronteira;
 
 import br.com.cshub.taxify.domain.fronteira.FronteiraRule;
 import br.com.cshub.taxify.dto.fronteira.FronteiraDTOs;
-import br.com.cshub.taxify.dto.fronteira.FronteiraDTOs.Resultado;
+import br.com.cshub.taxify.dto.fronteira.FronteiraDTOs.Result;
 import br.com.cshub.taxify.dto.fronteira.FronteiraRuleDTOs;
 import br.com.cshub.taxify.enumerated.FronteiraRuleKind;
 import org.junit.jupiter.api.Test;
@@ -47,13 +47,13 @@ class FronteiraReportPdfTest {
     void rulesAreNamedAsTheAccountantReadsThem() {
         FronteiraRule carga = new FronteiraRule();
         carga.setKind(FronteiraRuleKind.SIMPLES_PERCENTUAL);
-        carga.setPercentual(new BigDecimal("5.50"));
-        carga.setDescricao("IND TEC CREDENCIADA");
+        carga.setPercentage(new BigDecimal("5.50"));
+        carga.setDescription("IND TEC CREDENCIADA");
         assertThat(FronteiraReportPdf.label(carga)).isEqualTo("Carga líquida 5,5% - IND TEC CREDENCIADA");
 
         FronteiraRule agregacao = new FronteiraRule();
         agregacao.setKind(FronteiraRuleKind.AGREGACAO);
-        agregacao.setAgregacao(new BigDecimal("20"));
+        agregacao.setAggregationRate(new BigDecimal("20"));
         agregacao.setNcm("6109");
         assertThat(FronteiraReportPdf.label(agregacao)).isEqualTo("Agregação 20% (NCM 6109)");
     }
@@ -64,9 +64,9 @@ class FronteiraReportPdfTest {
     }
 
     private FronteiraDTOs.Report report() {
-        FronteiraDTOs.Line confere = line(1, "012.6.000000001-0", "752080", "1180.46", "1180.47", Resultado.CONFERE,
+        FronteiraDTOs.Line confere = line(1, "012.6.000000001-0", "752080", "1180.46", "1180.47", Result.CONFERE,
                 "CARGA_LIQUIDA", "Carga líquida", List.of(), true);
-        FronteiraDTOs.Line aMais = line(2, "012.6.000000002-0", "806396", "500.00", "300.00", Resultado.COBROU_A_MAIS,
+        FronteiraDTOs.Line aMais = line(2, "012.6.000000002-0", "806396", "500.00", "300.00", Result.COBROU_A_MAIS,
                 "FORMULA", "Fórmula própria", List.of(formulaId), false);
         FronteiraDTOs.Extract extract = new FronteiraDTOs.Extract("2026-11", "10789028-3", "0394697-51", "KDM", null, null, "SIM",
                 "IND TEC CREDENCIADA", LocalDate.of(2026, 12, 28), null, new BigDecimal("1680.46"), BigDecimal.ZERO, null, null,
@@ -79,7 +79,7 @@ class FronteiraReportPdfTest {
     }
 
     private static FronteiraDTOs.Line line(int index, String registro, String numero, String cobrado, String taxify,
-                                           Resultado resultado, String tratamento, String label, List<UUID> regras,
+                                           Result resultado, String tratamento, String label, List<UUID> regras,
                                            boolean conferido) {
         BigDecimal value = new BigDecimal(taxify);
         FronteiraRuleDTOs.ItemCalc item = new FronteiraRuleDTOs.ItemCalc(1, "P1", "Produto", "96071100", "6101", tratamento, label,

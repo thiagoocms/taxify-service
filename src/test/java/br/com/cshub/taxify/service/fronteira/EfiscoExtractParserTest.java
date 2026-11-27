@@ -53,25 +53,25 @@ class EfiscoExtractParserTest {
     void headerNotesAcrossPagesAndFooterTotals() {
         EfiscoExtractParser.Extract extract = parser.parseText(TEXT);
 
-        assertThat(extract.periodo()).isEqualTo(YearMonth.of(2026, 11));
-        assertThat(extract.inscricaoEstadual()).isEqualTo("0123456-78");
-        assertThat(extract.razaoSocial()).isEqualTo("CONFECCOES EXEMPLO LTDA");
+        assertThat(extract.period()).isEqualTo(YearMonth.of(2026, 11));
+        assertThat(extract.stateRegistration()).isEqualTo("0123456-78");
+        assertThat(extract.legalName()).isEqualTo("CONFECCOES EXEMPLO LTDA");
         assertThat(extract.credenciamentoAntecipacao()).isEqualTo("SIM");
         assertThat(extract.credenciamentoInterno()).isEqualTo("TECIDOS E ARMARINHO (INDUSTRIA)");
-        assertThat(extract.codigoReceita()).isEqualTo("00058-2");
-        assertThat(extract.dataVencimento()).isEqualTo(LocalDate.of(2026, 12, 28));
-        assertThat(extract.numeroExtrato()).isEqualTo("10000000-1");
+        assertThat(extract.revenueCode()).isEqualTo("00058-2");
+        assertThat(extract.dueDate()).isEqualTo(LocalDate.of(2026, 12, 28));
+        assertThat(extract.extractNumber()).isEqualTo("10000000-1");
 
         assertThat(extract.notes()).hasSize(4);
         EfiscoExtractParser.Note first = extract.notes().get(0);
-        assertThat(first.numero()).isEqualTo("18049"); // leading zero dropped, as nNF is stored
+        assertThat(first.invoiceNumber()).isEqualTo("18049"); // leading zero dropped, as nNF is stored
         assertThat(first.uf()).isEqualTo("SP");
-        assertThat(first.valorNota()).isEqualByComparingTo("887.00");
-        assertThat(first.icmsDevido()).isEqualByComparingTo("48.78");
-        assertThat(first.cnpjEmitente()).isEqualTo("11111111000111");
-        assertThat(first.dataPassagem()).isNull();
-        assertThat(extract.notes().get(1).dataPassagem()).isEqualTo("05/11/2026");
-        assertThat(extract.notes().get(1).valorNota()).isEqualByComparingTo("13720.00");
+        assertThat(first.invoiceAmount()).isEqualByComparingTo("887.00");
+        assertThat(first.icmsDue()).isEqualByComparingTo("48.78");
+        assertThat(first.issuerCnpj()).isEqualTo("11111111000111");
+        assertThat(first.crossingDate()).isNull();
+        assertThat(extract.notes().get(1).crossingDate()).isEqualTo("05/11/2026");
+        assertThat(extract.notes().get(1).invoiceAmount()).isEqualByComparingTo("13720.00");
         assertThat(extract.notes().get(3).line()).isEqualTo(4);
 
         assertThat(extract.total(EfiscoExtractParser.A_RECOLHER)).isEqualByComparingTo("1585.42");
@@ -88,9 +88,9 @@ class EfiscoExtractParserTest {
 
         EfiscoExtractParser.Extract extract = parser.parseText(broken);
 
-        assertThat(extract.periodo()).isEqualTo(YearMonth.of(2026, 11));
-        assertThat(extract.inscricaoEstadual()).isEqualTo("0123456-78");
-        assertThat(extract.numeroExtrato()).isEqualTo("10000000-1");
+        assertThat(extract.period()).isEqualTo(YearMonth.of(2026, 11));
+        assertThat(extract.stateRegistration()).isEqualTo("0123456-78");
+        assertThat(extract.extractNumber()).isEqualTo("10000000-1");
         assertThat(extract.totals()).containsKey(EfiscoExtractParser.MANDADO_SEGURANCA);
     }
 
@@ -111,11 +111,11 @@ class EfiscoExtractParserTest {
     void aRealExtract() throws Exception {
         EfiscoExtractParser.Extract extract = parser.parse(Files.readAllBytes(Path.of(System.getenv("EFISCO_SAMPLE_PDF"))));
 
-        BigDecimal sum = extract.notes().stream().map(EfiscoExtractParser.Note::icmsDevido).reduce(BigDecimal.ZERO, BigDecimal::add);
-        System.out.printf("periodo=%s IE=%s notas=%d soma=%s a recolher=%s totais=%s%n", extract.periodo(),
-                extract.inscricaoEstadual(), extract.notes().size(), sum, extract.total(EfiscoExtractParser.A_RECOLHER), extract.totals());
+        BigDecimal sum = extract.notes().stream().map(EfiscoExtractParser.Note::icmsDue).reduce(BigDecimal.ZERO, BigDecimal::add);
+        System.out.printf("periodo=%s IE=%s notas=%d soma=%s a recolher=%s totais=%s%n", extract.period(),
+                extract.stateRegistration(), extract.notes().size(), sum, extract.total(EfiscoExtractParser.A_RECOLHER), extract.totals());
         assertThat(extract.notes()).isNotEmpty();
-        assertThat(extract.periodo()).isNotNull();
+        assertThat(extract.period()).isNotNull();
         assertThat(sum.add(extract.total(EfiscoExtractParser.PAGO)))
                 .isGreaterThanOrEqualTo(extract.total(EfiscoExtractParser.A_RECOLHER));
     }

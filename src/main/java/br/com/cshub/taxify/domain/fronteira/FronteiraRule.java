@@ -41,7 +41,7 @@ public class FronteiraRule extends AbstractAuditingEntity {
 
     /** What it is; for SIMPLES_PERCENTUAL also the credenciamento it matches on the extract. */
     @Column(name = "descricao")
-    private String descricao;
+    private String description;
 
     /** Digits; a prefix matches every NCM that starts with it. */
     @Column(name = "ncm", length = 10)
@@ -51,31 +51,31 @@ public class FronteiraRule extends AbstractAuditingEntity {
     private String cest;
 
     @Column(name = "codigo_produto", length = 60)
-    private String codigoProduto;
+    private String productCode;
 
     @Column(name = "cnpj_fornecedor", length = 14)
-    private String cnpjFornecedor;
+    private String supplierCnpj;
 
     @Column(name = "aliquota", precision = 9, scale = 4)
-    private BigDecimal aliquota;
+    private BigDecimal rate;
 
     @Column(name = "mva", precision = 9, scale = 4)
     private BigDecimal mva;
 
     @Column(name = "percentual", precision = 9, scale = 4)
-    private BigDecimal percentual;
+    private BigDecimal percentage;
 
     /** AGREGACAO: the agregação of the base, in percent (20 = coefficient 1,20). */
     @Column(name = "agregacao", precision = 9, scale = 4)
-    private BigDecimal agregacao;
+    private BigDecimal aggregationRate;
 
     /** AGREGACAO: SUL_SUDESTE or DEMAIS (Norte, Nordeste, Centro-Oeste); null = any origin. */
     @Column(name = "regiao_origem", length = 20)
-    private String regiaoOrigem;
+    private String originRegion;
 
     /** AGREGACAO: only for a supplier of the Simples (true), only for one that isn't (false); null = any. */
     @Column(name = "fornecedor_simples")
-    private Boolean fornecedorSimples;
+    private Boolean simplesSupplier;
 
     @Column(name = "formula", length = 500)
     private String formula;
@@ -85,10 +85,10 @@ public class FronteiraRule extends AbstractAuditingEntity {
      * CARGA_LIQUIDA, USO_CONSUMO - see FronteiraCalculator.Treatment); blank = any of them.
      */
     @Column(name = "aplica_em", length = 30)
-    private String aplicaEm;
+    private String appliesTo;
 
     @Column(name = "fundamento", length = 500)
-    private String fundamento;
+    private String legalBasis;
 
     @Column(name = "link", length = 500)
     private String link;
@@ -123,34 +123,34 @@ public class FronteiraRule extends AbstractAuditingEntity {
     public void setCompany(Company company) { this.company = company; }
     public FronteiraRuleKind getKind() { return kind; }
     public void setKind(FronteiraRuleKind kind) { this.kind = kind; }
-    public String getDescricao() { return descricao; }
-    public void setDescricao(String descricao) { this.descricao = descricao; }
+    public String getDescription() { return description; }
+    public void setDescription(String description) { this.description = description; }
     public String getNcm() { return ncm; }
     public void setNcm(String ncm) { this.ncm = ncm; }
     public String getCest() { return cest; }
     public void setCest(String cest) { this.cest = cest; }
-    public String getCodigoProduto() { return codigoProduto; }
-    public void setCodigoProduto(String codigoProduto) { this.codigoProduto = codigoProduto; }
-    public String getCnpjFornecedor() { return cnpjFornecedor; }
-    public void setCnpjFornecedor(String cnpjFornecedor) { this.cnpjFornecedor = cnpjFornecedor; }
-    public BigDecimal getAliquota() { return aliquota; }
-    public void setAliquota(BigDecimal aliquota) { this.aliquota = aliquota; }
+    public String getProductCode() { return productCode; }
+    public void setProductCode(String productCode) { this.productCode = productCode; }
+    public String getSupplierCnpj() { return supplierCnpj; }
+    public void setSupplierCnpj(String supplierCnpj) { this.supplierCnpj = supplierCnpj; }
+    public BigDecimal getRate() { return rate; }
+    public void setRate(BigDecimal rate) { this.rate = rate; }
     public BigDecimal getMva() { return mva; }
     public void setMva(BigDecimal mva) { this.mva = mva; }
-    public BigDecimal getPercentual() { return percentual; }
-    public void setPercentual(BigDecimal percentual) { this.percentual = percentual; }
-    public BigDecimal getAgregacao() { return agregacao; }
-    public void setAgregacao(BigDecimal agregacao) { this.agregacao = agregacao; }
-    public String getRegiaoOrigem() { return regiaoOrigem; }
-    public void setRegiaoOrigem(String regiaoOrigem) { this.regiaoOrigem = regiaoOrigem; }
-    public Boolean getFornecedorSimples() { return fornecedorSimples; }
-    public void setFornecedorSimples(Boolean fornecedorSimples) { this.fornecedorSimples = fornecedorSimples; }
+    public BigDecimal getPercentage() { return percentage; }
+    public void setPercentage(BigDecimal percentage) { this.percentage = percentage; }
+    public BigDecimal getAggregationRate() { return aggregationRate; }
+    public void setAggregationRate(BigDecimal aggregationRate) { this.aggregationRate = aggregationRate; }
+    public String getOriginRegion() { return originRegion; }
+    public void setOriginRegion(String originRegion) { this.originRegion = originRegion; }
+    public Boolean getSimplesSupplier() { return simplesSupplier; }
+    public void setSimplesSupplier(Boolean simplesSupplier) { this.simplesSupplier = simplesSupplier; }
     public String getFormula() { return formula; }
     public void setFormula(String formula) { this.formula = formula; }
-    public String getAplicaEm() { return aplicaEm; }
-    public void setAplicaEm(String aplicaEm) { this.aplicaEm = aplicaEm; }
-    public String getFundamento() { return fundamento; }
-    public void setFundamento(String fundamento) { this.fundamento = fundamento; }
+    public String getAppliesTo() { return appliesTo; }
+    public void setAppliesTo(String appliesTo) { this.appliesTo = appliesTo; }
+    public String getLegalBasis() { return legalBasis; }
+    public void setLegalBasis(String legalBasis) { this.legalBasis = legalBasis; }
     public String getLink() { return link; }
     public void setLink(String link) { this.link = link; }
     public LocalDate getValidFrom() { return validFrom; }

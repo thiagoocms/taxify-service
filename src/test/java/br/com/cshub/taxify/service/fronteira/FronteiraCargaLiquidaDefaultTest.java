@@ -39,10 +39,10 @@ class FronteiraCargaLiquidaDefaultTest {
         FronteiraRule rule = saved.getValue();
         assertThat(rule.getCompany()).isSameAs(company);
         assertThat(rule.getKind()).isEqualTo(FronteiraRuleKind.SIMPLES_PERCENTUAL);
-        assertThat(rule.getDescricao()).isEqualTo("TECIDOS E ARMARINHO (INDUSTRIA)");
-        assertThat(rule.getPercentual()).isEqualByComparingTo("5.5");
+        assertThat(rule.getDescription()).isEqualTo("TECIDOS E ARMARINHO (INDUSTRIA)");
+        assertThat(rule.getPercentage()).isEqualByComparingTo("5.5");
         assertThat(rule.isReviewed()).isFalse();
-        assertThat(rule.getFundamento()).contains("5,5%").contains("10789028-3").contains("a conferir");
+        assertThat(rule.getLegalBasis()).contains("5,5%").contains("10789028-3").contains("a conferir");
     }
 
     /** One already there - global or the company's, written another way, or deleted on purpose - is left alone. */
@@ -50,7 +50,7 @@ class FronteiraCargaLiquidaDefaultTest {
     void anExistingRuleEvenDeletedIsNotRecreated() {
         FronteiraRule deleted = new FronteiraRule();
         deleted.setKind(FronteiraRuleKind.SIMPLES_PERCENTUAL);
-        deleted.setDescricao("Tecidos e armarinho (indústria)");
+        deleted.setDescription("Tecidos e armarinho (indústria)");
         deleted.setDeleted(true);
         when(repository.findAnyOfKind(FronteiraRuleKind.SIMPLES_PERCENTUAL, company.getId())).thenReturn(List.of(deleted));
 

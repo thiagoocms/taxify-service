@@ -32,7 +32,7 @@ public final class FronteiraDTOs {
     }
 
     /** Taxify's calculation against what e-Fisco charged. */
-    public enum Resultado {
+    public enum Result {
         /** The charge falls in the range of Taxify's rounding methods (with the tolerance). */
         CONFERE,
         COBROU_A_MAIS,
@@ -88,7 +88,7 @@ public final class FronteiraDTOs {
      */
     public record Line(int linha, String registro, String dataPassagem, String numeroNota, String uf, String cnpjEmitente,
                        BigDecimal valorNota, BigDecimal icmsDevido, BigDecimal taxa, BigDecimal diferencaParaTaxa,
-                       List<Flag> flags, NoteRef nota, Resultado resultado, boolean conferido, BigDecimal diferenca,
+                       List<Flag> flags, NoteRef nota, Result resultado, boolean conferido, BigDecimal diferenca,
                        NoteCalc calculo) {
     }
 

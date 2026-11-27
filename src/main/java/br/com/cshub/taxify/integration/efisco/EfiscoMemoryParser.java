@@ -43,10 +43,10 @@ public final class EfiscoMemoryParser {
                        BigDecimal percentualCargaLiquida, BigDecimal credito, BigDecimal icms) {
     }
 
-    public record Memory(String chaveAcesso, String regras, List<CalculationType> tipos, List<Item> itens, String texto) {
+    public record Memory(String accessKey, String rules, List<CalculationType> types, List<Item> items, String text) {
 
         public BigDecimal icmsTotal() {
-            return itens.stream().map(Item::icms).filter(java.util.Objects::nonNull).reduce(BigDecimal.ZERO, BigDecimal::add);
+            return items.stream().map(Item::icms).filter(java.util.Objects::nonNull).reduce(BigDecimal.ZERO, BigDecimal::add);
         }
     }
 
@@ -64,7 +64,7 @@ public final class EfiscoMemoryParser {
         Map<String, BigDecimal> globals = new LinkedHashMap<>();
         Map<String, BigDecimal> current = null;
         String mercadoria = null;
-        String calculo = null;
+        String calculation = null;
         for (String raw : lines) {
             String line = raw.strip();
             Matcher type = TYPE.matcher(line);
@@ -76,16 +76,16 @@ public final class EfiscoMemoryParser {
             Matcher item = ITEM.matcher(line);
             if (item.matches()) {
                 if (current != null) {
-                    items.add(item(mercadoria, calculo, current, globals));
+                    items.add(item(mercadoria, calculation, current, globals));
                 }
                 current = new LinkedHashMap<>();
                 mercadoria = item.group(1).strip();
-                calculo = null;
+                calculation = null;
                 continue;
             }
             Matcher kind = ICMS_KIND.matcher(line);
             if (kind.matches() && current != null) {
-                calculo = kind.group(1).strip();
+                calculation = kind.group(1).strip();
                 continue;
             }
             Map<String, BigDecimal> target = current != null ? current : globals;
@@ -103,13 +103,13 @@ public final class EfiscoMemoryParser {
             }
         }
         if (current != null) {
-            items.add(item(mercadoria, calculo, current, globals));
+            items.add(item(mercadoria, calculation, current, globals));
         }
         return new Memory(key.find() ? key.group(1) : null, rules.find() ? rules.group(1).strip() : null, types, items, text.strip());
     }
 
-    private static Item item(String mercadoria, String calculo, Map<String, BigDecimal> vars, Map<String, BigDecimal> globals) {
-        return new Item(mercadoria, calculo,
+    private static Item item(String mercadoria, String calculation, Map<String, BigDecimal> vars, Map<String, BigDecimal> globals) {
+        return new Item(mercadoria, calculation,
                 vars.get("ValorItemAntesDoDesconto"),
                 vars.get("ValorPartidaAntecipado"),
                 startingWith(vars, "CoefAgregacao"),

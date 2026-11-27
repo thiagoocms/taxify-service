@@ -185,7 +185,7 @@ public final class FronteiraCalculator {
                 : agregacao.isPresent() ? Treatment.MERCADORIA
                 : carga.isPresent() || context.simplesCompany() ? Treatment.CARGA_LIQUIDA
                 : Treatment.SEM_ENCERRAMENTO;
-        BigDecimal coef = standard == Treatment.MERCADORIA ? fraction(agregacao.get().getAgregacao()) : BigDecimal.ZERO;
+        BigDecimal coef = standard == Treatment.MERCADORIA ? fraction(agregacao.get().getAggregationRate()) : BigDecimal.ZERO;
 
         variables.put("partida", v.partida);
         variables.put("valor_produto", v.valorProduto);
@@ -197,18 +197,18 @@ public final class FronteiraCalculator {
         variables.put("credito", credito);
         variables.put("aliquota_origem", fraction(item.getAliquotaIcms()));
         variables.put("inter", inter == null ? BigDecimal.ZERO : inter);
-        variables.put("interna", interna.map(rule -> fraction(rule.getAliquota())).orElse(BigDecimal.ZERO));
+        variables.put("interna", interna.map(rule -> fraction(rule.getRate())).orElse(BigDecimal.ZERO));
         variables.put("mva", st.map(rule -> fraction(rule.getMva())).orElse(BigDecimal.ZERO));
         variables.put("mva_ajustada", st.isPresent() && interna.isPresent() && inter != null
-                ? mvaAjustada(fraction(st.get().getMva()), inter, fraction(interna.get().getAliquota()), UnaryOperator.identity())
+                ? mvaAjustada(fraction(st.get().getMva()), inter, fraction(interna.get().getRate()), UnaryOperator.identity())
                 : BigDecimal.ZERO);
-        variables.put("agregacao", agregacao.map(rule -> fraction(rule.getAgregacao())).orElse(BigDecimal.ZERO));
+        variables.put("agregacao", agregacao.map(rule -> fraction(rule.getAggregationRate())).orElse(BigDecimal.ZERO));
         variables.put("st_retido", v.stRetido);
-        variables.put("percentual", carga.map(rule -> fraction(rule.getPercentual())).orElse(BigDecimal.ZERO));
+        variables.put("percentual", carga.map(rule -> fraction(rule.getPercentage())).orElse(BigDecimal.ZERO));
 
         // the accountant's own formula for this treatment (or for all of them) wins over the standard calculation
         Optional<FronteiraRule> formula = bestMatch(context.rules().stream()
-                .filter(rule -> rule.getAplicaEm() == null || rule.getAplicaEm().isBlank() || rule.getAplicaEm().equals(standard.name()))
+                .filter(rule -> rule.getAppliesTo() == null || rule.getAppliesTo().isBlank() || rule.getAppliesTo().equals(standard.name()))
                 .toList(), FronteiraRuleKind.FORMULA, document, item, day);
         if (formula.isPresent()) {
             FronteiraRule rule = formula.get();
@@ -235,12 +235,12 @@ public final class FronteiraCalculator {
             }
             FronteiraRule rule = carga.get();
             used.add(rule.getId());
-            BigDecimal percentual = fraction(rule.getPercentual());
+            BigDecimal percentual = fraction(rule.getPercentage());
             BigDecimal raw = v.partida.multiply(percentual, MC);
             BigDecimal up = raw.setScale(2, RoundingMode.HALF_UP);
             BigDecimal down = raw.setScale(2, RoundingMode.DOWN);
             memoria.add("Carga líquida (%s%s): base de partida %s × %s = %s - sem abater crédito".formatted(
-                    blank(rule.getDescricao()) ? "" : rule.getDescricao() + ", ", scope(rule), money(v.partida), percent(percentual), money(up)));
+                    blank(rule.getDescription()) ? "" : rule.getDescription() + ", ", scope(rule), money(v.partida), percent(percentual), money(up)));
             return result(variables, item, Treatment.CARGA_LIQUIDA, v.partida, up, down, up, rule.isReviewed(), used, memoria, null);
         }
         if (inter == null) {
@@ -251,7 +251,7 @@ public final class FronteiraCalculator {
         if (interna.isEmpty()) {
             return semRegra(variables, item, v.partida, used, memoria, "Sem alíquota interna de PE na tabela de ICMS para o NCM " + item.getNcm() + ".");
         }
-        BigDecimal internalRate = fraction(interna.get().getAliquota());
+        BigDecimal internalRate = fraction(interna.get().getRate());
         used.add(interna.get().getId());
         memoria.add("Alíquota interna de PE: %s (%s)".formatted(percent(internalRate), scope(interna.get())));
         boolean reviewed = interna.get().isReviewed();
@@ -392,16 +392,16 @@ public final class FronteiraCalculator {
                 .filter(rule -> rule.getKind() == kind && rule.isEnabled() && !rule.isDeleted() && rule.validOn(day))
                 .filter(rule -> blank(rule.getNcm()) || ncm.startsWith(digits(rule.getNcm())))
                 .filter(rule -> blank(rule.getCest()) || cest.equals(digits(rule.getCest())))
-                .filter(rule -> blank(rule.getCodigoProduto()) || codigo.equalsIgnoreCase(rule.getCodigoProduto().strip()))
-                .filter(rule -> blank(rule.getCnpjFornecedor()) || supplier.equals(digits(rule.getCnpjFornecedor())))
+                .filter(rule -> blank(rule.getProductCode()) || codigo.equalsIgnoreCase(rule.getProductCode().strip()))
+                .filter(rule -> blank(rule.getSupplierCnpj()) || supplier.equals(digits(rule.getSupplierCnpj())))
                 .max(Comparator.comparingInt(FronteiraCalculator::specificity)
                         .thenComparing(rule -> rule.getCreatedDate() == null ? java.time.LocalDateTime.MIN : rule.getCreatedDate()));
     }
 
     private static int specificity(FronteiraRule rule) {
         int score = 0;
-        if (!blank(rule.getCodigoProduto())) score += 1000;
-        if (!blank(rule.getCnpjFornecedor())) score += 500;
+        if (!blank(rule.getProductCode())) score += 1000;
+        if (!blank(rule.getSupplierCnpj())) score += 500;
         if (!blank(rule.getCest())) score += 100;
         if (!blank(rule.getNcm())) score += 10 + digits(rule.getNcm()).length();
         if (rule.getCompany() != null) score += 1;
@@ -418,8 +418,8 @@ public final class FronteiraCalculator {
         String region = SUL_SUDESTE_UFS.contains(uf) ? SUL_SUDESTE : DEMAIS_REGIOES;
         return bestMatch(rules.stream()
                 .filter(rule -> rule.getKind() == FronteiraRuleKind.AGREGACAO)
-                .filter(rule -> blank(rule.getRegiaoOrigem()) || rule.getRegiaoOrigem().equals(region))
-                .filter(rule -> rule.getFornecedorSimples() == null || rule.getFornecedorSimples() == supplierSimples)
+                .filter(rule -> blank(rule.getOriginRegion()) || rule.getOriginRegion().equals(region))
+                .filter(rule -> rule.getSimplesSupplier() == null || rule.getSimplesSupplier() == supplierSimples)
                 .toList(), FronteiraRuleKind.AGREGACAO, document, item, day);
     }
 
@@ -437,7 +437,7 @@ public final class FronteiraCalculator {
         if (context.credenciamento() != null) {
             String wanted = plainText(context.credenciamento());
             List<FronteiraRule> named = candidates.stream()
-                    .filter(rule -> !blank(rule.getDescricao()) && plainText(rule.getDescricao()).equals(wanted)).toList();
+                    .filter(rule -> !blank(rule.getDescription()) && plainText(rule.getDescription()).equals(wanted)).toList();
             Optional<FronteiraRule> match = bestMatch(named, FronteiraRuleKind.SIMPLES_PERCENTUAL, document, item, day);
             if (match.isPresent()) {
                 return match;
@@ -446,7 +446,7 @@ public final class FronteiraCalculator {
         if (!context.simplesCompany()) {
             return Optional.empty();
         }
-        List<FronteiraRule> unnamed = candidates.stream().filter(rule -> blank(rule.getDescricao())).toList();
+        List<FronteiraRule> unnamed = candidates.stream().filter(rule -> blank(rule.getDescription())).toList();
         return bestMatch(unnamed.isEmpty() && candidates.size() == 1 ? candidates : unnamed,
                 FronteiraRuleKind.SIMPLES_PERCENTUAL, document, item, day);
     }
@@ -526,8 +526,8 @@ public final class FronteiraCalculator {
 
     private static String scope(FronteiraRule rule) {
         List<String> parts = new ArrayList<>();
-        if (!blank(rule.getCodigoProduto())) parts.add("produto " + rule.getCodigoProduto());
-        if (!blank(rule.getCnpjFornecedor())) parts.add("fornecedor " + rule.getCnpjFornecedor());
+        if (!blank(rule.getProductCode())) parts.add("produto " + rule.getProductCode());
+        if (!blank(rule.getSupplierCnpj())) parts.add("fornecedor " + rule.getSupplierCnpj());
         if (!blank(rule.getCest())) parts.add("CEST " + rule.getCest());
         if (!blank(rule.getNcm())) parts.add("NCM " + rule.getNcm());
         if (rule.getCompany() != null) parts.add("desta empresa");

@@ -62,19 +62,19 @@ public final class FronteiraRevisionRequestPdf {
     }
 
     /** Who asks for the revision, from the company's record (any of it may be missing). */
-    public record Taxpayer(String razaoSocial, String cnpj, String inscricaoEstadual, String cidade) {
+    public record Taxpayer(String legalName, String cnpj, String stateRegistration, String cidade) {
     }
 
     /** One note to revise, with what the draft says about it. */
-    public record Item(FronteiraDTOs.Line line, String cenario, List<String> fundamentos, boolean regraAConferir,
+    public record Item(FronteiraDTOs.Line line, String cenario, List<String> legalBases, boolean ruleToReview,
                        List<String> memoria) {
     }
 
     /** The draft's content - the same for the PDF and the text. */
-    public record Draft(String razaoSocial, String cnpj, String inscricaoEstadual, String cidade, String periodo,
-                        String numeroExtrato, String codigoReceita, LocalDate vencimento, BigDecimal valorExtrato,
-                        List<Item> itens, BigDecimal cobradoNasNotas, BigDecimal devidoNasNotas, BigDecimal contestado,
-                        BigDecimal extratoAposRevisao, int aConferir, LocalDate data) {
+    public record Draft(String legalName, String cnpj, String stateRegistration, String cidade, String period,
+                        String extractNumber, String revenueCode, LocalDate dueOn, BigDecimal extractAmount,
+                        List<Item> itens, BigDecimal chargedOnInvoices, BigDecimal dueOnInvoices, BigDecimal contestado,
+                        BigDecimal extractAfterRevision, int toReview, LocalDate data) {
     }
 
     /** The extract has notes charged beyond Taxify's calculation - otherwise there is nothing to ask. */
@@ -83,7 +83,7 @@ public final class FronteiraRevisionRequestPdf {
     }
 
     private static boolean toRevise(FronteiraDTOs.Line line) {
-        return line.resultado() == FronteiraDTOs.Resultado.COBROU_A_MAIS && line.diferenca() != null
+        return line.resultado() == FronteiraDTOs.Result.COBROU_A_MAIS && line.diferenca() != null
                 && line.diferenca().signum() > 0;
     }
 
@@ -102,17 +102,17 @@ public final class FronteiraRevisionRequestPdf {
             if (!toRevise(line)) {
                 continue;
             }
-            boolean aConferir = !line.conferido();
-            unchecked += aConferir ? 1 : 0;
+            boolean toReview = !line.conferido();
+            unchecked += toReview ? 1 : 0;
             charged = charged.add(line.icmsDevido());
             due = due.add(line.calculo().valor());
             contested = contested.add(line.diferenca());
-            items.add(new Item(line, scenario(line, rules), basis(line, rules), aConferir, memory(line)));
+            items.add(new Item(line, scenario(line, rules), basis(line, rules), toReview, memory(line)));
         }
         BigDecimal extractValue = extract.icmsARecolher() != null ? extract.icmsARecolher()
                 : report.summary() == null ? charged : report.summary().icmsDevido();
-        String name = firstNonBlank(taxpayer == null ? null : taxpayer.razaoSocial(), extract.razaoSocial(), report.companyName());
-        String ie = firstNonBlank(extract.inscricaoEstadual(), taxpayer == null ? null : taxpayer.inscricaoEstadual());
+        String name = firstNonBlank(taxpayer == null ? null : taxpayer.legalName(), extract.razaoSocial(), report.companyName());
+        String ie = firstNonBlank(extract.inscricaoEstadual(), taxpayer == null ? null : taxpayer.stateRegistration());
         return new Draft(name, taxpayer == null ? null : cnpj(taxpayer.cnpj()), ie, taxpayer == null ? null : blankToNull(taxpayer.cidade()),
                 report.periodo(), extract.numeroExtrato(), extract.codigoReceita(), extract.dataVencimento(), extractValue,
                 List.copyOf(items), charged, due, contested, extractValue.subtract(contested), unchecked, today);
@@ -127,11 +127,11 @@ public final class FronteiraRevisionRequestPdf {
         document.open();
         document.add(new Paragraph("Pedido de revisão do ICMS antecipado (Fronteira PE) - RASCUNHO", TITLE));
         document.add(new Paragraph(DRAFT_NOTE, SMALL));
-        if (d.aConferir() > 0) {
+        if (d.toReview() > 0) {
             PdfPTable box = new PdfPTable(1);
             box.setWidthPercentage(100);
             box.setSpacingBefore(6);
-            PdfPCell cell = new PdfPCell(new Phrase("Atenção: " + UNCHECKED_WARNING.formatted(d.aConferir()), WARNING));
+            PdfPCell cell = new PdfPCell(new Phrase("Atenção: " + UNCHECKED_WARNING.formatted(d.toReview()), WARNING));
             cell.setBackgroundColor(WARNING_BG);
             cell.setBorderColor(new Color(240, 200, 150));
             cell.setPadding(6);
@@ -145,14 +145,14 @@ public final class FronteiraRevisionRequestPdf {
         section(document, "Contribuinte e extrato");
         PdfPTable data = new PdfPTable(new float[]{1.3f, 3, 1.3f, 3});
         data.setWidthPercentage(100);
-        field(data, "Razão social", d.razaoSocial());
+        field(data, "Razão social", d.legalName());
         field(data, "CNPJ", d.cnpj());
-        field(data, "Inscrição estadual (PE)", d.inscricaoEstadual());
-        field(data, "Extrato nº", d.numeroExtrato());
-        field(data, "Competência", FronteiraReportPdf.monthLabel(d.periodo()) + " (" + d.periodo() + ")");
-        field(data, "Receita", d.codigoReceita() == null ? "ICMS antecipado" : d.codigoReceita() + " - ICMS antecipado");
-        field(data, "Vencimento", d.vencimento() == null ? null : d.vencimento().format(DAY));
-        field(data, "Valor cobrado no extrato", money(d.valorExtrato()));
+        field(data, "Inscrição estadual (PE)", d.stateRegistration());
+        field(data, "Extrato nº", d.extractNumber());
+        field(data, "Competência", FronteiraReportPdf.monthLabel(d.period()) + " (" + d.period() + ")");
+        field(data, "Receita", d.revenueCode() == null ? "ICMS antecipado" : d.revenueCode() + " - ICMS antecipado");
+        field(data, "Vencimento", d.dueOn() == null ? null : d.dueOn().format(DAY));
+        field(data, "Valor cobrado no extrato", money(d.extractAmount()));
         document.add(data);
 
         section(document, "Pedido");
@@ -160,10 +160,10 @@ public final class FronteiraRevisionRequestPdf {
         PdfPTable totals = new PdfPTable(4);
         totals.setWidthPercentage(100);
         totals.setSpacingBefore(6);
-        total(totals, "Cobrado nas notas listadas", money(d.cobradoNasNotas()), null);
-        total(totals, "Devido pelo cálculo", money(d.devidoNasNotas()), null);
+        total(totals, "Cobrado nas notas listadas", money(d.chargedOnInvoices()), null);
+        total(totals, "Devido pelo cálculo", money(d.dueOnInvoices()), null);
         total(totals, "Valor contestado", money(d.contestado()), WARNING_BG);
-        total(totals, "Extrato após a revisão", money(d.extratoAposRevisao()), null);
+        total(totals, "Extrato após a revisão", money(d.extractAfterRevision()), null);
         document.add(totals);
 
         section(document, "Notas cobradas a mais (" + d.itens().size() + ")");
@@ -180,7 +180,7 @@ public final class FronteiraRevisionRequestPdf {
         }
         for (Item item : d.itens()) {
             FronteiraDTOs.Line line = item.line();
-            Color background = item.regraAConferir() ? WARNING_BG : null;
+            Color background = item.ruleToReview() ? WARNING_BG : null;
             cell(table, noteRef(line, true), background, false);
             cell(table, supplier(line), background, false);
             cell(table, line.uf(), background, false);
@@ -188,8 +188,8 @@ public final class FronteiraRevisionRequestPdf {
             cell(table, money(line.icmsDevido()), background, true);
             cell(table, money(line.calculo().valor()), background, true);
             cell(table, money(line.diferenca()), background, true);
-            cell(table, item.cenario() + (item.regraAConferir() ? "\nREGRA A CONFERIR" : ""), background, false);
-            cell(table, item.fundamentos().isEmpty() ? NO_BASIS : String.join("\n", item.fundamentos()), background, false);
+            cell(table, item.cenario() + (item.ruleToReview() ? "\nREGRA A CONFERIR" : ""), background, false);
+            cell(table, item.legalBases().isEmpty() ? NO_BASIS : String.join("\n", item.legalBases()), background, false);
             if (!item.memoria().isEmpty()) {
                 PdfPCell memory = new PdfPCell(new Phrase("Memória de cálculo (Taxify): " + String.join("  ·  ", item.memoria()), SMALL));
                 memory.setColspan(widths.length);
@@ -204,7 +204,7 @@ public final class FronteiraRevisionRequestPdf {
         label.setPadding(3);
         label.setBackgroundColor(HEADER_BG);
         table.addCell(label);
-        for (BigDecimal value : List.of(d.cobradoNasNotas(), d.devidoNasNotas(), d.contestado())) {
+        for (BigDecimal value : List.of(d.chargedOnInvoices(), d.dueOnInvoices(), d.contestado())) {
             PdfPCell cell = new PdfPCell(new Phrase(money(value), CELL_BOLD));
             cell.setHorizontalAlignment(Element.ALIGN_RIGHT);
             cell.setPadding(3);
@@ -244,32 +244,32 @@ public final class FronteiraRevisionRequestPdf {
         StringBuilder t = new StringBuilder();
         t.append("PEDIDO DE REVISÃO DO ICMS ANTECIPADO (FRONTEIRA PE) - RASCUNHO\n");
         t.append(DRAFT_NOTE).append("\n");
-        if (d.aConferir() > 0) {
-            t.append("ATENÇÃO: ").append(UNCHECKED_WARNING.formatted(d.aConferir())).append("\n");
+        if (d.toReview() > 0) {
+            t.append("ATENÇÃO: ").append(UNCHECKED_WARNING.formatted(d.toReview())).append("\n");
         }
         t.append("\nÀ SEFAZ-PE, pelo e-Fisco - serviço: ").append(SERVICE_PLACEHOLDER).append("\n\n");
-        t.append("Contribuinte: ").append(text(d.razaoSocial())).append("\n");
-        t.append("CNPJ: ").append(text(d.cnpj())).append(" - Inscrição estadual: ").append(text(d.inscricaoEstadual())).append("\n");
-        t.append("Extrato nº ").append(text(d.numeroExtrato())).append(" - competência ").append(d.periodo())
-                .append(d.codigoReceita() == null ? "" : " - receita " + d.codigoReceita())
-                .append(d.vencimento() == null ? "" : " - vencimento " + d.vencimento().format(DAY))
-                .append(" - valor cobrado ").append(money(d.valorExtrato())).append("\n\n");
+        t.append("Contribuinte: ").append(text(d.legalName())).append("\n");
+        t.append("CNPJ: ").append(text(d.cnpj())).append(" - Inscrição estadual: ").append(text(d.stateRegistration())).append("\n");
+        t.append("Extrato nº ").append(text(d.extractNumber())).append(" - competência ").append(d.period())
+                .append(d.revenueCode() == null ? "" : " - receita " + d.revenueCode())
+                .append(d.dueOn() == null ? "" : " - vencimento " + d.dueOn().format(DAY))
+                .append(" - valor cobrado ").append(money(d.extractAmount())).append("\n\n");
         t.append(request(d)).append("\n\n");
-        t.append("Cobrado nas notas listadas: ").append(money(d.cobradoNasNotas())).append("\n");
-        t.append("Devido pelo cálculo: ").append(money(d.devidoNasNotas())).append("\n");
+        t.append("Cobrado nas notas listadas: ").append(money(d.chargedOnInvoices())).append("\n");
+        t.append("Devido pelo cálculo: ").append(money(d.dueOnInvoices())).append("\n");
         t.append("Valor contestado: ").append(money(d.contestado())).append("\n");
-        t.append("Valor do extrato após a revisão: ").append(money(d.extratoAposRevisao())).append("\n\n");
+        t.append("Valor do extrato após a revisão: ").append(money(d.extractAfterRevision())).append("\n\n");
         t.append("NOTAS COBRADAS A MAIS (").append(d.itens().size()).append(")\n");
         int index = 1;
         for (Item item : d.itens()) {
             FronteiraDTOs.Line line = item.line();
-            t.append("\n").append(index++).append(". ").append(noteRef(line, false)).append(item.regraAConferir() ? " [REGRA A CONFERIR]" : "").append("\n");
+            t.append("\n").append(index++).append(". ").append(noteRef(line, false)).append(item.ruleToReview() ? " [REGRA A CONFERIR]" : "").append("\n");
             t.append("   Fornecedor: ").append(supplier(line)).append(line.uf() == null ? "" : " (" + line.uf() + ")").append("\n");
             t.append("   Valor da NF ").append(money(line.valorNota())).append(" - cobrado ").append(money(line.icmsDevido()))
                     .append(" - calculado ").append(money(line.calculo().valor())).append(" - diferença ")
                     .append(money(line.diferenca())).append("\n");
             t.append("   Cenário/regra: ").append(item.cenario()).append("\n");
-            t.append("   Fundamento: ").append(item.fundamentos().isEmpty() ? NO_BASIS : String.join("; ", item.fundamentos())).append("\n");
+            t.append("   Fundamento: ").append(item.legalBases().isEmpty() ? NO_BASIS : String.join("; ", item.legalBases())).append("\n");
             if (!item.memoria().isEmpty()) {
                 t.append("   Memória de cálculo: ").append(String.join(" | ", item.memoria())).append("\n");
             }
@@ -287,17 +287,17 @@ public final class FronteiraRevisionRequestPdf {
     // ---------------------------------------------------------------- content
 
     private static String request(Draft d) {
-        return "O contribuinte acima requer a revisão do ICMS antecipado cobrado no extrato nº " + text(d.numeroExtrato())
-                + ", competência " + FronteiraReportPdf.monthLabel(d.periodo()) + ", quanto às " + d.itens().size()
+        return "O contribuinte acima requer a revisão do ICMS antecipado cobrado no extrato nº " + text(d.extractNumber())
+                + ", competência " + FronteiraReportPdf.monthLabel(d.period()) + ", quanto às " + d.itens().size()
                 + " nota(s) fiscal(is) listada(s) abaixo, em que o valor cobrado supera o apurado conforme o cenário e a regra "
                 + "indicados em cada uma. Valor total contestado: " + money(d.contestado()) + ". Valor que entende devido nessas "
-                + "notas: " + money(d.devidoNasNotas()) + " (cobrado: " + money(d.cobradoNasNotas()) + "), o que leva o extrato de "
-                + money(d.valorExtrato()) + " para " + money(d.extratoAposRevisao()) + ".";
+                + "notas: " + money(d.dueOnInvoices()) + " (cobrado: " + money(d.chargedOnInvoices()) + "), o que leva o extrato de "
+                + money(d.extractAmount()) + " para " + money(d.extractAfterRevision()) + ".";
     }
 
     private static String closing(Draft d) {
         return "Diante do exposto, requer a revisão do extrato para excluir o valor cobrado a mais nas notas listadas, com a "
-                + "emissão de novo extrato no valor de " + money(d.extratoAposRevisao()) + ". Coloca-se à disposição para apresentar "
+                + "emissão de novo extrato no valor de " + money(d.extractAfterRevision()) + ". Coloca-se à disposição para apresentar "
                 + "os documentos fiscais e as memórias de cálculo que se fizerem necessários.";
     }
 
@@ -324,7 +324,7 @@ public final class FronteiraRevisionRequestPdf {
     static List<String> basis(FronteiraDTOs.Line line, Map<UUID, FronteiraReportPdf.RuleInfo> rules) {
         Set<String> basis = new LinkedHashSet<>();
         line.calculo().itens().forEach(item -> item.regras().stream().map(rules::get).filter(Objects::nonNull)
-                .map(FronteiraReportPdf.RuleInfo::fundamento).filter(f -> f != null && !f.isBlank())
+                .map(FronteiraReportPdf.RuleInfo::legalBasis).filter(f -> f != null && !f.isBlank())
                 .forEach(f -> basis.add(f.strip())));
         return List.copyOf(basis);
     }

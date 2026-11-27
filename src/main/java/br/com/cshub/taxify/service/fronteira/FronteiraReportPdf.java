@@ -58,13 +58,13 @@ public final class FronteiraReportPdf {
     }
 
     /** A rule as the report names it, and whether the fiscal team checked it. */
-    public record RuleInfo(String label, String fundamento, boolean reviewed) {
+    public record RuleInfo(String label, String legalBasis, boolean reviewed) {
     }
 
     public static Map<UUID, RuleInfo> rulesInfo(Collection<FronteiraRule> rules) {
         Map<UUID, RuleInfo> info = new LinkedHashMap<>();
         for (FronteiraRule rule : rules) {
-            info.put(rule.getId(), new RuleInfo(label(rule), rule.getFundamento(), rule.isReviewed()));
+            info.put(rule.getId(), new RuleInfo(label(rule), rule.getLegalBasis(), rule.isReviewed()));
         }
         return info;
     }
@@ -72,13 +72,13 @@ public final class FronteiraReportPdf {
     static String label(FronteiraRule rule) {
         String scope = scope(rule);
         String name = switch (rule.getKind()) {
-            case FORMULA -> "Fórmula própria" + (rule.getDescricao() == null ? "" : " - " + rule.getDescricao())
+            case FORMULA -> "Fórmula própria" + (rule.getDescription() == null ? "" : " - " + rule.getDescription())
                     + (rule.getFormula() == null ? "" : ": " + rule.getFormula());
-            case SIMPLES_PERCENTUAL -> "Carga líquida " + percent(rule.getPercentual())
-                    + (rule.getDescricao() == null ? " (Simples, art. 363-A)" : " - " + rule.getDescricao());
-            case AGREGACAO -> "Agregação " + percent(rule.getAgregacao());
-            case ALIQUOTA_INTERNA -> "Alíquota interna " + percent(rule.getAliquota());
-            case ST_MVA -> "ST com MVA" + (rule.getDescricao() == null ? "" : " - " + rule.getDescricao());
+            case SIMPLES_PERCENTUAL -> "Carga líquida " + percent(rule.getPercentage())
+                    + (rule.getDescription() == null ? " (Simples, art. 363-A)" : " - " + rule.getDescription());
+            case AGREGACAO -> "Agregação " + percent(rule.getAggregationRate());
+            case ALIQUOTA_INTERNA -> "Alíquota interna " + percent(rule.getRate());
+            case ST_MVA -> "ST com MVA" + (rule.getDescription() == null ? "" : " - " + rule.getDescription());
         };
         return scope.isEmpty() ? name : name + " (" + scope + ")";
     }
@@ -88,11 +88,11 @@ public final class FronteiraReportPdf {
         if (rule.getNcm() != null && !rule.getNcm().isBlank()) {
             parts.add("NCM " + rule.getNcm());
         }
-        if (rule.getCodigoProduto() != null && !rule.getCodigoProduto().isBlank()) {
-            parts.add("produto " + rule.getCodigoProduto());
+        if (rule.getProductCode() != null && !rule.getProductCode().isBlank()) {
+            parts.add("produto " + rule.getProductCode());
         }
-        if (rule.getCnpjFornecedor() != null && !rule.getCnpjFornecedor().isBlank()) {
-            parts.add("fornecedor " + rule.getCnpjFornecedor());
+        if (rule.getSupplierCnpj() != null && !rule.getSupplierCnpj().isBlank()) {
+            parts.add("fornecedor " + rule.getSupplierCnpj());
         }
         return String.join(", ", parts);
     }
@@ -147,7 +147,7 @@ public final class FronteiraReportPdf {
         }
 
         List<FronteiraDTOs.Line> toRevise = report.lines().stream()
-                .filter(line -> line.resultado() == FronteiraDTOs.Resultado.COBROU_A_MAIS).toList();
+                .filter(line -> line.resultado() == FronteiraDTOs.Result.COBROU_A_MAIS).toList();
         section(document, "Notas para pedir revisão (" + toRevise.size() + ")");
         if (toRevise.isEmpty()) {
             document.add(new Paragraph("Nenhuma nota cobrada acima do cálculo do Taxify.", TEXT));
@@ -166,11 +166,11 @@ public final class FronteiraReportPdf {
         rows.add(new String[]{"Registro", "NF", "Fornecedor", "UF", "Valor NF", "Cobrado", "Taxify", "Diferença", "Resultado", "Cálculo usado"});
         Set<Integer> highlighted = new LinkedHashSet<>();
         for (FronteiraDTOs.Line line : report.lines()) {
-            if (line.resultado() == FronteiraDTOs.Resultado.COBROU_A_MAIS) {
+            if (line.resultado() == FronteiraDTOs.Result.COBROU_A_MAIS) {
                 highlighted.add(rows.size());
             }
             rows.add(new String[]{line.registro(), line.numeroNota(), supplier(line), line.uf(), money(line.valorNota()),
-                    money(line.icmsDevido()), calcValue(line), money(line.diferenca()), resultado(line), calculation(line, rules)});
+                    money(line.icmsDevido()), calcValue(line), money(line.diferenca()), result(line), calculation(line, rules)});
         }
         table(document, new float[]{1.5f, 0.8f, 2.6f, 0.45f, 1, 1, 1, 1, 1.2f, 3.6f}, rows, Set.of(4, 5, 6, 7), highlighted);
 
@@ -180,8 +180,8 @@ public final class FronteiraReportPdf {
             for (RuleInfo rule : used.values()) {
                 Paragraph paragraph = new Paragraph();
                 paragraph.add(new Phrase(rule.label() + (rule.reviewed() ? "" : " (a conferir)"), BOLD));
-                if (rule.fundamento() != null && !rule.fundamento().isBlank()) {
-                    paragraph.add(new Phrase(" - " + rule.fundamento(), TEXT));
+                if (rule.legalBasis() != null && !rule.legalBasis().isBlank()) {
+                    paragraph.add(new Phrase(" - " + rule.legalBasis(), TEXT));
                 }
                 document.add(paragraph);
             }
@@ -256,7 +256,7 @@ public final class FronteiraReportPdf {
                     cell(line.cnpjEmitente()), cell(line.nota() == null ? null : line.nota().emitenteNome()),
                     number(line.valorNota()), number(line.icmsDevido()),
                     calc == null || calc.semRegra() ? "" : number(calc.valor()), number(line.diferenca()),
-                    resultado(line), cell(treatments(line)), cell(ruleLabels(line, rules)),
+                    result(line), cell(treatments(line)), cell(ruleLabels(line, rules)),
                     line.conferido() ? "não" : "sim")).append('\n');
         }
         return csv.toString().getBytes(StandardCharsets.UTF_8);
@@ -332,7 +332,7 @@ public final class FronteiraReportPdf {
         return used;
     }
 
-    static String resultado(FronteiraDTOs.Line line) {
+    static String result(FronteiraDTOs.Line line) {
         return switch (line.resultado()) {
             case CONFERE -> "Confere";
             case COBROU_A_MAIS -> "Cobrou a mais";

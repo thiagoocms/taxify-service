@@ -1,7 +1,7 @@
 package br.com.cshub.taxify.service.fronteira;
 
 import br.com.cshub.taxify.dto.fronteira.FronteiraDTOs;
-import br.com.cshub.taxify.dto.fronteira.FronteiraDTOs.Resultado;
+import br.com.cshub.taxify.dto.fronteira.FronteiraDTOs.Result;
 import br.com.cshub.taxify.dto.fronteira.FronteiraRuleDTOs;
 import org.junit.jupiter.api.Test;
 
@@ -34,19 +34,19 @@ class FronteiraRevisionRequestPdfTest {
         FronteiraRevisionRequestPdf.Draft draft = FronteiraRevisionRequestPdf.draft(report(true), taxpayer, rules(), LocalDate.of(2026, 11, 24));
 
         assertThat(draft.itens()).extracting(item -> item.line().numeroNota()).containsExactly("806396", "806400");
-        assertThat(draft.cobradoNasNotas()).isEqualByComparingTo("800.00");
-        assertThat(draft.devidoNasNotas()).isEqualByComparingTo("450.00");
+        assertThat(draft.chargedOnInvoices()).isEqualByComparingTo("800.00");
+        assertThat(draft.dueOnInvoices()).isEqualByComparingTo("450.00");
         assertThat(draft.contestado()).isEqualByComparingTo("350.00");
-        assertThat(draft.valorExtrato()).isEqualByComparingTo("1980.46");
-        assertThat(draft.extratoAposRevisao()).isEqualByComparingTo("1630.46");
+        assertThat(draft.extractAmount()).isEqualByComparingTo("1980.46");
+        assertThat(draft.extractAfterRevision()).isEqualByComparingTo("1630.46");
         assertThat(draft.cnpj()).isEqualTo("11.222.333/0001-81");
-        assertThat(draft.inscricaoEstadual()).isEqualTo("1234567-89");
-        assertThat(draft.aConferir()).isEqualTo(1);
+        assertThat(draft.stateRegistration()).isEqualTo("1234567-89");
+        assertThat(draft.toReview()).isEqualTo(1);
         FronteiraRevisionRequestPdf.Item carga = draft.itens().get(1);
-        assertThat(carga.fundamentos()).containsExactly("Decreto 44.650/2017, art. 363-A");
-        assertThat(carga.regraAConferir()).isFalse();
-        assertThat(draft.itens().get(0).regraAConferir()).isTrue();
-        assertThat(draft.itens().get(0).fundamentos()).isEmpty();
+        assertThat(carga.legalBases()).containsExactly("Decreto 44.650/2017, art. 363-A");
+        assertThat(carga.ruleToReview()).isFalse();
+        assertThat(draft.itens().get(0).ruleToReview()).isTrue();
+        assertThat(draft.itens().get(0).legalBases()).isEmpty();
         assertThat(carga.memoria()).singleElement().asString()
                 .startsWith("Item 1 (NCM 61091000) = R$")
                 .contains("Partida: produto 1.000,00");
@@ -114,11 +114,11 @@ class FronteiraRevisionRequestPdfTest {
     }
 
     private FronteiraDTOs.Report report(boolean withUncheckedRule) {
-        FronteiraDTOs.Line confere = line(1, "012.6.000000001-0", "752080", "1180.46", "1180.47", Resultado.CONFERE,
+        FronteiraDTOs.Line confere = line(1, "012.6.000000001-0", "752080", "1180.46", "1180.47", Result.CONFERE,
                 "CARGA_LIQUIDA", "Carga líquida", List.of(cargaId), true, null);
-        FronteiraDTOs.Line formula = line(2, "012.6.000000002-0", "806396", "500.00", "300.00", Resultado.COBROU_A_MAIS,
+        FronteiraDTOs.Line formula = line(2, "012.6.000000002-0", "806396", "500.00", "300.00", Result.COBROU_A_MAIS,
                 "FORMULA", "Fórmula própria", List.of(withUncheckedRule ? formulaId : cargaId), !withUncheckedRule, KEY);
-        FronteiraDTOs.Line carga = line(3, "012.6.000000003-0", "806400", "300.00", "150.00", Resultado.COBROU_A_MAIS,
+        FronteiraDTOs.Line carga = line(3, "012.6.000000003-0", "806400", "300.00", "150.00", Result.COBROU_A_MAIS,
                 "CARGA_LIQUIDA", "Carga líquida", List.of(cargaId), true, null);
         FronteiraDTOs.Extract extract = new FronteiraDTOs.Extract("2026-11", "12345678-9", "1234567-89", "EXEMPLO", null, "058-2", "SIM",
                 "IND TEC CREDENCIADA", LocalDate.of(2026, 12, 28), null, new BigDecimal("1980.46"), BigDecimal.ZERO, null, null,
@@ -131,7 +131,7 @@ class FronteiraRevisionRequestPdfTest {
     }
 
     private static FronteiraDTOs.Line line(int index, String registro, String numero, String cobrado, String taxify,
-                                           Resultado resultado, String tratamento, String label, List<UUID> regras,
+                                           Result resultado, String tratamento, String label, List<UUID> regras,
                                            boolean conferido, String chave) {
         BigDecimal value = new BigDecimal(taxify);
         List<String> memoria = List.of("Partida: produto 1.000,00 + IPI 0,00 + frete 0,00 + seguro e outras despesas 0,00 = 1.000,00",

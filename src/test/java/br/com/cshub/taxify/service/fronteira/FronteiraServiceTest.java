@@ -18,7 +18,7 @@ import br.com.cshub.taxify.repository.SefazNoteSummaryRepository;
 import br.com.cshub.taxify.domain.fronteira.FronteiraRule;
 import br.com.cshub.taxify.domain.xml.FiscalXmlDocumentItem;
 import br.com.cshub.taxify.domain.xml.FiscalItemTaxDetail;
-import br.com.cshub.taxify.dto.fronteira.FronteiraDTOs.Resultado;
+import br.com.cshub.taxify.dto.fronteira.FronteiraDTOs.Result;
 import br.com.cshub.taxify.enumerated.FronteiraRuleKind;
 import br.com.cshub.taxify.service.fiscalcheck.DocumentDivergenceService;
 import br.com.cshub.taxify.validation.CompanyValidation;
@@ -90,21 +90,21 @@ class FronteiraServiceTest {
         when(messageService.getMessage(anyString())).thenAnswer(call -> call.getArgument(0));
         extract = new EfiscoExtract();
         extract.setCompany(company);
-        extract.setPeriodo("2026-11");
+        extract.setPeriod("2026-11");
         extract.setImportedAt(LocalDateTime.now());
-        when(extractRepository.findByCompany_IdAndPeriodoAndDeletedIsFalse(company.getId(), "2026-11")).thenReturn(Optional.of(extract));
-        when(extractRepository.findByCompany_IdAndDeletedIsFalseOrderByPeriodoDesc(company.getId())).thenReturn(List.of(extract));
+        when(extractRepository.findByCompany_IdAndPeriodAndDeletedIsFalse(company.getId(), "2026-11")).thenReturn(Optional.of(extract));
+        when(extractRepository.findByCompany_IdAndDeletedIsFalseOrderByPeriodDesc(company.getId())).thenReturn(List.of(extract));
         when(divergenceService.summarize(eq(company.getId()), any())).thenReturn(Map.of());
     }
 
     private static EfiscoExtractNote note(int line, String cnpj, String numero, String valor, String icms) {
         EfiscoExtractNote note = new EfiscoExtractNote();
-        note.setLinha(line);
-        note.setCnpjEmitente(cnpj);
-        note.setNumeroNota(numero);
+        note.setLineNumber(line);
+        note.setIssuerCnpj(cnpj);
+        note.setInvoiceNumber(numero);
         note.setUf("SP");
-        note.setValorNota(new BigDecimal(valor));
-        note.setIcmsDevido(new BigDecimal(icms));
+        note.setInvoiceAmount(new BigDecimal(valor));
+        note.setIcmsDue(new BigDecimal(icms));
         return note;
     }
 
@@ -215,7 +215,7 @@ class FronteiraServiceTest {
         FronteiraRule interna = new FronteiraRule();
         interna.setId(UUID.randomUUID());
         interna.setKind(FronteiraRuleKind.ALIQUOTA_INTERNA);
-        interna.setAliquota(new BigDecimal("20.5"));
+        interna.setRate(new BigDecimal("20.5"));
         interna.setEnabled(true);
         interna.setReviewedAt(LocalDateTime.now());
         when(ruleService.rulesFor(company.getId())).thenReturn(List.of(interna));
@@ -241,7 +241,7 @@ class FronteiraServiceTest {
         FronteiraDTOs.Report report = service.report(company.getId().toString(), "2026-11");
 
         assertThat(report.lines()).extracting(FronteiraDTOs.Line::resultado)
-                .containsExactly(Resultado.CONFERE, Resultado.COBROU_A_MAIS, Resultado.COBROU_A_MENOS, Resultado.NAO_CALCULOU);
+                .containsExactly(Result.CONFERE, Result.COBROU_A_MAIS, Result.COBROU_A_MENOS, Result.NAO_CALCULOU);
         assertThat(report.lines().get(1).diferenca()).isEqualByComparingTo("65.00");
         assertThat(report.summary().cobradoAMais()).isEqualByComparingTo("65.00");
         assertThat(report.summary().cobradoAMenos()).isEqualByComparingTo("120.00"); // 35,00 + 85,00
@@ -251,11 +251,11 @@ class FronteiraServiceTest {
 
     @Test
     void withoutAnExtractTheMonthsEntriesComeWithThePrevia() {
-        when(extractRepository.findByCompany_IdAndPeriodoAndDeletedIsFalse(company.getId(), "2026-11")).thenReturn(Optional.empty());
+        when(extractRepository.findByCompany_IdAndPeriodAndDeletedIsFalse(company.getId(), "2026-11")).thenReturn(Optional.empty());
         FronteiraRule interna = new FronteiraRule();
         interna.setId(UUID.randomUUID());
         interna.setKind(FronteiraRuleKind.ALIQUOTA_INTERNA);
-        interna.setAliquota(new BigDecimal("20.5"));
+        interna.setRate(new BigDecimal("20.5"));
         interna.setEnabled(true);
         when(ruleService.rulesFor(company.getId())).thenReturn(List.of(interna));
         FiscalXmlDocument entry = document("111", "9", "1000.00");

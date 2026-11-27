@@ -41,13 +41,13 @@ public class EfiscoExtractParser {
     private static final Pattern MONEY_ONLY_LINE = Pattern.compile("^(?:" + MONEY + ")(?:\\s+" + MONEY + ")*\\s*$");
     private static final Pattern FOOTER_LABEL = Pattern.compile("ICMS\\s+(.+?)(?=\\s+ICMS\\s|$)");
 
-    public record Note(int line, String registro, String dataPassagem, String numero, String uf,
-                       BigDecimal valorNota, BigDecimal icmsDevido, String cnpjEmitente) {
+    public record Note(int line, String recordNumber, String crossingDate, String invoiceNumber, String uf,
+                       BigDecimal invoiceAmount, BigDecimal icmsDue, String issuerCnpj) {
     }
 
-    public record Extract(YearMonth periodo, String inscricaoEstadual, String razaoSocial, String are,
-                          String codigoReceita, String credenciamentoAntecipacao, String credenciamentoInterno,
-                          LocalDate dataVencimento, String numeroExtrato, LocalDateTime emitidoEm,
+    public record Extract(YearMonth period, String stateRegistration, String legalName, String are,
+                          String revenueCode, String credenciamentoAntecipacao, String credenciamentoInterno,
+                          LocalDate dueDate, String extractNumber, LocalDateTime issuedAt,
                           List<Note> notes, Map<String, BigDecimal> totals) {
 
         public BigDecimal total(String key) {

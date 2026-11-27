@@ -143,24 +143,24 @@ public class FronteiraRuleService {
      * deleted (then it was removed on purpose).
      */
     @Transactional
-    public void ensureCargaLiquida(Company company, String credenciamento, BigDecimal percentual, String numeroExtrato) {
-        if (credenciamento == null || credenciamento.isBlank() || percentual == null || percentual.signum() <= 0) {
+    public void ensureCargaLiquida(Company company, String credenciamento, BigDecimal percentage, String extractNumber) {
+        if (credenciamento == null || credenciamento.isBlank() || percentage == null || percentage.signum() <= 0) {
             return;
         }
         String wanted = FronteiraCalculator.plainText(credenciamento);
         boolean known = repository.findAnyOfKind(FronteiraRuleKind.SIMPLES_PERCENTUAL, company.getId()).stream()
-                .anyMatch(rule -> rule.getDescricao() != null && FronteiraCalculator.plainText(rule.getDescricao()).equals(wanted));
+                .anyMatch(rule -> rule.getDescription() != null && FronteiraCalculator.plainText(rule.getDescription()).equals(wanted));
         if (known) {
             return;
         }
         FronteiraRule rule = new FronteiraRule();
         rule.setCompany(company);
         rule.setKind(FronteiraRuleKind.SIMPLES_PERCENTUAL);
-        rule.setDescricao(credenciamento.strip());
-        rule.setPercentual(percentual);
-        rule.setFundamento(("Carga líquida do credenciamento: %s%% é o que o e-Fisco aplica na maioria das notas do extrato%s."
-                + " Criada na importação - a conferir.").formatted(percentual.stripTrailingZeros().toPlainString().replace('.', ','),
-                numeroExtrato == null ? "" : " nº " + numeroExtrato));
+        rule.setDescription(credenciamento.strip());
+        rule.setPercentage(percentage);
+        rule.setLegalBasis(("Carga líquida do credenciamento: %s%% é o que o e-Fisco aplica na maioria das notas do extrato%s."
+                + " Criada na importação - a conferir.").formatted(percentage.stripTrailingZeros().toPlainString().replace('.', ','),
+                extractNumber == null ? "" : " nº " + extractNumber));
         rule.setEnabled(true);
         rule.setDeleted(false);
         repository.save(rule);
@@ -170,9 +170,9 @@ public class FronteiraRuleService {
         if (!repository.existsByKindAndCompanyIsNullAndNcmIsNull(FronteiraRuleKind.ALIQUOTA_INTERNA)) {
             FronteiraRule modal = new FronteiraRule();
             modal.setKind(FronteiraRuleKind.ALIQUOTA_INTERNA);
-            modal.setDescricao("Alíquota modal de PE");
-            modal.setAliquota(MODAL_RATE);
-            modal.setFundamento("Lei 15.730/2016 - alíquota interna modal de PE (a conferir)");
+            modal.setDescription("Alíquota modal de PE");
+            modal.setRate(MODAL_RATE);
+            modal.setLegalBasis("Lei 15.730/2016 - alíquota interna modal de PE (a conferir)");
             modal.setEnabled(true);
             modal.setDeleted(false);
             repository.save(modal);
@@ -214,30 +214,30 @@ public class FronteiraRuleService {
             throw invalid("Escolha o tipo da regra.");
         }
         rule.setKind(input.kind());
-        rule.setDescricao(text(input.descricao(), 255));
+        rule.setDescription(text(input.descricao(), 255));
         rule.setNcm(digitsOrNull(input.ncm(), 10));
         rule.setCest(digitsOrNull(input.cest(), 10));
-        rule.setCodigoProduto(text(input.codigoProduto(), 60));
-        rule.setCnpjFornecedor(digitsOrNull(input.cnpjFornecedor(), 14));
-        rule.setFundamento(text(input.fundamento(), 500));
+        rule.setProductCode(text(input.codigoProduto(), 60));
+        rule.setSupplierCnpj(digitsOrNull(input.cnpjFornecedor(), 14));
+        rule.setLegalBasis(text(input.fundamento(), 500));
         rule.setLink(text(input.link(), 500));
         rule.setValidFrom(input.validFrom());
         rule.setValidUntil(input.validUntil());
         if (input.validFrom() != null && input.validUntil() != null && input.validUntil().isBefore(input.validFrom())) {
             throw invalid("A vigência termina antes de começar.");
         }
-        rule.setAliquota(null);
+        rule.setRate(null);
         rule.setMva(null);
-        rule.setPercentual(null);
+        rule.setPercentage(null);
         rule.setFormula(null);
-        rule.setAplicaEm(null);
-        rule.setAgregacao(null);
-        rule.setRegiaoOrigem(null);
-        rule.setFornecedorSimples(null);
+        rule.setAppliesTo(null);
+        rule.setAggregationRate(null);
+        rule.setOriginRegion(null);
+        rule.setSimplesSupplier(null);
         switch (input.kind()) {
-            case ALIQUOTA_INTERNA -> rule.setAliquota(percent(input.aliquota(), "a alíquota interna"));
+            case ALIQUOTA_INTERNA -> rule.setRate(percent(input.aliquota(), "a alíquota interna"));
             case ST_MVA -> {
-                if (rule.getNcm() == null && rule.getCest() == null && rule.getCodigoProduto() == null) {
+                if (rule.getNcm() == null && rule.getCest() == null && rule.getProductCode() == null) {
                     throw invalid("Uma regra de ST precisa de NCM, CEST ou código do produto.");
                 }
                 if (input.mva() == null || input.mva().signum() < 0 || input.mva().compareTo(new BigDecimal("1000")) > 0) {
@@ -245,21 +245,21 @@ public class FronteiraRuleService {
                 }
                 rule.setMva(input.mva());
             }
-            case SIMPLES_PERCENTUAL -> rule.setPercentual(percent(input.percentual(), "a carga líquida"));
+            case SIMPLES_PERCENTUAL -> rule.setPercentage(percent(input.percentual(), "a carga líquida"));
             case AGREGACAO -> {
-                if (rule.getNcm() == null && rule.getCest() == null && rule.getCodigoProduto() == null) {
+                if (rule.getNcm() == null && rule.getCest() == null && rule.getProductCode() == null) {
                     throw invalid("Uma mercadoria com agregação precisa de NCM, CEST ou código do produto.");
                 }
                 if (input.agregacao() == null || input.agregacao().signum() < 0 || input.agregacao().compareTo(new BigDecimal("1000")) > 0) {
                     throw invalid("Informe a agregação em % (de 0 a 1000; 20 = coeficiente 1,20).");
                 }
-                String regiao = input.regiaoOrigem() == null || input.regiaoOrigem().isBlank() ? null : input.regiaoOrigem().strip().toUpperCase(java.util.Locale.ROOT);
-                if (regiao != null && !java.util.Set.of(FronteiraCalculator.SUL_SUDESTE, FronteiraCalculator.DEMAIS_REGIOES).contains(regiao)) {
+                String region = input.regiaoOrigem() == null || input.regiaoOrigem().isBlank() ? null : input.regiaoOrigem().strip().toUpperCase(java.util.Locale.ROOT);
+                if (region != null && !java.util.Set.of(FronteiraCalculator.SUL_SUDESTE, FronteiraCalculator.DEMAIS_REGIOES).contains(region)) {
                     throw invalid("Região de origem: SUL_SUDESTE, DEMAIS ou em branco (qualquer).");
                 }
-                rule.setAgregacao(input.agregacao());
-                rule.setRegiaoOrigem(regiao);
-                rule.setFornecedorSimples(input.fornecedorSimples());
+                rule.setAggregationRate(input.agregacao());
+                rule.setOriginRegion(region);
+                rule.setSimplesSupplier(input.fornecedorSimples());
             }
             case FORMULA -> {
                 try {
@@ -268,13 +268,13 @@ public class FronteiraRuleService {
                     throw invalid(e.getMessage());
                 }
                 rule.setFormula(input.formula().strip());
-                rule.setAplicaEm(aplicaEm(input.aplicaEm()));
+                rule.setAppliesTo(appliesTo(input.aplicaEm()));
             }
         }
     }
 
     /** Blank or TODOS = any standard treatment; devolução, remessa and ST already withheld can't be replaced. */
-    private String aplicaEm(String value) {
+    private String appliesTo(String value) {
         if (value == null || value.isBlank() || "TODOS".equalsIgnoreCase(value.strip())) {
             return null;
         }
@@ -324,9 +324,9 @@ public class FronteiraRuleService {
 
     static FronteiraRuleDTOs.Rule toDto(FronteiraRule rule) {
         return new FronteiraRuleDTOs.Rule(rule.getId(), rule.getCompany() == null ? null : rule.getCompany().getId(), rule.getKind(),
-                rule.getDescricao(), rule.getNcm(), rule.getCest(), rule.getCodigoProduto(), rule.getCnpjFornecedor(), rule.getAliquota(),
-                rule.getMva(), rule.getPercentual(), rule.getAgregacao(), rule.getRegiaoOrigem(), rule.getFornecedorSimples(),
-                rule.getFormula(), rule.getAplicaEm(), rule.getFundamento(), rule.getLink(), rule.getValidFrom(),
+                rule.getDescription(), rule.getNcm(), rule.getCest(), rule.getProductCode(), rule.getSupplierCnpj(), rule.getRate(),
+                rule.getMva(), rule.getPercentage(), rule.getAggregationRate(), rule.getOriginRegion(), rule.getSimplesSupplier(),
+                rule.getFormula(), rule.getAppliesTo(), rule.getLegalBasis(), rule.getLink(), rule.getValidFrom(),
                 rule.getValidUntil(), rule.isEnabled(), rule.isReviewed(), rule.getReviewedBy(), rule.getReviewedAt(),
                 rule.getCreatedBy(), rule.getCreatedDate());
     }

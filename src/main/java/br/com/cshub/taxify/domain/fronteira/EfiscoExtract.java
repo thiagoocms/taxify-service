@@ -34,22 +34,22 @@ public class EfiscoExtract extends AbstractAuditingEntity {
 
     /** "2026-11". */
     @Column(name = "periodo", length = 7, nullable = false)
-    private String periodo;
+    private String period;
 
     @Column(name = "numero_extrato", length = 30)
-    private String numeroExtrato;
+    private String extractNumber;
 
     @Column(name = "inscricao_estadual", length = 30)
-    private String inscricaoEstadual;
+    private String stateRegistration;
 
     @Column(name = "razao_social")
-    private String razaoSocial;
+    private String legalName;
 
     @Column(name = "are", length = 120)
     private String are;
 
     @Column(name = "codigo_receita", length = 20)
-    private String codigoReceita;
+    private String revenueCode;
 
     @Column(name = "credenciamento_antecipacao", length = 20)
     private String credenciamentoAntecipacao;
@@ -58,10 +58,10 @@ public class EfiscoExtract extends AbstractAuditingEntity {
     private String credenciamentoInterno;
 
     @Column(name = "data_vencimento")
-    private LocalDate dataVencimento;
+    private LocalDate dueDate;
 
     @Column(name = "emitido_em")
-    private LocalDateTime emitidoEm;
+    private LocalDateTime issuedAt;
 
     @Column(name = "icms_a_recolher", precision = 19, scale = 2)
     private BigDecimal icmsARecolher;
@@ -114,26 +114,26 @@ public class EfiscoExtract extends AbstractAuditingEntity {
     public void setId(UUID id) { this.id = id; }
     public Company getCompany() { return company; }
     public void setCompany(Company company) { this.company = company; }
-    public String getPeriodo() { return periodo; }
-    public void setPeriodo(String periodo) { this.periodo = periodo; }
-    public String getNumeroExtrato() { return numeroExtrato; }
-    public void setNumeroExtrato(String numeroExtrato) { this.numeroExtrato = numeroExtrato; }
-    public String getInscricaoEstadual() { return inscricaoEstadual; }
-    public void setInscricaoEstadual(String inscricaoEstadual) { this.inscricaoEstadual = inscricaoEstadual; }
-    public String getRazaoSocial() { return razaoSocial; }
-    public void setRazaoSocial(String razaoSocial) { this.razaoSocial = razaoSocial; }
+    public String getPeriod() { return period; }
+    public void setPeriod(String period) { this.period = period; }
+    public String getExtractNumber() { return extractNumber; }
+    public void setExtractNumber(String extractNumber) { this.extractNumber = extractNumber; }
+    public String getStateRegistration() { return stateRegistration; }
+    public void setStateRegistration(String stateRegistration) { this.stateRegistration = stateRegistration; }
+    public String getLegalName() { return legalName; }
+    public void setLegalName(String legalName) { this.legalName = legalName; }
     public String getAre() { return are; }
     public void setAre(String are) { this.are = are; }
-    public String getCodigoReceita() { return codigoReceita; }
-    public void setCodigoReceita(String codigoReceita) { this.codigoReceita = codigoReceita; }
+    public String getRevenueCode() { return revenueCode; }
+    public void setRevenueCode(String revenueCode) { this.revenueCode = revenueCode; }
     public String getCredenciamentoAntecipacao() { return credenciamentoAntecipacao; }
     public void setCredenciamentoAntecipacao(String credenciamentoAntecipacao) { this.credenciamentoAntecipacao = credenciamentoAntecipacao; }
     public String getCredenciamentoInterno() { return credenciamentoInterno; }
     public void setCredenciamentoInterno(String credenciamentoInterno) { this.credenciamentoInterno = credenciamentoInterno; }
-    public LocalDate getDataVencimento() { return dataVencimento; }
-    public void setDataVencimento(LocalDate dataVencimento) { this.dataVencimento = dataVencimento; }
-    public LocalDateTime getEmitidoEm() { return emitidoEm; }
-    public void setEmitidoEm(LocalDateTime emitidoEm) { this.emitidoEm = emitidoEm; }
+    public LocalDate getDueDate() { return dueDate; }
+    public void setDueDate(LocalDate dueDate) { this.dueDate = dueDate; }
+    public LocalDateTime getIssuedAt() { return issuedAt; }
+    public void setIssuedAt(LocalDateTime issuedAt) { this.issuedAt = issuedAt; }
     public BigDecimal getIcmsARecolher() { return icmsARecolher; }
     public void setIcmsARecolher(BigDecimal icmsARecolher) { this.icmsARecolher = icmsARecolher; }
     public BigDecimal getIcmsPago() { return icmsPago; }

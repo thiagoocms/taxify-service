@@ -27,49 +27,49 @@ public class EfiscoExtractNote extends AbstractAuditingEntity {
     private EfiscoExtract extract;
 
     @Column(name = "linha", nullable = false)
-    private int linha;
+    private int lineNumber;
 
     @Column(name = "registro", length = 40)
-    private String registro;
+    private String recordNumber;
 
     @Column(name = "data_passagem", length = 20)
-    private String dataPassagem;
+    private String crossingDate;
 
     /** Without leading zeros, as nNF is stored. */
     @Column(name = "numero_nota", length = 20, nullable = false)
-    private String numeroNota;
+    private String invoiceNumber;
 
     @Column(name = "uf", length = 2)
     private String uf;
 
     @Column(name = "valor_nota", precision = 19, scale = 2, nullable = false)
-    private BigDecimal valorNota;
+    private BigDecimal invoiceAmount;
 
     @Column(name = "icms_devido", precision = 19, scale = 2, nullable = false)
-    private BigDecimal icmsDevido;
+    private BigDecimal icmsDue;
 
     /** Digits only (CNPJ, or CPF of a rural producer). */
     @Column(name = "cnpj_emitente", length = 14, nullable = false)
-    private String cnpjEmitente;
+    private String issuerCnpj;
 
     public UUID getId() { return id; }
     public void setId(UUID id) { this.id = id; }
     public EfiscoExtract getExtract() { return extract; }
     public void setExtract(EfiscoExtract extract) { this.extract = extract; }
-    public int getLinha() { return linha; }
-    public void setLinha(int linha) { this.linha = linha; }
-    public String getRegistro() { return registro; }
-    public void setRegistro(String registro) { this.registro = registro; }
-    public String getDataPassagem() { return dataPassagem; }
-    public void setDataPassagem(String dataPassagem) { this.dataPassagem = dataPassagem; }
-    public String getNumeroNota() { return numeroNota; }
-    public void setNumeroNota(String numeroNota) { this.numeroNota = numeroNota; }
+    public int getLineNumber() { return lineNumber; }
+    public void setLineNumber(int lineNumber) { this.lineNumber = lineNumber; }
+    public String getRecordNumber() { return recordNumber; }
+    public void setRecordNumber(String recordNumber) { this.recordNumber = recordNumber; }
+    public String getCrossingDate() { return crossingDate; }
+    public void setCrossingDate(String crossingDate) { this.crossingDate = crossingDate; }
+    public String getInvoiceNumber() { return invoiceNumber; }
+    public void setInvoiceNumber(String invoiceNumber) { this.invoiceNumber = invoiceNumber; }
     public String getUf() { return uf; }
     public void setUf(String uf) { this.uf = uf; }
-    public BigDecimal getValorNota() { return valorNota; }
-    public void setValorNota(BigDecimal valorNota) { this.valorNota = valorNota; }
-    public BigDecimal getIcmsDevido() { return icmsDevido; }
-    public void setIcmsDevido(BigDecimal icmsDevido) { this.icmsDevido = icmsDevido; }
-    public String getCnpjEmitente() { return cnpjEmitente; }
-    public void setCnpjEmitente(String cnpjEmitente) { this.cnpjEmitente = cnpjEmitente; }
+    public BigDecimal getInvoiceAmount() { return invoiceAmount; }
+    public void setInvoiceAmount(BigDecimal invoiceAmount) { this.invoiceAmount = invoiceAmount; }
+    public BigDecimal getIcmsDue() { return icmsDue; }
+    public void setIcmsDue(BigDecimal icmsDue) { this.icmsDue = icmsDue; }
+    public String getIssuerCnpj() { return issuerCnpj; }
+    public void setIssuerCnpj(String issuerCnpj) { this.issuerCnpj = issuerCnpj; }
 }

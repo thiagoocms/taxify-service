@@ -9,7 +9,7 @@ import br.com.cshub.taxify.domain.xml.FiscalXmlDocument;
 import br.com.cshub.taxify.dto.fiscalxml.FiscalXmlSummaryDTO.DivergenceSummary;
 import br.com.cshub.taxify.dto.fronteira.FronteiraDTOs;
 import br.com.cshub.taxify.dto.fronteira.FronteiraDTOs.Flag;
-import br.com.cshub.taxify.dto.fronteira.FronteiraDTOs.Resultado;
+import br.com.cshub.taxify.dto.fronteira.FronteiraDTOs.Result;
 import br.com.cshub.taxify.dto.fronteira.FronteiraRuleDTOs;
 import br.com.cshub.taxify.domain.xml.SefazNoteSummary;
 import br.com.cshub.taxify.domain.xml.FiscalXmlDocumentItem;
@@ -136,26 +136,26 @@ public class FronteiraService {
         } catch (EfiscoExtractParser.InvalidExtractException e) {
             throw new BadRequestException("error.fronteira.extract.invalid", messageService.getMessage("error.fronteira.extract.invalid", e.getMessage()));
         }
-        checkStateRegistration(company, read.inscricaoEstadual());
+        checkStateRegistration(company, read.stateRegistration());
 
         EfiscoExtract extract = extractRepository
-                .findByCompany_IdAndPeriodoAndDeletedIsFalse(company.getId(), read.periodo().toString())
+                .findByCompany_IdAndPeriodAndDeletedIsFalse(company.getId(), read.period().toString())
                 .orElseGet(() -> {
                     EfiscoExtract created = new EfiscoExtract();
                     created.setCompany(company);
-                    created.setPeriodo(read.periodo().toString());
+                    created.setPeriod(read.period().toString());
                     created.setDeleted(false);
                     return created;
                 });
-        extract.setNumeroExtrato(read.numeroExtrato());
-        extract.setInscricaoEstadual(read.inscricaoEstadual());
-        extract.setRazaoSocial(read.razaoSocial());
+        extract.setExtractNumber(read.extractNumber());
+        extract.setStateRegistration(read.stateRegistration());
+        extract.setLegalName(read.legalName());
         extract.setAre(read.are());
-        extract.setCodigoReceita(read.codigoReceita());
+        extract.setRevenueCode(read.revenueCode());
         extract.setCredenciamentoAntecipacao(read.credenciamentoAntecipacao());
         extract.setCredenciamentoInterno(read.credenciamentoInterno());
-        extract.setDataVencimento(read.dataVencimento());
-        extract.setEmitidoEm(read.emitidoEm());
+        extract.setDueDate(read.dueDate());
+        extract.setIssuedAt(read.issuedAt());
         extract.setIcmsARecolher(read.totals().get(EfiscoExtractParser.A_RECOLHER));
         extract.setIcmsPago(read.totals().get(EfiscoExtractParser.PAGO));
         extract.setIcmsEmProcesso(read.totals().get(EfiscoExtractParser.EM_PROCESSO));
@@ -170,21 +170,21 @@ public class FronteiraService {
         List<EfiscoExtractNote> notes = new ArrayList<>();
         for (EfiscoExtractParser.Note note : read.notes()) {
             EfiscoExtractNote row = new EfiscoExtractNote();
-            row.setLinha(note.line());
-            row.setRegistro(note.registro());
-            row.setDataPassagem(note.dataPassagem());
-            row.setNumeroNota(note.numero());
+            row.setLineNumber(note.line());
+            row.setRecordNumber(note.recordNumber());
+            row.setCrossingDate(note.crossingDate());
+            row.setInvoiceNumber(note.invoiceNumber());
             row.setUf(note.uf());
-            row.setValorNota(note.valorNota());
-            row.setIcmsDevido(note.icmsDevido());
-            row.setCnpjEmitente(note.cnpjEmitente());
+            row.setInvoiceAmount(note.invoiceAmount());
+            row.setIcmsDue(note.icmsDue());
+            row.setIssuerCnpj(note.issuerCnpj());
             row.setDeleted(false);
             notes.add(row);
         }
         extract.replaceNotes(notes);
         keepPdf(extract, company, pdf);
         extractRepository.save(extract);
-        return report(company, read.periodo());
+        return report(company, read.period());
     }
 
     /** An extract of another IE is refused; a company without any IE registered takes it. */
@@ -259,25 +259,25 @@ public class FronteiraService {
     @Transactional
     public FronteiraDTOs.Report report(String companyId, String periodo) {
         Company company = company(companyId);
-        List<EfiscoExtract> extracts = extractRepository.findByCompany_IdAndDeletedIsFalseOrderByPeriodoDesc(company.getId());
+        List<EfiscoExtract> extracts = extractRepository.findByCompany_IdAndDeletedIsFalseOrderByPeriodDesc(company.getId());
         YearMonth month = periodo == null || periodo.isBlank()
-                ? (extracts.isEmpty() ? YearMonth.now() : YearMonth.parse(extracts.get(0).getPeriodo()))
+                ? (extracts.isEmpty() ? YearMonth.now() : YearMonth.parse(extracts.get(0).getPeriod()))
                 : month(periodo);
         return report(company, month);
     }
 
     private FronteiraDTOs.Report report(Company company, YearMonth month) {
-        List<FronteiraDTOs.Period> periods = extractRepository.findByCompany_IdAndDeletedIsFalseOrderByPeriodoDesc(company.getId())
+        List<FronteiraDTOs.Period> periods = extractRepository.findByCompany_IdAndDeletedIsFalseOrderByPeriodDesc(company.getId())
                 .stream()
-                .map(extract -> new FronteiraDTOs.Period(extract.getPeriodo(), extract.getNumeroExtrato(),
-                        extract.getNotes().stream().map(EfiscoExtractNote::getIcmsDevido).reduce(BigDecimal.ZERO, BigDecimal::add),
+                .map(extract -> new FronteiraDTOs.Period(extract.getPeriod(), extract.getExtractNumber(),
+                        extract.getNotes().stream().map(EfiscoExtractNote::getIcmsDue).reduce(BigDecimal.ZERO, BigDecimal::add),
                         extract.getNotes().size(), extract.getImportedAt()))
                 .toList();
         EfiscoExtract extract = extractRepository
-                .findByCompany_IdAndPeriodoAndDeletedIsFalse(company.getId(), month.toString()).orElse(null);
+                .findByCompany_IdAndPeriodAndDeletedIsFalse(company.getId(), month.toString()).orElse(null);
         List<EfiscoExtractNote> notes = extract == null ? List.of() : extract.getNotes();
         if (extract != null) {
-            ruleService.ensureCargaLiquida(company, extract.getCredenciamentoInterno(), predominantRate(notes), extract.getNumeroExtrato());
+            ruleService.ensureCargaLiquida(company, extract.getCredenciamentoInterno(), predominantRate(notes), extract.getExtractNumber());
         }
 
         Map<String, FiscalXmlDocument> documents = documentsOf(company.getId(), notes);
@@ -287,7 +287,7 @@ public class FronteiraService {
 
         // the month's credenciamento, or - for the prévia - the latest one the company had
         String credenciamento = extract != null ? extract.getCredenciamentoInterno()
-                : extractRepository.findByCompany_IdAndDeletedIsFalseOrderByPeriodoDesc(company.getId()).stream()
+                : extractRepository.findByCompany_IdAndDeletedIsFalseOrderByPeriodDesc(company.getId()).stream()
                         .map(EfiscoExtract::getCredenciamentoInterno).filter(java.util.Objects::nonNull).findFirst().orElse(null);
         FronteiraCalculator.Context context = new FronteiraCalculator.Context(ruleService.rulesFor(company.getId()),
                 company.getTaxRegimeType() == TaxRegime.SIMPLES_NACIONAL, credenciamento,
@@ -322,19 +322,19 @@ public class FronteiraService {
         List<FronteiraDTOs.Line> lines = new ArrayList<>();
         Tally tally = new Tally();
         for (EfiscoExtractNote note : notes) {
-            tally.valorNotas = tally.valorNotas.add(note.getValorNota());
-            tally.icmsDevido = tally.icmsDevido.add(note.getIcmsDevido());
+            tally.invoicesAmount = tally.invoicesAmount.add(note.getInvoiceAmount());
+            tally.icmsDevido = tally.icmsDevido.add(note.getIcmsDue());
             BigDecimal rate = rate(note);
             List<Flag> flags = new ArrayList<>();
             BigDecimal differenceToRate = null;
-            if (predominant != null && rate != null && note.getIcmsDevido().signum() > 0 && offRate(note, rate, predominant)) {
-                differenceToRate = note.getIcmsDevido().subtract(expected(note, predominant));
+            if (predominant != null && rate != null && note.getIcmsDue().signum() > 0 && offRate(note, rate, predominant)) {
+                differenceToRate = note.getIcmsDue().subtract(expected(note, predominant));
                 flags.add(Flag.FORA_DA_TAXA);
-                tally.foraDaTaxa++;
-                tally.icmsForaDaTaxa = tally.icmsForaDaTaxa.add(note.getIcmsDevido());
-                tally.diferencaForaDaTaxa = tally.diferencaForaDaTaxa.add(differenceToRate);
+                tally.outsideRate++;
+                tally.icmsOutsideRate = tally.icmsOutsideRate.add(note.getIcmsDue());
+                tally.differenceOutsideRate = tally.differenceOutsideRate.add(differenceToRate);
             }
-            String key = key(note.getCnpjEmitente(), note.getNumeroNota());
+            String key = key(note.getIssuerCnpj(), note.getInvoiceNumber());
             FiscalXmlDocument document = documents.get(key);
             FronteiraDTOs.NoteRef ref = null;
             FronteiraRuleDTOs.NoteCalc calc = null;
@@ -344,17 +344,17 @@ public class FronteiraService {
             } else {
                 if (document.isCanceled()) {
                     flags.add(Flag.NOTA_CANCELADA);
-                    tally.canceladas++;
+                    tally.canceled++;
                 }
                 if (document.getValorTotalNota() != null
-                        && document.getValorTotalNota().subtract(note.getValorNota()).abs().compareTo(new BigDecimal("0.01")) > 0) {
+                        && document.getValorTotalNota().subtract(note.getInvoiceAmount()).abs().compareTo(new BigDecimal("0.01")) > 0) {
                     flags.add(Flag.VALOR_DIFERENTE);
-                    tally.valorDiferente++;
+                    tally.differentAmount++;
                 }
                 DivergenceSummary divergence = divergences.get(document.getId());
                 if (divergence != null) {
                     flags.add(Flag.DIVERGENCIA_FISCAL);
-                    tally.comDivergencia++;
+                    tally.withDivergence++;
                 }
                 ref = new FronteiraDTOs.NoteRef(document.getId(), document.getEmitenteNome(), document.getIssueDate(),
                         document.getValorTotalNota(), document.getNaturezaOperacao(),
@@ -362,68 +362,68 @@ public class FronteiraService {
                         document.getAccessKey());
                 calc = calcs.get(document.getId());
             }
-            Resultado resultado = resultado(note.getIcmsDevido(), document, calc);
-            BigDecimal difference = calc == null || resultado == Resultado.SEM_REGRA || resultado == Resultado.PENDENTE
-                    ? null : note.getIcmsDevido().subtract(calc.valor());
+            Result resultado = resultado(note.getIcmsDue(), document, calc);
+            BigDecimal difference = calc == null || resultado == Result.SEM_REGRA || resultado == Result.PENDENTE
+                    ? null : note.getIcmsDue().subtract(calc.valor());
             boolean reviewed = calc == null || calc.conferido();
             tally.count(resultado, difference, calc, reviewed);
-            lines.add(new FronteiraDTOs.Line(note.getLinha(), note.getRegistro(), note.getDataPassagem(), note.getNumeroNota(),
-                    note.getUf(), note.getCnpjEmitente(), note.getValorNota(), note.getIcmsDevido(), rate, differenceToRate,
+            lines.add(new FronteiraDTOs.Line(note.getLineNumber(), note.getRecordNumber(), note.getCrossingDate(), note.getInvoiceNumber(),
+                    note.getUf(), note.getIssuerCnpj(), note.getInvoiceAmount(), note.getIcmsDue(), rate, differenceToRate,
                     List.copyOf(flags), ref, resultado, reviewed, difference, calc));
         }
 
-        FronteiraDTOs.Summary summary = new FronteiraDTOs.Summary(notes.size(), tally.valorNotas, tally.icmsDevido, predominant,
-                tally.foraDaTaxa, tally.icmsForaDaTaxa, tally.diferencaForaDaTaxa, tally.semXml, tally.valorDiferente,
-                tally.canceladas, tally.comDivergencia, uncharged.size(), tally.icmsCalculado, tally.cobradoAMais,
-                tally.cobradoAMenos, tally.confere, tally.aMais, tally.aMenos, tally.naoCalculou, tally.semRegra,
-                tally.pendentes, tally.aConferir, tally.icmsDevido.subtract(tally.cobradoAMais));
+        FronteiraDTOs.Summary summary = new FronteiraDTOs.Summary(notes.size(), tally.invoicesAmount, tally.icmsDevido, predominant,
+                tally.outsideRate, tally.icmsOutsideRate, tally.differenceOutsideRate, tally.semXml, tally.differentAmount,
+                tally.canceled, tally.withDivergence, uncharged.size(), tally.icmsCalculado, tally.cobradoAMais,
+                tally.cobradoAMenos, tally.confere, tally.aMais, tally.aMenos, tally.notCalculated, tally.withoutRule,
+                tally.pendentes, tally.toReview, tally.icmsDevido.subtract(tally.cobradoAMais));
         return new FronteiraDTOs.Report(company.getId(), company.getName(), month.toString(), toDto(extract), summary,
                 lines, uncharged, previa, periods);
     }
 
     /** The charge against the calculation's range: rounding differences up to {@link #CALC_TOLERANCE} confer. */
-    static Resultado resultado(BigDecimal charged, FiscalXmlDocument document, FronteiraRuleDTOs.NoteCalc calc) {
+    static Result resultado(BigDecimal charged, FiscalXmlDocument document, FronteiraRuleDTOs.NoteCalc calc) {
         if (document == null) {
-            return Resultado.PENDENTE;
+            return Result.PENDENTE;
         }
         if (document.isCanceled()) {
-            return charged.signum() > 0 ? Resultado.COBROU_A_MAIS : Resultado.CONFERE;
+            return charged.signum() > 0 ? Result.COBROU_A_MAIS : Result.CONFERE;
         }
         if (calc == null || calc.itens().isEmpty()) {
-            return Resultado.PENDENTE;
+            return Result.PENDENTE;
         }
         if (calc.semRegra()) {
-            return Resultado.SEM_REGRA;
+            return Result.SEM_REGRA;
         }
         if (charged.signum() == 0 && calc.valor().compareTo(CALC_TOLERANCE) > 0) {
-            return Resultado.NAO_CALCULOU;
+            return Result.NAO_CALCULOU;
         }
         if (charged.compareTo(calc.maximo().add(CALC_TOLERANCE)) > 0) {
-            return Resultado.COBROU_A_MAIS;
+            return Result.COBROU_A_MAIS;
         }
         if (charged.compareTo(calc.minimo().subtract(CALC_TOLERANCE)) < 0) {
-            return Resultado.COBROU_A_MENOS;
+            return Result.COBROU_A_MENOS;
         }
-        return Resultado.CONFERE;
+        return Result.CONFERE;
     }
 
     private static final class Tally {
-        BigDecimal valorNotas = BigDecimal.ZERO;
+        BigDecimal invoicesAmount = BigDecimal.ZERO;
         BigDecimal icmsDevido = BigDecimal.ZERO;
-        BigDecimal icmsForaDaTaxa = BigDecimal.ZERO;
-        BigDecimal diferencaForaDaTaxa = BigDecimal.ZERO;
+        BigDecimal icmsOutsideRate = BigDecimal.ZERO;
+        BigDecimal differenceOutsideRate = BigDecimal.ZERO;
         BigDecimal icmsCalculado = BigDecimal.ZERO;
         BigDecimal cobradoAMais = BigDecimal.ZERO;
         BigDecimal cobradoAMenos = BigDecimal.ZERO;
-        int foraDaTaxa, semXml, valorDiferente, canceladas, comDivergencia;
-        int confere, aMais, aMenos, naoCalculou, semRegra, pendentes, aConferir;
+        int outsideRate, semXml, differentAmount, canceled, withDivergence;
+        int confere, aMais, aMenos, notCalculated, withoutRule, pendentes, toReview;
 
-        void count(Resultado resultado, BigDecimal difference, FronteiraRuleDTOs.NoteCalc calc, boolean reviewed) {
+        void count(Result resultado, BigDecimal difference, FronteiraRuleDTOs.NoteCalc calc, boolean reviewed) {
             if (calc != null && !calc.semRegra()) {
                 icmsCalculado = icmsCalculado.add(calc.valor());
             }
-            if (!reviewed && resultado != Resultado.SEM_REGRA && resultado != Resultado.PENDENTE) {
-                aConferir++;
+            if (!reviewed && resultado != Result.SEM_REGRA && resultado != Result.PENDENTE) {
+                toReview++;
             }
             switch (resultado) {
                 case CONFERE -> confere++;
@@ -438,10 +438,10 @@ public class FronteiraService {
                     cobradoAMenos = cobradoAMenos.add(difference.negate());
                 }
                 case NAO_CALCULOU -> {
-                    naoCalculou++;
+                    notCalculated++;
                     cobradoAMenos = cobradoAMenos.add(difference.negate());
                 }
-                case SEM_REGRA -> semRegra++;
+                case SEM_REGRA -> withoutRule++;
                 case PENDENTE -> pendentes++;
             }
         }
@@ -450,16 +450,16 @@ public class FronteiraService {
     /** issuer CNPJ + number → the company's note (one query for the whole extract). */
     private Map<String, FiscalXmlDocument> documentsOf(UUID companyId, Collection<EfiscoExtractNote> notes) {
         Set<String> cnpjs = new HashSet<>();
-        Set<String> numeros = new HashSet<>();
+        Set<String> numbers = new HashSet<>();
         for (EfiscoExtractNote note : notes) {
-            cnpjs.add(note.getCnpjEmitente());
-            numeros.add(note.getNumeroNota());
+            cnpjs.add(note.getIssuerCnpj());
+            numbers.add(note.getInvoiceNumber());
         }
         Map<String, FiscalXmlDocument> byKey = new HashMap<>();
         if (cnpjs.isEmpty()) {
             return byKey;
         }
-        for (FiscalXmlDocument document : documentRepository.findByCompany_IdAndIssuerCnpjInAndNumeroInAndDeletedIsFalse(companyId, cnpjs, numeros)) {
+        for (FiscalXmlDocument document : documentRepository.findByCompany_IdAndIssuerCnpjInAndNumeroInAndDeletedIsFalse(companyId, cnpjs, numbers)) {
             // the company's own copy of the entry wins over anything else with the same key
             byKey.merge(key(document.getIssuerCnpj(), document.getNumero()), document,
                     (current, other) -> current.getDirection() == FiscalDirection.INBOUND ? current : other);
@@ -528,12 +528,12 @@ public class FronteiraService {
 
     // ---------------------------------------------------------------- rates
 
-    /** ICMS devido / valor da NF in %, 4 places; null on a zero-value note. */
+    /** ICMS devido / amount da NF in %, 4 places; null on a zero-value note. */
     static BigDecimal rate(EfiscoExtractNote note) {
-        if (note.getValorNota() == null || note.getValorNota().signum() == 0) {
+        if (note.getInvoiceAmount() == null || note.getInvoiceAmount().signum() == 0) {
             return null;
         }
-        return note.getIcmsDevido().multiply(HUNDRED).divide(note.getValorNota(), 4, RoundingMode.HALF_UP);
+        return note.getIcmsDue().multiply(HUNDRED).divide(note.getInvoiceAmount(), 4, RoundingMode.HALF_UP);
     }
 
     /**
@@ -560,11 +560,11 @@ public class FronteiraService {
 
     private static boolean offRate(EfiscoExtractNote note, BigDecimal rate, BigDecimal predominant) {
         return rate.subtract(predominant).abs().compareTo(RATE_TOLERANCE) > 0
-                && note.getIcmsDevido().subtract(expected(note, predominant)).abs().compareTo(MONEY_TOLERANCE) > 0;
+                && note.getIcmsDue().subtract(expected(note, predominant)).abs().compareTo(MONEY_TOLERANCE) > 0;
     }
 
     private static BigDecimal expected(EfiscoExtractNote note, BigDecimal rate) {
-        return note.getValorNota().multiply(rate).divide(HUNDRED, 2, RoundingMode.HALF_UP);
+        return note.getInvoiceAmount().multiply(rate).divide(HUNDRED, 2, RoundingMode.HALF_UP);
     }
 
     // ---------------------------------------------------------------- helpers
@@ -589,15 +589,15 @@ public class FronteiraService {
         } catch (EfiscoExtractParser.InvalidExtractException e) {
             return false; // the import says why
         }
-        BigDecimal readDevido = read.notes().stream().map(EfiscoExtractParser.Note::icmsDevido).filter(java.util.Objects::nonNull)
+        BigDecimal readDue = read.notes().stream().map(EfiscoExtractParser.Note::icmsDue).filter(java.util.Objects::nonNull)
                 .reduce(BigDecimal.ZERO, BigDecimal::add);
-        return extractRepository.findByCompany_IdAndPeriodoAndDeletedIsFalse(company.getId(), read.periodo().toString())
-                .filter(existing -> java.util.Objects.equals(existing.getNumeroExtrato(), read.numeroExtrato())
+        return extractRepository.findByCompany_IdAndPeriodAndDeletedIsFalse(company.getId(), read.period().toString())
+                .filter(existing -> java.util.Objects.equals(existing.getExtractNumber(), read.extractNumber())
                         && existing.getNotes().size() == read.notes().size()
                         && sameValue(existing.getIcmsARecolher(), read.total(EfiscoExtractParser.A_RECOLHER))
                         && sameValue(existing.getIcmsPago(), read.total(EfiscoExtractParser.PAGO))
-                        && sameValue(existing.getNotes().stream().map(EfiscoExtractNote::getIcmsDevido).filter(java.util.Objects::nonNull)
-                        .reduce(BigDecimal.ZERO, BigDecimal::add), readDevido))
+                        && sameValue(existing.getNotes().stream().map(EfiscoExtractNote::getIcmsDue).filter(java.util.Objects::nonNull)
+                        .reduce(BigDecimal.ZERO, BigDecimal::add), readDue))
                 .isPresent();
     }
 
@@ -607,8 +607,8 @@ public class FronteiraService {
      */
     @Transactional(readOnly = true)
     public boolean extractClosed(Company company, YearMonth period) {
-        return extractRepository.findByCompany_IdAndPeriodoAndDeletedIsFalse(company.getId(), period.toString())
-                .filter(extract -> (extract.getDataVencimento() != null && extract.getDataVencimento().isBefore(java.time.LocalDate.now()))
+        return extractRepository.findByCompany_IdAndPeriodAndDeletedIsFalse(company.getId(), period.toString())
+                .filter(extract -> (extract.getDueDate() != null && extract.getDueDate().isBefore(java.time.LocalDate.now()))
                         || (extract.getIcmsPago() != null && extract.getIcmsPago().signum() > 0
                         && (extract.getIcmsARecolher() == null || extract.getIcmsARecolher().signum() == 0)))
                 .isPresent();
@@ -622,7 +622,7 @@ public class FronteiraService {
     @Transactional(readOnly = true)
     public byte[] extractPdf(String companyId, String periodo) {
         Company company = company(companyId);
-        EfiscoExtract extract = extractRepository.findByCompany_IdAndPeriodoAndDeletedIsFalse(company.getId(), month(periodo).toString())
+        EfiscoExtract extract = extractRepository.findByCompany_IdAndPeriodAndDeletedIsFalse(company.getId(), month(periodo).toString())
                 .filter(found -> found.getPdfPath() != null)
                 .orElseThrow(() -> new br.com.cshub.taxify.exception.ResourceNotFoundException(messageService.getMessage("error.entity.not.found")));
         try {
@@ -644,7 +644,7 @@ public class FronteiraService {
         } catch (EfiscoExtractParser.InvalidExtractException e) {
             return;
         }
-        extractRepository.findByCompany_IdAndPeriodoAndDeletedIsFalse(company.getId(), read.periodo().toString())
+        extractRepository.findByCompany_IdAndPeriodAndDeletedIsFalse(company.getId(), read.period().toString())
                 .filter(extract -> extract.getPdfPath() == null)
                 .ifPresent(extract -> {
                     keepPdf(extract, company, pdf);
@@ -656,9 +656,9 @@ public class FronteiraService {
     private void keepPdf(EfiscoExtract extract, Company company, byte[] pdf) {
         String previous = extract.getPdfPath();
         try {
-            extract.setPdfPath(storage.storeExtractPdf(company.getId(), extract.getPeriodo(), pdf));
+            extract.setPdfPath(storage.storeExtractPdf(company.getId(), extract.getPeriod(), pdf));
         } catch (java.io.IOException | RuntimeException e) {
-            log.warn("Could not keep the extract PDF of company {} ({})", company.getId(), extract.getPeriodo(), e);
+            log.warn("Could not keep the extract PDF of company {} ({})", company.getId(), extract.getPeriod(), e);
             return;
         }
         if (previous != null) {
@@ -701,9 +701,9 @@ public class FronteiraService {
     }
 
     private static FronteiraDTOs.Extract toDto(EfiscoExtract extract) {
-        return new FronteiraDTOs.Extract(extract.getPeriodo(), extract.getNumeroExtrato(), extract.getInscricaoEstadual(),
-                extract.getRazaoSocial(), extract.getAre(), extract.getCodigoReceita(), extract.getCredenciamentoAntecipacao(),
-                extract.getCredenciamentoInterno(), extract.getDataVencimento(), extract.getEmitidoEm(),
+        return new FronteiraDTOs.Extract(extract.getPeriod(), extract.getExtractNumber(), extract.getStateRegistration(),
+                extract.getLegalName(), extract.getAre(), extract.getRevenueCode(), extract.getCredenciamentoAntecipacao(),
+                extract.getCredenciamentoInterno(), extract.getDueDate(), extract.getIssuedAt(),
                 extract.getIcmsARecolher(), extract.getIcmsPago(), extract.getIcmsEmProcesso(), extract.getIcmsAutuado(),
                 extract.getIcmsMandadoSeguranca(), extract.getIcmsAnistiado(), extract.getIcmsRegDebito(),
                 extract.getFileName(), extract.getImportedAt(), extract.getImportedBy(), extract.getPdfPath() != null);

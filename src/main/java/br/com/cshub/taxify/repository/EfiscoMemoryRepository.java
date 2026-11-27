@@ -10,5 +10,5 @@ import java.util.UUID;
 @Repository
 public interface EfiscoMemoryRepository extends AbstractJpaRepository<EfiscoMemory, UUID> {
 
-    Optional<EfiscoMemory> findByCompany_IdAndRegistro(UUID companyId, String registro);
+    Optional<EfiscoMemory> findByCompany_IdAndRecordNumber(UUID companyId, String registro);
 }
