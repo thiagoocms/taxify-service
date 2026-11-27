@@ -27,11 +27,42 @@ final class CopyMappings {
     static final String GOODS_DOCUMENT_TYPE =
             "CASE WHEN l.document_type = 'CTE' THEN 'CTE' WHEN TRIM(l.ide_modelo) = '65' THEN 'NFCE' ELSE 'NFE' END";
 
-    /** NFS-e participant: one document column, the type by its length (I-06). */
-    static String documentTypeByLength(String column) {
-        return "CASE WHEN NULLIF(" + column + ", '') IS NULL THEN NULL WHEN CHAR_LENGTH(" + column + ") = 14 THEN 'CNPJ'"
-                + " WHEN CHAR_LENGTH(" + column + ") = 11 THEN 'CPF' ELSE 'FOREIGN' END";
+    /** A blank text counts as absent ({@code LegacyFiscalDocumentTranslator}: {@code hasText}). */
+    static String hasText(String column) {
+        return "NULLIF(TRIM(" + column + "), '') IS NOT NULL";
     }
+
+    /** The column when it has text, else NULL - the value itself is copied as it is. */
+    static String textOrNull(String column) {
+        return "CASE WHEN " + hasText(column) + " THEN " + column + " END";
+    }
+
+    /**
+     * NFS-e participant: one document column, the type by its size - 14 digits = CNPJ, 11 digits = CPF, anything else
+     * no type ({@code TaxpayerDocumentType.bySize}).
+     */
+    static String documentTypeBySize(String column) {
+        return "CASE WHEN NOT (" + hasText(column) + ") THEN NULL WHEN " + column + " REGEXP '^[0-9]{14}$' THEN 'CNPJ'"
+                + " WHEN " + column + " REGEXP '^[0-9]{11}$' THEN 'CPF' END";
+    }
+
+    /** First of the candidates with text, and its type (FD-RN-09: CNPJ before CPF before foreign id). */
+    private static String[] firstDocument(String[][] candidates) {
+        StringBuilder value = new StringBuilder("CASE");
+        StringBuilder type = new StringBuilder("CASE");
+        for (String[] candidate : candidates) {
+            value.append(" WHEN ").append(hasText(candidate[0])).append(" THEN ").append(candidate[0]);
+            type.append(" WHEN ").append(hasText(candidate[0])).append(" THEN '").append(candidate[1]).append("'");
+        }
+        return new String[]{value.append(" END").toString(), type.append(" END").toString()};
+    }
+
+    /**
+     * A review still pending with nothing filled is no review at all (null = PENDING in the new model, like the old
+     * getter); anything else keeps its status, a null one read as PENDING.
+     */
+    static final String REVIEW_STATUS = "CASE WHEN COALESCE(l.review_status, 'PENDING') = 'PENDING' AND l.reviewed_at IS NULL"
+            + " AND l.reviewed_by IS NULL AND l.review_note IS NULL THEN NULL ELSE COALESCE(l.review_status, 'PENDING') END";
 
     /** Common block (C) of a {@code fiscal_xml_documents} row - NF-e, NFC-e and CT-e. */
     static Map<String, String> goodsCommon(boolean cte) {
@@ -40,25 +71,27 @@ final class CopyMappings {
         m.put("company_id", "l.company_id");
         m.put("document_type", GOODS_DOCUMENT_TYPE);
         m.put("access_key", "l.access_key");
-        m.put("model", cte ? "CASE WHEN l.ide_modelo IS NULL OR TRIM(l.ide_modelo) = '' THEN '57' ELSE l.ide_modelo END" : "l.ide_modelo");
+        m.put("model", cte ? "CASE WHEN " + hasText("l.ide_modelo") + " THEN TRIM(l.ide_modelo) ELSE '57' END" : "TRIM(l.ide_modelo)");
         m.put("series", "l.ide_serie");
         m.put("number", "l.ide_numero");
         m.put("issue_date", "l.issue_date");
         m.put("operation_nature", "l.ide_natureza_operacao");
         m.put("direction", "l.direction");
         m.put("company_role", "CASE WHEN l.own_issue = 1 THEN 'ISSUER' ELSE 'RECIPIENT' END");
-        m.put("status", "COALESCE(l.status, 'AUTHORIZED')");
-        m.put("canceled_at", "l.canceled_at");
+        // FD-RN-10: null = authorized; an authorized row keeps no canceled_at (I-02)
+        m.put("status", "CASE WHEN l.status = 'CANCELED' THEN 'CANCELED' ELSE 'AUTHORIZED' END");
+        m.put("canceled_at", "CASE WHEN l.status = 'CANCELED' THEN l.canceled_at END");
         // FD-RN-09: CNPJ before CPF before foreign id (the XML brings only one of them)
-        m.put("issuer_document", "COALESCE(NULLIF(l.issuer_cnpj, ''), NULLIF(l.emit_cpf, ''))");
-        m.put("issuer_document_type", "CASE WHEN NULLIF(l.issuer_cnpj, '') IS NOT NULL THEN 'CNPJ'"
-                + " WHEN NULLIF(l.emit_cpf, '') IS NOT NULL THEN 'CPF' END");
+        String[] issuer = firstDocument(new String[][]{{"l.issuer_cnpj", "CNPJ"}, {"l.emit_cpf", "CPF"}});
+        m.put("issuer_document", issuer[0]);
+        m.put("issuer_document_type", issuer[1]);
         m.put("issuer_name", "l.emit_nome");
         m.put("issuer_uf", "l.emit_end_uf");
         m.put("issuer_city_code", "l.emit_end_codigo_municipio");
-        m.put("recipient_document", "COALESCE(NULLIF(l.recipient_cnpj, ''), NULLIF(l.dest_cpf, ''), NULLIF(l.dest_id_estrangeiro, ''))");
-        m.put("recipient_document_type", "CASE WHEN NULLIF(l.recipient_cnpj, '') IS NOT NULL THEN 'CNPJ'"
-                + " WHEN NULLIF(l.dest_cpf, '') IS NOT NULL THEN 'CPF' WHEN NULLIF(l.dest_id_estrangeiro, '') IS NOT NULL THEN 'FOREIGN' END");
+        String[] recipient = firstDocument(new String[][]{{"l.recipient_cnpj", "CNPJ"}, {"l.dest_cpf", "CPF"},
+                {"l.dest_id_estrangeiro", "FOREIGN"}});
+        m.put("recipient_document", recipient[0]);
+        m.put("recipient_document_type", recipient[1]);
         m.put("recipient_name", "l.dest_nome");
         m.put("recipient_uf", "l.dest_end_uf");
         m.put("recipient_city_code", "l.dest_end_codigo_municipio");
@@ -77,7 +110,7 @@ final class CopyMappings {
         m.put("xml_file_path", "l.xml_file_path");
         // FD-RN-15: the CT-e is read again by the CT-e parser (capture phase 3)
         m.put("metadata_version", cte ? "0" : "COALESCE(l.metadata_version, 0)");
-        m.put("review_status", "l.review_status");
+        m.put("review_status", REVIEW_STATUS);
         m.put("reviewed_at", "l.reviewed_at");
         m.put("reviewed_by", "l.reviewed_by");
         m.put("review_note", "l.review_note");
@@ -144,9 +177,15 @@ final class CopyMappings {
         return m;
     }
 
-    /** CT-e uploaded before the remodel: only the common block (FD-RN-15); the T block waits for the CT-e parser. */
+    /**
+     * CT-e uploaded before the remodel: the common block plus, of the goods columns, only the ICMS base and value - the
+     * columns {@code CteIcms} shares with block G (FD-RN-15); the rest of block T waits for the CT-e parser.
+     */
     static Map<String, String> cte() {
-        return goodsCommon(true);
+        Map<String, String> m = goodsCommon(true);
+        m.put("icms_base", "l.total_base_calculo_icms");
+        m.put("icms_amount", "l.total_valor_icms");
+        return m;
     }
 
     /** {@code service_invoices} → {@code Nfse}: common block plus the S block (FD-RN-08, 10). */
@@ -161,12 +200,12 @@ final class CopyMappings {
         m.put("direction", "CASE l.direction WHEN 'PRESTADA' THEN 'OUTBOUND' WHEN 'TOMADA' THEN 'INBOUND' END");
         m.put("company_role", "CASE l.direction WHEN 'PRESTADA' THEN 'ISSUER' WHEN 'TOMADA' THEN 'TAKER' ELSE 'THIRD_PARTY' END");
         m.put("status", "CASE WHEN l.canceled = 1 THEN 'CANCELED' ELSE 'AUTHORIZED' END");
-        m.put("issuer_document", "NULLIF(l.prestador_documento, '')");
-        m.put("issuer_document_type", documentTypeByLength("l.prestador_documento"));
+        m.put("issuer_document", textOrNull("l.prestador_documento"));
+        m.put("issuer_document_type", documentTypeBySize("l.prestador_documento"));
         m.put("issuer_name", "l.prestador_nome");
         m.put("issuer_city_code", "l.prestador_municipio");
-        m.put("recipient_document", "NULLIF(l.tomador_documento, '')");
-        m.put("recipient_document_type", documentTypeByLength("l.tomador_documento"));
+        m.put("recipient_document", textOrNull("l.tomador_documento"));
+        m.put("recipient_document_type", documentTypeBySize("l.tomador_documento"));
         m.put("recipient_name", "l.tomador_nome");
         m.put("total_amount", "l.valor_servico");
         m.put("withheld_csll_amount", "l.valor_csll");

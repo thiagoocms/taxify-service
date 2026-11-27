@@ -54,6 +54,7 @@ public class V87__FiscalDocumentsCutover extends BaseJavaMigration {
     }
 
     private void run(CutoverDatabase db) {
+        FiscalDocumentTables.verify(db);
         Map<LegacyTable, LegacyTable.Location> locations = new EnumMap<>(LegacyTable.class);
         for (LegacyTable table : LegacyTable.values()) {
             locations.put(table, table.locate(db));
@@ -111,7 +112,7 @@ public class V87__FiscalDocumentsCutover extends BaseJavaMigration {
             unexpected(db, problems, documents, "document_type NOT IN ('NFE', 'CTE')", "document_type other than NFE/CTE");
             unexpected(db, problems, documents, "direction IS NOT NULL AND direction NOT IN ('INBOUND', 'OUTBOUND')", "unknown direction");
             unexpected(db, problems, documents, "status IS NOT NULL AND status NOT IN ('AUTHORIZED', 'CANCELED')", "unknown status");
-            unexpected(db, problems, documents, "CHAR_LENGTH(ide_modelo) > 2", "ide_modelo longer than 2");
+            unexpected(db, problems, documents, "CHAR_LENGTH(TRIM(ide_modelo)) > 2", "ide_modelo longer than 2");
         }
         if (hasInvoices) {
             unexpected(db, problems, invoices, "direction NOT IN ('PRESTADA', 'TOMADA', 'TERCEIRO')", "unknown NFS-e direction");
@@ -170,18 +171,18 @@ public class V87__FiscalDocumentsCutover extends BaseJavaMigration {
     private void copyDocuments(CutoverDatabase db, Map<LegacyTable, LegacyTable.Location> locations) {
         if (present(LegacyTable.DOCUMENTS, locations)) {
             String source = LegacyTable.DOCUMENTS.legacyName();
-            copy(db, "documents", source, V86__FiscalDocuments.DOCUMENTS, CopyMappings.goodsInvoice(), "l.document_type <> 'CTE'");
-            copy(db, "transport-documents", source, V86__FiscalDocuments.DOCUMENTS, CopyMappings.cte(), "l.document_type = 'CTE'");
+            copy(db, "documents", source, FiscalDocumentTables.DOCUMENTS, CopyMappings.goodsInvoice(), "l.document_type <> 'CTE'");
+            copy(db, "transport-documents", source, FiscalDocumentTables.DOCUMENTS, CopyMappings.cte(), "l.document_type = 'CTE'");
         }
         if (present(LegacyTable.SERVICE_INVOICES, locations)) {
-            copy(db, "service-invoices", LegacyTable.SERVICE_INVOICES.legacyName(), V86__FiscalDocuments.DOCUMENTS,
+            copy(db, "service-invoices", LegacyTable.SERVICE_INVOICES.legacyName(), FiscalDocumentTables.DOCUMENTS,
                     CopyMappings.serviceInvoice(), null);
         }
         if (present(LegacyTable.ITEMS, locations)) {
-            copy(db, "items", LegacyTable.ITEMS.legacyName(), V86__FiscalDocuments.ITEMS, CopyMappings.item(), null);
+            copy(db, "items", LegacyTable.ITEMS.legacyName(), FiscalDocumentTables.ITEMS, CopyMappings.item(), null);
         }
         if (present(LegacyTable.EVENTS, locations)) {
-            copy(db, "events", LegacyTable.EVENTS.legacyName(), V86__FiscalDocuments.EVENTS, CopyMappings.event(), null);
+            copy(db, "events", LegacyTable.EVENTS.legacyName(), FiscalDocumentTables.EVENTS, CopyMappings.event(), null);
         }
     }
 
@@ -230,7 +231,7 @@ public class V87__FiscalDocumentsCutover extends BaseJavaMigration {
             copied += copySource(db, source, null, "UPLOAD");
         }
         log.info("fiscal.documents.cutover.copied step=sources table={} copied={} ms={}",
-                V86__FiscalDocuments.SOURCES, copied, System.currentTimeMillis() - started);
+                FiscalDocumentTables.SOURCES, copied, System.currentTimeMillis() - started);
     }
 
     /** {@code dateColumn} null = the upload origin, dated by the document's {@code created_date}. */
@@ -240,10 +241,10 @@ public class V87__FiscalDocumentsCutover extends BaseJavaMigration {
         }
         String date = dateColumn == null ? "l.created_date" : "l." + dateColumn;
         String condition = dateColumn == null ? "l.source_system = 'UPLOAD'" : "l." + dateColumn + " IS NOT NULL";
-        return db.jdbc.update("INSERT INTO " + V86__FiscalDocuments.SOURCES
+        return db.jdbc.update("INSERT INTO " + FiscalDocumentTables.SOURCES
                 + " (id, document_id, company_id, source, first_seen_at, last_seen_at)"
                 + " SELECT UUID(), l.id, l.company_id, ?, " + date + ", " + date + " FROM " + table + " l WHERE " + condition
-                + " AND NOT EXISTS (SELECT 1 FROM " + V86__FiscalDocuments.SOURCES + " s WHERE s.document_id = l.id AND s.source = ?)",
+                + " AND NOT EXISTS (SELECT 1 FROM " + FiscalDocumentTables.SOURCES + " s WHERE s.document_id = l.id AND s.source = ?)",
                 sourceKey, sourceKey);
     }
 
@@ -272,34 +273,50 @@ public class V87__FiscalDocumentsCutover extends BaseJavaMigration {
             String checkedAt = received ? "c.ultima_verificacao_em" : "c.issued_checked_at";
             String prefix = received ? "received" : "issued";
             String stored = db.columnOrNull(t, "c", prefix + "_stored_any_source");
-            String gapMonth = db.columnOrNull(t, "c", prefix + "_known_gap_month");
-            String gap = db.columnOrNull(t, "c", prefix + "_known_gap");
-            String prevMonth = "c." + prefix + "_prev_month";
+            List<String[]> gapSlots = new ArrayList<>();
+            for (String slot : SyncControlCounters.GAP_SLOTS) {
+                gapSlots.add(new String[]{db.columnOrNull(t, "c", prefix + "_" + slot + "_month"),
+                        db.columnOrNull(t, "c", prefix + "_" + slot)});
+            }
+            String prevMonth = "TRIM(c." + prefix + "_prev_month)";
 
+            // the issued side only when it was ever checked; it uses the received side's window (one window per row)
             String current = "c.data_emissao_inicio IS NOT NULL" + (received ? ""
-                    : " AND (c.issued_total_sieg IS NOT NULL OR c.issued_total_imported IS NOT NULL"
-                    + " OR c.issued_checked_at IS NOT NULL OR " + stored + " IS NOT NULL)");
+                    : " AND (c.issued_total_sieg IS NOT NULL OR c.issued_total_imported IS NOT NULL OR c.issued_checked_at IS NOT NULL)");
             copied += insertCounts(db, side, month, "c.data_emissao_inicio", "c.data_emissao_fim", providerTotal, checkedAt,
-                    imported, stored, "CASE WHEN " + gapMonth + " = " + month + " THEN " + gap + " END", checkedAt, "NULL",
-                    current, null);
+                    imported, stored, gapOf(gapSlots, month), checkedAt, "NULL", current, null);
+            // a previous month equal to the current one is not copied (the current row wins)
+            String previous = CopyMappings.hasText(prevMonth)
+                    + " AND (c.data_emissao_inicio IS NULL OR " + prevMonth + " <> " + month + ")";
             copied += insertCounts(db, side, prevMonth, "NULL", "NULL", "c." + prefix + "_prev_total_sieg", "NULL",
-                    "c." + prefix + "_prev_imported", "NULL", "CASE WHEN " + gapMonth + " = " + prevMonth + " THEN " + gap + " END",
-                    "NULL", "?", prevMonth + " IS NOT NULL", now);
-            copied += insertCounts(db, side, gapMonth, "NULL", "NULL", "NULL", "NULL", "0", "NULL", gap, "NULL",
-                    "CASE WHEN c.data_emissao_inicio IS NOT NULL AND " + gapMonth + " = " + month + " THEN NULL ELSE ? END",
-                    gapMonth + " IS NOT NULL AND " + gap + " IS NOT NULL", now);
+                    "c." + prefix + "_prev_imported", "NULL", gapOf(gapSlots, prevMonth), "NULL", "?", previous, now);
+            for (String[] slot : gapSlots) {
+                copied += insertCounts(db, side, slot[0], "NULL", "NULL", "NULL", "NULL", "0", "NULL", slot[1], "NULL",
+                        "CASE WHEN c.data_emissao_inicio IS NOT NULL AND " + slot[0] + " = " + month + " THEN NULL ELSE ? END",
+                        slot[0] + " IS NOT NULL AND " + slot[1] + " IS NOT NULL", now);
+            }
         }
         long controls = db.count("SELECT COUNT(*) FROM " + t);
         long withoutWindow = db.count("SELECT COUNT(*) FROM " + t + " WHERE data_emissao_inicio IS NULL");
         log.info("fiscal.documents.cutover.copied step=capture-counts table={} controls={} copied={} withoutWindow={} ms={}",
-                V86__FiscalDocuments.COUNTS, controls, copied, withoutWindow, System.currentTimeMillis() - started);
+                FiscalDocumentTables.COUNTS, controls, copied, withoutWindow, System.currentTimeMillis() - started);
+    }
+
+    /** The known gap of a month: the first V85 slot ({@code known_gap}, then {@code earlier_gap}) holding that month. */
+    private static String gapOf(List<String[]> slots, String month) {
+        StringBuilder sql = new StringBuilder("CASE");
+        for (String[] slot : slots) {
+            sql.append(" WHEN ").append(slot[0]).append(" = ").append(month).append(" AND ").append(slot[1])
+                    .append(" IS NOT NULL THEN ").append(slot[1]);
+        }
+        return sql.append(" END").toString();
     }
 
     private static long insertCounts(CutoverDatabase db, String side, String periodMonth, String windowStart, String windowEnd,
                                      String providerTotal, String providerCountedAt, String imported, String stored,
                                      String knownGap, String importedCountedAt, String closedAt, String condition,
                                      Timestamp now) {
-        String counts = V86__FiscalDocuments.COUNTS;
+        String counts = FiscalDocumentTables.COUNTS;
         String sql = "INSERT INTO " + counts + " (id, company_id, channel, document_type, side, period_month, window_start,"
                 + " window_end, provider_total, provider_counted_at, imported_total, stored_any_source_total, known_gap,"
                 + " imported_counted_at, closed_at, created_by, created_date, last_modified_by, last_modified_date, deleted)"

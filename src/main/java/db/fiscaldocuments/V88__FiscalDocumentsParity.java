@@ -45,10 +45,10 @@ public class V88__FiscalDocumentsParity extends BaseJavaMigration {
     private static final Logger log = LoggerFactory.getLogger(V88__FiscalDocumentsParity.class);
     static final int MAX_LOGGED = 20;
 
-    private static final String FD = V86__FiscalDocuments.DOCUMENTS;
-    private static final String FDI = V86__FiscalDocuments.ITEMS;
-    private static final String FDE = V86__FiscalDocuments.EVENTS;
-    private static final String FDS = V86__FiscalDocuments.SOURCES;
+    private static final String FD = FiscalDocumentTables.DOCUMENTS;
+    private static final String FDI = FiscalDocumentTables.ITEMS;
+    private static final String FDE = FiscalDocumentTables.EVENTS;
+    private static final String FDS = FiscalDocumentTables.SOURCES;
     private static final String MONTH_OF = "DATE_FORMAT(%s.issue_date, '%%Y-%%m')";
 
     @Override
@@ -151,9 +151,9 @@ public class V88__FiscalDocumentsParity extends BaseJavaMigration {
         String type = CopyMappings.GOODS_DOCUMENT_TYPE;
         String goods = "CASE WHEN l.document_type = 'CTE' THEN NULL ELSE %s END";
         return new Aggregate("SELECT l.company_id, " + month("l") + ", " + type + ", l.direction,"
-                + " COUNT(*), SUM(CASE WHEN l.status = 'CANCELED' THEN 1 ELSE 0 END), SUM(CASE WHEN l.canceled_at IS NOT NULL THEN 1 ELSE 0 END), SUM(CASE WHEN l.deleted = 1 THEN 1 ELSE 0 END),"
+                + " COUNT(*), SUM(CASE WHEN l.status = 'CANCELED' THEN 1 ELSE 0 END), SUM(CASE WHEN l.status = 'CANCELED' AND l.canceled_at IS NOT NULL THEN 1 ELSE 0 END), SUM(CASE WHEN l.deleted = 1 THEN 1 ELSE 0 END),"
                 + " SUM(l.total_valor_total_nota),"
-                + " SUM(" + String.format(goods, "l.total_valor_icms") + "), SUM(" + String.format(goods, "l.total_valor_icms_st") + "),"
+                + " SUM(l.total_valor_icms), SUM(" + String.format(goods, "l.total_valor_icms_st") + "),"
                 + " SUM(" + String.format(goods, "l.total_valor_ipi") + "), SUM(" + String.format(goods, "l.total_valor_pis") + "),"
                 + " SUM(" + String.format(goods, "l.total_valor_cofins") + "),"
                 + " SUM(l.ret_pis), SUM(l.ret_cofins), SUM(l.ret_csll), SUM(l.ret_irrf), SUM(l.ret_inss),"
@@ -348,7 +348,7 @@ public class V88__FiscalDocumentsParity extends BaseJavaMigration {
         Map<List<Object>, CountRow> actual = new LinkedHashMap<>();
         db.jdbc.query("SELECT company_id, side, period_month, window_start, window_end, provider_total, provider_counted_at,"
                 + " imported_total, stored_any_source_total, known_gap, imported_counted_at, closed_at FROM "
-                + V86__FiscalDocuments.COUNTS + " WHERE channel = ? AND document_type = ?", row -> {
+                + FiscalDocumentTables.COUNTS + " WHERE channel = ? AND document_type = ?", row -> {
             actual.put(List.of(row.getString(1), row.getString(2), row.getString(3)), new CountRow(
                     normalize(row.getObject(4)), normalize(row.getObject(5)), normalize(row.getObject(6)),
                     normalize(row.getObject(7)), normalize(row.getObject(8)), normalize(row.getObject(9)),
@@ -383,22 +383,29 @@ public class V88__FiscalDocumentsParity extends BaseJavaMigration {
             Object imported = c.get(received ? "total_importado" : "issued_total_imported");
             Object checkedAt = c.get(received ? "ultima_verificacao_em" : "issued_checked_at");
             Object stored = c.get(prefix + "_stored_any_source");
-            boolean everChecked = received || providerTotal != null || imported != null || checkedAt != null || stored != null;
+            boolean everChecked = received || providerTotal != null || imported != null || checkedAt != null;
             if (currentMonth != null && everChecked) {
                 bySide.put(currentMonth, new CountRow(windowStart, c.get("data_emissao_fim"), providerTotal, checkedAt,
                         zeroIfNull(imported), stored, null, checkedAt, false));
             }
-            Object prevMonth = c.get(prefix + "_prev_month");
-            if (prevMonth != null && !bySide.containsKey(prevMonth.toString())) {
-                bySide.put(prevMonth.toString(), new CountRow(null, null, c.get(prefix + "_prev_total_sieg"), null,
+            String prevMonth = c.get(prefix + "_prev_month") == null ? "" : c.get(prefix + "_prev_month").toString().strip();
+            if (!prevMonth.isEmpty() && !prevMonth.equals(currentMonth)) {
+                bySide.put(prevMonth, new CountRow(null, null, c.get(prefix + "_prev_total_sieg"), null,
                         zeroIfNull(c.get(prefix + "_prev_imported")), null, null, null, true));
             }
-            Object gapMonth = c.get(prefix + "_known_gap_month");
-            Object gap = c.get(prefix + "_known_gap");
-            if (gapMonth != null && gap != null) {
+            for (String slot : SyncControlCounters.GAP_SLOTS) {
+                Object gapMonth = c.get(prefix + "_" + slot + "_month");
+                Object gap = c.get(prefix + "_" + slot);
+                if (gapMonth == null || gap == null) {
+                    continue;
+                }
                 CountRow existing = bySide.get(gapMonth.toString());
-                bySide.put(gapMonth.toString(), existing != null ? existing.withKnownGap(gap)
-                        : new CountRow(null, null, null, null, BigDecimal.ZERO, null, gap, null, !gapMonth.toString().equals(currentMonth)));
+                if (existing == null) {
+                    bySide.put(gapMonth.toString(), new CountRow(null, null, null, null, BigDecimal.ZERO, null, gap, null,
+                            !gapMonth.toString().equals(currentMonth)));
+                } else if (existing.knownGap() == null) {
+                    bySide.put(gapMonth.toString(), existing.withKnownGap(gap));
+                }
             }
             bySide.forEach((month, row) -> expected.put(List.of(companyId, side, month), row));
         }

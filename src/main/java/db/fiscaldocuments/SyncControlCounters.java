@@ -9,7 +9,7 @@ import java.util.stream.Stream;
  * {@code company_id}, {@code last_attempt_at}, {@code *_events_checked_on}, {@code service_invoices_checked_on},
  * auditing and {@code deleted}).
  *
- * <p>The last six come from V85 ({@code fix/sieg-call-savings}) and may not exist on a database that never ran it:
+ * <p>The last ten come from V85 ({@code fix/sieg-call-savings}) and may not exist on a database that never ran it (the first version had six, the final one ten):
  * the copy reads them as {@code NULL} then.
  */
 final class SyncControlCounters {
@@ -28,7 +28,16 @@ final class SyncControlCounters {
     static final List<String> V85 = List.of(
             "received_known_gap_month", "received_known_gap",
             "issued_known_gap_month", "issued_known_gap",
+            "received_earlier_gap_month", "received_earlier_gap",
+            "issued_earlier_gap_month", "issued_earlier_gap",
             "received_stored_any_source", "issued_stored_any_source");
+
+    /**
+     * The two V85 slots of "known gap" per side ({@code <side>_<slot>_month} and {@code <side>_<slot>}): each holds one
+     * month, and each becomes the {@code known_gap} of that month's row. Should both hold the same month, the first
+     * slot wins.
+     */
+    static final List<String> GAP_SLOTS = List.of("known_gap", "earlier_gap");
 
     static final List<String> ALL = Stream.concat(V19_V79.stream(), V85.stream()).toList();
 
