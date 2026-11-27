@@ -123,7 +123,9 @@ public class ServiceInvoiceService {
      * A1 in shadow (decision of 2026-11-27): [from, to] is downloaded exactly as without the gate, and the current month
      * ([first day of {@code to}'s month, to]) is checked with the counts this attempt already has - free, no request of its
      * own: one log line per company with ids and counts, saying what the gate would have done. A line "would have MISSED"
-     * means the gate would have skipped a month that brought new notes - the gate is not safe to turn on.
+     * means the gate would have skipped a month that brought new notes - the gate is not safe to turn on. Only the current
+     * month is evaluated: the earlier months of the lookback that the ON mode checks (with counts of their own) never show
+     * up in this log - counting them here would cost 2 requests a month on top of the old download.
      */
     @Transactional
     public SyncResult syncWithShadowGate(UUID companyId, LocalDate from, LocalDate to, Integer issuerCount, Integer recipientCount) {

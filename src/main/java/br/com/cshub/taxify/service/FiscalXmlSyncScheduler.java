@@ -468,7 +468,8 @@ public class FiscalXmlSyncScheduler {
      *   <li>OFF: the whole lookback is downloaded every day;</li>
      *   <li>SHADOW (default): same download, and the current month's provider count this attempt's NF-e sides already got
      *   ({@code issuerCount}/{@code recipientCount}, free) is compared with what the provider had delivered - logged as
-     *   what the gate would have done, nothing skipped;</li>
+     *   what the gate would have done, nothing skipped. Only the current month is evaluated: the earlier months ON checks
+     *   do not show up in the shadow log;</li>
      *   <li>ON: the lookback in windows of one calendar month; each is downloaded only when the provider counts more than it
      *   already delivered - the current month with this attempt's counts, the older windows with a count of their own.</li>
      * </ul>

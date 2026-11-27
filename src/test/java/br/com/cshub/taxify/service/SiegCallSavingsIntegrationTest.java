@@ -317,9 +317,19 @@ class SiegCallSavingsIntegrationTest {
         assertThat(row.get("received_known_gap")).as("an interrupted pass records nothing").isNull();
         assertThat(reconcilePages.get()).isEqualTo(2);
 
-        // the next attempt (the pending still known) asks for the reconciliation again and completes it
+        // the same day, the pending still known: only the regular page - the interrupted pass is not re-read before tomorrow
         downloads.clear();
         attempt();
+        attempt();
+        assertThat(downloads).extracting(SiegBaixarXmlsRequest::skip).containsExactly(63, 63);
+        assertThat(reconcilePages.get()).isEqualTo(2);
+        assertThat(stored()).isEqualTo(63);
+
+        // the next day the reconciliation is tried again and completes
+        clock.set(LocalDateTime.of(2026, 12, 21, 10, 0));
+        downloads.clear();
+        attempt();
+        assertThat(downloads).extracting(SiegBaixarXmlsRequest::skip).containsExactly(63, 0, 50);
         assertThat(stored()).isEqualTo(66);
         assertThat(control().get("received_known_gap")).isEqualTo(0);
     }
