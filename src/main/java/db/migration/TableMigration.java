@@ -55,6 +55,7 @@ public abstract class TableMigration extends BaseJavaMigration {
     private final List<Check> checks = new ArrayList<>();
     private List<String> primaryKey = List.of("id");
     private String tableOptions = "";
+    private Integer lockWaitSeconds;
     protected JdbcTemplate jdbc;
 
     protected TableMigration(String table) {
@@ -81,6 +82,14 @@ public abstract class TableMigration extends BaseJavaMigration {
 
     protected final void foreignKey(String name, String column, String referencedTable) {
         foreignKeys.add(new ForeignKey(name, column, referencedTable));
+    }
+
+    /**
+     * A short {@code lock_wait_timeout} for this migration's DDL (given back at the end): a table still in use makes it
+     * fail after that many seconds instead of hanging the deploy. Unset = the session's value, as before.
+     */
+    protected final void lockWaitSeconds(int seconds) {
+        this.lockWaitSeconds = seconds;
     }
 
     /** Extra table options of the CREATE (e.g. {@code ROW_FORMAT=DYNAMIC}); an existing table is left as it is. */
@@ -110,15 +119,26 @@ public abstract class TableMigration extends BaseJavaMigration {
     @Override
     public final void migrate(Context context) {
         jdbc = new JdbcTemplate(new SingleConnectionDataSource(context.getConnection(), true));
-        if (tableExists(table)) {
-            completeColumns();
-        } else {
-            createTable();
+        Integer previousLockWait = lockWaitSeconds == null ? null
+                : jdbc.queryForObject("SELECT @@SESSION.lock_wait_timeout", Integer.class);
+        try {
+            if (lockWaitSeconds != null) {
+                jdbc.execute("SET SESSION lock_wait_timeout = " + lockWaitSeconds);
+            }
+            if (tableExists(table)) {
+                completeColumns();
+            } else {
+                createTable();
+            }
+            beforeKeys();
+            indexes.forEach(this::ensureIndex);
+            foreignKeys.forEach(this::ensureForeignKey);
+            checks.forEach(this::ensureCheck);
+        } finally {
+            if (previousLockWait != null) {
+                jdbc.execute("SET SESSION lock_wait_timeout = " + previousLockWait);
+            }
         }
-        beforeKeys();
-        indexes.forEach(this::ensureIndex);
-        foreignKeys.forEach(this::ensureForeignKey);
-        checks.forEach(this::ensureCheck);
     }
 
     private void createTable() {

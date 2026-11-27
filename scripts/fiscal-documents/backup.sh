@@ -12,39 +12,77 @@
 #      (total_valor_total_nota, valor_servico, valor_total dos itens, total_sieg) com a origem;
 #   4. apaga o schema de conferência (ou o mantém com KEEP_CHECK_SCHEMA=1, para o scripts/fiscal-documents/parity.sql).
 #
-# Uso (na EC2, com o MySQL no container do compose; a senha vai por variável, nunca na linha de comando):
-#   export MYSQL_PWD='...'            # lida pelo mysql/mysqldump; repassada ao container por "docker exec -e MYSQL_PWD"
+#
+# Uso (na EC2, com o MySQL no container do compose):
 #   DOCKER_CONTAINER=taxify-mysql DB_USER=root DB_NAME=<schema> OUT_DIR=/home/ec2-user/fd-backup \
 #     scripts/fiscal-documents/backup.sh
+# A senha é pedida no terminal (sem eco) e vai para um arquivo de opções temporário (umask 077, apagado no fim, também
+# dentro do container), passado por --defaults-extra-file: nunca na linha de comando nem em variável de ambiente.
+# Para automação (o teste), DB_DEFAULTS_FILE aponta para um arquivo de opções [client] já pronto (permissão 600).
 # Sem DOCKER_CONTAINER, usa os clientes mysql/mysqldump do host com DB_HOST (padrão 127.0.0.1) e DB_PORT (3306).
+# O schema de conferência (CHECK_SCHEMA, padrão fd_backup_check) precisa começar com fd_; um schema que já existe e que
+# não foi criado por este script (sem a tabela-marca fd_backup_check_marker) é recusado.
 #
 # Depois: copiar o arquivo e o .sha256 para o bucket S3 privado da conta, com criptografia (por exemplo
-#   aws s3 cp <arquivo> s3://<bucket>/fiscal-documents/ --sse aws:kms), anotar o SHA-256 no registro da release e
-#   apagar o arquivo do host e do S3 no prazo da P-FD-08 (30 dias). O arquivo tem dado de cliente: acesso só do Tony e
-#   do dev da janela. O script não imprime dado nenhum: só nomes de tabela, contagens e OK/DIFERENTE.
+#   aws s3 cp <arquivo> s3://<bucket>/fiscal-documents/ --sse aws:kms), anotar o SHA-256 no registro da release, passar
+#   o mesmo valor à imagem nova em FD_BACKUP_SHA256 (sem ele a V89 não apaga o legado) e apagar o arquivo do host e do
+#   S3 no prazo da P-FD-08 (30 dias). O arquivo tem dado de cliente: acesso só do Tony e do dev da janela. O script não
+#   imprime dado nenhum: só nomes de tabela, contagens e OK/DIFERENTE.
 set -euo pipefail
 
 : "${DB_NAME:?informe DB_NAME (o schema da aplicação)}"
 : "${DB_USER:?informe DB_USER}"
 : "${OUT_DIR:?informe OUT_DIR (fora do container)}"
-: "${MYSQL_PWD:?exporte MYSQL_PWD (a senha não vai na linha de comando)}"
-export MYSQL_PWD
 DB_HOST="${DB_HOST:-127.0.0.1}"
 DB_PORT="${DB_PORT:-3306}"
 CHECK_SCHEMA="${CHECK_SCHEMA:-fd_backup_check}"
 KEEP_CHECK_SCHEMA="${KEEP_CHECK_SCHEMA:-0}"
 TABLES=(fiscal_xml_documents fiscal_xml_document_items service_invoices fiscal_xml_events fiscal_xml_sync_control)
+MARKER=fd_backup_check_marker
 
+[[ "$CHECK_SCHEMA" =~ ^fd_[a-z0-9_]+$ ]] || { echo "CHECK_SCHEMA precisa começar com fd_ (só minúsculas, números e _)"; exit 2; }
 [[ "$CHECK_SCHEMA" != "$DB_NAME" ]] || { echo "CHECK_SCHEMA não pode ser o schema da aplicação"; exit 2; }
-[[ "$CHECK_SCHEMA" =~ ^[a-z0-9_]+$ ]] || { echo "CHECK_SCHEMA inválido"; exit 2; }
+
+umask 077
+local_cnf="$(mktemp)"
+remote_cnf="/tmp/fd-backup-$$.cnf"
+cleanup() {
+  rm -f "$local_cnf"
+  if [[ -n "${DOCKER_CONTAINER:-}" ]]; then docker exec "$DOCKER_CONTAINER" rm -f "$remote_cnf" >/dev/null 2>&1 || true; fi
+}
+trap cleanup EXIT
+if [[ -n "${DB_DEFAULTS_FILE:-}" ]]; then
+  cat "$DB_DEFAULTS_FILE" > "$local_cnf"
+else
+  read -rsp "senha do MySQL para $DB_USER: " password; echo
+  printf '[client]\nuser=%s\npassword=%s\n' "$DB_USER" "$password" > "$local_cnf"
+  unset password
+fi
+if [[ -n "${DOCKER_CONTAINER:-}" ]]; then
+  docker exec -i "$DOCKER_CONTAINER" sh -c "umask 077 && cat > $remote_cnf" < "$local_cnf"
+  cnf="$remote_cnf"
+else
+  cnf="$local_cnf"
+fi
 
 client() { # client <mysql|mysqldump> <args...>
   local program="$1"; shift
   if [[ -n "${DOCKER_CONTAINER:-}" ]]; then
-    docker exec -i -e MYSQL_PWD "$DOCKER_CONTAINER" "$program" -u"$DB_USER" "$@"
+    docker exec -i "$DOCKER_CONTAINER" "$program" --defaults-extra-file="$cnf" "$@"
   else
-    "$program" -h"$DB_HOST" -P"$DB_PORT" -u"$DB_USER" "$@"
+    "$program" --defaults-extra-file="$cnf" -h"$DB_HOST" -P"$DB_PORT" "$@"
   fi
+}
+
+prepare_check_schema() { # só apaga um schema que este script criou (tem a tabela-marca)
+  local exists marked
+  exists="$(client mysql -N -B -e "SELECT COUNT(*) FROM information_schema.schemata WHERE schema_name = '$CHECK_SCHEMA'")"
+  if [[ "$exists" != "0" ]]; then
+    marked="$(client mysql -N -B -e "SELECT COUNT(*) FROM information_schema.tables WHERE table_schema = '$CHECK_SCHEMA' AND table_name = '$MARKER'")"
+    [[ "$marked" == "1" ]] || { echo "o schema $CHECK_SCHEMA já existe e não foi criado por este script: nada foi feito"; exit 2; }
+    client mysql -e "DROP DATABASE \`$CHECK_SCHEMA\`"
+  fi
+  client mysql -e "CREATE DATABASE \`$CHECK_SCHEMA\`; CREATE TABLE \`$CHECK_SCHEMA\`.$MARKER (created_at datetime)"
 }
 
 summary() { # summary <schema>: tabela, linhas, conferência das somas (sem imprimir valores: só o hash delas)
@@ -57,9 +95,10 @@ summary() { # summary <schema>: tabela, linhas, conferência das somas (sem impr
       FROM fiscal_xml_sync_control"
 }
 
-umask 077
 mkdir -p "$OUT_DIR"
 file="$OUT_DIR/fiscal-documents-backup-$(date +%Y%m%d-%H%M%S).sql"
+
+prepare_check_schema
 
 echo "1/4 dump de ${#TABLES[@]} tabelas"
 client mysqldump --single-transaction --skip-triggers --skip-routines --skip-events --no-tablespaces \
@@ -72,7 +111,6 @@ cat "$file.sha256"
 
 echo "3/4 restauração de conferência em $CHECK_SCHEMA"
 source_summary="$(summary "$DB_NAME")"
-client mysql -e "DROP DATABASE IF EXISTS \`$CHECK_SCHEMA\`; CREATE DATABASE \`$CHECK_SCHEMA\`"
 client mysql "$CHECK_SCHEMA" < "$file"
 check_summary="$(summary "$CHECK_SCHEMA")"
 

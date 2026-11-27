@@ -36,7 +36,9 @@ UNION ALL SELECT 'ids', 'events extra', COUNT(*) FROM fiscal_document_events n
 WITH o AS (
     SELECT company_id, DATE_FORMAT(issue_date, '%Y-%m') AS period,
            CASE WHEN document_type = 'CTE' THEN 'CTE' WHEN TRIM(ide_modelo) = '65' THEN 'NFCE' ELSE 'NFE' END AS type,
-           direction, COUNT(*) AS n, SUM(CASE WHEN status = 'CANCELED' THEN 1 ELSE 0 END) AS canceled,
+           COALESCE(direction, CASE WHEN own_issue = 1 THEN CASE TRIM(ide_tipo_operacao) WHEN '0' THEN 'INBOUND'
+                    WHEN '1' THEN 'OUTBOUND' END ELSE 'INBOUND' END) AS direction,
+           COUNT(*) AS n, SUM(CASE WHEN status = 'CANCELED' THEN 1 ELSE 0 END) AS canceled,
            SUM(total_valor_total_nota) AS total, SUM(total_valor_icms) AS icms,
            SUM(CASE WHEN document_type = 'CTE' THEN NULL ELSE total_valor_icms_st END) AS icms_st,
            SUM(CASE WHEN document_type = 'CTE' THEN NULL ELSE total_valor_ipi END) AS ipi,
@@ -125,21 +127,23 @@ SELECT 'events (only new)', n.company_id, n.event_type, n.registered FROM n
 
 -- origens por empresa x fonte: documentos com a data antiga (ou de upload) x linhas, e as datas mínima e máxima
 WITH old_sources AS (
-    SELECT company_id, 'SIEG' AS source, found_in_sieg_at AS seen FROM fd_old.fiscal_xml_documents WHERE found_in_sieg_at IS NOT NULL
-    UNION ALL SELECT company_id, 'SEFAZ_DFE', found_in_sefaz_at FROM fd_old.fiscal_xml_documents WHERE found_in_sefaz_at IS NOT NULL
-    UNION ALL SELECT company_id, 'UPLOAD', created_date FROM fd_old.fiscal_xml_documents WHERE source_system = 'UPLOAD'
-    UNION ALL SELECT company_id, 'SIEG', found_in_sieg_at FROM fd_old.service_invoices WHERE found_in_sieg_at IS NOT NULL
-    UNION ALL SELECT company_id, 'NFSE_ADN', found_in_adn_at FROM fd_old.service_invoices WHERE found_in_adn_at IS NOT NULL
-    UNION ALL SELECT company_id, 'UPLOAD', created_date FROM fd_old.service_invoices WHERE source_system = 'UPLOAD'),
-o AS (SELECT company_id, source, COUNT(*) AS n, MIN(seen) AS first_min, MAX(seen) AS first_max FROM old_sources GROUP BY 1, 2),
-n AS (SELECT company_id, source, COUNT(*) AS n, MIN(first_seen_at) AS first_min, MAX(first_seen_at) AS first_max
-      FROM fiscal_document_sources GROUP BY 1, 2)
-SELECT 'sources' AS block, o.company_id, o.source FROM o
-    LEFT JOIN n ON n.company_id = o.company_id AND n.source = o.source
+    SELECT company_id, 'SIEG' AS source, 'PERIOD' AS mode, found_in_sieg_at AS seen FROM fd_old.fiscal_xml_documents WHERE found_in_sieg_at IS NOT NULL
+    UNION ALL SELECT company_id, 'SEFAZ_DFE', 'CURSOR', found_in_sefaz_at FROM fd_old.fiscal_xml_documents WHERE found_in_sefaz_at IS NOT NULL
+    UNION ALL SELECT company_id, 'UPLOAD', 'NONE', created_date FROM fd_old.fiscal_xml_documents WHERE source_system = 'UPLOAD'
+    UNION ALL SELECT company_id, 'SIEG', 'PERIOD', found_in_sieg_at FROM fd_old.service_invoices WHERE found_in_sieg_at IS NOT NULL
+    UNION ALL SELECT company_id, 'NFSE_ADN', 'CURSOR', found_in_adn_at FROM fd_old.service_invoices WHERE found_in_adn_at IS NOT NULL
+    UNION ALL SELECT company_id, 'UPLOAD', 'NONE', created_date FROM fd_old.service_invoices WHERE source_system = 'UPLOAD'),
+o AS (SELECT company_id, source, mode, COUNT(*) AS n, MIN(seen) AS first_min, MAX(seen) AS first_max FROM old_sources
+      GROUP BY 1, 2, 3),
+n AS (SELECT company_id, source, retrieval_mode AS mode, COUNT(*) AS n, MIN(first_seen_at) AS first_min,
+             MAX(first_seen_at) AS first_max
+      FROM fiscal_document_sources GROUP BY 1, 2, 3)
+SELECT 'sources' AS block, o.company_id, o.source, o.mode FROM o
+    LEFT JOIN n ON n.company_id = o.company_id AND n.source = o.source AND n.mode = o.mode
     WHERE NOT (n.n <=> o.n AND n.first_min <=> o.first_min AND n.first_max <=> o.first_max)
 UNION ALL
-SELECT 'sources (only new)', n.company_id, n.source FROM n
-    LEFT JOIN o ON n.company_id = o.company_id AND n.source = o.source
+SELECT 'sources (only new)', n.company_id, n.source, n.mode FROM n
+    LEFT JOIN o ON n.company_id = o.company_id AND n.source = o.source AND n.mode = o.mode
     WHERE o.company_id IS NULL;
 
 -- contagens da captura: mês corrente de cada lado (as diferenças conhecidas e o mês anterior a V88 confere campo a campo)

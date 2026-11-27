@@ -22,6 +22,7 @@ public class V86__FiscalDocuments extends TableMigration {
 
     public V86__FiscalDocuments() {
         super(DOCUMENTS);
+        lockWaitSeconds(CutoverDatabase.LOCK_WAIT_SECONDS);
 
         tableOptions("ROW_FORMAT=DYNAMIC");
         // common block (C)

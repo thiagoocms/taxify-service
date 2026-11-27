@@ -17,6 +17,7 @@ public class V86_1__FiscalDocumentItems extends TableMigration {
 
     public V86_1__FiscalDocumentItems() {
         super(ITEMS);
+        lockWaitSeconds(CutoverDatabase.LOCK_WAIT_SECONDS);
 
         tableOptions("ROW_FORMAT=DYNAMIC");
         column("id", "varchar(36) not null");

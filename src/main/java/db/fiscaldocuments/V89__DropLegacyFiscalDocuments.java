@@ -8,6 +8,7 @@ import org.springframework.dao.DataAccessException;
 
 import java.util.ArrayList;
 import java.util.List;
+import java.util.Locale;
 
 /**
  * Remodel of the fiscal documents (spec 2026-11-27, FD-RN-53, decision P-FD-03): drops the four {@code legacy_*}
@@ -35,12 +36,64 @@ public class V89__DropLegacyFiscalDocuments extends BaseJavaMigration {
     public void migrate(Context context) {
         CutoverDatabase db = new CutoverDatabase(context);
         db.withShortLockWait("V89 drop legacy", () -> {
-            dropLegacyTables(db, context);
+            guard(db, context);
+            dropLegacyTables(db);
             dropCounterColumns(db);
         });
     }
 
-    private void dropLegacyTables(CutoverDatabase db, Context context) {
+    /**
+     * Placeholder ({@code spring.flyway.placeholders.fd_backup_sha256}) or environment variable
+     * ({@code FD_BACKUP_SHA256}) with the SHA-256 of the backup of runbook step 1 (FD-RN-52), written down by
+     * {@code scripts/fiscal-documents/backup.sh}. A technical lock: with legacy rows to drop and no valid value, V89
+     * stops and the legacy_* tables stay.
+     */
+    static final String BACKUP_PLACEHOLDER = "fd_backup_sha256";
+    static final String BACKUP_VARIABLE = "FD_BACKUP_SHA256";
+
+    private void guard(CutoverDatabase db, Context context) {
+        if (db.attempted("87") && !db.migrated("88")) {
+            throw new IllegalStateException("V89 refused: V87 ran but V88 (parity) has not succeeded on this database -"
+                    + " the legacy_* tables and the counter columns are kept");
+        }
+        if (legacyRows(db) == 0) {
+            return;
+        }
+        if (!db.migrated("88")) {
+            throw new IllegalStateException("V89 refused: V88 (parity) has not succeeded on this database - the legacy_*"
+                    + " tables are kept");
+        }
+        String sha = backupSha256(context);
+        if (sha == null || !sha.matches("[0-9a-f]{64}")) {
+            throw new IllegalStateException("V89 refused: the SHA-256 of the checked backup (FD-RN-52) was not given - set "
+                    + BACKUP_VARIABLE + " (or the Flyway placeholder " + BACKUP_PLACEHOLDER + ") to the value backup.sh wrote;"
+                    + " the legacy_* tables are kept");
+        }
+        log.info("fiscal.documents.cutover.backup.sha256 prefix={}", sha.substring(0, 12));
+    }
+
+    private static String backupSha256(Context context) {
+        String value = null;
+        if (context.getConfiguration() != null && context.getConfiguration().getPlaceholders() != null) {
+            value = context.getConfiguration().getPlaceholders().get(BACKUP_PLACEHOLDER);
+        }
+        if (value == null || value.isBlank()) {
+            value = System.getenv(BACKUP_VARIABLE);
+        }
+        return value == null ? null : value.strip().toLowerCase(Locale.ROOT);
+    }
+
+    private static long legacyRows(CutoverDatabase db) {
+        long rows = 0;
+        for (LegacyTable table : LegacyTable.values()) {
+            if (db.tableExists(table.legacyName())) {
+                rows += db.count("SELECT COUNT(*) FROM (SELECT 1 FROM " + table.legacyName() + " LIMIT 1) t");
+            }
+        }
+        return rows;
+    }
+
+    private void dropLegacyTables(CutoverDatabase db) {
         List<String> present = new ArrayList<>();
         for (LegacyTable table : LegacyTable.values()) {
             if (db.tableExists(table.legacyName())) {
@@ -50,11 +103,6 @@ public class V89__DropLegacyFiscalDocuments extends BaseJavaMigration {
         if (present.isEmpty()) {
             log.info("fiscal.documents.cutover.nothing.to.do reason=no-legacy-tables step=drop");
             return;
-        }
-        String history = context.getConfiguration().getTable();
-        if (db.count("SELECT COUNT(*) FROM " + history + " WHERE version = '88' AND success = 1") == 0) {
-            throw new IllegalStateException("V89 refused: V88 (parity) has not succeeded on this database - the legacy_*"
-                    + " tables are kept");
         }
         for (LegacyTable table : LegacyTable.values()) {
             db.jdbc.execute("DROP TABLE IF EXISTS " + table.legacyName());

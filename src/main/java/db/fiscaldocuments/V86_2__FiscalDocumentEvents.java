@@ -14,6 +14,7 @@ public class V86_2__FiscalDocumentEvents extends TableMigration {
 
     public V86_2__FiscalDocumentEvents() {
         super(EVENTS);
+        lockWaitSeconds(CutoverDatabase.LOCK_WAIT_SECONDS);
 
         column("id", "varchar(36) not null");
         column("company_id", "varchar(36) not null");

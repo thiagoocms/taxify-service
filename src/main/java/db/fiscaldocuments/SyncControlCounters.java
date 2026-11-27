@@ -44,6 +44,22 @@ final class SyncControlCounters {
     private SyncControlCounters() {
     }
 
+    /**
+     * With V85 on the database (in the history, or any of its columns present), all ten columns must be there: a
+     * missing one is an error, never a silent NULL. Without V85 at all, they read as NULL.
+     */
+    static void requireV85Complete(CutoverDatabase db) {
+        if (!present(db)) {
+            return;
+        }
+        List<String> missing = V85.stream().filter(column -> !db.columnExists(TABLE, column)).toList();
+        boolean v85 = db.migrated("85") || missing.size() < V85.size();
+        if (v85 && !missing.isEmpty()) {
+            throw new IllegalStateException("fiscal documents cutover stopped before the rename: V85 is applied but "
+                    + TABLE + " lacks " + missing);
+        }
+    }
+
     /** The counters are still on the table (V87 and V88 have work to do; V89 drops them). */
     static boolean present(CutoverDatabase db) {
         return db.tableExists(TABLE) && db.columnExists(TABLE, "total_sieg");

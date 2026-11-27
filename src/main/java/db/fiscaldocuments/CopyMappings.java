@@ -23,7 +23,24 @@ final class CopyMappings {
         return "CASE " + column + " WHEN 'SEFAZ_DIST' THEN 'SEFAZ_DFE' WHEN 'ADN' THEN 'NFSE_ADN' ELSE " + column + " END";
     }
 
-    /** NF-e: {@code CTE} stays, {@code NFE} with model 65 is the NFC-e (FD-RN-14). */
+    /**
+     * FD-RN-56: the direction an old row still lacks, by the {@code FiscalDirectionBackfill} rule - received (not own
+     * issue, or unknown) = INBOUND; own issue with {@code ide_tipo_operacao} 0 = INBOUND, 1 = OUTBOUND. An own issue
+     * without a usable {@code ide_tipo_operacao} stays NULL here, and V87 stops before the rename when any is left
+     * ({@link #UNRESOLVED_DIRECTION}).
+     */
+    static final String DERIVED_DIRECTION = "COALESCE(l.direction, CASE WHEN l.own_issue = 1 THEN CASE TRIM(l.ide_tipo_operacao)"
+            + " WHEN '0' THEN 'INBOUND' WHEN '1' THEN 'OUTBOUND' END ELSE 'INBOUND' END)";
+
+    /** Rows whose direction is NULL and the rule above can't fill. */
+    static final String UNRESOLVED_DIRECTION = "direction IS NULL AND own_issue = 1"
+            + " AND (ide_tipo_operacao IS NULL OR TRIM(ide_tipo_operacao) NOT IN ('0', '1'))";
+
+    /**
+     * "Has text" and every TRIM of this copy (party documents, model, CFOP, previous month) strip only the ordinary
+     * space, the same rule the domain translator follows (agreed with the domain dev): a tab or line break is kept.
+     * NF-e: {@code CTE} stays, {@code NFE} with model 65 is the NFC-e (FD-RN-14).
+     */
     static final String GOODS_DOCUMENT_TYPE =
             "CASE WHEN l.document_type = 'CTE' THEN 'CTE' WHEN TRIM(l.ide_modelo) = '65' THEN 'NFCE' ELSE 'NFE' END";
 
@@ -76,7 +93,7 @@ final class CopyMappings {
         m.put("number", "l.ide_numero");
         m.put("issue_date", "l.issue_date");
         m.put("operation_nature", "l.ide_natureza_operacao");
-        m.put("direction", "l.direction");
+        m.put("direction", DERIVED_DIRECTION);
         m.put("company_role", "CASE WHEN l.own_issue = 1 THEN 'ISSUER' ELSE 'RECIPIENT' END");
         // FD-RN-10: null = authorized; an authorized row keeps no canceled_at (I-02)
         m.put("status", "CASE WHEN l.status = 'CANCELED' THEN 'CANCELED' ELSE 'AUTHORIZED' END");

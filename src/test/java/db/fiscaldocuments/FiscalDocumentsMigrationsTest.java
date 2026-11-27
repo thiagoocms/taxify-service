@@ -24,6 +24,7 @@ import java.sql.SQLException;
 import java.time.LocalDate;
 import java.time.LocalDateTime;
 import java.util.Arrays;
+import java.util.LinkedHashMap;
 import java.util.List;
 import java.util.Map;
 
@@ -53,7 +54,9 @@ import static org.mockito.Mockito.when;
 class FiscalDocumentsMigrationsTest {
 
     static final String SCRATCH = "taxify_fdmig";
-    static final String BEFORE = "84";
+    static final String BEFORE = "85";
+    /** Fictitious SHA-256 of "the backup" for the V89 lock (FD_BACKUP_SHA256). */
+    static final String BACKUP_SHA256 = "0123456789abcdef0123456789abcdef0123456789abcdef0123456789abcdef";
     static final String[] LOCATIONS = {"classpath:db/migration", "classpath:db/fiscaldocuments"};
 
     private final ListAppender<ILoggingEvent> logs = new ListAppender<>();
@@ -77,6 +80,7 @@ class FiscalDocumentsMigrationsTest {
         return Flyway.configure().dataSource(url(SCRATCH), System.getenv().getOrDefault("DB_USER", "root"),
                         System.getenv().getOrDefault("DB_PASSWORD", "root"))
                 .locations(locations.length == 0 ? LOCATIONS : locations)
+                .placeholders(Map.of("fd_backup_sha256", BACKUP_SHA256))
                 .baselineOnMigrate(true).baselineVersion("0").target(target).load();
     }
 
@@ -133,7 +137,6 @@ class FiscalDocumentsMigrationsTest {
         flyway(BEFORE).migrate();
         JdbcTemplate jdbc = jdbc(SCRATCH);
         LegacyFixtures.scenario(jdbc);
-        LegacyFixtures.addV85Columns(jdbc);
         LegacyFixtures.syncControls(jdbc);
         List<Map<String, Object>> pendenciesBefore = jdbc.queryForList("SELECT * FROM pendencies");
         List<Map<String, Object>> reviewsBefore = jdbc.queryForList("SELECT * FROM retention_reviews");
@@ -141,6 +144,14 @@ class FiscalDocumentsMigrationsTest {
         flyway("88").migrate();
 
         assertThat(log("fiscal.documents.cutover.parity.ok")).contains("goods=").contains("capture-counts=");
+        // FD-RN-55, 56 and 3.11: counted before the copy
+        assertThat(log("fiscal.documents.cutover.direction.derived")).isEqualTo("fiscal.documents.cutover.direction.derived count=2");
+        assertThat(log("fiscal.documents.cutover.canceled.at.discarded"))
+                .isEqualTo("fiscal.documents.cutover.canceled.at.discarded count=1");
+        assertThat(log("fiscal.documents.cutover.tolerated")).isEqualTo(
+                "fiscal.documents.cutover.tolerated nationalKeyNot50Digits=0 partyDocumentWithoutType=1");
+        assertThat(log("fiscal.documents.cutover.counts.rules"))
+                .isEqualTo("fiscal.documents.cutover.counts.rules previousMonthEqualsCurrent=1 gapSlotsSameMonth=0");
         assertThat(jdbc.queryForObject("SELECT COUNT(*) FROM fiscal_documents", Integer.class)).isEqualTo(13 + 5);
         assertThat(jdbc.queryForObject("SELECT COUNT(*) FROM legacy_fiscal_xml_documents", Integer.class)).isEqualTo(13);
 
@@ -210,7 +221,7 @@ class FiscalDocumentsMigrationsTest {
                 .containsEntry("recipient_document", "X-99887766").containsEntry("recipient_document_type", "FOREIGN")
                 .containsEntry("source_system", "SEFAZ_DFE");
         // CT-FD-04: model 65 = NFC-e
-        assertThat(document(jdbc, doc("k6"))).containsEntry("document_type", "NFCE").containsEntry("model", "65")
+        assertThat(document(jdbc, doc("k6"))).containsEntry("document_type", "NFCE").containsEntry("model", "65").containsEntry("direction", "OUTBOUND")
                 .containsEntry("recipient_document", "39053344705").containsEntry("recipient_document_type", "CPF");
         // CT-e: common block, ICMS base and value only, model 57, version 0
         assertThat(document(jdbc, doc("k7"))).containsEntry("document_type", "CTE").containsEntry("model", "57")
@@ -220,7 +231,8 @@ class FiscalDocumentsMigrationsTest {
         // CT-FD-11, 17: own_issue null → RECIPIENT; no date, no key; metadata null → 0
         assertThat(document(jdbc, doc("k8"))).containsEntry("company_role", "RECIPIENT").containsEntry("issue_date", null)
                 .containsEntry("access_key", null).containsEntry("metadata_version", 0);
-        assertThat(document(jdbc, doc("k9"))).containsEntry("issue_date", LocalDateTime.of(2026, 10, 31, 23, 59, 59));
+        assertThat(document(jdbc, doc("k9"))).containsEntry("issue_date", LocalDateTime.of(2026, 10, 31, 23, 59, 59))
+                .containsEntry("direction", "INBOUND");
         // CT-FD-15: same key in E1 and E2
         assertThat(document(jdbc, doc("e2k1"))).containsEntry("company_id", E2).containsEntry("access_key", key(1))
                 .containsEntry("company_role", "ISSUER");
@@ -310,18 +322,18 @@ class FiscalDocumentsMigrationsTest {
                 + " WHERE id = 'ev100000-0000-4000-8000-000000000002'")).containsEntry("document_id", null).containsEntry("registered", false);
 
         // sources (CT-FD-27)
-        assertThat(jdbc.queryForList("SELECT CONCAT(document_id, ' ', source, ' ', first_seen_at, ' ', last_seen_at)"
+        assertThat(jdbc.queryForList("SELECT CONCAT(document_id, ' ', source, ' ', retrieval_mode, ' ', first_seen_at, ' ', last_seen_at)"
                 + " FROM fiscal_document_sources ORDER BY document_id, source", String.class)).containsExactly(
-                doc("k1") + " SEFAZ_DFE 2026-11-05 09:15:00.000000 2026-11-05 09:15:00.000000",
-                doc("k1") + " SIEG 2026-11-05 08:00:00.000000 2026-11-05 08:00:00.000000",
-                doc("k2") + " SIEG 2026-11-06 08:00:00.000000 2026-11-06 08:00:00.000000",
-                doc("k3") + " UPLOAD 2026-11-03 14:00:00.000000 2026-11-03 14:00:00.000000",
-                doc("k5") + " SEFAZ_DFE 2026-11-07 08:00:00.000000 2026-11-07 08:00:00.000000",
-                doc("k7") + " UPLOAD 2026-11-02 08:00:00.000000 2026-11-02 08:00:00.000000",
-                doc("k8") + " UPLOAD 2026-11-02 08:00:00.000000 2026-11-02 08:00:00.000000",
-                doc("s1") + " NFSE_ADN 2026-11-08 08:00:00.000000 2026-11-08 08:00:00.000000",
-                doc("s2") + " SIEG 2026-11-09 08:00:00.000000 2026-11-09 08:00:00.000000",
-                doc("s4") + " UPLOAD 2026-11-04 09:00:00.000000 2026-11-04 09:00:00.000000");
+                doc("k1") + " SEFAZ_DFE CURSOR 2026-11-05 09:15:00.000000 2026-11-05 09:15:00.000000",
+                doc("k1") + " SIEG PERIOD 2026-11-05 08:00:00.000000 2026-11-05 08:00:00.000000",
+                doc("k2") + " SIEG PERIOD 2026-11-06 08:00:00.000000 2026-11-06 08:00:00.000000",
+                doc("k3") + " UPLOAD NONE 2026-11-03 14:00:00.000000 2026-11-03 14:00:00.000000",
+                doc("k5") + " SEFAZ_DFE CURSOR 2026-11-07 08:00:00.000000 2026-11-07 08:00:00.000000",
+                doc("k7") + " UPLOAD NONE 2026-11-02 08:00:00.000000 2026-11-02 08:00:00.000000",
+                doc("k8") + " UPLOAD NONE 2026-11-02 08:00:00.000000 2026-11-02 08:00:00.000000",
+                doc("s1") + " NFSE_ADN CURSOR 2026-11-08 08:00:00.000000 2026-11-08 08:00:00.000000",
+                doc("s2") + " SIEG PERIOD 2026-11-09 08:00:00.000000 2026-11-09 08:00:00.000000",
+                doc("s4") + " UPLOAD NONE 2026-11-04 09:00:00.000000 2026-11-04 09:00:00.000000");
 
         // capture counts (CT-FD-29, 36)
         assertThat(jdbc.queryForList("SELECT CONCAT_WS('|', company_id, side, period_month, IFNULL(window_start, '-'),"
@@ -500,6 +512,76 @@ class FiscalDocumentsMigrationsTest {
         assertThat(jdbc.queryForObject("SELECT COUNT(*) FROM fiscal_documents", Integer.class)).isZero();
         assertThat(historySuccess(jdbc, "86")).isTrue();
         assertThat(historySuccess(jdbc, "87")).isFalse();
+    }
+
+    // ------------------------------------------------------------------ pre-checks that stop before the rename
+
+    private void recreateScratch() {
+        JdbcTemplate admin = jdbc("");
+        admin.execute("DROP DATABASE IF EXISTS " + SCRATCH);
+        admin.execute("CREATE DATABASE " + SCRATCH + " CHARACTER SET utf8mb4");
+    }
+
+    @Test
+    void rowsTheCopyCannotTranslateStopEverythingBeforeTheRename() {
+        Map<String, String> cases = new LinkedHashMap<>();
+        // FD-RN-56: own issue, no direction, no usable tpNF
+        cases.put("UPDATE fiscal_xml_documents SET direction = NULL, own_issue = 1, ide_tipo_operacao = NULL WHERE id = '"
+                + doc("k5") + "'", "own-issue row(s) without direction");
+        // a source key that is not an upper-case word (compared byte by byte)
+        cases.put("UPDATE service_invoices SET source_system = 'sieg' WHERE id = '" + doc("s2") + "'", "source_system outside");
+        // an item on a CT-e row (a Cte has no items)
+        cases.put("UPDATE fiscal_xml_document_items SET document_id = '" + doc("k7") + "' WHERE id = 'i1000000-0000-4000-8000-000000000003'",
+                "item(s) of CT-e rows");
+        for (Map.Entry<String, String> scenario : cases.entrySet()) {
+            recreateScratch();
+            flyway(BEFORE).migrate();
+            JdbcTemplate jdbc = jdbc(SCRATCH);
+            LegacyFixtures.scenario(jdbc);
+            jdbc.update(scenario.getKey());
+
+            assertThatThrownBy(() -> flyway("latest").migrate()).as(scenario.getValue())
+                    .rootCause().hasMessageContaining(scenario.getValue()).hasMessageContaining("before the rename");
+            assertThat(tableExists(jdbc, "fiscal_xml_documents")).isTrue();
+            assertThat(tableExists(jdbc, "legacy_fiscal_xml_documents")).isFalse();
+            assertThat(jdbc.queryForObject("SELECT COUNT(*) FROM fiscal_documents", Integer.class)).isZero();
+        }
+        assertThat(log("fiscal.documents.cutover.direction.unresolved")).isEqualTo("fiscal.documents.cutover.direction.unresolved count=1");
+    }
+
+    /** With V85 applied, a counter column missing is an error, not a silent NULL. */
+    @Test
+    void v85AppliedWithAColumnMissingStopsTheCutover() {
+        flyway(BEFORE).migrate();
+        JdbcTemplate jdbc = jdbc(SCRATCH);
+        LegacyFixtures.scenario(jdbc);
+        jdbc.execute("ALTER TABLE fiscal_xml_sync_control DROP COLUMN issued_earlier_gap");
+
+        assertThatThrownBy(() -> flyway("latest").migrate()).rootCause()
+                .hasMessageContaining("V85 is applied but fiscal_xml_sync_control lacks [issued_earlier_gap]");
+        assertThat(tableExists(jdbc, "fiscal_xml_documents")).isTrue();
+    }
+
+    /** The technical lock of FD-RN-52: without the backup's SHA-256, V89 stops and the legacy_* tables stay. */
+    @Test
+    void v89KeepsTheLegacyWithoutTheBackupSha256() {
+        flyway(BEFORE).migrate();
+        JdbcTemplate jdbc = jdbc(SCRATCH);
+        LegacyFixtures.scenario(jdbc);
+        Flyway withoutBackup = Flyway.configure().configuration(flyway("latest").getConfiguration())
+                .placeholders(Map.of("fd_backup_sha256", "")).load();
+
+        assertThatThrownBy(withoutBackup::migrate).rootCause().hasMessageContaining("SHA-256 of the checked backup");
+
+        assertThat(historySuccess(jdbc, "88")).isTrue();
+        assertThat(historySuccess(jdbc, "89")).isFalse();
+        assertThat(jdbc.queryForObject("SELECT COUNT(*) FROM legacy_fiscal_xml_documents", Integer.class)).isEqualTo(13);
+        assertThat(columns(jdbc, "fiscal_xml_sync_control")).contains("total_sieg");
+
+        flyway("latest").repair();
+        flyway("latest").migrate();
+        assertThat(tableExists(jdbc, "legacy_fiscal_xml_documents")).isFalse();
+        assertThat(log("fiscal.documents.cutover.backup.sha256")).isEqualTo("fiscal.documents.cutover.backup.sha256 prefix=0123456789ab");
     }
 
     // ------------------------------------------------------------------ CA-FD-25; CT-FD-34

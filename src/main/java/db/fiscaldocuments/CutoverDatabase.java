@@ -25,9 +25,11 @@ final class CutoverDatabase {
     static final ZoneId RECIFE = ZoneId.of("America/Recife");
 
     final JdbcTemplate jdbc;
+    private final String historyTable;
 
     CutoverDatabase(Context context) {
         this.jdbc = new JdbcTemplate(new SingleConnectionDataSource(context.getConnection(), true));
+        this.historyTable = context.getConfiguration() == null ? "flyway_schema_history" : context.getConfiguration().getTable();
     }
 
     boolean tableExists(String table) {
@@ -42,6 +44,17 @@ final class CutoverDatabase {
     /** The column itself when it exists, or {@code NULL} - the V85 counters may not be on this database yet. */
     String columnOrNull(String table, String alias, String column) {
         return columnExists(table, column) ? alias + "." + column : "NULL";
+    }
+
+    /** Whether Flyway recorded this version as successful on this database. */
+    boolean migrated(String version) {
+        return tableExists(historyTable)
+                && count("SELECT COUNT(*) FROM " + historyTable + " WHERE version = ? AND success = 1", version) > 0;
+    }
+
+    /** Whether Flyway recorded this version at all (successful or failed). */
+    boolean attempted(String version) {
+        return tableExists(historyTable) && count("SELECT COUNT(*) FROM " + historyTable + " WHERE version = ?", version) > 0;
     }
 
     long count(String sql, Object... args) {

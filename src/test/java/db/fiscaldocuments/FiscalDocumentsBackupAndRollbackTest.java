@@ -83,20 +83,27 @@ class FiscalDocumentsBackupAndRollbackTest {
     }
 
     private Result backup() throws Exception {
+        return backup("fd_old");
+    }
+
+    /** backup.sh with the password in an options file (as the operator's prompt would write it), never in the environment. */
+    private Result backup(String checkSchema) throws Exception {
+        Path cnf = out.resolve("client.cnf");
+        Files.writeString(cnf, "[client]\nuser=root\npassword=" + System.getenv().getOrDefault("DB_PASSWORD", "root") + "\n");
         Map<String, String> env = new LinkedHashMap<>();
         env.put("DOCKER_CONTAINER", CONTAINER);
         env.put("DB_NAME", SCRATCH);
         env.put("DB_USER", "root");
-        env.put("MYSQL_PWD", System.getenv().getOrDefault("DB_PASSWORD", "root"));
-        env.put("OUT_DIR", out.toString().replace('\\', '/'));
+        env.put("DB_DEFAULTS_FILE", cnf.toString().replace('\\', '/'));
+        env.put("OUT_DIR", out.resolve("backup").toString().replace('\\', '/'));
         env.put("KEEP_CHECK_SCHEMA", "1");
-        env.put("CHECK_SCHEMA", "fd_old");
+        env.put("CHECK_SCHEMA", checkSchema);
         return run(List.of(System.getenv().getOrDefault("FD_BASH", "bash"),
                 SCRIPTS.resolve("backup.sh").toString().replace('\\', '/')), env, null);
     }
 
     private Path dumpFile() throws IOException {
-        try (var files = Files.list(out)) {
+        try (var files = Files.list(out.resolve("backup"))) {
             return files.filter(p -> p.getFileName().toString().endsWith(".sql")).findFirst().orElseThrow();
         }
     }
@@ -110,13 +117,19 @@ class FiscalDocumentsBackupAndRollbackTest {
         return run(command, Map.of("MYSQL_PWD", System.getenv().getOrDefault("DB_PASSWORD", "root")), stdin);
     }
 
-    private Result rollback() throws Exception {
+    /** After V89: rollback-from-backup.sql with the dump next to it. */
+    private Result rollbackFromBackup() throws Exception {
         assertThat(run(List.of("docker", "exec", CONTAINER, "mkdir", "-p", "/tmp/fd-rollback"), Map.of(), null).exit()).isZero();
         assertThat(run(List.of("docker", "cp", dumpFile().toString(), CONTAINER + ":/tmp/fd-rollback/fiscal-documents-backup.sql"),
                 Map.of(), null).exit()).isZero();
-        Result result = mysqlInContainer("/tmp/fd-rollback", SCRIPTS.resolve("rollback.sql").toFile());
+        Result result = mysqlInContainer("/tmp/fd-rollback", SCRIPTS.resolve("rollback-from-backup.sql").toFile());
         run(List.of("docker", "exec", CONTAINER, "rm", "-rf", "/tmp/fd-rollback"), Map.of(), null);
         return result;
+    }
+
+    /** V87/V88 failed: rollback.sql only, no dump anywhere near it. */
+    private Result rollbackLegacy() throws Exception {
+        return mysqlInContainer(null, SCRIPTS.resolve("rollback.sql").toFile());
     }
 
     private static Map<String, Object> snapshot(JdbcTemplate jdbc) {
@@ -132,7 +145,6 @@ class FiscalDocumentsBackupAndRollbackTest {
 
     private static void seed(JdbcTemplate jdbc) {
         LegacyFixtures.scenario(jdbc);
-        LegacyFixtures.addV85Columns(jdbc);
         LegacyFixtures.syncControls(jdbc);
     }
 
@@ -166,7 +178,13 @@ class FiscalDocumentsBackupAndRollbackTest {
                 .contains("items missing\t1").contains("items\t" + LegacyFixtures.E1 + "\t2026-10\t1102")
                 .doesNotContain("1000.00").doesNotContain("999.99");
 
-        Result rollback = rollback();
+        // rollback.sql is only for a failed V87/V88: with the legacy dropped it stops without touching anything
+        Result wrongScript = rollbackLegacy();
+        assertThat(wrongScript.exit()).isNotZero();
+        assertThat(wrongScript.output()).contains("fd_rollback_stopped_legacy_already_dropped_use_rollback_from_backup");
+        assertThat(tableExists(jdbc, "fiscal_documents")).isTrue();
+
+        Result rollback = rollbackFromBackup();
         assertThat(rollback.exit()).as(rollback.output()).isZero();
 
         assertThat(snapshot(jdbc)).isEqualTo(before);
@@ -179,14 +197,16 @@ class FiscalDocumentsBackupAndRollbackTest {
         assertThat(previousImage.migrate().migrationsExecuted).isZero();
     }
 
-    /** CT-FD-34 + 6.5 item 0: V88 failed (legacy_* still there); the script renames them back and restores the backup. */
+    /**
+     * CT-FD-34 + 6.5 item 0: V88 failed (legacy_* intact); rollback.sql only renames them back and drops the new tables -
+     * no backup restored over them. rollback-from-backup.sql refuses this state.
+     */
     @Test
     void rollbackAfterAFailedParity() throws Exception {
         flyway(BEFORE).migrate();
         JdbcTemplate jdbc = jdbc(SCRATCH);
         seed(jdbc);
         Map<String, Object> before = snapshot(jdbc);
-        assertThat(backup().exit()).isZero();
         flyway("87").migrate();
         jdbc.update("UPDATE fiscal_documents SET total_amount = 3999.99 WHERE id = ?", doc("k1"));
         assertThatThrownBy(() -> flyway("latest").migrate()).hasRootCauseMessage(
@@ -194,7 +214,11 @@ class FiscalDocumentsBackupAndRollbackTest {
                         + " and the legacy_* tables are intact");
         assertThat(tableExists(jdbc, "legacy_fiscal_xml_documents")).isTrue();
 
-        Result rollback = rollback();
+        Result wrongScript = mysqlInContainer(null, SCRIPTS.resolve("rollback-from-backup.sql").toFile());
+        assertThat(wrongScript.exit()).isNotZero();
+        assertThat(wrongScript.output()).contains("fd_rollback_stopped_legacy_still_there_use_rollback_sql");
+
+        Result rollback = rollbackLegacy();
         assertThat(rollback.exit()).as(rollback.output()).isZero();
 
         assertThat(snapshot(jdbc)).isEqualTo(before);
@@ -203,6 +227,32 @@ class FiscalDocumentsBackupAndRollbackTest {
         }
         for (String table : FiscalDocumentTables.TABLES) {
             assertThat(tableExists(jdbc, table)).as(table).isFalse();
+        }
+    }
+
+    /** backup.sh only uses an fd_ schema it created itself: anything else is refused before the dump. */
+    @Test
+    void backupRefusesAForeignCheckSchema() throws Exception {
+        flyway(BEFORE).migrate();
+        jdbc("").execute("DROP DATABASE IF EXISTS fd_foreign");
+        jdbc("").execute("CREATE DATABASE fd_foreign");
+        jdbc("").execute("CREATE TABLE fd_foreign.keep_me (id int)");
+        try {
+            Result notPrefixed = backup(SCRATCH);
+            assertThat(notPrefixed.exit()).isEqualTo(2);
+            assertThat(notPrefixed.output()).contains("CHECK_SCHEMA precisa começar com fd_");
+
+            Result foreign = backup("fd_foreign");
+            assertThat(foreign.exit()).isEqualTo(2);
+            assertThat(foreign.output()).contains("já existe e não foi criado por este script");
+            assertThat(jdbc("").queryForObject("SELECT COUNT(*) FROM information_schema.tables WHERE table_schema = 'fd_foreign'",
+                    Integer.class)).isEqualTo(1);
+
+            // a schema the script created is reused (dropped and created again)
+            assertThat(backup("fd_old").exit()).isZero();
+            assertThat(backup("fd_old").exit()).isZero();
+        } finally {
+            jdbc("").execute("DROP DATABASE IF EXISTS fd_foreign");
         }
     }
 }

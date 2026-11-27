@@ -132,8 +132,8 @@ final class LegacyFixtures {
         insert(jdbc, fxd, nfe(doc("k5"), E1, "access_key", key(5), "direction", "OUTBOUND", "own_issue", 1,
                 "issue_date", "2026-10-10 10:00:00", "issuer_cnpj", E1_CNPJ, "dest_id_estrangeiro", "X-99887766",
                 "total_valor_total_nota", "750.25", "source_system", "SEFAZ_DIST", "found_in_sefaz_at", "2026-11-07 08:00:00"));
-        // CT-FD-04: model 65 = NFC-e
-        insert(jdbc, fxd, nfe(doc("k6"), E1, "access_key", key(6), "direction", "OUTBOUND", "own_issue", 1, "ide_modelo", "65",
+        // CT-FD-04: model 65 = NFC-e; FD-RN-56: own issue without direction, tpNF 1 → OUTBOUND
+        insert(jdbc, fxd, nfe(doc("k6"), E1, "access_key", key(6), "direction", null, "own_issue", 1, "ide_tipo_operacao", "1", "ide_modelo", "65",
                 "issue_date", "2026-10-11 10:00:00", "issuer_cnpj", E1_CNPJ, "dest_cpf", "39053344705", "total_valor_total_nota", "89.90"));
         // CT-e of upload: common block + ICMS only, model 57, metadata version 0
         insert(jdbc, fxd, nfe(doc("k7"), E1, "document_type", "CTE", "ide_modelo", null, "access_key", key(7),
@@ -143,8 +143,8 @@ final class LegacyFixtures {
         // CT-FD-11 and 17: own_issue null, no issue date, no key (the "strange file" of an upload)
         insert(jdbc, fxd, nfe(doc("k8"), E1, "access_key", null, "direction", "INBOUND", "own_issue", null,
                 "issue_date", null, "metadata_version", null, "total_valor_total_nota", "10.00", "source_system", "UPLOAD"));
-        // CT-FD-16: month turn, no conversion
-        insert(jdbc, fxd, nfe(doc("k9"), E1, "access_key", key(9), "direction", "INBOUND", "own_issue", 0,
+        // CT-FD-16: month turn, no conversion; FD-RN-56: received without direction → INBOUND
+        insert(jdbc, fxd, nfe(doc("k9"), E1, "access_key", key(9), "direction", null, "own_issue", 0,
                 "issue_date", "2026-10-31 23:59:59", "total_valor_total_nota", "1.00"));
         insert(jdbc, fxd, nfe(doc("k10"), E1, "access_key", key(10), "direction", "INBOUND", "own_issue", 0,
                 "issue_date", "2026-11-01 00:00:00", "total_valor_total_nota", "2.00"));
@@ -219,16 +219,7 @@ final class LegacyFixtures {
                 "reviewed_by", "fiscal1@exemplo.test", "reviewed_at", "2026-11-11 08:00:00"));
     }
 
-    /** The V85 columns of {@code fix/sieg-call-savings} (final version, ten columns), added as V85 would. */
-    static void addV85Columns(JdbcTemplate jdbc) {
-        jdbc.execute("ALTER TABLE fiscal_xml_sync_control ADD COLUMN received_known_gap_month char(7),"
-                + " ADD COLUMN received_known_gap int, ADD COLUMN issued_known_gap_month char(7), ADD COLUMN issued_known_gap int,"
-                + " ADD COLUMN received_earlier_gap_month char(7), ADD COLUMN received_earlier_gap int,"
-                + " ADD COLUMN issued_earlier_gap_month char(7), ADD COLUMN issued_earlier_gap int,"
-                + " ADD COLUMN received_stored_any_source int, ADD COLUMN issued_stored_any_source int");
-    }
-
-    /** CT-FD-29, 36 and the edge cases of 3.11 (needs {@link #addV85Columns}). */
+    /** CT-FD-29, 36 and the edge cases of 3.11 (the ten V85 columns are there: Flyway runs up to V85). */
     static void syncControls(JdbcTemplate jdbc) {
         insert(jdbc, "fiscal_xml_sync_control", audited("id", "s-e1", "company_id", E1,
                 "data_emissao_inicio", "2026-11-01", "data_emissao_fim", "2026-11-30", "total_sieg", 40, "total_importado", 37,

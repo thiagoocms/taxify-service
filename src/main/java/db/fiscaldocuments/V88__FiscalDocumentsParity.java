@@ -85,6 +85,7 @@ public class V88__FiscalDocumentsParity extends BaseJavaMigration {
                 compare(db, "sources", sourcesLegacy(db, documents, invoices), sourcesNew(), groups, failed);
             }
         }
+        SyncControlCounters.requireV85Complete(db);
         if (SyncControlCounters.present(db)) {
             captureCounts(db, groups, failed);
         }
@@ -150,7 +151,7 @@ public class V88__FiscalDocumentsParity extends BaseJavaMigration {
     private static Aggregate goodsLegacy() {
         String type = CopyMappings.GOODS_DOCUMENT_TYPE;
         String goods = "CASE WHEN l.document_type = 'CTE' THEN NULL ELSE %s END";
-        return new Aggregate("SELECT l.company_id, " + month("l") + ", " + type + ", l.direction,"
+        return new Aggregate("SELECT l.company_id, " + month("l") + ", " + type + ", " + CopyMappings.DERIVED_DIRECTION + ","
                 + " COUNT(*), SUM(CASE WHEN l.status = 'CANCELED' THEN 1 ELSE 0 END), SUM(CASE WHEN l.status = 'CANCELED' AND l.canceled_at IS NOT NULL THEN 1 ELSE 0 END), SUM(CASE WHEN l.deleted = 1 THEN 1 ELSE 0 END),"
                 + " SUM(l.total_valor_total_nota),"
                 + " SUM(l.total_valor_icms), SUM(" + String.format(goods, "l.total_valor_icms_st") + "),"
@@ -220,31 +221,33 @@ public class V88__FiscalDocumentsParity extends BaseJavaMigration {
     private static Aggregate sourcesLegacy(CutoverDatabase db, boolean documents, boolean invoices) {
         List<String> parts = new ArrayList<>();
         if (documents) {
-            sourcePart(db, parts, LegacyTable.DOCUMENTS.legacyName(), "found_in_sieg_at", "SIEG");
-            sourcePart(db, parts, LegacyTable.DOCUMENTS.legacyName(), "found_in_sefaz_at", "SEFAZ_DFE");
-            sourcePart(db, parts, LegacyTable.DOCUMENTS.legacyName(), null, "UPLOAD");
+            sourcePart(db, parts, LegacyTable.DOCUMENTS.legacyName(), "found_in_sieg_at", "SIEG", "PERIOD");
+            sourcePart(db, parts, LegacyTable.DOCUMENTS.legacyName(), "found_in_sefaz_at", "SEFAZ_DFE", "CURSOR");
+            sourcePart(db, parts, LegacyTable.DOCUMENTS.legacyName(), null, "UPLOAD", "NONE");
         }
         if (invoices) {
-            sourcePart(db, parts, LegacyTable.SERVICE_INVOICES.legacyName(), "found_in_sieg_at", "SIEG");
-            sourcePart(db, parts, LegacyTable.SERVICE_INVOICES.legacyName(), "found_in_adn_at", "NFSE_ADN");
-            sourcePart(db, parts, LegacyTable.SERVICE_INVOICES.legacyName(), null, "UPLOAD");
+            sourcePart(db, parts, LegacyTable.SERVICE_INVOICES.legacyName(), "found_in_sieg_at", "SIEG", "PERIOD");
+            sourcePart(db, parts, LegacyTable.SERVICE_INVOICES.legacyName(), "found_in_adn_at", "NFSE_ADN", "CURSOR");
+            sourcePart(db, parts, LegacyTable.SERVICE_INVOICES.legacyName(), null, "UPLOAD", "NONE");
         }
-        return new Aggregate("SELECT s.company_id, s.source, COUNT(*), MIN(s.seen), MAX(s.seen), MIN(s.seen), MAX(s.seen)"
-                + " FROM (" + String.join(" UNION ALL ", parts) + ") s GROUP BY 1, 2", 2);
+        return new Aggregate("SELECT s.company_id, s.source, s.mode, COUNT(*), MIN(s.seen), MAX(s.seen), MIN(s.seen), MAX(s.seen)"
+                + " FROM (" + String.join(" UNION ALL ", parts) + ") s GROUP BY 1, 2, 3", 3);
     }
 
-    private static void sourcePart(CutoverDatabase db, List<String> parts, String table, String column, String source) {
+    private static void sourcePart(CutoverDatabase db, List<String> parts, String table, String column, String source,
+                                   String mode) {
         if (column != null && !db.columnExists(table, column)) {
             return;
         }
         String seen = column == null ? "created_date" : column;
         String condition = column == null ? "source_system = 'UPLOAD'" : column + " IS NOT NULL";
-        parts.add("SELECT company_id, '" + source + "' AS source, " + seen + " AS seen FROM " + table + " WHERE " + condition);
+        parts.add("SELECT company_id, '" + source + "' AS source, '" + mode + "' AS mode, " + seen + " AS seen FROM " + table
+                + " WHERE " + condition);
     }
 
     private static Aggregate sourcesNew() {
-        return new Aggregate("SELECT s.company_id, s.source, COUNT(*), MIN(s.first_seen_at), MAX(s.first_seen_at),"
-                + " MIN(s.last_seen_at), MAX(s.last_seen_at) FROM " + FDS + " s GROUP BY 1, 2", 2);
+        return new Aggregate("SELECT s.company_id, s.source, s.retrieval_mode, COUNT(*), MIN(s.first_seen_at), MAX(s.first_seen_at),"
+                + " MIN(s.last_seen_at), MAX(s.last_seen_at) FROM " + FDS + " s GROUP BY 1, 2, 3", 3);
     }
 
     private void compare(CutoverDatabase db, String block, Aggregate legacy, Aggregate current,

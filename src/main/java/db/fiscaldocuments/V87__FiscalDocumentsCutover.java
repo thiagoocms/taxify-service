@@ -55,6 +55,7 @@ public class V87__FiscalDocumentsCutover extends BaseJavaMigration {
 
     private void run(CutoverDatabase db) {
         FiscalDocumentTables.verify(db);
+        SyncControlCounters.requireV85Complete(db);
         Map<LegacyTable, LegacyTable.Location> locations = new EnumMap<>(LegacyTable.class);
         for (LegacyTable table : LegacyTable.values()) {
             locations.put(table, table.locate(db));
@@ -113,13 +114,55 @@ public class V87__FiscalDocumentsCutover extends BaseJavaMigration {
             unexpected(db, problems, documents, "direction IS NOT NULL AND direction NOT IN ('INBOUND', 'OUTBOUND')", "unknown direction");
             unexpected(db, problems, documents, "status IS NOT NULL AND status NOT IN ('AUTHORIZED', 'CANCELED')", "unknown status");
             unexpected(db, problems, documents, "CHAR_LENGTH(TRIM(ide_modelo)) > 2", "ide_modelo longer than 2");
+            unexpected(db, problems, documents, SOURCE_KEY_INVALID, "source_system outside " + SOURCE_KEY_PATTERN);
+            // FD-RN-56: what the backfill rule can't fill is for the Tony to decide
+            long unresolved = db.count("SELECT COUNT(*) FROM " + documents + " WHERE " + CopyMappings.UNRESOLVED_DIRECTION);
+            if (unresolved > 0) {
+                log.error("fiscal.documents.cutover.direction.unresolved count={}", unresolved);
+                problems.add(unresolved + " own-issue row(s) without direction nor ide_tipo_operacao 0/1 (FD-RN-56)");
+            }
+            if (present(LegacyTable.ITEMS, locations)) {
+                long cteItems = db.count("SELECT COUNT(*) FROM " + nameOf(LegacyTable.ITEMS, locations) + " i JOIN " + documents
+                        + " d ON d.id = i.document_id WHERE d.document_type = 'CTE'");
+                if (cteItems > 0) {
+                    problems.add(cteItems + " item(s) of CT-e rows (a Cte has no items, I-16)");
+                }
+            }
         }
         if (hasInvoices) {
             unexpected(db, problems, invoices, "direction NOT IN ('PRESTADA', 'TOMADA', 'TERCEIRO')", "unknown NFS-e direction");
             unexpected(db, problems, invoices, "layout NOT IN ('NACIONAL', 'ABRASF')", "unknown NFS-e layout");
+            unexpected(db, problems, invoices, SOURCE_KEY_INVALID, "source_system outside " + SOURCE_KEY_PATTERN);
         }
         if (!problems.isEmpty()) {
             throw new IllegalStateException("fiscal documents cutover stopped before the rename, nothing copied: " + problems);
+        }
+        logNormalizations(db, hasDocuments ? documents : null, hasInvoices ? invoices : null);
+    }
+
+    /** Source keys are upper-case words ({@code DocumentSourceKey}); compared byte by byte, so {@code sieg} is refused. */
+    static final String SOURCE_KEY_PATTERN = "^[A-Z][A-Z0-9_]*$";
+    private static final String SOURCE_KEY_INVALID = "NOT (CAST(source_system AS BINARY) REGEXP '" + SOURCE_KEY_PATTERN + "')";
+
+    /**
+     * What the copy changes or the domain tolerates, counted before copying (FD-RN-55, 56, 3.11; counts only): directions
+     * derived, canceled_at dropped on an authorized row, legacy NFS-e that the domain keeps only as copied rows
+     * ({@code metadata_version = 0}): national key not of 50 digits, party document with no type.
+     */
+    private void logNormalizations(CutoverDatabase db, String documents, String invoices) {
+        long derived = documents == null ? 0 : db.count("SELECT COUNT(*) FROM " + documents + " WHERE direction IS NULL");
+        long canceledAtDropped = documents == null ? 0 : db.count("SELECT COUNT(*) FROM " + documents
+                + " WHERE canceled_at IS NOT NULL AND (status IS NULL OR status <> 'CANCELED')");
+        log.info("fiscal.documents.cutover.direction.derived count={}", derived);
+        log.info("fiscal.documents.cutover.canceled.at.discarded count={}", canceledAtDropped);
+        if (invoices != null) {
+            long nationalKey = db.count("SELECT COUNT(*) FROM " + invoices
+                    + " WHERE layout = 'NACIONAL' AND NOT (CAST(access_key AS BINARY) REGEXP '^[0-9]{50}$')");
+            long untyped = db.count("SELECT COUNT(*) FROM " + invoices + " WHERE ("
+                    + CopyMappings.hasText("prestador_documento") + " AND " + CopyMappings.documentTypeBySize("prestador_documento")
+                    + " IS NULL) OR (" + CopyMappings.hasText("tomador_documento") + " AND "
+                    + CopyMappings.documentTypeBySize("tomador_documento") + " IS NULL)");
+            log.info("fiscal.documents.cutover.tolerated nationalKeyNot50Digits={} partyDocumentWithoutType={}", nationalKey, untyped);
         }
     }
 
@@ -220,32 +263,36 @@ public class V87__FiscalDocumentsCutover extends BaseJavaMigration {
         long copied = 0;
         if (present(LegacyTable.DOCUMENTS, locations)) {
             String source = LegacyTable.DOCUMENTS.legacyName();
-            copied += copySource(db, source, "found_in_sieg_at", "SIEG");
-            copied += copySource(db, source, "found_in_sefaz_at", "SEFAZ_DFE");
-            copied += copySource(db, source, null, "UPLOAD");
+            copied += copySource(db, source, "found_in_sieg_at", "SIEG", "PERIOD");
+            copied += copySource(db, source, "found_in_sefaz_at", "SEFAZ_DFE", "CURSOR");
+            copied += copySource(db, source, null, "UPLOAD", "NONE");
         }
         if (present(LegacyTable.SERVICE_INVOICES, locations)) {
             String source = LegacyTable.SERVICE_INVOICES.legacyName();
-            copied += copySource(db, source, "found_in_sieg_at", "SIEG");
-            copied += copySource(db, source, "found_in_adn_at", "NFSE_ADN");
-            copied += copySource(db, source, null, "UPLOAD");
+            copied += copySource(db, source, "found_in_sieg_at", "SIEG", "PERIOD");
+            copied += copySource(db, source, "found_in_adn_at", "NFSE_ADN", "CURSOR");
+            copied += copySource(db, source, null, "UPLOAD", "NONE");
         }
         log.info("fiscal.documents.cutover.copied step=sources table={} copied={} ms={}",
                 FiscalDocumentTables.SOURCES, copied, System.currentTimeMillis() - started);
     }
 
-    /** {@code dateColumn} null = the upload origin, dated by the document's {@code created_date}. */
-    private static long copySource(CutoverDatabase db, String table, String dateColumn, String sourceKey) {
+    /**
+     * {@code dateColumn} null = the upload origin, dated by the document's {@code created_date}. {@code retrievalMode}
+     * (3.10): how the source delivered it - {@code PERIOD} (SIEG count + pages), {@code CURSOR} (SEFAZ DF-e, ADN),
+     * {@code NONE} (upload).
+     */
+    private static long copySource(CutoverDatabase db, String table, String dateColumn, String sourceKey, String retrievalMode) {
         if (dateColumn != null && !db.columnExists(table, dateColumn)) {
             return 0;
         }
         String date = dateColumn == null ? "l.created_date" : "l." + dateColumn;
         String condition = dateColumn == null ? "l.source_system = 'UPLOAD'" : "l." + dateColumn + " IS NOT NULL";
         return db.jdbc.update("INSERT INTO " + FiscalDocumentTables.SOURCES
-                + " (id, document_id, company_id, source, first_seen_at, last_seen_at)"
-                + " SELECT UUID(), l.id, l.company_id, ?, " + date + ", " + date + " FROM " + table + " l WHERE " + condition
-                + " AND NOT EXISTS (SELECT 1 FROM " + FiscalDocumentTables.SOURCES + " s WHERE s.document_id = l.id AND s.source = ?)",
-                sourceKey, sourceKey);
+                + " (id, document_id, company_id, source, retrieval_mode, first_seen_at, last_seen_at)"
+                + " SELECT UUID(), l.id, l.company_id, ?, ?, " + date + ", " + date + " FROM " + table + " l WHERE " + condition
+                + " AND NOT EXISTS (SELECT 1 FROM " + FiscalDocumentTables.SOURCES + " s WHERE s.document_id = l.id AND s.source = ? AND s.retrieval_mode = ?)",
+                sourceKey, retrievalMode, sourceKey, retrievalMode);
     }
 
     // ------------------------------------------------------------------ 5. capture counts
@@ -266,6 +313,7 @@ public class V87__FiscalDocumentsCutover extends BaseJavaMigration {
         String t = SyncControlCounters.TABLE;
         Timestamp now = Timestamp.valueOf(CutoverDatabase.nowInRecife());
         String month = "DATE_FORMAT(c.data_emissao_inicio, '%Y-%m')";
+        logCountRules(db, month);
         long copied = 0;
         for (String side : List.of("RECEIVED", "ISSUED")) {
             boolean received = side.equals("RECEIVED");
@@ -301,6 +349,22 @@ public class V87__FiscalDocumentsCutover extends BaseJavaMigration {
         long withoutWindow = db.count("SELECT COUNT(*) FROM " + t + " WHERE data_emissao_inicio IS NULL");
         log.info("fiscal.documents.cutover.copied step=capture-counts table={} controls={} copied={} withoutWindow={} ms={}",
                 FiscalDocumentTables.COUNTS, controls, copied, withoutWindow, System.currentTimeMillis() - started);
+    }
+
+    /** 3.11 rules that drop a value, counted before the copy: previous month = current, both gap slots in one month. */
+    private static void logCountRules(CutoverDatabase db, String month) {
+        String t = SyncControlCounters.TABLE;
+        long previousSkipped = 0;
+        long sameMonthSlots = 0;
+        for (String prefix : List.of("received", "issued")) {
+            previousSkipped += db.count("SELECT COUNT(*) FROM " + t + " c WHERE c.data_emissao_inicio IS NOT NULL AND "
+                    + CopyMappings.hasText("c." + prefix + "_prev_month") + " AND TRIM(c." + prefix + "_prev_month) = " + month);
+            String known = db.columnOrNull(t, "c", prefix + "_known_gap_month");
+            String earlier = db.columnOrNull(t, "c", prefix + "_earlier_gap_month");
+            sameMonthSlots += db.count("SELECT COUNT(*) FROM " + t + " c WHERE " + known + " = " + earlier);
+        }
+        log.info("fiscal.documents.cutover.counts.rules previousMonthEqualsCurrent={} gapSlotsSameMonth={}",
+                previousSkipped, sameMonthSlots);
     }
 
     /** The known gap of a month: the first V85 slot ({@code known_gap}, then {@code earlier_gap}) holding that month. */
