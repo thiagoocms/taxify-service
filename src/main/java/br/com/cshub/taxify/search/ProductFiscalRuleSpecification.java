@@ -24,7 +24,7 @@ public class ProductFiscalRuleSpecification extends AbstractsSpecification<Produ
                 Join<Object, Object> companyJoin = root.join("company", JoinType.LEFT);
                 predicates.add(builder.equal(companyJoin.get("id"), criteria.getValue()));
             }
-            case "codigoProduto" -> predicates.add(builder.equal(root.get("codigoProduto"), criteria.getValue()));
+            case "codigoProduto" -> predicates.add(builder.equal(root.get("productCode"), criteria.getValue()));
             default -> {
             }
         }

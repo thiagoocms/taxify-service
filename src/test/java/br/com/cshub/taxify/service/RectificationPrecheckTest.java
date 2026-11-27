@@ -25,9 +25,9 @@ class RectificationPrecheckTest {
 
     private static ProductFiscalRule rule(String cfop, String ncm, ProductTaxRule tax) {
         ProductFiscalRule rule = new ProductFiscalRule(UUID.randomUUID());
-        rule.setCodigoProduto("P001");
-        rule.setCfopCorreto(cfop);
-        rule.setNcmCorreto(ncm);
+        rule.setProductCode("P001");
+        rule.setCorrectCfop(cfop);
+        rule.setCorrectNcm(ncm);
         rule.setTaxRule(tax);
         return rule;
     }

@@ -26,7 +26,7 @@ final class RectificationPrecheck {
         if (differs(item.getCfop(), ProductRuleCheck.expectedCfop(item, rule))) {
             return true;
         }
-        if (rule.getNcmCorreto() != null && differs(item.getNcm(), rule.getNcmCorreto())) {
+        if (rule.getCorrectNcm() != null && differs(item.getNcm(), rule.getCorrectNcm())) {
             return true;
         }
         ProductTaxRule tax = rule.getTaxRule();
@@ -37,7 +37,7 @@ final class RectificationPrecheck {
         String csosn = detail == null ? null : detail.csosn();
         FiscalItemIbsCbs ibsCbs = item.getIbsCbs();
         return pinnedAndDiffers(detail == null ? null : detail.cest(), tax.cest())
-                || pinnedAndDiffers(detail == null ? null : detail.origemMercadoria(), tax.origemMercadoria())
+                || pinnedAndDiffers(detail == null ? null : detail.origemMercadoria(), tax.goodsOrigin())
                 // The ICMS group holds either a CSOSN (Simples) or a CST - the column has whichever it is.
                 || (csosn != null
                         ? pinnedAndDiffers(csosn, tax.csosn())
@@ -45,7 +45,7 @@ final class RectificationPrecheck {
                 || pinnedAndDiffers(item.getSituacaoTributariaIpi(), tax.cstIpi())
                 || pinnedAndDiffers(item.getSituacaoTributariaPis(), tax.cstPis())
                 || pinnedAndDiffers(item.getSituacaoTributariaCofins(), tax.cstCofins())
-                || pinnedAndDiffers(ibsCbs == null ? null : ibsCbs.classificacaoTributaria(), tax.classificacaoTributaria());
+                || pinnedAndDiffers(ibsCbs == null ? null : ibsCbs.classificacaoTributaria(), tax.taxClassification());
     }
 
     /** CFOP/NCM: rewritten whenever the tag exists and differs. */

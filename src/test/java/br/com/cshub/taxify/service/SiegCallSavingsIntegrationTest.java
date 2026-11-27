@@ -209,7 +209,7 @@ class SiegCallSavingsIntegrationTest {
         assertThat(foundInSieg()).as("the SEFAZ notes were seen in SIEG too").isEqualTo(100);
         FiscalXmlSyncControl control = controlRepository.findByCompany_Id(UUID.fromString(companyId)).orElseThrow();
         assertThat(control.getTotalSieg()).isEqualTo(100);
-        assertThat(control.getTotalImportado()).isEqualTo(100);
+        assertThat(control.getTotalImported()).isEqualTo(100);
     }
 
     /**
@@ -238,7 +238,7 @@ class SiegCallSavingsIntegrationTest {
         // which stops on the first page: the 5 late notes were there
         assertThat(downloads).extracting(SiegBaixarXmlsRequest::skip).containsExactly(60, 0);
         FiscalXmlSyncControl control = controlRepository.findByCompany_Id(UUID.fromString(companyId)).orElseThrow();
-        assertThat(control.getTotalImportado()).isEqualTo(65);
+        assertThat(control.getTotalImported()).isEqualTo(65);
         assertThat(control.getTotalSieg()).isEqualTo(65);
     }
 
@@ -453,9 +453,9 @@ class SiegCallSavingsIntegrationTest {
     private void attempt(boolean nextDay) {
         LocalDate today = LocalDate.of(2026, 12, 20);
         FiscalXmlSyncControl control = controlRepository.findByCompany_Id(UUID.fromString(companyId)).orElse(null);
-        boolean sameMonth = control != null && control.getDataEmissaoInicio() != null
-                && YearMonth.from(control.getUltimaVerificacaoEm()).equals(YearMonth.from(today));
-        int imported = sameMonth ? control.getTotalImportado() : 0;
+        boolean sameMonth = control != null && control.getIssueDateFrom() != null
+                && YearMonth.from(control.getLastCheckedAt()).equals(YearMonth.from(today));
+        int imported = sameMonth ? control.getTotalImported() : 0;
         int gap = control == null ? 0 : control.knownGap(false, YearMonth.from(today).toString());
         boolean knownPending = !nextDay && sameMonth && control.getTotalSieg() > 0 && imported + gap < control.getTotalSieg();
         if (!nextDay && sameMonth && control.getTotalSieg() > 0 && imported + gap >= control.getTotalSieg()) {

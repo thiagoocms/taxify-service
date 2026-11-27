@@ -172,11 +172,11 @@ class FiscalXmlIntegrationServiceSyncTest {
         verify(syncControlRepository).save(captor.capture());
         FiscalXmlSyncControl control = captor.getValue();
         assertThat(control.getCompany().getId()).isEqualTo(companyId);
-        assertThat(control.getDataEmissaoInicio()).isEqualTo(inicio);
-        assertThat(control.getDataEmissaoFim()).isEqualTo(fim);
+        assertThat(control.getIssueDateFrom()).isEqualTo(inicio);
+        assertThat(control.getIssueDateTo()).isEqualTo(fim);
         assertThat(control.getTotalSieg()).isEqualTo(200);
-        assertThat(control.getTotalImportado()).isEqualTo(100);
-        assertThat(control.getUltimaVerificacaoEm()).isNotNull();
+        assertThat(control.getTotalImported()).isEqualTo(100);
+        assertThat(control.getLastCheckedAt()).isNotNull();
     }
 
     @Test
@@ -193,7 +193,7 @@ class FiscalXmlIntegrationServiceSyncTest {
 
         ArgumentCaptor<FiscalXmlSyncControl> captor = ArgumentCaptor.forClass(FiscalXmlSyncControl.class);
         verify(syncControlRepository).save(captor.capture());
-        assertThat(captor.getValue().getTotalImportado()).isEqualTo(30);
+        assertThat(captor.getValue().getTotalImported()).isEqualTo(30);
     }
 
     @Test
@@ -227,10 +227,10 @@ class FiscalXmlIntegrationServiceSyncTest {
         verify(syncControlRepository).save(captor.capture());
         FiscalXmlSyncControl control = captor.getValue();
         assertThat(control.getTotalSieg()).isEqualTo(200);
-        assertThat(control.getTotalImportado()).isEqualTo(120);
+        assertThat(control.getTotalImported()).isEqualTo(120);
         assertThat(control.knownGap(false, "2026-11")).isEqualTo(80);
         assertThat(control.getReceivedStoredAnySource()).as("the panel's 'no Taxify (qualquer origem)'").isEqualTo(130);
-        assertThat(control.getUltimaVerificacaoEm()).isNotNull();
+        assertThat(control.getLastCheckedAt()).isNotNull();
     }
 
     /** B1: the paging ended short after skip 120 - a reconciliation is asked for, to run outside this transaction. */

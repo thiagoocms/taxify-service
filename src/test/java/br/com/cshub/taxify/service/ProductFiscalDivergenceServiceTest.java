@@ -182,7 +182,7 @@ class ProductFiscalDivergenceServiceTest {
         when(itemRepository.findByDocument_Company_IdAndDocument_IssueDateBetween(eq(companyId), any(), any()))
                 .thenReturn(List.of(fromA, fromB));
         ProductFiscalRule ofA = ruleWith("001", "1102", null);
-        ofA.setDocumentoFornecedor("11222333000181");
+        ofA.setSupplierDocument("11222333000181");
         when(ruleRepository.findByCompany_IdAndDeletedIsFalse(companyId)).thenReturn(List.of(ofA));
 
         List<ProductFiscalDivergenceDTO> result = service.findDivergences(companyId.toString(), null, null);
@@ -234,9 +234,9 @@ class ProductFiscalDivergenceServiceTest {
 
     private ProductFiscalRule ruleWith(String codigoProduto, String cfopCorreto, String ncmCorreto) {
         ProductFiscalRule rule = new ProductFiscalRule(UUID.randomUUID());
-        rule.setCodigoProduto(codigoProduto);
-        rule.setCfopCorreto(cfopCorreto);
-        rule.setNcmCorreto(ncmCorreto);
+        rule.setProductCode(codigoProduto);
+        rule.setCorrectCfop(cfopCorreto);
+        rule.setCorrectNcm(ncmCorreto);
         return rule;
     }
 }

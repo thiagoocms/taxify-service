@@ -214,9 +214,9 @@ public class FiscalXmlRectificationService {
             }
             ProductFiscalRule rule = ruleOpt.get();
 
-            applyField(prod, "CFOP", OperationCfops.forOperation(rule.getCfopCorreto(), idDest), codigo, corrections);
-            if (rule.getNcmCorreto() != null) {
-                applyField(prod, "NCM", rule.getNcmCorreto(), codigo, corrections);
+            applyField(prod, "CFOP", OperationCfops.forOperation(rule.getCorrectCfop(), idDest), codigo, corrections);
+            if (rule.getCorrectNcm() != null) {
+                applyField(prod, "NCM", rule.getCorrectNcm(), codigo, corrections);
             }
             if (rule.getTaxRule() != null) {
                 TaxCodeRectifier.apply(det, rule.getTaxRule(), codigo, corrections);

@@ -86,7 +86,7 @@ public class ProductFiscalDivergenceService {
                 item.getCfop(),
                 ProductRuleCheck.expectedCfop(item, rule),
                 item.getNcm(),
-                rule.getNcmCorreto()
+                rule.getCorrectNcm()
         );
     }
 

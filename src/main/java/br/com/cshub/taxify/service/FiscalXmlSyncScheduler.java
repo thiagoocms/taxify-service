@@ -269,9 +269,9 @@ public class FiscalXmlSyncScheduler {
                 control.setCompany(company);
                 control.setDeleted(false);
                 control.setTotalSieg(0);
-                control.setTotalImportado(0);
+                control.setTotalImported(0);
                 // filled because the column is NOT NULL - not a verification (see FiscalXmlSyncControl#getVerifiedAt)
-                control.setUltimaVerificacaoEm(LocalDateTime.now(clock));
+                control.setLastCheckedAt(LocalDateTime.now(clock));
                 seed(control);
             }
         }
@@ -420,7 +420,7 @@ public class FiscalXmlSyncScheduler {
 
     /** The day the side was last checked (null = never) - read before this attempt changes it. */
     private static LocalDate checkedDay(FiscalXmlSyncControl control, FiscalXmlSide side) {
-        LocalDateTime checkedAt = side == FiscalXmlSide.ISSUED ? control.getIssuedCheckedAt() : control.getUltimaVerificacaoEm();
+        LocalDateTime checkedAt = side == FiscalXmlSide.ISSUED ? control.getIssuedCheckedAt() : control.getLastCheckedAt();
         return checkedAt == null ? null : checkedAt.toLocalDate();
     }
 
@@ -652,8 +652,8 @@ public class FiscalXmlSyncScheduler {
                 return new SideState(valueOf(control.getIssuedTotalSieg()), valueOf(control.getIssuedTotalImported()),
                         control.getIssuedCheckedAt(), control.getIssuedCheckedAt() != null, gap);
             }
-            return new SideState(control.getTotalSieg(), control.getTotalImportado(), control.getUltimaVerificacaoEm(),
-                    control.getUltimaVerificacaoEm() != null && control.getDataEmissaoInicio() != null, gap);
+            return new SideState(control.getTotalSieg(), control.getTotalImported(), control.getLastCheckedAt(),
+                    control.getLastCheckedAt() != null && control.getIssueDateFrom() != null, gap);
         }
 
         /**

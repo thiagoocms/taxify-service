@@ -62,9 +62,9 @@ class FiscalCheckEngineTest {
 
     private static ProductFiscalRule rule(String codigo, String cfop, String ncm) {
         ProductFiscalRule rule = new ProductFiscalRule(UUID.randomUUID());
-        rule.setCodigoProduto(codigo);
-        rule.setCfopCorreto(cfop);
-        rule.setNcmCorreto(ncm);
+        rule.setProductCode(codigo);
+        rule.setCorrectCfop(cfop);
+        rule.setCorrectNcm(ncm);
         return rule;
     }
 }

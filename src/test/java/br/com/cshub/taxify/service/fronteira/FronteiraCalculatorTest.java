@@ -460,8 +460,8 @@ class FronteiraCalculatorTest {
     void anAtivoByTheProductRuleIsOnlyTheDiferencial() {
         FiscalXmlDocument document = note("MG", "4261.61");
         br.com.cshub.taxify.domain.fiscalrule.ProductFiscalRule ativo = new br.com.cshub.taxify.domain.fiscalrule.ProductFiscalRule(UUID.randomUUID());
-        ativo.setCodigoProduto("11204481");
-        ativo.setCfopCorreto("1551");
+        ativo.setProductCode("11204481");
+        ativo.setCorrectCfop("1551");
 
         ItemResult result = FronteiraCalculator.item(document, nobreak(document),
                 new Context(List.of(interna(null, "20.5"), cargaTecidos(), nobreakAgregacao()), false, "TECIDOS E ARMARINHO (INDUSTRIA)",
@@ -488,9 +488,9 @@ class FronteiraCalculatorTest {
         eletro.setNcm("8516");
         Context asEfisco = new Context(List.of(interna(null, "20.5"), cargaTecidos(), eletro), false, "TECIDOS E ARMARINHO (INDUSTRIA)");
         br.com.cshub.taxify.domain.fiscalrule.ProductFiscalRule ativo = new br.com.cshub.taxify.domain.fiscalrule.ProductFiscalRule(UUID.randomUUID());
-        ativo.setCodigoProduto("TW6527");
-        ativo.setDocumentoFornecedor("11111111000111");
-        ativo.setCfopCorreto("1551");
+        ativo.setProductCode("TW6527");
+        ativo.setSupplierDocument("11111111000111");
+        ativo.setCorrectCfop("1551");
         Context asAtivo = new Context(asEfisco.rules(), false, asEfisco.credenciamento(),
                 br.com.cshub.taxify.domain.fiscalrule.ProductRules.of(List.of(ativo)));
 

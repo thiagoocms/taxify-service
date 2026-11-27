@@ -97,7 +97,7 @@ class FiscalXmlVerificationClockAndPreviousMonthTest {
         ArgumentCaptor<FiscalXmlSyncControl> saved = ArgumentCaptor.forClass(FiscalXmlSyncControl.class);
         verify(controls, org.mockito.Mockito.times(2)).save(saved.capture());
         assertThat(saved.getAllValues().get(0).getIssuedCheckedAt()).isEqualTo(LocalDateTime.of(2026, 11, 27, 10, 0));
-        assertThat(saved.getAllValues().get(1).getUltimaVerificacaoEm()).isEqualTo(LocalDateTime.of(2026, 11, 27, 10, 0));
+        assertThat(saved.getAllValues().get(1).getLastCheckedAt()).isEqualTo(LocalDateTime.of(2026, 11, 27, 10, 0));
     }
 
     /** CT-CP-66 / CA-CP-26: Y, November 180 of 200; the first December check closes November with those numbers. */
@@ -120,7 +120,7 @@ class FiscalXmlVerificationClockAndPreviousMonthTest {
         assertThat(y.getIssuedPrevTotalSieg()).isEqualTo(12);
         // and the current month starts over
         assertThat(y.getTotalSieg()).isEqualTo(3);
-        assertThat(y.getTotalImportado()).isZero();
+        assertThat(y.getTotalImported()).isZero();
     }
 
     /** CT-CP-67: X, November 40/40, closes 40/40. CT-CP-68: two checks in the same month do not touch prev_*. */
@@ -142,11 +142,11 @@ class FiscalXmlVerificationClockAndPreviousMonthTest {
 
     private static FiscalXmlSyncControl novemberControl(int total, int imported, int issuedTotal, int issuedImported) {
         FiscalXmlSyncControl control = new FiscalXmlSyncControl();
-        control.setDataEmissaoInicio(LocalDate.of(2026, 11, 1));
-        control.setDataEmissaoFim(LocalDate.of(2026, 11, 30));
+        control.setIssueDateFrom(LocalDate.of(2026, 11, 1));
+        control.setIssueDateTo(LocalDate.of(2026, 11, 30));
         control.setTotalSieg(total);
-        control.setTotalImportado(imported);
-        control.setUltimaVerificacaoEm(LocalDateTime.of(2026, 11, 30, 22, 0));
+        control.setTotalImported(imported);
+        control.setLastCheckedAt(LocalDateTime.of(2026, 11, 30, 22, 0));
         control.setIssuedTotalSieg(issuedTotal);
         control.setIssuedTotalImported(issuedImported);
         control.setIssuedCheckedAt(LocalDateTime.of(2026, 11, 30, 22, 0));

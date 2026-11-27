@@ -230,8 +230,8 @@ class FiscalXmlSyncQueueIntegrationTest {
         control.setCompany(companyRepository.findById(companyId).orElseThrow());
         control.setDeleted(false);
         control.setTotalSieg(0);
-        control.setTotalImportado(0);
-        control.setUltimaVerificacaoEm(LocalDateTime.now());
+        control.setTotalImported(0);
+        control.setLastCheckedAt(LocalDateTime.now());
         control = controlRepository.save(control);
 
         LocalDateTime t1 = LocalDateTime.now(Clock.system(RECIFE)).truncatedTo(ChronoUnit.MICROS).withNano(123_456_000);
@@ -323,8 +323,8 @@ class FiscalXmlSyncQueueIntegrationTest {
         control.setCompany(companyRepository.findById(UUID.fromString(companyId)).orElseThrow());
         control.setDeleted(false);
         control.setTotalSieg(0);
-        control.setTotalImportado(0);
-        control.setUltimaVerificacaoEm(received);
+        control.setTotalImported(0);
+        control.setLastCheckedAt(received);
         control.setIssuedCheckedAt(issued);
         controlRepository.save(control);
     }

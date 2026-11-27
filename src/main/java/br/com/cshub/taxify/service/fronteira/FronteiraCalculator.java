@@ -159,7 +159,7 @@ public final class FronteiraCalculator {
         // the entry CFOP the company books: its product fiscal rule's, else the supplier's turned into an entry
         Optional<ProductFiscalRule> productRule = context.productRules() == null ? Optional.empty()
                 : context.productRules().find(item.getCodigo(), ProductRules.supplierOf(document));
-        String ruleCfop = productRule.map(ProductFiscalRule::getCfopCorreto).map(String::strip).filter(cfop -> cfop.length() == 4).orElse(null);
+        String ruleCfop = productRule.map(ProductFiscalRule::getCorrectCfop).map(String::strip).filter(cfop -> cfop.length() == 4).orElse(null);
         String entry = ruleCfop != null ? ruleCfop : EntryCfops.fromSupplier(item.getCfop());
         String operation = entry != null && entry.length() == 4 ? entry.substring(1) : "";
         if (ruleCfop != null) {

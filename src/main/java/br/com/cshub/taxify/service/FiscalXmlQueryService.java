@@ -221,8 +221,8 @@ public class FiscalXmlQueryService {
      * rewrote it to the rule's CFOP (the item column keeps what was issued).
      */
     private static String effectiveCfop(FiscalXmlDocument document, ProductFiscalRule rule, String issued) {
-        if (rule != null && rule.getCfopCorreto() != null && ProductRuleCheck.rectifiedUnder(document, rule)) {
-            return OperationCfops.forOperation(rule.getCfopCorreto(), document.getDestinoOperacao()).strip();
+        if (rule != null && rule.getCorrectCfop() != null && ProductRuleCheck.rectifiedUnder(document, rule)) {
+            return OperationCfops.forOperation(rule.getCorrectCfop(), document.getDestinoOperacao()).strip();
         }
         return issued.strip();
     }

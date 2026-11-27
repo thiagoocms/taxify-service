@@ -50,7 +50,7 @@ final class TaxCodeRectifier {
 
         Element icms = group(first(imposto, "ICMS"));
         if (icms != null) {
-            set(icms, "orig", tax.origemMercadoria(), codigo, "orig", corrections);
+            set(icms, "orig", tax.goodsOrigin(), codigo, "orig", corrections);
             String name = icms.getLocalName();
             Set<String> allowed = ICMS_GROUPS.getOrDefault(name, Set.of());
             if (first(icms, "CSOSN") != null) {
@@ -72,7 +72,7 @@ final class TaxCodeRectifier {
 
         Element ibsCbs = first(imposto, "IBSCBS");
         String currentCst = text(first(ibsCbs, "CST"));
-        String classTrib = tax.classificacaoTributaria();
+        String classTrib = tax.taxClassification();
         boolean sameCst = tax.cstIbsCbs() == null || Objects.equals(tax.cstIbsCbs(), currentCst);
         if (ibsCbs != null && classTrib != null && currentCst != null && sameCst && classTrib.startsWith(currentCst)) {
             set(ibsCbs, "cClassTrib", classTrib, codigo, "cClassTrib", corrections);

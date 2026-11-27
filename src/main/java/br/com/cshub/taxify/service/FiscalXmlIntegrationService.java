@@ -343,7 +343,7 @@ public class FiscalXmlIntegrationService {
             } else if (need.side() == FiscalXmlSide.ISSUED) {
                 control.setIssuedTotalImported(delivered);
             } else {
-                control.setTotalImportado(delivered);
+                control.setTotalImported(delivered);
             }
             if (need.currentWindow()) {
                 control.setStoredAnySource(need.side().ownIssue(), storedAnySource(company.getId(), need.side(), need.from(), need.to()));
@@ -457,13 +457,13 @@ public class FiscalXmlIntegrationService {
                     FiscalXmlSyncControl created = new FiscalXmlSyncControl();
                     created.setCompany(company);
                     created.setDeleted(false);
-                    created.setUltimaVerificacaoEm(LocalDateTime.now(clock));
+                    created.setLastCheckedAt(LocalDateTime.now(clock));
                     return created;
                 });
         int imported = siegDelivered(company.getId(), side, dataEmissaoInicio, dataEmissaoFim);
         closePreviousMonth(control, dataEmissaoInicio);
-        control.setDataEmissaoInicio(dataEmissaoInicio);
-        control.setDataEmissaoFim(dataEmissaoFim);
+        control.setIssueDateFrom(dataEmissaoInicio);
+        control.setIssueDateTo(dataEmissaoFim);
         if (gapToRecord != null && dataEmissaoInicio != null) {
             control.recordKnownGap(side.ownIssue(), YearMonth.from(dataEmissaoInicio).toString(), gapToRecord);
         }
@@ -478,8 +478,8 @@ public class FiscalXmlIntegrationService {
             if (totalSieg != null) {
                 control.setTotalSieg(totalSieg);
             }
-            control.setTotalImportado(imported);
-            control.setUltimaVerificacaoEm(LocalDateTime.now(clock));
+            control.setTotalImported(imported);
+            control.setLastCheckedAt(LocalDateTime.now(clock));
         }
         syncControlRepository.save(control);
     }
@@ -491,15 +491,15 @@ public class FiscalXmlIntegrationService {
      * manual sync of an earlier month (window going back) closes nothing.
      */
     static void closePreviousMonth(FiscalXmlSyncControl control, LocalDate newWindowStart) {
-        LocalDate oldStart = control.getDataEmissaoInicio();
+        LocalDate oldStart = control.getIssueDateFrom();
         if (oldStart == null || newWindowStart == null || !YearMonth.from(newWindowStart).isAfter(YearMonth.from(oldStart))) {
             return;
         }
         String month = YearMonth.from(oldStart).toString();
         // one day of margin: the window's day comes from the JVM's zone, the verification time from Recife's
         LocalDate checkedFrom = oldStart.minusDays(1);
-        if (control.getUltimaVerificacaoEm() != null && !control.getUltimaVerificacaoEm().toLocalDate().isBefore(checkedFrom)) {
-            control.closeReceivedMonth(month, control.getTotalSieg(), control.getTotalImportado());
+        if (control.getLastCheckedAt() != null && !control.getLastCheckedAt().toLocalDate().isBefore(checkedFrom)) {
+            control.closeReceivedMonth(month, control.getTotalSieg(), control.getTotalImported());
         }
         if (control.getIssuedCheckedAt() != null && !control.getIssuedCheckedAt().toLocalDate().isBefore(checkedFrom)) {
             control.closeIssuedMonth(month, control.getIssuedTotalSieg(), control.getIssuedTotalImported());

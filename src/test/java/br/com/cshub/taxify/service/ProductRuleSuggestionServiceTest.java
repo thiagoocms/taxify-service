@@ -113,9 +113,9 @@ class ProductRuleSuggestionServiceTest {
 
     private static ProductFiscalRule rule(String codigo, String supplier) {
         ProductFiscalRule rule = new ProductFiscalRule(UUID.randomUUID());
-        rule.setCodigoProduto(codigo);
-        rule.setCfopCorreto("1102");
-        rule.setDocumentoFornecedor(supplier == null ? null : supplier.replaceAll("\\D", ""));
+        rule.setProductCode(codigo);
+        rule.setCorrectCfop("1102");
+        rule.setSupplierDocument(supplier == null ? null : supplier.replaceAll("\\D", ""));
         return rule;
     }
 

@@ -60,7 +60,7 @@ class SharedHelpersTest {
     void theSupplierRuleWinsOverTheGeneralOneOfTheCode() {
         ProductFiscalRule general = rule("P1");
         ProductFiscalRule ofSupplier = rule("P1");
-        ofSupplier.setDocumentoFornecedor("11222333000181");
+        ofSupplier.setSupplierDocument("11222333000181");
         ProductRules rules = ProductRules.of(List.of(general, ofSupplier, rule(null)));
 
         assertThat(rules.find("P1", "11.222.333/0001-81")).contains(ofSupplier);
@@ -96,7 +96,7 @@ class SharedHelpersTest {
 
     private static ProductFiscalRule rule(String codigo) {
         ProductFiscalRule rule = new ProductFiscalRule(UUID.randomUUID());
-        rule.setCodigoProduto(codigo);
+        rule.setProductCode(codigo);
         return rule;
     }
 }

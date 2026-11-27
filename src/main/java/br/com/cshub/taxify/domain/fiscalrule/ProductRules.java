@@ -25,14 +25,14 @@ public final class ProductRules {
 
     private ProductRules(Collection<ProductFiscalRule> rules) {
         for (ProductFiscalRule rule : rules) {
-            if (rule.getCodigoProduto() == null) {
+            if (rule.getProductCode() == null) {
                 continue;
             }
-            String supplier = DocumentNumbers.onlyDigits(rule.getDocumentoFornecedor());
+            String supplier = DocumentNumbers.onlyDigits(rule.getSupplierDocument());
             if (supplier == null || supplier.isEmpty()) {
-                general.putIfAbsent(rule.getCodigoProduto(), rule);
+                general.putIfAbsent(rule.getProductCode(), rule);
             } else {
-                bySupplier.putIfAbsent(key(rule.getCodigoProduto(), supplier), rule);
+                bySupplier.putIfAbsent(key(rule.getProductCode(), supplier), rule);
             }
         }
     }

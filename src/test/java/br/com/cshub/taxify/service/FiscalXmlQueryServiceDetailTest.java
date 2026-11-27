@@ -111,8 +111,8 @@ class FiscalXmlQueryServiceDetailTest {
         withoutRule.setCfop("5405");
         when(itemRepository.findByDocument_IdOrderByNumeroItemAsc(document.getId())).thenReturn(java.util.List.of(withRule, withoutRule));
         br.com.cshub.taxify.domain.fiscalrule.ProductFiscalRule rule = new br.com.cshub.taxify.domain.fiscalrule.ProductFiscalRule(UUID.randomUUID());
-        rule.setCodigoProduto("P1");
-        rule.setCfopCorreto("5102");
+        rule.setProductCode("P1");
+        rule.setCorrectCfop("5102");
         org.springframework.test.util.ReflectionTestUtils.setField(rule, "lastModifiedDate", java.time.LocalDateTime.now().minusDays(1));
         org.mockito.Mockito.lenient().when(ruleRepository.findByCompany_IdAndDeletedIsFalse(document.getCompany().getId()))
                 .thenReturn(java.util.List.of(rule));

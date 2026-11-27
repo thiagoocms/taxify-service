@@ -17,12 +17,12 @@ public class ProductFiscalRuleMapper extends AbstractMapper<ProductFiscalRule, P
         ProductFiscalRule entity = new ProductFiscalRule();
         entity.setId(source.id() != null ? UUID.fromString(source.id()) : null);
         entity.setCompany(source.companyId() != null ? new Company(UUID.fromString(source.companyId())) : null);
-        entity.setCodigoProduto(source.codigoProduto());
-        entity.setDocumentoFornecedor(supplierDigits(source.documentoFornecedor()));
-        entity.setDescricaoProduto(source.descricaoProduto());
-        entity.setNcmCorreto(source.ncmCorreto());
-        entity.setCfopCorreto(source.cfopCorreto());
-        entity.setObservacoes(source.observacoes());
+        entity.setProductCode(source.codigoProduto());
+        entity.setSupplierDocument(supplierDigits(source.documentoFornecedor()));
+        entity.setProductDescription(source.descricaoProduto());
+        entity.setCorrectNcm(source.ncmCorreto());
+        entity.setCorrectCfop(source.cfopCorreto());
+        entity.setNotes(source.observacoes());
         entity.setDeleted(Boolean.TRUE.equals(source.deleted()));
         entity.setTaxRule(taxRuleOf(source));
         return entity;
@@ -34,38 +34,38 @@ public class ProductFiscalRuleMapper extends AbstractMapper<ProductFiscalRule, P
         return new ProductFiscalRuleDTO(
                 source.getId().toString(),
                 source.getCompany().getId().toString(),
-                source.getCodigoProduto(),
-                source.getDescricaoProduto(),
-                source.getNcmCorreto(),
-                source.getCfopCorreto(),
-                source.getObservacoes(),
+                source.getProductCode(),
+                source.getProductDescription(),
+                source.getCorrectNcm(),
+                source.getCorrectCfop(),
+                source.getNotes(),
                 source.isDeleted(),
-                tax == null ? null : tax.origemMercadoria(),
+                tax == null ? null : tax.goodsOrigin(),
                 tax == null ? null : tax.cstIcms(),
                 tax == null ? null : tax.csosn(),
-                tax == null ? null : tax.aliquotaIcms(),
+                tax == null ? null : tax.icmsRate(),
                 tax == null ? null : tax.cest(),
                 tax == null ? null : tax.cstIpi(),
-                tax == null ? null : tax.aliquotaIpi(),
+                tax == null ? null : tax.ipiRate(),
                 tax == null ? null : tax.cstPis(),
-                tax == null ? null : tax.aliquotaPis(),
+                tax == null ? null : tax.pisRate(),
                 tax == null ? null : tax.cstCofins(),
-                tax == null ? null : tax.aliquotaCofins(),
+                tax == null ? null : tax.cofinsRate(),
                 tax == null ? null : tax.cstIbsCbs(),
-                tax == null ? null : tax.classificacaoTributaria(),
-                source.getDocumentoFornecedor()
+                tax == null ? null : tax.taxClassification(),
+                source.getSupplierDocument()
         );
     }
 
     @Override
     public void merge(ProductFiscalRule source, ProductFiscalRule target) {
         target.setCompany(source.getCompany());
-        target.setCodigoProduto(source.getCodigoProduto());
-        target.setDocumentoFornecedor(source.getDocumentoFornecedor());
-        target.setDescricaoProduto(source.getDescricaoProduto());
-        target.setNcmCorreto(source.getNcmCorreto());
-        target.setCfopCorreto(source.getCfopCorreto());
-        target.setObservacoes(source.getObservacoes());
+        target.setProductCode(source.getProductCode());
+        target.setSupplierDocument(source.getSupplierDocument());
+        target.setProductDescription(source.getProductDescription());
+        target.setCorrectNcm(source.getCorrectNcm());
+        target.setCorrectCfop(source.getCorrectCfop());
+        target.setNotes(source.getNotes());
         target.setDeleted(source.isDeleted());
         target.setTaxRule(source.getTaxRule());
     }

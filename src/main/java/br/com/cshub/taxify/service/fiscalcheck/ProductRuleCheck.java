@@ -62,7 +62,7 @@ public class ProductRuleCheck implements FiscalCheck {
 
     /** The rule's CFOP with the first digit of this note's operation (1102 → 2102 interstate). */
     public static String expectedCfop(FiscalXmlDocumentItem item, ProductFiscalRule rule) {
-        return OperationCfops.forOperation(rule.getCfopCorreto(),
+        return OperationCfops.forOperation(rule.getCorrectCfop(),
                 item.getDocument() == null ? null : item.getDocument().getDestinoOperacao());
     }
 
@@ -70,7 +70,7 @@ public class ProductRuleCheck implements FiscalCheck {
         List<FiscalDivergence> divergences = new ArrayList<>();
         if (!rectifiedUnder(item.getDocument(), rule)) {
             text(divergences, CFOP, "CFOP", "CFOP", item.getCfop(), expectedCfop(item, rule), true);
-            text(divergences, NCM, "NCM", "NCM", item.getNcm(), rule.getNcmCorreto(), true);
+            text(divergences, NCM, "NCM", "NCM", item.getNcm(), rule.getCorrectNcm(), true);
         }
 
         ProductTaxRule tax = rule.getTaxRule();
@@ -79,19 +79,19 @@ public class ProductRuleCheck implements FiscalCheck {
         }
         FiscalItemTaxDetail detail = item.getTaxDetail();
         if (detail != null) {
-            text(divergences, ORIGEM, "orig", "Origem", detail.origemMercadoria(), tax.origemMercadoria(), false);
+            text(divergences, ORIGEM, "orig", "Origem", detail.origemMercadoria(), tax.goodsOrigin(), false);
             text(divergences, CEST, "CEST", "CEST", detail.cest(), tax.cest(), false);
             if (detail.csosn() != null) {
                 text(divergences, CSOSN, "CSOSN", "CSOSN", detail.csosn(), tax.csosn(), false);
             } else {
                 text(divergences, CST_ICMS, "CST_ICMS", "CST de ICMS", item.getSituacaoTributariaIcms(), tax.cstIcms(), false);
             }
-            rate(divergences, ALIQUOTA_IPI, "pIPI", "Alíquota de IPI", detail.aliquotaIpi(), tax.aliquotaIpi());
-            rate(divergences, ALIQUOTA_PIS, "pPIS", "Alíquota de PIS", detail.aliquotaPis(), tax.aliquotaPis());
-            rate(divergences, ALIQUOTA_COFINS, "pCOFINS", "Alíquota de COFINS", detail.aliquotaCofins(), tax.aliquotaCofins());
+            rate(divergences, ALIQUOTA_IPI, "pIPI", "Alíquota de IPI", detail.aliquotaIpi(), tax.ipiRate());
+            rate(divergences, ALIQUOTA_PIS, "pPIS", "Alíquota de PIS", detail.aliquotaPis(), tax.pisRate());
+            rate(divergences, ALIQUOTA_COFINS, "pCOFINS", "Alíquota de COFINS", detail.aliquotaCofins(), tax.cofinsRate());
         }
         if (isInternal(item.getDocument())) {
-            rate(divergences, ALIQUOTA_ICMS, "pICMS", "Alíquota interna de ICMS", item.getAliquotaIcms(), tax.aliquotaIcms());
+            rate(divergences, ALIQUOTA_ICMS, "pICMS", "Alíquota interna de ICMS", item.getAliquotaIcms(), tax.icmsRate());
         }
         text(divergences, CST_IPI, "CST_IPI", "CST de IPI", item.getSituacaoTributariaIpi(), tax.cstIpi(), false);
         text(divergences, CST_PIS, "CST_PIS", "CST de PIS", item.getSituacaoTributariaPis(), tax.cstPis(), false);
@@ -99,7 +99,7 @@ public class ProductRuleCheck implements FiscalCheck {
         FiscalItemIbsCbs ibsCbs = item.getIbsCbs();
         if (ibsCbs != null) {
             text(divergences, CST_IBSCBS, "CST_IBSCBS", "CST de IBS/CBS", ibsCbs.cst(), tax.cstIbsCbs(), false);
-            text(divergences, CLASS_TRIB, "cClassTrib", "cClassTrib", ibsCbs.classificacaoTributaria(), tax.classificacaoTributaria(), false);
+            text(divergences, CLASS_TRIB, "cClassTrib", "cClassTrib", ibsCbs.classificacaoTributaria(), tax.taxClassification(), false);
         }
         return divergences;
     }

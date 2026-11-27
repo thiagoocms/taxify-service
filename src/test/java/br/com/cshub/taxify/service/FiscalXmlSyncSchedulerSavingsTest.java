@@ -90,11 +90,11 @@ class FiscalXmlSyncSchedulerSavingsTest {
     private FiscalXmlSyncControl zeroControl(LocalDateTime checkedAt) {
         FiscalXmlSyncControl control = new FiscalXmlSyncControl();
         control.setCompany(company);
-        control.setDataEmissaoInicio(checkedAt.toLocalDate().withDayOfMonth(1));
-        control.setDataEmissaoFim(checkedAt.toLocalDate());
+        control.setIssueDateFrom(checkedAt.toLocalDate().withDayOfMonth(1));
+        control.setIssueDateTo(checkedAt.toLocalDate());
         control.setTotalSieg(0);
-        control.setTotalImportado(0);
-        control.setUltimaVerificacaoEm(checkedAt);
+        control.setTotalImported(0);
+        control.setLastCheckedAt(checkedAt);
         control.setIssuedTotalSieg(0);
         control.setIssuedTotalImported(0);
         control.setIssuedCheckedAt(checkedAt);
@@ -215,7 +215,7 @@ class FiscalXmlSyncSchedulerSavingsTest {
     void aKnownGapMakesTheSideUpToDate() {
         FiscalXmlSyncControl control = zeroControl(LocalDateTime.of(2026, 11, 27, 8, 0));
         control.setTotalSieg(63);
-        control.setTotalImportado(60);
+        control.setTotalImported(60);
         control.recordKnownGap(false, "2026-11", 3);
         when(syncControlRepository.findAllWithCompany()).thenReturn(List.of(control));
 
@@ -229,7 +229,7 @@ class FiscalXmlSyncSchedulerSavingsTest {
     void aKnownGapOfAnotherMonthDoesNotCount() {
         FiscalXmlSyncControl control = zeroControl(LocalDateTime.of(2026, 11, 27, 8, 0));
         control.setTotalSieg(63);
-        control.setTotalImportado(60);
+        control.setTotalImported(60);
         control.recordKnownGap(false, "2026-10", 3);
         when(syncControlRepository.findAllWithCompany()).thenReturn(List.of(control));
         when(provider.sync(any())).thenReturn(new FiscalXmlSyncResult(0, 0, 0));

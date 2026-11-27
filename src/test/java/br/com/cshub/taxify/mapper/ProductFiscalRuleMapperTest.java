@@ -27,7 +27,7 @@ class ProductFiscalRuleMapperTest {
         entity.setId(UUID.randomUUID());
         entity.setCompany(new Company(UUID.randomUUID()));
 
-        assertThat(entity.getTaxRule().origemMercadoria()).isEqualTo("0");
+        assertThat(entity.getTaxRule().goodsOrigin()).isEqualTo("0");
         ProductFiscalRuleDTO back = mapper.toModel(entity);
         assertThat(back.origemMercadoria()).isEqualTo("0");
         assertThat(back.cstIcms()).isEqualTo("00");

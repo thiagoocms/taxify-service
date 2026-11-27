@@ -150,8 +150,8 @@ class FiscalXmlRectificationServiceTest {
     void doesNothingWhenTheItemAlreadyMatchesTheRule() {
         when(documentRepository.findFirstByIdAndDeletedIsFalse(documentId)).thenReturn(Optional.of(document()));
         ProductFiscalRule rule = new ProductFiscalRule(UUID.randomUUID());
-        rule.setCodigoProduto("P001");
-        rule.setCfopCorreto("5405");
+        rule.setProductCode("P001");
+        rule.setCorrectCfop("5405");
         when(ruleRepository.findByCompany_IdAndDeletedIsFalse(companyId)).thenReturn(List.of(rule));
 
         FiscalXmlRectificationResultDTO result = service.rectify(documentId);
@@ -166,8 +166,8 @@ class FiscalXmlRectificationServiceTest {
     void writesANewFileWithTheCorrectedCfopAndLeavesTheOriginalUntouched() throws IOException {
         when(documentRepository.findFirstByIdAndDeletedIsFalse(documentId)).thenReturn(Optional.of(document()));
         ProductFiscalRule rule = new ProductFiscalRule(UUID.randomUUID());
-        rule.setCodigoProduto("P001");
-        rule.setCfopCorreto("5102");
+        rule.setProductCode("P001");
+        rule.setCorrectCfop("5102");
         when(ruleRepository.findByCompany_IdAndDeletedIsFalse(companyId)).thenReturn(List.of(rule));
 
         FiscalXmlRectificationResultDTO result = service.rectify(documentId);
@@ -202,8 +202,8 @@ class FiscalXmlRectificationServiceTest {
     void attachesTheAuthenticatedUserToTheAuditLogWhenThereIsOne() {
         when(documentRepository.findFirstByIdAndDeletedIsFalse(documentId)).thenReturn(Optional.of(document()));
         ProductFiscalRule rule = new ProductFiscalRule(UUID.randomUUID());
-        rule.setCodigoProduto("P001");
-        rule.setCfopCorreto("5102");
+        rule.setProductCode("P001");
+        rule.setCorrectCfop("5102");
         when(ruleRepository.findByCompany_IdAndDeletedIsFalse(companyId)).thenReturn(List.of(rule));
         User currentUser = new User();
         when(currentUserService.getCurrentUser()).thenReturn(Optional.of(currentUser));
@@ -219,8 +219,8 @@ class FiscalXmlRectificationServiceTest {
     void rerunningWithTheSameRuleDoesNotWriteAnotherFileOrLog() {
         when(documentRepository.findFirstByIdAndDeletedIsFalse(documentId)).thenReturn(Optional.of(document()));
         ProductFiscalRule rule = new ProductFiscalRule(UUID.randomUUID());
-        rule.setCodigoProduto("P001");
-        rule.setCfopCorreto("5102");
+        rule.setProductCode("P001");
+        rule.setCorrectCfop("5102");
         when(ruleRepository.findByCompany_IdAndDeletedIsFalse(companyId)).thenReturn(List.of(rule));
 
         FiscalXmlRectificationResultDTO first = service.rectify(documentId);
@@ -267,8 +267,8 @@ class FiscalXmlRectificationServiceTest {
         FiscalXmlDocument document = document();
         when(documentRepository.findFirstByIdAndDeletedIsFalse(documentId)).thenReturn(Optional.of(document));
         ProductFiscalRule rule = new ProductFiscalRule(UUID.randomUUID());
-        rule.setCodigoProduto("P001");
-        rule.setCfopCorreto("5102");
+        rule.setProductCode("P001");
+        rule.setCorrectCfop("5102");
         when(ruleRepository.findByCompany_IdAndDeletedIsFalse(companyId)).thenReturn(List.of(rule));
         InvoiceAuditLog previous = new InvoiceAuditLog();
         previous.setNotes("Retificacao automatica: Item P001: CFOP 5405 -> 5102");
@@ -285,9 +285,9 @@ class FiscalXmlRectificationServiceTest {
     void alsoCorrectsNcmWhenTheRulePinsOne() throws IOException {
         when(documentRepository.findFirstByIdAndDeletedIsFalse(documentId)).thenReturn(Optional.of(document()));
         ProductFiscalRule rule = new ProductFiscalRule(UUID.randomUUID());
-        rule.setCodigoProduto("P001");
-        rule.setCfopCorreto("5405");
-        rule.setNcmCorreto("87654321");
+        rule.setProductCode("P001");
+        rule.setCorrectCfop("5405");
+        rule.setCorrectNcm("87654321");
         when(ruleRepository.findByCompany_IdAndDeletedIsFalse(companyId)).thenReturn(List.of(rule));
 
         FiscalXmlRectificationResultDTO result = service.rectify(documentId);
@@ -313,8 +313,8 @@ class FiscalXmlRectificationServiceTest {
 
     private ProductFiscalRule ruleWithCfop(String cfop) {
         ProductFiscalRule rule = new ProductFiscalRule(UUID.randomUUID());
-        rule.setCodigoProduto("P001");
-        rule.setCfopCorreto(cfop);
+        rule.setProductCode("P001");
+        rule.setCorrectCfop(cfop);
         return rule;
     }
 

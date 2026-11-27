@@ -30,26 +30,26 @@ public class ProductFiscalRule extends AbstractAuditingEntity {
     private Company company;
 
     @Column(name = "codigo_produto", length = 60, nullable = false)
-    private String codigoProduto;
+    private String productCode;
 
     /**
      * CNPJ/CPF (digits) of the supplier this rule is for - on a received note the product code
      * is the supplier's. Null = the code's general rule ({@link ProductRules}).
      */
     @Column(name = "documento_fornecedor", length = 14)
-    private String documentoFornecedor;
+    private String supplierDocument;
 
     @Column(name = "descricao_produto", length = 500)
-    private String descricaoProduto;
+    private String productDescription;
 
     @Column(name = "ncm_correto", length = 10)
-    private String ncmCorreto;
+    private String correctNcm;
 
     @Column(name = "cfop_correto", length = 10, nullable = false)
-    private String cfopCorreto;
+    private String correctCfop;
 
     @Column(name = "observacoes", length = 1000)
-    private String observacoes;
+    private String notes;
 
     /** Null when no tax field is set - only CFOP/NCM are checked then. */
     @Embedded
@@ -66,12 +66,12 @@ public class ProductFiscalRule extends AbstractAuditingEntity {
     public ProductFiscalRule() {
     }
 
-    public String getDocumentoFornecedor() {
-        return documentoFornecedor;
+    public String getSupplierDocument() {
+        return supplierDocument;
     }
 
-    public void setDocumentoFornecedor(String documentoFornecedor) {
-        this.documentoFornecedor = documentoFornecedor;
+    public void setSupplierDocument(String supplierDocument) {
+        this.supplierDocument = supplierDocument;
     }
 
     public ProductFiscalRule(UUID id) {
@@ -94,43 +94,43 @@ public class ProductFiscalRule extends AbstractAuditingEntity {
         this.company = company;
     }
 
-    public String getCodigoProduto() {
-        return codigoProduto;
+    public String getProductCode() {
+        return productCode;
     }
 
-    public void setCodigoProduto(String codigoProduto) {
-        this.codigoProduto = codigoProduto;
+    public void setProductCode(String productCode) {
+        this.productCode = productCode;
     }
 
-    public String getDescricaoProduto() {
-        return descricaoProduto;
+    public String getProductDescription() {
+        return productDescription;
     }
 
-    public void setDescricaoProduto(String descricaoProduto) {
-        this.descricaoProduto = descricaoProduto;
+    public void setProductDescription(String productDescription) {
+        this.productDescription = productDescription;
     }
 
-    public String getNcmCorreto() {
-        return ncmCorreto;
+    public String getCorrectNcm() {
+        return correctNcm;
     }
 
-    public void setNcmCorreto(String ncmCorreto) {
-        this.ncmCorreto = ncmCorreto;
+    public void setCorrectNcm(String correctNcm) {
+        this.correctNcm = correctNcm;
     }
 
-    public String getCfopCorreto() {
-        return cfopCorreto;
+    public String getCorrectCfop() {
+        return correctCfop;
     }
 
-    public void setCfopCorreto(String cfopCorreto) {
-        this.cfopCorreto = cfopCorreto;
+    public void setCorrectCfop(String correctCfop) {
+        this.correctCfop = correctCfop;
     }
 
-    public String getObservacoes() {
-        return observacoes;
+    public String getNotes() {
+        return notes;
     }
 
-    public void setObservacoes(String observacoes) {
-        this.observacoes = observacoes;
+    public void setNotes(String notes) {
+        this.notes = notes;
     }
 }

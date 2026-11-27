@@ -106,8 +106,8 @@ class FiscalXmlQueryServiceSearchTest {
                 new Object[]{rectified.getId(), "P2", "5405"},
                 new Object[]{original.getId(), "P1", "5405"}));
         ProductFiscalRule rule = new ProductFiscalRule(UUID.randomUUID());
-        rule.setCodigoProduto("P1");
-        rule.setCfopCorreto("5102");
+        rule.setProductCode("P1");
+        rule.setCorrectCfop("5102");
         ReflectionTestUtils.setField(rule, "lastModifiedDate", LocalDateTime.now().minusDays(1));
         when(ruleRepository.findByCompany_IdAndDeletedIsFalse(company.getId())).thenReturn(List.of(rule));
 

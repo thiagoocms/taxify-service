@@ -116,7 +116,7 @@ class FiscalXmlSyncSchedulerTest {
         FiscalXmlSyncControl saved = captor.getValue();
         assertThat(saved.getCompany().getId()).isEqualTo(companyA.getId());
         assertThat(saved.getTotalSieg()).isZero();
-        assertThat(saved.getTotalImportado()).isZero();
+        assertThat(saved.getTotalImported()).isZero();
         verifyNoInteractions(provider);
     }
 
@@ -191,7 +191,7 @@ class FiscalXmlSyncSchedulerTest {
         properties.setReferenceDate(LocalDate.of(2026, 8, 15));
         FiscalXmlSyncControl control = controlFor(companyA, 200);
         control.setTotalSieg(200);
-        control.setUltimaVerificacaoEm(LocalDate.of(2026, 8, 15).atTime(9, 0));
+        control.setLastCheckedAt(LocalDate.of(2026, 8, 15).atTime(9, 0));
         control.setIssuedTotalSieg(30);
         control.setIssuedTotalImported(12);
         control.setIssuedCheckedAt(LocalDate.of(2026, 8, 14).atTime(9, 0));
@@ -233,7 +233,7 @@ class FiscalXmlSyncSchedulerTest {
         properties.setReferenceDate(LocalDate.of(2026, 8, 15));
         FiscalXmlSyncControl caughtUp = controlFor(companyA, 200);
         caughtUp.setTotalSieg(200);
-        caughtUp.setUltimaVerificacaoEm(LocalDate.of(2026, 8, 15).atTime(9, 0));
+        caughtUp.setLastCheckedAt(LocalDate.of(2026, 8, 15).atTime(9, 0));
         caughtUp.setIssuedTotalSieg(40);
         caughtUp.setIssuedTotalImported(40);
         caughtUp.setIssuedCheckedAt(LocalDate.of(2026, 8, 15).atTime(9, 0));
@@ -277,7 +277,7 @@ class FiscalXmlSyncSchedulerTest {
         properties.setReferenceDate(LocalDate.of(2026, 8, 15));
         FiscalXmlSyncControl caughtUpYesterday = controlFor(companyA, 200);
         caughtUpYesterday.setTotalSieg(200);
-        caughtUpYesterday.setUltimaVerificacaoEm(LocalDate.of(2026, 8, 14).atTime(23, 0));
+        caughtUpYesterday.setLastCheckedAt(LocalDate.of(2026, 8, 14).atTime(23, 0));
         when(companyRepository.findAll()).thenReturn(List.of(companyA));
         when(syncControlRepository.findAllCompanyIds()).thenReturn(List.of(companyA.getId()));
         when(syncControlRepository.findAllWithCompany()).thenReturn(List.of(caughtUpYesterday));
@@ -294,7 +294,7 @@ class FiscalXmlSyncSchedulerTest {
         properties.setReferenceDate(LocalDate.of(2026, 8, 15));
         FiscalXmlSyncControl neverPending = controlFor(companyA, 0);
         neverPending.setTotalSieg(0);
-        neverPending.setUltimaVerificacaoEm(LocalDate.of(2026, 8, 15).atTime(9, 0));
+        neverPending.setLastCheckedAt(LocalDate.of(2026, 8, 15).atTime(9, 0));
         when(companyRepository.findAll()).thenReturn(List.of(companyA));
         when(syncControlRepository.findAllCompanyIds()).thenReturn(List.of(companyA.getId()));
         when(syncControlRepository.findAllWithCompany()).thenReturn(List.of(neverPending));
@@ -584,8 +584,8 @@ class FiscalXmlSyncSchedulerTest {
         FiscalXmlSyncControl copy = new FiscalXmlSyncControl();
         copy.setId(row.getId());
         copy.setCompany(row.getCompany());
-        copy.setTotalImportado(row.getTotalImportado());
-        copy.setUltimaVerificacaoEm(row.getUltimaVerificacaoEm());
+        copy.setTotalImported(row.getTotalImported());
+        copy.setLastCheckedAt(row.getLastCheckedAt());
         copy.setIssuedCheckedAt(row.getIssuedCheckedAt());
         copy.setLastAttemptAt(row.getLastAttemptAt());
         return copy;
@@ -612,7 +612,7 @@ class FiscalXmlSyncSchedulerTest {
         ArgumentCaptor<FiscalXmlSyncControl> saved = ArgumentCaptor.forClass(FiscalXmlSyncControl.class);
         verify(syncControlRepository, times(2)).save(saved.capture());
         assertThat(saved.getAllValues()).extracting(row -> row.getCompany().getId()).containsExactly(companyA.getId(), companyB.getId());
-        assertThat(saved.getAllValues().getLast().getUltimaVerificacaoEm()).isEqualTo(LocalDateTime.of(2026, 12, 1, 9, 0));
+        assertThat(saved.getAllValues().getLast().getLastCheckedAt()).isEqualTo(LocalDateTime.of(2026, 12, 1, 9, 0));
         // the tick went on past the seeding
         verify(syncControlRepository).findAllWithCompany();
     }
@@ -699,12 +699,12 @@ class FiscalXmlSyncSchedulerTest {
     private FiscalXmlSyncControl controlFor(Company company, int totalImportado) {
         FiscalXmlSyncControl control = new FiscalXmlSyncControl();
         control.setCompany(company);
-        control.setTotalImportado(totalImportado);
+        control.setTotalImported(totalImportado);
         // Last checked "now" (same month as LocalDate.now(), the default `today` when a
         // test doesn't override referenceDate) so alreadyImportedCount/knownPending flow
         // through unchanged by default - tests about month-rollover behavior set their
         // own ultimaVerificacaoEm explicitly.
-        control.setUltimaVerificacaoEm(LocalDateTime.now());
+        control.setLastCheckedAt(LocalDateTime.now());
         return control;
     }
 

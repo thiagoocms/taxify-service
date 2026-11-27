@@ -171,7 +171,7 @@ class FiscalXmlRectificationSchedulerTest {
         FiscalXmlSyncControl control = new FiscalXmlSyncControl();
         control.setCompany(company);
         control.setTotalSieg(totalSieg);
-        control.setTotalImportado(totalImportado);
+        control.setTotalImported(totalImportado);
         return control;
     }
 

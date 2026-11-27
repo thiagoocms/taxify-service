@@ -40,12 +40,12 @@ public class FiscalXmlSyncControlService {
         return new FiscalXmlSyncControlDTO(
                 control.getCompany().getId().toString(),
                 control.getCompany().getName(),
-                control.getDataEmissaoInicio(),
-                control.getDataEmissaoFim(),
+                control.getIssueDateFrom(),
+                control.getIssueDateTo(),
                 control.getTotalSieg(),
-                control.getTotalImportado(),
-                control.getTotalSieg() - control.getTotalImportado(),
-                control.getUltimaVerificacaoEm()
+                control.getTotalImported(),
+                control.getTotalSieg() - control.getTotalImported(),
+                control.getLastCheckedAt()
         );
     }
 }

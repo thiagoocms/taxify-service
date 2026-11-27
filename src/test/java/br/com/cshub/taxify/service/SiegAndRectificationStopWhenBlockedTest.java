@@ -91,7 +91,7 @@ class SiegAndRectificationStopWhenBlockedTest {
     private static FiscalXmlSyncControl control(Company company) {
         FiscalXmlSyncControl control = new FiscalXmlSyncControl();
         control.setCompany(company);
-        control.setUltimaVerificacaoEm(LocalDateTime.now());
+        control.setLastCheckedAt(LocalDateTime.now());
         return control;
     }
 

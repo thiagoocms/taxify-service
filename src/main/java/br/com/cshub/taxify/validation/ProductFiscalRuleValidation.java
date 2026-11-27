@@ -81,16 +81,16 @@ public class ProductFiscalRuleValidation extends AbstractCrudValidation<ProductF
 
     @Override
     protected void checkValidationsExtras(ProductFiscalRule entity) {
-        boolean duplicate = repository.existsDuplicate(entity.getCompany().getId(), entity.getCodigoProduto(),
-                entity.getDocumentoFornecedor(), entity.getId());
+        boolean duplicate = repository.existsDuplicate(entity.getCompany().getId(), entity.getProductCode(),
+                entity.getSupplierDocument(), entity.getId());
 
         if (duplicate) {
             throw new ConflictException("error.productFiscalRule.duplicate", messageService.getMessage("error.productFiscalRule.duplicate"));
         }
 
         var tax = entity.getTaxRule();
-        if (tax != null && tax.cstIbsCbs() != null && tax.classificacaoTributaria() != null
-                && !tax.classificacaoTributaria().startsWith(tax.cstIbsCbs())) {
+        if (tax != null && tax.cstIbsCbs() != null && tax.taxClassification() != null
+                && !tax.taxClassification().startsWith(tax.cstIbsCbs())) {
             throw new BadRequestException("error.productFiscalRule.classTrib.cst", messageService.getMessage("error.productFiscalRule.classTrib.cst"));
         }
     }

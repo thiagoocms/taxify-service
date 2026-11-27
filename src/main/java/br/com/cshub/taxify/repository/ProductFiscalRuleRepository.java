@@ -19,11 +19,11 @@ public interface ProductFiscalRuleRepository extends AbstractJpaRepository<Produ
 
     /** Another active rule for the same code and supplier (null = the general rule); {@code id} null on create. */
     @Query("select count(r) > 0 from ProductFiscalRule r where r.company.id = :companyId and r.deleted = false"
-            + " and r.codigoProduto = :codigo"
-            + " and ((:supplier is null and r.documentoFornecedor is null) or r.documentoFornecedor = :supplier)"
+            + " and r.productCode = :codigo"
+            + " and ((:supplier is null and r.supplierDocument is null) or r.supplierDocument = :supplier)"
             + " and (:id is null or r.id <> :id)")
-    boolean existsDuplicate(@Param("companyId") UUID companyId, @Param("codigo") String codigoProduto,
-                            @Param("supplier") String documentoFornecedor, @Param("id") UUID id);
+    boolean existsDuplicate(@Param("companyId") UUID companyId, @Param("codigo") String productCode,
+                            @Param("supplier") String supplierDocument, @Param("id") UUID id);
 
     /** Companies (not deleted) with at least one active rule - the ones the scheduled rectification has work for. */
     @Query("select distinct r.company from ProductFiscalRule r where r.deleted = false and r.company.deleted = false")
@@ -32,7 +32,7 @@ public interface ProductFiscalRuleRepository extends AbstractJpaRepository<Produ
     @Query("select max(r.lastModifiedDate) from ProductFiscalRule r where r.company.id = :companyId")
     Optional<LocalDateTime> findMaxLastModifiedDateByCompanyId(UUID companyId);
 
-    @Query("select r.codigoProduto from ProductFiscalRule r "
-            + "where r.company.id = :companyId and r.deleted = false and r.codigoProduto in :codigos")
+    @Query("select r.productCode from ProductFiscalRule r "
+            + "where r.company.id = :companyId and r.deleted = false and r.productCode in :codigos")
     List<String> findCodigosWithRule(@Param("companyId") UUID companyId, @Param("codigos") Collection<String> codigos);
 }

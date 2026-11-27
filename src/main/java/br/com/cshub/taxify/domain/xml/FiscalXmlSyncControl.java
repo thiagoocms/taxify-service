@@ -12,7 +12,7 @@ import java.util.UUID;
 
 /**
  * One row per company, tracking sync progress: how many NFe SIEG reports for the
- * current sync window ({@link #dataEmissaoInicio}/{@link #dataEmissaoFim}, always the
+ * current sync window ({@link #issueDateFrom}/{@link #issueDateTo}, always the
  * whole current month - see {@link br.com.cshub.taxify.service.FiscalXmlSyncScheduler}),
  * updated by {@link br.com.cshub.taxify.integration.sieg.SiegClient#contarXmlsNfe},
  * against how many are actually persisted for that company. Updated on every
@@ -35,19 +35,19 @@ public class FiscalXmlSyncControl extends AbstractAuditingEntity {
     private Company company;
 
     @Column(name = "data_emissao_inicio")
-    private LocalDate dataEmissaoInicio;
+    private LocalDate issueDateFrom;
 
     @Column(name = "data_emissao_fim")
-    private LocalDate dataEmissaoFim;
+    private LocalDate issueDateTo;
 
     @Column(name = "total_sieg", nullable = false)
     private int totalSieg;
 
     @Column(name = "total_importado", nullable = false)
-    private int totalImportado;
+    private int totalImported;
 
     @Column(name = "ultima_verificacao_em", nullable = false)
-    private LocalDateTime ultimaVerificacaoEm;
+    private LocalDateTime lastCheckedAt;
 
     /*
      * The fields above track the RECEIVED side (SIEG "CNPJdest" - notes from suppliers); these
@@ -65,7 +65,7 @@ public class FiscalXmlSyncControl extends AbstractAuditingEntity {
 
     /**
      * Last time the scheduler picked this company (success, failure or skipped as up to date) - the queue order. Not
-     * a verification: a brand-new row has {@code ultimaVerificacaoEm} filled on creation but was never checked.
+     * a verification: a brand-new row has {@code lastCheckedAt} filled on creation but was never checked.
      */
     @Column(name = "last_attempt_at")
     private LocalDateTime lastAttemptAt;
@@ -83,10 +83,10 @@ public class FiscalXmlSyncControl extends AbstractAuditingEntity {
      * the received side's time is filled on the row's creation and does not count alone.
      */
     public LocalDateTime getVerifiedAt() {
-        if (issuedCheckedAt == null || ultimaVerificacaoEm == null) {
+        if (issuedCheckedAt == null || lastCheckedAt == null) {
             return null;
         }
-        return issuedCheckedAt.isBefore(ultimaVerificacaoEm) ? issuedCheckedAt : ultimaVerificacaoEm;
+        return issuedCheckedAt.isBefore(lastCheckedAt) ? issuedCheckedAt : lastCheckedAt;
     }
 
     /** Last day the recent notes' events (cancelamentos...) were re-read, per side - see FiscalXmlSyncScheduler. */
@@ -290,20 +290,20 @@ public class FiscalXmlSyncControl extends AbstractAuditingEntity {
         this.company = company;
     }
 
-    public LocalDate getDataEmissaoInicio() {
-        return dataEmissaoInicio;
+    public LocalDate getIssueDateFrom() {
+        return issueDateFrom;
     }
 
-    public void setDataEmissaoInicio(LocalDate dataEmissaoInicio) {
-        this.dataEmissaoInicio = dataEmissaoInicio;
+    public void setIssueDateFrom(LocalDate issueDateFrom) {
+        this.issueDateFrom = issueDateFrom;
     }
 
-    public LocalDate getDataEmissaoFim() {
-        return dataEmissaoFim;
+    public LocalDate getIssueDateTo() {
+        return issueDateTo;
     }
 
-    public void setDataEmissaoFim(LocalDate dataEmissaoFim) {
-        this.dataEmissaoFim = dataEmissaoFim;
+    public void setIssueDateTo(LocalDate issueDateTo) {
+        this.issueDateTo = issueDateTo;
     }
 
     public int getTotalSieg() {
@@ -314,20 +314,20 @@ public class FiscalXmlSyncControl extends AbstractAuditingEntity {
         this.totalSieg = totalSieg;
     }
 
-    public int getTotalImportado() {
-        return totalImportado;
+    public int getTotalImported() {
+        return totalImported;
     }
 
-    public void setTotalImportado(int totalImportado) {
-        this.totalImportado = totalImportado;
+    public void setTotalImported(int totalImported) {
+        this.totalImported = totalImported;
     }
 
-    public LocalDateTime getUltimaVerificacaoEm() {
-        return ultimaVerificacaoEm;
+    public LocalDateTime getLastCheckedAt() {
+        return lastCheckedAt;
     }
 
-    public void setUltimaVerificacaoEm(LocalDateTime ultimaVerificacaoEm) {
-        this.ultimaVerificacaoEm = ultimaVerificacaoEm;
+    public void setLastCheckedAt(LocalDateTime lastCheckedAt) {
+        this.lastCheckedAt = lastCheckedAt;
     }
 
     public Integer getIssuedTotalSieg() {

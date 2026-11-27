@@ -104,8 +104,8 @@ class FiscalXmlSyncSchedulerStagesTest {
         FiscalXmlSyncControl control = new FiscalXmlSyncControl();
         control.setCompany(company);
         control.setTotalSieg(receivedTotal);
-        control.setTotalImportado(receivedImported);
-        control.setUltimaVerificacaoEm(checkedAt);
+        control.setTotalImported(receivedImported);
+        control.setLastCheckedAt(checkedAt);
         control.setIssuedTotalSieg(receivedTotal);
         control.setIssuedTotalImported(receivedImported);
         control.setIssuedCheckedAt(checkedAt);

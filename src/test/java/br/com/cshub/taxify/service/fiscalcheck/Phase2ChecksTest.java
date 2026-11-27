@@ -164,13 +164,13 @@ class Phase2ChecksTest {
     // ------------------------------------------------------------------ helpers
 
     private FiscalCheckContext contextWith(ProductFiscalRule rule) {
-        return new FiscalCheckContext(UUID.randomUUID(), Map.of(rule.getCodigoProduto(), rule));
+        return new FiscalCheckContext(UUID.randomUUID(), Map.of(rule.getProductCode(), rule));
     }
 
     private static ProductFiscalRule rule(ProductTaxRule tax) {
         ProductFiscalRule rule = new ProductFiscalRule(UUID.randomUUID());
-        rule.setCodigoProduto("P1");
-        rule.setCfopCorreto("5102");
+        rule.setProductCode("P1");
+        rule.setCorrectCfop("5102");
         rule.setTaxRule(tax);
         return rule;
     }

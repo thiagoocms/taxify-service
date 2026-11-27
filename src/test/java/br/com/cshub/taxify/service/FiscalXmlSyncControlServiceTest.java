@@ -49,12 +49,12 @@ class FiscalXmlSyncControlServiceTest {
         control.setCompany(company);
         LocalDate inicio = LocalDate.of(2026, 9, 10);
         LocalDate fim = LocalDate.of(2026, 9, 11);
-        control.setDataEmissaoInicio(inicio);
-        control.setDataEmissaoFim(fim);
+        control.setIssueDateFrom(inicio);
+        control.setIssueDateTo(fim);
         control.setTotalSieg(200);
-        control.setTotalImportado(100);
+        control.setTotalImported(100);
         LocalDateTime checkedAt = LocalDateTime.now();
-        control.setUltimaVerificacaoEm(checkedAt);
+        control.setLastCheckedAt(checkedAt);
 
         when(repository.findAll()).thenReturn(List.of(control));
 
