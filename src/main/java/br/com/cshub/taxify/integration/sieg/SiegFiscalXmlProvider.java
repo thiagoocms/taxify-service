@@ -65,6 +65,15 @@ public class SiegFiscalXmlProvider implements FiscalXmlProvider {
     }
 
     @Override
+    public FiscalXmlSyncResult checkPreviousMonth(UUID companyId, FiscalXmlSide side, LocalDate from, LocalDate to) {
+        FiscalXmlIntegrationService.SiegSideOutcome outcome = integrationService.checkPreviousMonthFromSieg(companyId, side, from, to);
+        int reconciled = reconciliationService.reconcile(outcome.reconciliation());
+        XmlDownloadResultDTO result = outcome.result();
+        return new FiscalXmlSyncResult(result.totalPersistedNew() + reconciled, result.totalDuplicatedSkipped(),
+                result.totalParseErrors(), outcome.countFailed());
+    }
+
+    @Override
     public int refreshEvents(UUID companyId, FiscalXmlSide side, LocalDate from, LocalDate to) {
         return integrationService.refreshRecentEvents(companyId, side, from, to);
     }

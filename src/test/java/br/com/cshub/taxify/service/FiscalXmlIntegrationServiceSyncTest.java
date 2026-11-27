@@ -247,7 +247,7 @@ class FiscalXmlIntegrationServiceSyncTest {
                 filter(LocalDate.of(2026, 11, 1), LocalDate.of(2026, 11, 27)), true);
 
         assertThat(outcome.reconciliation()).isEqualTo(new FiscalXmlIntegrationService.ReconciliationNeed(companyId,
-                FiscalXmlSide.RECEIVED, LocalDate.of(2026, 11, 1), LocalDate.of(2026, 11, 27), 200, 120));
+                FiscalXmlSide.RECEIVED, LocalDate.of(2026, 11, 1), LocalDate.of(2026, 11, 27), 200, 120, true));
         assertThat(outcome.reconciliation().pages()).isEqualTo(4);
         verify(siegClient).baixarXmls(any(), any()); // only the regular page here
     }

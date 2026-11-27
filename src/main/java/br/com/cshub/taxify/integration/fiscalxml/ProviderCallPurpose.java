@@ -13,6 +13,8 @@ public enum ProviderCallPurpose {
     PAGE,
     /** The re-read from the first page when the paging ended short of the provider's count (B1). */
     RECONCILE,
+    /** The previous month's NF-e checked again in the first days of the month (count and pages). */
+    PREVIOUS,
     /** The daily sweep of the recent notes' events. */
     EVENTS,
     /** The service invoices (NFS-e): their count and their pages. */

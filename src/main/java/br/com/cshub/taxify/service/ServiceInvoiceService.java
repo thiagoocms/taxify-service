@@ -106,7 +106,7 @@ public class ServiceInvoiceService {
         Integer asIssuer = issuerCount != null ? issuerCount : countNfse(company, apiKey, cnpj, null, from, to);
         Integer asRecipient = recipientCount != null ? recipientCount : countNfse(company, apiKey, null, cnpj, from, to);
         long delivered = repository.countByCompany_IdAndIssueDateBetweenAndFoundInSiegAtIsNotNull(companyId,
-                IssuePeriod.start(from), IssuePeriod.end(to));
+                IssuePeriod.siegStart(from), IssuePeriod.siegEnd(to));
         if (asIssuer != null && asRecipient != null && delivered >= (long) asIssuer + asRecipient) {
             log.info("NFS-e of company {} ({} to {}): SIEG counts {}, {} already delivered - no download", companyId, from, to,
                     asIssuer + asRecipient, delivered);
@@ -153,8 +153,8 @@ public class ServiceInvoiceService {
     }
 
     private long siegDelivered(UUID companyId, LocalDate from, LocalDate to) {
-        return repository.countByCompany_IdAndIssueDateBetweenAndFoundInSiegAtIsNotNull(companyId, IssuePeriod.start(from),
-                IssuePeriod.end(to));
+        return repository.countByCompany_IdAndIssueDateBetweenAndFoundInSiegAtIsNotNull(companyId, IssuePeriod.siegStart(from),
+                IssuePeriod.siegEnd(to));
     }
 
     /** SIEG's NFS-e count for one filter of the window; null = the count failed. */

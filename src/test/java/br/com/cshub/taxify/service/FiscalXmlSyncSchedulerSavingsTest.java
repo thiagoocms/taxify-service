@@ -281,6 +281,55 @@ class FiscalXmlSyncSchedulerSavingsTest {
         assertThat(ProviderCallContext.current()).isNull();
     }
 
+    /** Decision of 2026-11-27: up to day 10, each side's first attempt of the day checks the previous month too. */
+    @Test
+    void theFirstDaysCheckThePreviousMonthOnceADayPerSide() {
+        FiscalXmlSyncControl control = zeroControl(LocalDateTime.of(2026, 12, 2, 9, 0));
+        when(syncControlRepository.findAllWithCompany()).thenReturn(List.of(control));
+        when(provider.sync(any())).thenReturn(new FiscalXmlSyncResult(0, 0, 0));
+        List<ProviderCallPurpose> purposes = new ArrayList<>();
+        when(provider.checkPreviousMonth(any(), any(), any(), any())).thenAnswer(inv -> {
+            purposes.add(ProviderCallContext.current());
+            return new FiscalXmlSyncResult(0, 0, 0);
+        });
+
+        scheduler(LocalDateTime.of(2026, 12, 3, 9, 0)).syncAllCompanies();
+
+        verify(provider).checkPreviousMonth(company.getId(), FiscalXmlSide.RECEIVED, LocalDate.of(2026, 11, 1), LocalDate.of(2026, 11, 30));
+        verify(provider).checkPreviousMonth(company.getId(), FiscalXmlSide.ISSUED, LocalDate.of(2026, 11, 1), LocalDate.of(2026, 11, 30));
+        assertThat(purposes).containsOnly(ProviderCallPurpose.PREVIOUS);
+    }
+
+    @Test
+    void laterAttemptsOfTheDayAndLaterDaysDoNotCheckThePreviousMonth() {
+        FiscalXmlSyncControl checkedToday = zeroControl(LocalDateTime.of(2026, 12, 3, 2, 0));
+        when(syncControlRepository.findAllWithCompany()).thenReturn(List.of(checkedToday));
+        when(provider.sync(any())).thenReturn(new FiscalXmlSyncResult(0, 0, 0));
+        scheduler(LocalDateTime.of(2026, 12, 3, 9, 0)).syncAllCompanies();
+
+        FiscalXmlSyncControl day11 = zeroControl(LocalDateTime.of(2026, 12, 10, 9, 0));
+        when(syncControlRepository.findAllWithCompany()).thenReturn(List.of(day11));
+        scheduler(LocalDateTime.of(2026, 12, 11, 9, 0)).syncAllCompanies();
+
+        verify(provider, never()).checkPreviousMonth(any(), any(), any(), any());
+    }
+
+    /** Two slots of known difference per side: the current month and the previous one never push each other out. */
+    @Test
+    void theKnownDifferenceKeepsTwoMonths() {
+        FiscalXmlSyncControl control = new FiscalXmlSyncControl();
+        control.recordKnownGap(false, "2026-11", 3);
+        control.recordKnownGap(false, "2026-12", 1);
+        control.recordKnownGap(false, "2026-11", 2);
+        assertThat(control.knownGap(false, "2026-11")).isEqualTo(2);
+        assertThat(control.knownGap(false, "2026-12")).isEqualTo(1);
+        control.recordKnownGap(false, "2027-01", 4); // takes November's slot, the older one
+        assertThat(control.knownGap(false, "2026-11")).isZero();
+        assertThat(control.knownGap(false, "2026-12")).isEqualTo(1);
+        assertThat(control.knownGap(false, "2027-01")).isEqualTo(4);
+        assertThat(control.knownGap(true, "2026-12")).as("each side apart").isZero();
+    }
+
     /** A stage that throws puts the outer scope back - nothing leaks to the next company on the thread. */
     @Test
     void aFailingStageRestoresTheOuterScope() {

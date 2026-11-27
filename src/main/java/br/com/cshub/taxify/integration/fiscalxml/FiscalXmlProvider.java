@@ -59,6 +59,14 @@ public interface FiscalXmlProvider {
         return syncServiceInvoices(companyId, from, to);
     }
 
+    /**
+     * The side's notes of the previous month [from, to], checked again in the first days of the month: only what the
+     * provider counts beyond what it already delivered is downloaded. Providers without it do nothing (null).
+     */
+    default FiscalXmlSyncResult checkPreviousMonth(UUID companyId, FiscalXmlSide side, LocalDate from, LocalDate to) {
+        return null;
+    }
+
     /** One page of a past period's notes, outside the regular bookkeeping. {@code lastPage}: nothing more to ask. */
     record RecoveryPage(int notes, int persistedNew, boolean lastPage) {
     }

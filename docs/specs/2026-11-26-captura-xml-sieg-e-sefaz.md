@@ -66,12 +66,15 @@ Como medir hoje:
 - se `totalSieg > 0` e `importado + diferença conhecida < totalSieg`, a requisição vai como "pendência conhecida" e o `contar-xmls` é pulado.
 
 Se o mês virou, ou se o lado nunca foi verificado, a pendência não é presumida. O `skip` sempre vem do banco (o da janela nova costuma ser 0).
+
+**Mês anterior nos primeiros dias (decisão do Tony de 2026-11-27).** A janela regular vai do dia 1 até hoje, então uma NF-e de um mês que só chega ao SIEG no mês seguinte não seria pedida. Até o dia `TAXIFY_SIEG_PREVIOUS_MONTH_DAYS` (padrão 10; 0 = nunca), a primeira tentativa do dia de cada lado confere também o mês anterior inteiro pela contagem, com as mesmas regras da janela regular: contagem com `Skip = 0`, download só se a contagem passar do que o SIEG já entregou daquele mês mais a diferença conhecida dele, página a partir do que o SIEG entregou e reconciliação (fora da transação) quando a paginação termina abaixo do total. Não mexe nos contadores do mês corrente: guarda só a diferença do mês anterior (segunda vaga, `*_earlier_gap*`, V85) e atualiza "como o mês anterior fechou" (CP-RN-22) quando é esse o mês. As chamadas vão com a finalidade `previous` no contador `sieg.requests`. Custo: 1 contagem por lado por dia nos dias 1 a 10, mais as páginas do que faltar.
 `FiscalXmlSyncScheduler.java:269-278`; `FiscalXmlIntegrationService.java:160-169`.
 
 **RN-07: Conta antes de baixar.**
 - Sem pendência conhecida, chama `contar-xmls`, sem `BaixarEventos` e sempre com `Skip = 0` (a janela inteira), para contar só as notas.
 - Se a contagem dá 0, não baixa e grava o total 0.
 - Se a contagem não passa do que o SIEG já entregou mais a diferença conhecida do mês (RN-08), não baixa (a página seguinte viria vazia).
+- "O que o SIEG já entregou" é contado **na mesma fronteira da janela pedida ao SIEG** (dias UTC): no horário gravado, que é o local da nota, de 21:00 do dia anterior a 20:59:59 do último dia (Recife, -03:00). Uma nota de 30/11 22h de Recife (01:00Z de 1/12) conta na janela de dezembro, como no SIEG - sem falso "faltam" em novembro nem em dezembro. Notas de outro fuso (-04:00, -05:00) podem ficar uma hora fora.
 - A resposta traz a contagem de todos os tipos: a de NFS-e do mesmo filtro segue para a etapa de NFS-e (RN-10 da spec de NFS-e), sem chamada a mais.
 - Se a contagem falha, devolve -1: baixa mesmo assim e **não** grava o total, que continua refletindo só respostas reais do SIEG.
 
@@ -396,4 +399,4 @@ Pool de agendamento: `spring.task.scheduling.pool.size = 3`. As capturas SEFAZ e
 
 O SIEG aceita 2 requisições por minuto para a conta inteira (2.880 por dia). A rotina gastava pelo menos 8 por empresa por dia antes de trazer nota nova. Mudanças: RN-05 (lado com total 0), RN-06/RN-09 (skip só do SIEG), RN-07 (não baixa o que já veio; contagem de NFS-e aproveitada), RN-08 (diferença guardada e reconciliação fora da transação), RN-14 (eventos só com nota recente) e a NFS-e (spec própria). Cada chamada é medida pelo contador `sieg.requests` com a tag `purpose` (`count`, `page`, `reconcile`, `events`, `nfse`, `recovery`, `priority`, `manual`) e por uma linha diária no log, só com contagens (`TAXIFY_SIEG_REQUEST_LOG_ENABLED`, `TAXIFY_SIEG_REQUEST_LOG_CRON`).
 
-A janela continua em UTC (00:00Z a 23:59Z do dia): não foi possível confirmar se o SIEG aceita offset. A janela de hoje termina às 20:59 de Recife; as notas da noite entram no dia seguinte.
+A janela continua em UTC (00:00Z a 23:59Z do dia): não foi possível confirmar se o SIEG aceita offset. A janela de hoje termina às 20:59 de Recife; as notas da noite entram no dia seguinte. Desde 2026-11-27 as contagens locais comparadas com as do SIEG (o "entregue", o `skip`, a diferença, o "qualquer origem" do painel e a NFS-e) usam a mesma fronteira UTC convertida para Recife, e o mês anterior é conferido nos primeiros dias do mês. **Pergunta de fuso resolvida:** a comparação é sempre na fronteira do SIEG; continua em aberto só se o SIEG aceita offset no filtro (se aceitar, a janela poderia ir no dia de Recife).

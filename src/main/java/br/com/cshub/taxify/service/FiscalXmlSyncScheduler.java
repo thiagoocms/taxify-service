@@ -400,10 +400,14 @@ public class FiscalXmlSyncScheduler {
         ProviderCallContext.priority(forced, () -> {
             Map<FiscalXmlSide, Integer> serviceInvoiceCounts = new EnumMap<>(FiscalXmlSide.class);
             for (FiscalXmlSide side : FiscalXmlSide.values()) {
+                boolean firstToday = !today.equals(checkedDay(control, side));
                 Integer count = ProviderCallContext.call(ProviderCallPurpose.PAGE,
                         () -> syncSide(provider, control, side, today, forced));
                 if (count != null) {
                     serviceInvoiceCounts.put(side, count);
+                }
+                if (firstToday) {
+                    ProviderCallContext.run(ProviderCallPurpose.PREVIOUS, () -> checkPreviousMonth(provider, control, side, today));
                 }
                 ProviderCallContext.run(ProviderCallPurpose.EVENTS, () -> refreshEventsOncePerDay(provider, control, side, today));
             }
@@ -412,6 +416,36 @@ public class FiscalXmlSyncScheduler {
                     serviceInvoiceCounts.get(FiscalXmlSide.ISSUED), serviceInvoiceCounts.get(FiscalXmlSide.RECEIVED)));
             ProviderCallContext.run(ProviderCallPurpose.RECOVERY, () -> recoverBlockedMonths(provider, control));
         });
+    }
+
+    /** The day the side was last checked (null = never) - read before this attempt changes it. */
+    private static LocalDate checkedDay(FiscalXmlSyncControl control, FiscalXmlSide side) {
+        LocalDateTime checkedAt = side == FiscalXmlSide.ISSUED ? control.getIssuedCheckedAt() : control.getUltimaVerificacaoEm();
+        return checkedAt == null ? null : checkedAt.toLocalDate();
+    }
+
+    /**
+     * Up to day {@link FiscalXmlSyncProperties#getPreviousMonthDays()} of the month, the first attempt of the day of each
+     * side also checks the previous month on the provider (an NF-e that reaches SIEG only after its month ended - the
+     * regular window is day 1 to today). One count; pages only for what is missing. A failure is logged and never stops
+     * the company: the next day checks again.
+     */
+    private void checkPreviousMonth(FiscalXmlProvider provider, FiscalXmlSyncControl control, FiscalXmlSide side, LocalDate today) {
+        if (today.getDayOfMonth() > properties.getPreviousMonthDays()) {
+            return;
+        }
+        LocalDate from = today.minusMonths(1).withDayOfMonth(1);
+        LocalDate to = from.withDayOfMonth(from.lengthOfMonth());
+        UUID companyId = control.getCompany().getId();
+        try {
+            FiscalXmlSyncResult result = provider.checkPreviousMonth(companyId, side, from, to);
+            if (result != null && result.persistedNew() > 0) {
+                log.info("Previous month check of company {} ({}): {} new", companyId, side, result.persistedNew());
+            }
+        } catch (RuntimeException e) {
+            log.warn("Previous month check of company {} ({}) failed - checked again tomorrow: {}", companyId, side,
+                    e.getClass().getSimpleName());
+        }
     }
 
     /**

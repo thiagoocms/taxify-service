@@ -39,8 +39,21 @@ public class FiscalXmlSyncProperties {
      * behavior).
      */
     private int zeroTotalRecountHours = 6;
+    /**
+     * TAXIFY_SIEG_PREVIOUS_MONTH_DAYS - up to this day of the month the previous month's NF-e are checked too, once a day
+     * per side, by the provider's count (decision of 2026-11-27, default 10). 0 = never.
+     */
+    private int previousMonthDays = 10;
     /** TAXIFY_SIEG_NFSE_COUNT_GATE - off, shadow (default) or on: see {@link ServiceInvoiceCountGate}. */
     private ServiceInvoiceCountGate serviceInvoiceCountGate = ServiceInvoiceCountGate.SHADOW;
+
+    public int getPreviousMonthDays() {
+        return previousMonthDays;
+    }
+
+    public void setPreviousMonthDays(int previousMonthDays) {
+        this.previousMonthDays = previousMonthDays;
+    }
 
     public int getZeroTotalRecountHours() {
         return zeroTotalRecountHours;

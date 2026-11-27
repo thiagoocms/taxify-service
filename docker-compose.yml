@@ -178,6 +178,7 @@ services:
       # Economia de chamadas ao SIEG (2 req/min para a conta inteira): recontagem do lado com total 0, NFS-e só com
       # diferença na contagem, eventos só no lado com nota recente e a linha diária de chamadas por finalidade.
       TAXIFY_SIEG_ZERO_TOTAL_RECOUNT_HOURS: ${TAXIFY_SIEG_ZERO_TOTAL_RECOUNT_HOURS:-6}
+      TAXIFY_SIEG_PREVIOUS_MONTH_DAYS: ${TAXIFY_SIEG_PREVIOUS_MONTH_DAYS:-10}
       # NFS-e pela contagem: off | shadow (só loga o que pularia; padrão) | on
       TAXIFY_SIEG_NFSE_COUNT_GATE: ${TAXIFY_SIEG_NFSE_COUNT_GATE:-shadow}
       TAXIFY_SIEG_EVENTS_ONLY_RECENT_NOTES: ${TAXIFY_SIEG_EVENTS_ONLY_RECENT_NOTES:-true}

@@ -65,7 +65,7 @@ class SiegRequestMeterTest {
         });
 
         assertThat(meter.summary()).isEqualTo(
-                "total=3 count=2 page=1 reconcile=0 events=0 nfse=0 recovery=0 priority=0 manual=0");
+                "total=3 count=2 page=1 reconcile=0 previous=0 events=0 nfse=0 recovery=0 priority=0 manual=0");
         assertThat(meter.summary()).startsWith("total=0 ");
         assertThat(count("count")).as("the Micrometer counter is cumulative").isEqualTo(2);
     }

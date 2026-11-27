@@ -5,7 +5,8 @@ package db.migration;
  * <ul>
  *   <li>{@code *_known_gap} / {@code *_known_gap_month}: a diferença (total do SIEG − notas que o SIEG entregou) que
  *   sobrou depois de uma passada completa desde a primeira página, e o mês (yyyy-MM) dela. A reconciliação só roda de
- *   novo quando a diferença do mesmo mês aumenta;</li>
+ *   novo quando a diferença do mesmo mês aumenta. {@code *_earlier_gap*} é a segunda vaga, para o mês anterior conferido
+ *   nos primeiros dias do mês (cada vaga guarda um mês; um mês novo ocupa a vaga do mês mais antigo);</li>
  *   <li>{@code *_stored_any_source}: as notas do lado na janela que o Taxify tem, de qualquer origem (SIEG, SEFAZ,
  *   upload), na última verificação - o painel mostra ao lado de "vindas do SIEG / total do SIEG".</li>
  * </ul>
@@ -20,6 +21,10 @@ public class V85__SyncControlSiegGapAndStoredCount extends TableMigration {
         column("received_known_gap", "int");
         column("issued_known_gap_month", "char(7)");
         column("issued_known_gap", "int");
+        column("received_earlier_gap_month", "char(7)");
+        column("received_earlier_gap", "int");
+        column("issued_earlier_gap_month", "char(7)");
+        column("issued_earlier_gap", "int");
         column("received_stored_any_source", "int");
         column("issued_stored_any_source", "int");
     }

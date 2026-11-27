@@ -146,21 +146,79 @@ public class FiscalXmlSyncControl extends AbstractAuditingEntity {
     @Column(name = "issued_stored_any_source")
     private Integer issuedStoredAnySource;
 
-    /** The difference a complete pass left on the side for {@code month} (yyyy-MM); 0 = none known. */
+    @Column(name = "received_earlier_gap_month", length = 7, columnDefinition = "char(7)")
+    private String receivedEarlierGapMonth;
+
+    @Column(name = "received_earlier_gap")
+    private Integer receivedEarlierGap;
+
+    @Column(name = "issued_earlier_gap_month", length = 7, columnDefinition = "char(7)")
+    private String issuedEarlierGapMonth;
+
+    @Column(name = "issued_earlier_gap")
+    private Integer issuedEarlierGap;
+
+    /**
+     * The difference a complete pass left on the side for {@code month} (yyyy-MM); 0 = none known. Two slots per side -
+     * the current month and the previous one, checked in the first days of the month.
+     */
     public int knownGap(boolean issued, String month) {
-        String gapMonth = issued ? issuedKnownGapMonth : receivedKnownGapMonth;
-        Integer gap = issued ? issuedKnownGap : receivedKnownGap;
-        return gap == null || gapMonth == null || !gapMonth.strip().equals(month) ? 0 : gap;
+        if (month == null) {
+            return 0;
+        }
+        if (month.equals(strip(issued ? issuedKnownGapMonth : receivedKnownGapMonth))) {
+            return valueOf(issued ? issuedKnownGap : receivedKnownGap);
+        }
+        if (month.equals(strip(issued ? issuedEarlierGapMonth : receivedEarlierGapMonth))) {
+            return valueOf(issued ? issuedEarlierGap : receivedEarlierGap);
+        }
+        return 0;
     }
 
+    /** Keeps {@code gap} for {@code month}: in the slot that already holds the month, else in the one of the older month. */
     public void recordKnownGap(boolean issued, String month, int gap) {
-        if (issued) {
-            this.issuedKnownGapMonth = month;
-            this.issuedKnownGap = gap;
+        String first = strip(issued ? issuedKnownGapMonth : receivedKnownGapMonth);
+        String second = strip(issued ? issuedEarlierGapMonth : receivedEarlierGapMonth);
+        boolean inFirst = month.equals(first) || (!month.equals(second) && (first == null
+                || (second != null && first.compareTo(second) < 0)));
+        if (inFirst) {
+            if (issued) {
+                issuedKnownGapMonth = month;
+                issuedKnownGap = gap;
+            } else {
+                receivedKnownGapMonth = month;
+                receivedKnownGap = gap;
+            }
+        } else if (issued) {
+            issuedEarlierGapMonth = month;
+            issuedEarlierGap = gap;
         } else {
-            this.receivedKnownGapMonth = month;
-            this.receivedKnownGap = gap;
+            receivedEarlierGapMonth = month;
+            receivedEarlierGap = gap;
         }
+    }
+
+    /** How the previous month closed is refreshed when that month is checked again (first days of the month). */
+    public void refreshPreviousMonth(boolean issued, String month, int totalSieg, int imported) {
+        String closed = strip(issued ? issuedPrevMonth : receivedPrevMonth);
+        if (!month.equals(closed)) {
+            return;
+        }
+        if (issued) {
+            issuedPrevTotalSieg = totalSieg;
+            issuedPrevImported = imported;
+        } else {
+            receivedPrevTotalSieg = totalSieg;
+            receivedPrevImported = imported;
+        }
+    }
+
+    private static String strip(String month) {
+        return month == null ? null : month.strip();
+    }
+
+    private static int valueOf(Integer value) {
+        return value == null ? 0 : value;
     }
 
     public void setStoredAnySource(boolean issued, int stored) {

@@ -190,7 +190,7 @@ class ServiceInvoiceServiceTest {
     void unknownCountsAreAskedOncePerFilter() {
         when(siegClient.contarXmls(any(), eq("key"))).thenReturn(new br.com.cshub.taxify.integration.sieg.SiegDocumentCounts(99, 2));
         when(repository.countByCompany_IdAndIssueDateBetweenAndFoundInSiegAtIsNotNull(eq(company.getId()),
-                eq(LocalDate.of(2026, 10, 1).atStartOfDay()), eq(LocalDate.of(2026, 10, 31).atTime(java.time.LocalTime.MAX)))).thenReturn(4L);
+                eq(LocalDate.of(2026, 9, 30).atTime(21, 0)), eq(LocalDate.of(2026, 10, 31).atTime(java.time.LocalTime.MAX).minusHours(3)))).thenReturn(4L); // SIEG's UTC days in Recife time
 
         service.syncMonthIfMissing(company.getId(), LocalDate.of(2026, 10, 1), LocalDate.of(2026, 10, 31), null, null);
 
