@@ -15,6 +15,7 @@ import org.springframework.context.ApplicationEventPublisher;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 
+import java.util.Map;
 import java.util.UUID;
 
 @Service
@@ -32,6 +33,26 @@ public class ProductFiscalRuleService extends CompanyScopedCrudService<ProductFi
                 ProductFiscalRule::getCompany, root -> root.get("company"));
         setMessageNotFound("error.productFiscalRule.not.found");
         this.events = events;
+    }
+
+    /** Property names before the English-naming refactor, still accepted in {@code sort=}. */
+    static final Map<String, String> LEGACY_SORT_PROPERTIES = Map.ofEntries(
+            Map.entry("codigoProduto", "productCode"),
+            Map.entry("documentoFornecedor", "supplierDocument"),
+            Map.entry("descricaoProduto", "productDescription"),
+            Map.entry("ncmCorreto", "correctNcm"),
+            Map.entry("cfopCorreto", "correctCfop"),
+            Map.entry("observacoes", "notes"),
+            Map.entry("taxRule.origemMercadoria", "taxRule.goodsOrigin"),
+            Map.entry("taxRule.aliquotaIcms", "taxRule.icmsRate"),
+            Map.entry("taxRule.aliquotaIpi", "taxRule.ipiRate"),
+            Map.entry("taxRule.aliquotaPis", "taxRule.pisRate"),
+            Map.entry("taxRule.aliquotaCofins", "taxRule.cofinsRate"),
+            Map.entry("taxRule.classificacaoTributaria", "taxRule.taxClassification"));
+
+    @Override
+    protected Map<String, String> legacySortProperties() {
+        return LEGACY_SORT_PROPERTIES;
     }
 
     /** Saved, and the notes with the product are rectified right after the commit (ProductFiscalRuleSavedEvent). */

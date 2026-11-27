@@ -1,15 +1,18 @@
 package br.com.cshub.taxify.common;
 
 import br.com.cshub.taxify.domain.AbstractAuditingEntity;
+import br.com.cshub.taxify.exception.BadRequestException;
 import br.com.cshub.taxify.exception.ResourceNotFoundException;
 import br.com.cshub.taxify.search.AbstractsSpecification;
 import br.com.cshub.taxify.search.SearchCriteriaUtil;
+import org.springframework.core.ResolvableType;
 import org.springframework.data.domain.Page;
 import org.springframework.data.domain.Pageable;
 import org.springframework.data.jpa.domain.Specification;
 import org.springframework.transaction.annotation.Transactional;
 
 import java.io.Serializable;
+import java.util.Map;
 
 public abstract class AbstractCrudService<E extends AbstractAuditingEntity, ID extends Serializable, M, F> implements Serializable {
 
@@ -41,7 +44,7 @@ public abstract class AbstractCrudService<E extends AbstractAuditingEntity, ID e
 
     @Transactional(readOnly = true)
     public Page<M> findAll(Pageable pageable) {
-        var page = repository.findAll(notDeleted(), pageable);
+        var page = repository.findAll(notDeleted(), sortable(pageable));
         return mapper.toModels(page);
     }
 
@@ -60,8 +63,27 @@ public abstract class AbstractCrudService<E extends AbstractAuditingEntity, ID e
             spec = asksForDeleted ? byCriteria : Specification.allOf(byCriteria, notDeleted());
         }
         spec = restrictQuery(spec);
-        Page<E> page = this.repository.findAll(spec, pageable);
+        Page<E> page = this.repository.findAll(spec, sortable(pageable));
         return mapper.toModels(page);
+    }
+
+    /**
+     * Old (pt) names of entity properties renamed in Java, still accepted in {@code sort=}: {@code old -> new}.
+     * Entities renamed in the English-naming wave 1 override this; the rest have none.
+     */
+    protected Map<String, String> legacySortProperties() {
+        return Map.of();
+    }
+
+    /** The sort with legacy names translated; an unknown property is a 400, not an error deep in the query. */
+    private Pageable sortable(Pageable pageable) {
+        Class<?> entity = ResolvableType.forClass(getClass()).as(AbstractCrudService.class).resolveGeneric(0);
+        if (entity == null) {
+            return pageable;
+        }
+        return SortProperties.resolve(pageable, entity, legacySortProperties())
+                .orElseThrow(() -> new BadRequestException(BadRequestException.DEFAULT_CODE,
+                        messageService.getMessage(BadRequestException.DEFAULT_CODE)));
     }
 
     /**

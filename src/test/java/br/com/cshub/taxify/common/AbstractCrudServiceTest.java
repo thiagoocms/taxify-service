@@ -1,6 +1,7 @@
 package br.com.cshub.taxify.common;
 
 import br.com.cshub.taxify.domain.AbstractAuditingEntity;
+import br.com.cshub.taxify.exception.BadRequestException;
 import br.com.cshub.taxify.exception.ResourceNotFoundException;
 import br.com.cshub.taxify.search.AbstractsSpecification;
 import org.junit.jupiter.api.BeforeEach;
@@ -14,9 +15,11 @@ import org.springframework.data.domain.Page;
 import org.springframework.data.domain.PageImpl;
 import org.springframework.data.domain.PageRequest;
 import org.springframework.data.domain.Pageable;
+import org.springframework.data.domain.Sort;
 import org.springframework.data.jpa.domain.Specification;
 
 import java.util.List;
+import java.util.Map;
 import java.util.Optional;
 
 import static org.assertj.core.api.Assertions.assertThat;
@@ -217,5 +220,50 @@ class AbstractCrudServiceTest {
         when(messageService.getMessage("error.custom")).thenReturn("custom!");
 
         assertThatThrownBy(() -> service.findById(1L)).hasMessage("custom!");
+    }
+
+    /** A service whose entity had "value" renamed from the pt "valor" (wave 1 of the English naming). */
+    private AbstractCrudService<Widget, Long, String, TestFilter> serviceWithLegacySort() {
+        return new AbstractCrudService<>(repository, mapper, validation, messageService, specification) {
+            @Override
+            protected Map<String, String> legacySortProperties() {
+                return Map.of("valor", "value");
+            }
+        };
+    }
+
+    @Test
+    void theOldPropertyNameStillSorts() {
+        when(repository.findAll(any(Specification.class), any(Pageable.class))).thenReturn(new PageImpl<>(List.of(new Widget("a"))));
+
+        serviceWithLegacySort().findAll(PageRequest.of(2, 15, Sort.by(Sort.Direction.DESC, "valor")), null);
+
+        ArgumentCaptor<Pageable> used = ArgumentCaptor.forClass(Pageable.class);
+        verify(repository).findAll(any(Specification.class), used.capture());
+        assertThat(used.getValue().getSort().getOrderFor("value")).isNotNull();
+        assertThat(used.getValue().getSort().getOrderFor("value").getDirection()).isEqualTo(Sort.Direction.DESC);
+        assertThat(used.getValue().getPageNumber()).isEqualTo(2);
+        assertThat(used.getValue().getPageSize()).isEqualTo(15);
+    }
+
+    @Test
+    void theNewPropertyNameAndInheritedOnesSortAsBefore() {
+        when(repository.findAll(any(Specification.class), any(Pageable.class))).thenReturn(new PageImpl<>(List.of()));
+
+        serviceWithLegacySort().findAll(PageRequest.of(0, 10, Sort.by("value", "createdDate")));
+
+        ArgumentCaptor<Pageable> used = ArgumentCaptor.forClass(Pageable.class);
+        verify(repository).findAll(any(Specification.class), used.capture());
+        assertThat(used.getValue().getSort().stream().map(Sort.Order::getProperty)).containsExactly("value", "createdDate");
+    }
+
+    @Test
+    void anUnknownSortPropertyIsABadRequestNotAServerError() {
+        when(messageService.getMessage(BadRequestException.DEFAULT_CODE)).thenReturn("Requisição inválida");
+
+        assertThatThrownBy(() -> serviceWithLegacySort().findAll(PageRequest.of(0, 10, Sort.by("naoExiste")), null))
+                .isInstanceOf(BadRequestException.class)
+                .satisfies(e -> assertThat(((BadRequestException) e).getCode()).isEqualTo("error.generic.bad.request"));
+        verifyNoInteractions(repository);
     }
 }
