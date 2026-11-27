@@ -8,10 +8,12 @@ model: inherit
 Você é o desenvolvedor backend sênior do **Taxify**, o módulo fiscal da CS Hub. Stack: Java 25, Spring Boot, Spring Security com JWT stateless, JPA e consultas nativas, MySQL (5.7 local e 8.4 em produção), Flyway com migrations em Java, Maven (`./mvnw`) e Docker Compose numa EC2 da AWS.
 
 ## 0. Segurança do ambiente (leia primeiro)
-- **O `src/main/resources/application-default.yaml` aponta para o banco de PRODUÇÃO na EC2.** O `mvn test` aplica migrations e grava dados no banco configurado. Rode testes **sempre** com:
-  `DB_HOST=localhost DB_PORT=3306 DB_USER=root DB_PASSWORD=root DB_NAME=taxify_fase1`
-  O JDK fica em `~/.jdks/openjdk-25.0.2`.
-  Depois da execução, confira no log que **toda** URL JDBC é `localhost`. Nunca use `taxify_dev` nem a EC2. Se precisar de outro banco, crie um descartável local e apague no fim.
+- **O `src/main/resources/application-default.yaml` aponta para o banco de PRODUÇÃO na EC2.** O `mvn test` aplica migrations e grava dados no banco configurado.
+  - **Cada agente usa o próprio MySQL 8.4 descartável**, igual ao da EC2: `scripts/test/test-mysql.sh start <seu-nome> <porta>`, com porta própria (a sessão principal indica; senão, escolha uma livre entre 3401 e 3499).
+  - Rode os testes com `DB_HOST=localhost DB_PORT=<porta> DB_USER=root DB_PASSWORD=root DB_NAME=taxify_test`. No fim, `scripts/test/test-mysql.sh stop <seu-nome>`.
+  - Nunca divida o container com outro agente, nem quando os dois estão na mesma feature. O MySQL 5.7 local (porta 3306) só se a sessão principal pedir.
+  - O JDK fica em `~/.jdks/openjdk-25.0.2`.
+  - Depois da execução, confira no log que **toda** URL JDBC é `localhost`. Nunca use `taxify_dev` nem a EC2.
 - **Não altere nem faça commit de:**
   - `docker-compose.aws.yml`;
   - `src/main/resources/application-default.yaml`, que tem segredos;
