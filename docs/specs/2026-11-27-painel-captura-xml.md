@@ -17,13 +17,18 @@
 > - commit `36be0c4`: a fila da SIEG persistida em `fiscal_xml_sync_control.last_attempt_at` (V56.1).
 >
 > **Nenhuma regra fiscal é criada aqui.** "Em dia", "atrasada" e os limites do "Sincronizar agora" são decisões de
-> produto. Ficam em parâmetros configuráveis, e o padrão de cada um está em "Perguntas em aberto" com a recomendação.
+> produto. Elas foram tomadas pelo Tony em 2026-11-27 (seção 15) e ficam em parâmetros configuráveis, com o valor
+> decidido como padrão.
 
 ## Status
 
-**Em especificação.** Uma pergunta bloqueia só a **visão da plataforma** (P-CP-01: mostrar o nome das empresas
-clientes no console, o que é uma exceção à F1-RN-15). As outras têm recomendação, e o desenvolvimento pode seguir com
-ela. A visão do escritório e a gravação da última falha não dependem da P-CP-01.
+**Pronta para implementação.** O Tony decidiu todas as perguntas em 2026-11-27 (seção 15):
+- P-CP-01: aceitou a exceção limitada à F1-RN-15 para a visão da plataforma;
+- P-CP-02 a P-CP-11: aceitou as recomendações como propostas.
+
+**Pré-requisito de go-live da visão da plataforma** (`/plataforma/captura` e `GET /platform/capture-panel`): a política
+de privacidade e o acordo de operador precisam citar que a CS Hub, como operadora, vê o nome das empresas clientes e o
+número do estabelecimento para dar suporte à captura (CP-RN-02, seção 13). A visão do escritório não depende disso.
 
 ---
 
@@ -67,7 +72,9 @@ ela. A visão do escritório e a gravação da última falha não dependem da P-
 ### Acesso
 
 - Console da plataforma: `GET /platform/firms`, `@PlatformAdminOnly`. Pela F1-RN-15 (decisão 11), ele **nunca traz
-  nome, CNPJ ou dado fiscal das empresas clientes** (`service/firmaccess/PlatformFirmService.java:52-57`).
+  nome, CNPJ ou dado fiscal das empresas clientes** (`service/firmaccess/PlatformFirmService.java:52-57`). Esta spec
+  abre uma **exceção limitada** a essa regra, só para o painel de captura (decisão P-CP-01; ver CP-RN-02 e a seção 15).
+  O `GET /platform/firms` continua como está.
 - Admin da plataforma: perfil ADMIN, login em `PLATFORM_ADMIN_LOGINS` e escritório `PLATFORM_FIRM_ID`
   (`common/PlatformAdminService.java`).
 - Bloqueio: GET liberado e POST de escrita com 403 `error.firm.access.blocked` (F1-RN-08); `/platform/**` sempre
@@ -110,7 +117,7 @@ pede para alguém rodar o SQL de diagnóstico no banco. As falhas ficam só no l
 | Papel | O que faz | Frequência |
 |---|---|---|
 | ADMIN do escritório | Vê todas as empresas do escritório, filtra as que têm problema, abre o detalhe e pede "Sincronizar agora" | Diário, de manhã; e quando um analista reclama de nota faltando |
-| Analista Fiscal (perfil FISCAL, `INVOICES_SYNC`) | Vê só as empresas da carteira dele, sem o botão (recomendação P-CP-02) | Antes de começar a conferência de uma empresa |
+| Analista Fiscal (perfil FISCAL, `INVOICES_SYNC`) | Vê só as empresas da carteira dele, sem o botão (decisão P-CP-02) | Antes de começar a conferência de uma empresa |
 | Admin da plataforma (CS Hub) | Vê todas as empresas de todos os escritórios, a saúde da fila e pede "Sincronizar agora" para qualquer empresa de escritório liberado | Diário; e sempre depois de um deploy |
 | Agendador SIEG | Atende primeiro os pedidos de "Sincronizar agora" e grava o resultado de cada etapa | A cada 5 minutos |
 | Agendadores SEFAZ e ADN | Gravam o resultado da etapa com código seguro | De hora em hora |
@@ -135,7 +142,7 @@ pede para alguém rodar o SQL de diagnóstico no banco. As falhas ficam só no l
 - **CP-RN-01 Escopo da visão do escritório.** `GET /capture-panel`:
   - **ADMIN:** todas as empresas não excluídas do próprio escritório (decisão do Tony);
   - **usuário com `INVOICES_SYNC`** (perfil FISCAL): só as empresas da carteira (`UserCompany` ativo), sem o botão
-    "Sincronizar agora" (recomendação P-CP-02);
+    "Sincronizar agora" (decisão P-CP-02);
   - **demais perfis** (ACCOUNTING, MANAGEMENT, FINANCIAL, PAYROLL): 403;
   - o escritório vem **sempre do usuário logado**, nunca de parâmetro. Um contexto sem escritório (token de usuário
     excluído tratado como "sistema", R-02 da arquitetura) responde 403, e não "todas as empresas";
@@ -145,10 +152,18 @@ pede para alguém rodar o SQL de diagnóstico no banco. As falhas ficam só no l
   demais, inclusive o ADMIN de escritório):
   - todas as empresas não excluídas de todos os escritórios (decisão do Tony), com o nome do escritório e filtro por
     escritório;
-  - **dados da empresa cliente mostrados:** nome e o número do estabelecimento do CNPJ (`/0001`, `/0002`, para separar
-    matriz e filial com o mesmo nome). **Nunca** o CNPJ inteiro, valores, chaves de acesso, nomes de terceiros ou
-    `last_detail`. Isso é uma exceção à F1-RN-15 e depende da P-CP-01;
-  - cada consulta grava o log `capture.panel.viewed scope=platform by={userId} firm={firmId|all}` (sem nome de empresa).
+  - **exceção limitada à F1-RN-15** (decisão P-CP-01, 2026-11-27). Dados da empresa cliente mostrados:
+    - o nome;
+    - o número do estabelecimento do CNPJ (`/0001`, `/0002`), para separar matriz e filial com o mesmo nome;
+    - as contagens de notas e as datas da captura.
+  - **Nunca** mostrados: o CNPJ inteiro, valores, chaves de acesso, nomes de terceiros e `last_detail`;
+  - a exceção vale **só** para este painel. O `GET /platform/firms` e o resto do console continuam com a F1-RN-15
+    original;
+  - cada consulta grava o log `capture.panel.viewed scope=platform by={userId} firm={firmId|all}` (sem nome de empresa);
+  - **pré-requisito de go-live:** a política de privacidade e o acordo de operador precisam citar a exceção. Até lá, as
+    rotas da plataforma podem ir para produção desligadas (`TAXIFY_CAPTURE_PANEL_PLATFORM_ENABLED=false`, que responde
+    404 nas rotas `/platform/capture-panel/**` e esconde o item do menu). Ligar a variável na EC2 é deploy de produção
+    e exige aprovação do Tony.
 - **CP-RN-03 Escritório bloqueado.** Com o escritório em `BLOCKED`, `SUSPENDED` ou `CANCELED`:
   - o painel abre (é GET, F1-RN-08), com a faixa de bloqueio que já existe, e todas as empresas ficam na situação
     `BLOQUEADA` (CP-RN-07);
@@ -179,16 +194,16 @@ pede para alguém rodar o SQL de diagnóstico no banco. As falhas ficam só no l
   | 2 | `FORA_DO_PLANO` | Sem direito (CP-RN-05) | "O plano vigente não tem importação de XML pelo SIEG" ou "Sem assinatura vigente" |
   | 3 | `NUNCA_TENTADA` | `last_attempt_at` nulo | "Ainda não foi atendida pela fila. Posição: {n}" |
   | 4 | `COM_ERRO` | Alguma etapa SIEG (CP-RN-10) com `last_outcome = FAILURE` | A mensagem do código da etapa mais recente com falha (CP-RN-11) |
-  | 5 | `ATRASADA` | `verifiedAt` nulo ou mais antigo que `TAXIFY_CAPTURE_PANEL_SIEG_FRESH_HOURS` (padrão **24 h**, P-CP-03); **ou** `received_events_checked_on`, `issued_events_checked_on` ou `service_invoices_checked_on` antes de ontem | "Sem verificação completa há {X} h" / "Nunca verificada por completo" / "Eventos ou NFS-e sem varredura desde {data}" |
-  | 6 | `PENDENTE` | Algum lado verificado **no mês corrente** com `importado < total SIEG` | "Faltam {total − importado} NF-e recebidas / emitidas" |
+  | 5 | `ATRASADA` | `verifiedAt` nulo ou mais antigo que `TAXIFY_CAPTURE_PANEL_SIEG_FRESH_HOURS` (padrão **24 h**, decisão P-CP-03); **ou** `received_events_checked_on`, `issued_events_checked_on` ou `service_invoices_checked_on` antes de ontem | "Sem verificação completa há {X} h" / "Nunca verificada por completo" / "Eventos ou NFS-e sem varredura desde {data}" |
+  | 6 | `PENDENTE` | Algum lado verificado **no mês corrente** com `importado < total SIEG`; **ou** o mês anterior fechou com pendência (CP-RN-22) | "Faltam {total − importado} NF-e recebidas / emitidas" / "{mês} fechou com {n} NF-e não importadas" |
   | 7 | `EM_DIA` | Nenhuma das anteriores | — |
 
   - `verifiedAt` é o `FiscalXmlSyncControl#getVerifiedAt()` (a mais antiga das duas verificações).
   - O `total SIEG = 0` com `importado = 0`, verificado dentro da janela, é `EM_DIA`.
   - `importado > total SIEG` (notas que vieram da SEFAZ ou de upload e o SIEG não tem) não é pendência: é `EM_DIA` e a
     tela mostra os dois números (CP-RN-09).
-  - Um lado cuja última verificação foi no mês anterior não conta para `PENDENTE`: os contadores dele são do mês
-    anterior. A tela mostra o mês a que eles se referem.
+  - Um lado cuja última verificação foi no mês anterior não conta para a pendência do mês corrente: os contadores dele
+    são do mês anterior. A tela mostra o mês a que eles se referem.
 - **CP-RN-07 Situação dos canais SEFAZ e ADN.**
 
   | # | Situação | Condição |
@@ -197,7 +212,7 @@ pede para alguém rodar o SQL de diagnóstico no banco. As falhas ficam só no l
   | 2 | `FORA_DO_PLANO` | Sem direito (CP-RN-05). Na SEFAZ, a UF fora de `SEFAZ_DIST_UFS` tem o motivo próprio "UF fora da captura SEFAZ automática" |
   | 3 | `COM_ERRO` | Sem certificado A1 da raiz do CNPJ no escritório (`CERT_MISSING`, calculado pelo painel), **ou** `last_status = ERRO` |
   | 4 | `NUNCA_TENTADA` | Sem linha de controle ou `last_run_at` nulo |
-  | 5 | `ATRASADA` | `last_run_at` mais antigo que `TAXIFY_CAPTURE_PANEL_DIRECT_FRESH_HOURS` (padrão **3 h**, P-CP-03) |
+  | 5 | `ATRASADA` | `last_run_at` mais antigo que `TAXIFY_CAPTURE_PANEL_DIRECT_FRESH_HOURS` (padrão **3 h**, decisão P-CP-03) |
   | 6 | `EM_DIA` | `last_status` OK ou SEM_MOVIMENTO, dentro da janela |
 
   - O código da falha vem de `capture_stage_status` (CP-RN-10). Linha com `last_status = ERRO` gravada **antes** do
@@ -211,7 +226,8 @@ pede para alguém rodar o SQL de diagnóstico no banco. As falhas ficam só no l
   - senão, a **pior** situação entre os canais com direito, nesta ordem: `COM_ERRO` > `NUNCA_TENTADA` > `ATRASADA` >
     `PENDENTE` > `EM_DIA`.
   - A situação de cada canal também vai na resposta, para o filtro por canal (CP-RN-13).
-  - Empresa inativa (`active = false`) aparece só com o filtro "incluir inativas" e não entra no resumo (P-CP-07).
+  - Empresa inativa (`active = false`) aparece só com o filtro "incluir inativas" e não entra no resumo (decisão
+    P-CP-07). Tirar a inativa da fila do SIEG fica para outra mudança.
 
 ### O que a tela mostra por empresa
 
@@ -225,6 +241,7 @@ pede para alguém rodar o SQL de diagnóstico no banco. As falhas ficam só no l
   | Fila SIEG | Última verificação completa | `verifiedAt` | "A mais antiga entre recebidas ({hora}) e emitidas ({hora})" |
   | NF-e recebidas | Importadas / total SIEG, mês | `total_importado`, `total_sieg`, `data_emissao_inicio/fim`, `ultima_verificacao_em` | "{importado} notas no Taxify (qualquer origem) emitidas de {início} a {fim}; o SIEG informou {total} na verificação de {data hora}" |
   | NF-e emitidas | Idem | `issued_*` | Idem |
+  | Mês anterior | Como o mês anterior fechou, por lado (CP-RN-22) | `received_prev_*`, `issued_prev_*` | "nov/2026 fechou com {importado} de {total} NF-e recebidas" |
   | Eventos | Último dia varrido, por lado | `received_events_checked_on`, `issued_events_checked_on` | "Cancelamentos dos últimos 3 dias relidos em {data}" |
   | NFS-e SIEG | Último dia verificado | `service_invoices_checked_on` | — |
   | Última nota gravada | Por tipo e origem: NF-e SIEG, NF-e SEFAZ, NF-e upload, NFS-e SIEG, NFS-e ADN, NFS-e upload | `max(created_date)` por `(company_id, source_system)` em `fiscal_xml_documents` e `service_invoices`, só para as empresas da página | "Nunca" quando não há |
@@ -299,8 +316,8 @@ pede para alguém rodar o SQL de diagnóstico no banco. As falhas ficam só no l
 
   - Para separar os códigos HTTP, a `SiegIntegrationException` passa a carregar o status HTTP da resposta (hoje ela é
     lançada sem ele em `SiegClient.java:77`).
-  - O log técnico de cada falha continua existindo, com o id da empresa e o código. A mensagem e a pilha da exceção
-    continuam no log como hoje (ver P-CP-09 sobre o corpo da resposta do SIEG que vai para o log).
+  - **O `SiegClient` deixa de gravar no log o corpo da resposta de erro** (decisão P-CP-09). O log fica só com o status
+    HTTP e o código. O log técnico de cada falha continua com o id da empresa, o código e a pilha da exceção.
 
 ### Resumo e fila
 
@@ -323,8 +340,11 @@ pede para alguém rodar o SQL de diagnóstico no banco. As falhas ficam só no l
     - Rótulo: "pelo menos {X} h. Cada empresa gasta de 2 a 8 chamadas, e o SIEG aceita 2 por minuto, então uma rodada
       pode passar do intervalo";
   - **próxima tentativa estimada** de cada empresa: `próxima execução do cron + floor(posição / vagas_regulares) ×
-    intervalo`, em que `posição` é o índice (começando em 0) da empresa na ordem da fila (`queueOrder()`, a mesma do
-    agendador). Rótulo "estimativa". A plataforma vê a posição; o ADMIN vê a posição e a data estimada.
+    intervalo`, em que `posição` é o índice da empresa na ordem da fila (`queueOrder()`, a mesma do agendador). Rótulo
+    "estimativa". A plataforma vê a posição; o ADMIN vê a posição e a data estimada.
+  - **Contagem da posição:** na API, a posição começa em **0** (`position`, `queuePosition`: 0 é a próxima a ser
+    atendida). Na tela, ela aparece **somando 1** ("Posição: 1" é a próxima). A fórmula da estimativa usa sempre a
+    posição da API, a que começa em 0.
 
 ### Filtros, ordem e paginação
 
@@ -366,10 +386,10 @@ pede para alguém rodar o SQL de diagnóstico no banco. As falhas ficam só no l
   `POST /integrations/xmls/sincronizar` segura a requisição HTTP enquanto o limitador espera (minutos), e isso não se
   repete aqui.
   - Resposta 202 `{requestId, status: "PENDING", position, estimatedAt}`.
-  - No agendador, a cada rodada, as primeiras `TAXIFY_CAPTURE_PRIORITY_SLOTS_PER_TICK` vagas do lote (padrão **1**) vão
-    para os pedidos em aberto, do mais antigo para o mais novo. As outras vagas seguem a fila normal. As vagas de
-    prioridade são no máximo `batch-size − 1`, para a fila normal nunca parar. Com `batch-size = 1`, a prioridade se
-    alterna com a fila normal: uma rodada para o pedido, a seguinte para a fila.
+  - No agendador, a cada rodada, as primeiras `TAXIFY_CAPTURE_PRIORITY_SLOTS_PER_TICK` vagas do lote (padrão **1**,
+    decisão P-CP-04) vão para os pedidos em aberto, do mais antigo para o mais novo. As outras vagas seguem a fila
+    normal. As vagas de prioridade são no máximo `batch-size − 1`, para a fila normal nunca parar. Com `batch-size = 1`,
+    a prioridade se alterna com a fila normal: uma rodada para o pedido, a seguinte para a fila.
   - A reserva da empresa continua atômica (`reserve`), e o pedido passa a `RESERVED` na mesma hora.
   - **Na tentativa prioritária, o "lado em dia não gasta requisição" (RN-05 da captura) não vale:** os dois lados
     contam de novo no SIEG. Sem isso, o botão não faria nada justamente quando o usuário sabe que chegou nota nova
@@ -383,8 +403,9 @@ pede para alguém rodar o SQL de diagnóstico no banco. As falhas ficam só no l
     escritório (senão 404);
   - **admin da plataforma:** `POST /platform/capture-panel/companies/{companyId}/sync-now`, `@PlatformAdminOnly`,
     qualquer empresa;
-  - **analista com `INVOICES_SYNC`:** não, na v1 (P-CP-02). O botão não aparece e a rota do escritório responde 403.
-- **CP-RN-17 Quando é recusado.** As verificações seguem esta ordem, e a primeira que falha responde:
+  - **analista com `INVOICES_SYNC`:** não, na v1 (decisão P-CP-02). O botão não aparece e a rota do escritório responde 403.
+- **CP-RN-17 Quando é recusado.** As verificações seguem esta ordem, e a primeira que falha responde (limites da
+  decisão P-CP-05):
 
   | # | Situação | Resposta |
   |---|---|---|
@@ -397,7 +418,7 @@ pede para alguém rodar o SQL de diagnóstico no banco. As falhas ficam só no l
   | 7 | O escritório já tem `TAXIFY_CAPTURE_PRIORITY_MAX_OPEN_PER_FIRM` pedidos em aberto (padrão **5**) | 429 `error.capture.priority.firm.open.limit`, com `details.limit` |
   | 8 | O escritório já fez `TAXIFY_CAPTURE_PRIORITY_PER_FIRM_PER_DAY` pedidos no dia civil de Recife (padrão **10**) | 429 `error.capture.priority.firm.daily.limit`, com `details.limit` e `details.retryAt` (00:00 do dia seguinte) |
 
-  - Os limites 6 a 8 valem também para o admin da plataforma, contados no escritório da empresa (P-CP-05).
+  - Os limites 6 a 8 valem também para o admin da plataforma, contados no escritório da empresa.
   - A concorrência (dois cliques ao mesmo tempo) é resolvida por chave única: a coluna `open_key` vale o `company_id`
     enquanto o pedido está aberto e nulo depois. O perdedor do `INSERT` lê o pedido aberto e responde 202 com ele.
 - **CP-RN-18 Pedido que não é atendido.**
@@ -414,13 +435,28 @@ pede para alguém rodar o SQL de diagnóstico no banco. As falhas ficam só no l
   já existe da captura (`FiscalXmlPurgeScheduler`) ou por um diário próprio. `capture_stage_status` não é apagado: é
   uma linha por empresa e etapa, sem dado sensível.
 
-### Ajuste necessário no relógio
+### Ajustes na captura
 
 - **CP-RN-21 Datas da verificação em Recife.** `ultima_verificacao_em` e `issued_checked_at` passam a ser gravados com
   o `Clock` de Recife, como já é o `last_attempt_at`. Sem isso, com a JVM em UTC (R-07 da arquitetura), a verificação
   apareceria 3 h depois da tentativa e a CP-RN-06 erraria a janela. As linhas antigas se corrigem sozinhas na próxima
   verificação de cada empresa. O "hoje" da janela do mês (`LocalDate.now()` do agendador) **não** muda nesta spec: ele
-  está ligado à pergunta 2 da spec de captura (fuso da janela), que é do Tony (P-CP-08).
+  está ligado à pergunta 2 da spec de captura (fuso da janela), que fica para ser decidida lá (decisão P-CP-08).
+- **CP-RN-22 Mês anterior (decisão P-CP-06).** Na virada do mês, as notas que faltaram no mês anterior somem da vista,
+  porque a rotina automática sincroniza só o mês corrente. Por isso, `fiscal_xml_sync_control` passa a guardar, por
+  lado, como o último mês verificado fechou:
+  - colunas `received_prev_month` / `issued_prev_month` (`aaaa-mm`), `received_prev_total_sieg` /
+    `issued_prev_total_sieg` e `received_prev_imported` / `issued_prev_imported`;
+  - gravadas em `updateSyncControl` quando a janela nova é de um mês diferente da janela gravada. Os valores copiados
+    são os contadores do lado **antes** de serem trocados pelos do mês novo;
+  - o painel mostra "{mês} fechou com {importado} de {total} NF-e recebidas". Se `importado < total`, a empresa fica
+    `PENDENTE` (CP-RN-06, linha 6) com "{mês} fechou com {total − importado} NF-e não importadas", até a virada
+    seguinte;
+  - buscar de novo essas notas **não** faz parte desta spec (fora do escopo). O caminho continua sendo o
+    `POST /integrations/xmls/sincronizar` ou o upload.
+- **CP-RN-23 Endpoint antigo (decisão P-CP-10).** `GET /fiscal-xml-sync-control` continua funcionando como está e é
+  marcado como obsoleto: `@Deprecated` no recurso e cabeçalho `Deprecation: true` na resposta, com o Javadoc apontando
+  para `/capture-panel`. A remoção fica para uma limpeza depois do go-live do painel.
 
 ---
 
@@ -441,10 +477,11 @@ Cenário base (fictício). Hoje é sexta-feira, 2026-11-27, 10:00 em Recife. Pro
 - **CA-CP-01 (CP-RN-01)** Dado o cenário base, quando a Carla abre o painel, então ela vê X, Y, Z e Z2, e nenhuma
   empresa do escritório B. Quando a Ana abre, então ela vê só X e Y, sem o botão "Sincronizar agora". Quando o Davi
   chama `GET /capture-panel`, então a resposta é 403.
-- **CA-CP-02 (CP-RN-02)** Dado o `csadmin`, quando ele abre `/plataforma/captura`, então vê as empresas dos escritórios A e B
-  com o nome do escritório, o nome da empresa e o estabelecimento (`/0001`, `/0002`), sem CNPJ completo. O log
-  registra `capture.panel.viewed scope=platform`. Quando a Carla chama `GET /platform/capture-panel`, então a resposta
-  é 403.
+- **CA-CP-02 (CP-RN-02)** Dado o `csadmin` com `TAXIFY_CAPTURE_PANEL_PLATFORM_ENABLED=true`, quando ele abre
+  `/plataforma/captura`, então vê as empresas dos escritórios A e B com o nome do escritório, o nome da empresa e o
+  estabelecimento (`/0001`, `/0002`), sem CNPJ completo. O log registra `capture.panel.viewed scope=platform`. Quando
+  a Carla chama `GET /platform/capture-panel`, então a resposta é 403. Com a variável em `false`, então as rotas
+  `/platform/capture-panel/**` respondem 404, e o item do menu não aparece.
 - **CA-CP-03 (CP-RN-06)** Dado X com recebidas 40/40 e emitidas 12/12 verificadas hoje às 08:10, eventos e NFS-e
   varridos hoje e nenhuma falha, quando o painel abre, então X está `EM_DIA`.
 - **CA-CP-04 (CP-RN-06)** Dado Y com recebidas 180 importadas de 200 informadas pelo SIEG, verificadas hoje às 09:00,
@@ -461,7 +498,8 @@ Cenário base (fictício). Hoje é sexta-feira, 2026-11-27, 10:00 em Recife. Pro
   `COM_ERRO`, e o detalhe mostra "última falha em 27/11 09:40 (resolvida)".
 - **CA-CP-08 (CP-RN-11)** Dado que o SIEG responde HTTP 400 com um corpo que contém um CNPJ e um token fictícios,
   quando a falha é gravada, então `capture_stage_status` tem `failure_code = SIEG_REJECTED` e
-  `provider_status = 400`, e nem o banco, nem a resposta do painel, nem o log `capture.*` contêm o CNPJ ou o token.
+  `provider_status = 400`, e nem o banco, nem a resposta do painel, nem qualquer log da aplicação (inclusive o do
+  `SiegClient`) contêm o CNPJ ou o token.
 - **CA-CP-09 (CP-RN-07)** Dado X com SEFAZ no plano e nenhum certificado da raiz no escritório, quando o painel abre,
   então o canal SEFAZ de X está `COM_ERRO` com `CERT_MISSING`. Dado um certificado vencido em 20/11/2026 e
   `last_status = ERRO`, então o canal mostra "O certificado A1 venceu em 20/11/2026."
@@ -474,9 +512,9 @@ Cenário base (fictício). Hoje é sexta-feira, 2026-11-27, 10:00 em Recife. Pro
   Quando o ADMIN do B abre o painel, então ele vê W como `BLOQUEADA`, com a faixa de somente leitura, e o
   "Sincronizar agora" responde 403 `error.firm.access.blocked`. Quando o `csadmin` pede "Sincronizar agora" para W,
   então a resposta é 409 `error.capture.priority.firm.blocked`.
-- **CA-CP-13 (CP-RN-15)** Dado Z na posição 150 da fila, quando a Carla pede "Sincronizar agora" às 10:01, então a
-  resposta é 202 com `position = 0` e `estimatedAt = 10:05`. Na rodada das 10:05, Z é atendida numa das 2 vagas, e a
-  outra vaga vai para a primeira da fila normal.
+- **CA-CP-13 (CP-RN-12, CP-RN-15)** Dado Z na posição 150 da fila, quando a Carla pede "Sincronizar agora" às 10:01,
+  então a resposta é 202 com `position = 0` e `estimatedAt = 10:05`, e a tela mostra "Posição: 1". Na rodada das
+  10:05, Z é atendida numa das 2 vagas, e a outra vaga vai para a primeira da fila normal.
 - **CA-CP-14 (CP-RN-15)** Dado X com recebidas 40/40 verificadas hoje às 08:10, quando a Carla pede "Sincronizar agora",
   então na rodada seguinte o `contar-xmls` das recebidas é chamado mesmo assim. Se o SIEG informar 41, a nota nova é
   baixada.
@@ -506,6 +544,11 @@ Cenário base (fictício). Hoje é sexta-feira, 2026-11-27, 10:00 em Recife. Pro
 - **CA-CP-25 (CP-RN-05)** Dado qualquer empresa, quando o painel diz que ela tem direito ao canal SIEG, então o
   agendador também a considera elegível, e vice-versa (teste com o mesmo conjunto de assinaturas, inclusive duas
   vigentes sobrepostas).
+- **CA-CP-26 (CP-RN-22)** Dado Y com recebidas 180 de 200 em novembro, quando a primeira verificação de dezembro roda
+  em 01/12, então `received_prev_month = 2026-11`, `received_prev_total_sieg = 200` e `received_prev_imported = 180`,
+  e o painel mostra Y `PENDENTE` com "nov/2026 fechou com 20 NF-e não importadas".
+- **CA-CP-27 (CP-RN-23)** Dado qualquer usuário com `INVOICES_VIEW`, quando ele chama `GET /fiscal-xml-sync-control`,
+  então a resposta é a mesma de antes, com o cabeçalho `Deprecation: true`.
 
 ## 7. Casos de teste (dados fictícios; hoje = 2026-11-27 10:00 Recife)
 
@@ -518,13 +561,13 @@ Cenário base (fictício). Hoje é sexta-feira, 2026-11-27, 10:00 em Recife. Pro
 | CT-CP-05 | Janela de 24 h | `verifiedAt` = 26/11 10:30 (23 h 30) / 26/11 09:30 (24 h 30) | `EM_DIA` / `ATRASADA` "há 24 h" | CP-RN-06 |
 | CT-CP-06 | Nunca verificada por completo | `issued_checked_at` nulo, `last_attempt_at` 27/11 09:00 | `ATRASADA` "Nunca verificada por completo" | CP-RN-06 |
 | CT-CP-07 | Eventos parados | Tudo em dia, `issued_events_checked_on = 25/11` | `ATRASADA` "Eventos ou NFS-e sem varredura desde 25/11/2026" | CP-RN-06 |
-| CT-CP-08 | Virada do mês | Em 01/12 02:00: recebidas 180/200 verificadas em 30/11 23:00 | Não é `PENDENTE` (contadores de nov/2026, mostrados com o mês); `EM_DIA` pela janela de 24 h | CP-RN-06 |
-| CT-CP-09 | Nunca tentada | `last_attempt_at` nulo; posição 37 | `NUNCA_TENTADA` "Posição: 38" (posição 37 contada a partir de 0) | CP-RN-06, 12 |
+| CT-CP-08 | Virada do mês sem pendência | Em 01/12 02:00: recebidas 200/200 em nov, verificadas em 30/11 23:00 | `EM_DIA` pela janela de 24 h; contadores mostrados como nov/2026 | CP-RN-06 |
+| CT-CP-09 | Nunca tentada | `last_attempt_at` nulo; `queuePosition = 37` na API | `NUNCA_TENTADA`; tela "Posição: 38" (37 + 1) | CP-RN-06, 12 |
 | CT-CP-10 | Falha 5xx e recuperação | `SIEG_RECEIVED` FAILURE `SIEG_UNAVAILABLE` 503 às 09:40; depois SUCCESS às 22:00 | `COM_ERRO`, depois sai; `consecutive_failures` 1 → 0; `last_failure_at` mantido | CP-RN-10 |
 | CT-CP-11 | Falhas seguidas | 3 falhas `SIEG_TIMEOUT` em voltas seguidas | `consecutive_failures = 3`; "Falhou 3 vezes seguidas; último sucesso em 24/11 14:05" | CP-RN-10 |
 | CT-CP-12 | Sem chave do SIEG | Escritório sem `FirmIntegration` SIEG; 4 empresas | As 4 `COM_ERRO` `SIEG_API_KEY_MISSING`; resumo "com erro: 4" | CP-RN-11 |
 | CT-CP-13 | 401 / 429 / 404 vazio | Respostas HTTP 401, 429 e 404 "Nenhum arquivo XML localizado" | `SIEG_AUTH` 401; `SIEG_RATE_LIMITED`; o 404 não é falha (SUCCESS) | CP-RN-11 |
-| CT-CP-14 | Corpo sensível | HTTP 400 com corpo contendo `12345678000190` e `token=abc123` (fictícios) | `SIEG_REJECTED`, `provider_status = 400`; nenhuma ocorrência de `12345678000190` nem `abc123` no banco, na resposta ou no log `capture.*` | CP-RN-11 |
+| CT-CP-14 | Corpo sensível | HTTP 400 com corpo contendo `12345678000190` e `token=abc123` (fictícios) | `SIEG_REJECTED`, `provider_status = 400`; nenhuma ocorrência de `12345678000190` nem `abc123` no banco, na resposta ou em qualquer log (inclusive o `SiegClient`) | CP-RN-11 |
 | CT-CP-15 | `provider_status` inválido | Status recebido "4O0" ou "12345" | Gravado nulo | CP-RN-11 |
 | CT-CP-16 | Aviso de contagem | `contar-xmls` lança erro; `baixar-xmls` traz 50 | SUCCESS com `warning_code = SIEG_COUNT_FAILED`; `total_sieg` inalterado | CP-RN-10, 11 |
 | CT-CP-17 | Aviso de parse | `parseErrors = 2` | SUCCESS com `XML_PARSE_ERRORS`, `warning_count = 2`, "2 XML(s) não puderam ser lidos" | CP-RN-11 |
@@ -545,13 +588,13 @@ Cenário base (fictício). Hoje é sexta-feira, 2026-11-27, 10:00 em Recife. Pro
 | CT-CP-32 | Volta teórica | N = 300, `batch-size` 2, sem prioridade, intervalo 5 min | `ceil(300 / 2) × 5 = 150 × 5 = 750 min` = "pelo menos 12 h 30 min" | CP-RN-12 |
 | CT-CP-33 | Volta teórica com prioridade | N = 300, 1 vaga de prioridade em uso | `ceil(300 / 1) × 5 = 1.500 min` = "pelo menos 25 h" | CP-RN-12 |
 | CT-CP-34 | Volta observada | Menor `last_attempt_at` com direito = 26/11 16:00 | "18 h" (27/11 10:00 − 26/11 16:00) | CP-RN-12 |
-| CT-CP-35 | Próxima tentativa | Empresa na posição 41 (contada a partir de 0), 2 vagas regulares, próxima execução 10:05 | `10:05 + floor(41 / 2) × 5 min = 10:05 + 100 min = 11:45` | CP-RN-12 |
+| CT-CP-35 | Próxima tentativa | `queuePosition = 41` na API, 2 vagas regulares, próxima execução 10:05 | `10:05 + floor(41 / 2) × 5 min = 10:05 + 100 min = 11:45`; tela "Posição: 42" | CP-RN-12 |
 | CT-CP-36 | Fila parada | Maior `last_attempt_at` da plataforma = 09:20; limite 30 min | "parada desde 09:20" | CP-RN-12 |
 | CT-CP-37 | Fila rodando | Maior `last_attempt_at` = 09:55 | "rodando" | CP-RN-12 |
 | CT-CP-38 | Escopo do FISCAL | Ana, carteira X e Y | 2 empresas; resumo só delas; `sync-now` 403 | CP-RN-01, 16 |
 | CT-CP-39 | Sem escritório no contexto | Token de usuário excluído (antes do SN-RN-11) | 403; nunca "todas as empresas" | CP-RN-01 |
 | CT-CP-40 | Outro escritório | Carla: `POST /capture-panel/companies/{W}/sync-now` | 404 | CP-RN-01, 16 |
-| CT-CP-41 | Sincronizar agora | Z na posição 150, pedido às 10:01 | 202 `position = 0`, `estimatedAt = 10:05`; atendida às 10:05; pedido `SERVED` | CP-RN-15 |
+| CT-CP-41 | Sincronizar agora | Z na posição 150, pedido às 10:01 | 202 `position = 0`, `estimatedAt = 10:05`; tela "Posição: 1"; atendida às 10:05; pedido `SERVED` | CP-RN-12, 15 |
 | CT-CP-42 | Contagem forçada | X 40/40 hoje; pedido; SIEG informa 41 | `contar-xmls` chamado; 1 nota nova; 41/41 | CP-RN-15 |
 | CT-CP-43 | Idempotência | Dois cliques com o pedido `PENDING` | Mesmo `requestId`; contador do dia = 1 | CP-RN-17 |
 | CT-CP-44 | Concorrência | Dois POST simultâneos | Um pedido aberto (chave `open_key`); duas respostas 202 iguais | CP-RN-17 |
@@ -576,6 +619,11 @@ Cenário base (fictício). Hoje é sexta-feira, 2026-11-27, 10:00 em Recife. Pro
 | CT-CP-63 | Direito igual ao agendador | Duas assinaturas vigentes sobrepostas: a mais nova sem SIEG e a mais antiga com SIEG | Painel e agendador dizem "sem direito" | CP-RN-05 |
 | CT-CP-64 | Fuso da verificação | JVM em UTC; verificação às 10:00 de Recife | `ultima_verificacao_em = 10:00` (não 13:00) | CP-RN-21 |
 | CT-CP-65 | Falha ao gravar a etapa | Exceção no `save` de `capture_stage_status` | As notas ficam gravadas; log `capture.stage.record.failed company={id}`; a próxima empresa é processada | CP-RN-10 |
+| CT-CP-66 | Mês anterior com pendência | Y: nov 180/200; primeira verificação de dez em 01/12 03:00 | `received_prev_month = 2026-11`, `prev_total_sieg = 200`, `prev_imported = 180`; Y `PENDENTE` "nov/2026 fechou com 20 NF-e não importadas" (200 − 180) | CP-RN-22 |
+| CT-CP-67 | Mês anterior completo | X: nov 40/40; virada | `prev` gravado 40/40; sem pendência por isso | CP-RN-22 |
+| CT-CP-68 | Mesma janela não copia | Duas verificações no mesmo mês | Colunas `prev_*` inalteradas | CP-RN-22 |
+| CT-CP-69 | Visão da plataforma desligada | `TAXIFY_CAPTURE_PANEL_PLATFORM_ENABLED=false` | `GET /platform/capture-panel` e o `sync-now` da plataforma: 404; menu sem o item | CP-RN-02 |
+| CT-CP-70 | Endpoint obsoleto | `GET /fiscal-xml-sync-control` | Mesmo corpo de antes; cabeçalho `Deprecation: true` | CP-RN-23 |
 
 ---
 
@@ -589,9 +637,10 @@ Base: `/taxify-service/api/v1`. Erros no formato único `{timestamp, status, cod
 | GET | `/capture-panel` | `@RequiresPermission(INVOICES_SYNC)` (ADMIN: escritório inteiro; demais: carteira). Liberado no bloqueio (GET) | Query: `situacao`, `canal`, `tipo`, `busca`, `incluirInativas`, `sort`, `page`, `size` → `{summary, queue, page: {content, totalElements, totalPages, number, size}}` | CP-RN-01, 06 a 14 |
 | GET | `/capture-panel/companies/{companyId}` | Idem, com a regra de tenant (404) | Detalhe completo da empresa (CP-RN-09) | CP-RN-09 |
 | POST | `/capture-panel/companies/{companyId}/sync-now` | `@AdminOnly`. Bloqueado no somente leitura (escrita) | → 202 `{requestId, status, position, estimatedAt}`; 403, 404, 409, 429, 503 | CP-RN-15 a 17 |
-| GET | `/platform/capture-panel` | `@PlatformAdminOnly` | As mesmas queries mais `firmId` → o mesmo corpo, com `firmId` e `firmName` em cada linha | CP-RN-02 |
-| GET | `/platform/capture-panel/companies/{companyId}` | `@PlatformAdminOnly` | Detalhe (sem CNPJ completo) | CP-RN-02, 09 |
-| POST | `/platform/capture-panel/companies/{companyId}/sync-now` | `@PlatformAdminOnly` | Como o do escritório; 409 `error.capture.priority.firm.blocked` | CP-RN-03, 15 a 17 |
+| GET | `/platform/capture-panel` | `@PlatformAdminOnly`; 404 com `TAXIFY_CAPTURE_PANEL_PLATFORM_ENABLED=false` | As mesmas queries mais `firmId` → o mesmo corpo, com `firmId` e `firmName` em cada linha | CP-RN-02 |
+| GET | `/platform/capture-panel/companies/{companyId}` | Idem | Detalhe (sem CNPJ completo) | CP-RN-02, 09 |
+| POST | `/platform/capture-panel/companies/{companyId}/sync-now` | Idem | Como o do escritório; 409 `error.capture.priority.firm.blocked` | CP-RN-03, 15 a 17 |
+| GET | `/fiscal-xml-sync-control` (já existe) | `INVOICES_VIEW`, sem mudança | Mesmo corpo, com o cabeçalho `Deprecation: true` | CP-RN-23 |
 
 Esboço do corpo (os nomes valem como contrato para o front):
 
@@ -616,8 +665,10 @@ Esboço do corpo (os nomes valem como contrato para o front):
       "status": "PENDENTE", "statusReason": "Faltam 20 NF-e recebidas",
       "channels": {
         "SIEG": {"status": "PENDENTE", "lastAttemptAt": "…", "verifiedAt": "…", "queuePosition": 41, "nextAttemptEstimate": "…",
-                 "received": {"imported": 180, "totalSieg": 200, "from": "2026-11-01", "to": "2026-11-27", "checkedAt": "…"},
-                 "issued": {"imported": 12, "totalSieg": 12, "from": "2026-11-01", "to": "2026-11-27", "checkedAt": "…"},
+                 "received": {"imported": 180, "totalSieg": 200, "from": "2026-11-01", "to": "2026-11-27", "checkedAt": "…",
+                              "previousMonth": {"month": "2026-10", "imported": 95, "totalSieg": 95}},
+                 "issued": {"imported": 12, "totalSieg": 12, "from": "2026-11-01", "to": "2026-11-27", "checkedAt": "…",
+                            "previousMonth": null},
                  "eventsCheckedOn": {"received": "2026-11-27", "issued": "2026-11-27"}, "serviceInvoicesCheckedOn": "2026-11-27",
                  "priorityRequest": null},
         "SEFAZ": {"status": "EM_DIA", "certificate": {"present": true, "fromHeadOffice": false, "validUntil": "2027-03-15"},
@@ -633,10 +684,10 @@ Esboço do corpo (os nomes valem como contrato para o front):
 }
 ```
 
+- `queuePosition` e `position` começam em 0. O front mostra o valor somando 1 (CP-RN-12).
 - A visão do escritório nunca traz `firmId`/`firmName` de outro escritório. A da plataforma nunca traz o CNPJ completo.
 - Os endpoints novos entram no teste-guarda `noEndpointIsLeftWithoutAnAccessRule` e no `theConsoleIsForThePlatformAdminOnly`
   (`PermissionAuthorizationManagerTest`).
-- `GET /fiscal-xml-sync-control` fica como está nesta spec (P-CP-10).
 
 ## 9. Modelo de dados
 
@@ -646,14 +697,11 @@ Esboço do corpo (os nomes valem como contrato para o front):
 | `capture_priority_requests` | V77 | `id`, `company_id` (FK), `accounting_firm_id` (FK), `requested_by varchar(36)` (id do usuário), `requested_scope varchar(10)` (FIRM, PLATFORM), `requested_at datetime(6)`, `status varchar(10)` (PENDING, RESERVED, SERVED, CANCELED, EXPIRED), `served_at datetime(6) null`, `open_key varchar(36) null` (= `company_id` enquanto PENDING ou RESERVED; nulo depois), auditoria. **Único** `open_key`. Índices `(accounting_firm_id, requested_at)`, `(status, requested_at)`, `(company_id, served_at)` |
 | `fiscal_xml_documents` (+índice) | V78 | `idx_fxd_company_source_created (company_id, source_system, created_date)` |
 | `service_invoices` (+índice) | V78 | `idx_service_invoices_company_source_created (company_id, source_system, created_date)` |
+| `fiscal_xml_sync_control` (+colunas) | V79 | `received_prev_month char(7) null`, `received_prev_total_sieg int null`, `received_prev_imported int null`, `issued_prev_month char(7) null`, `issued_prev_total_sieg int null`, `issued_prev_imported int null` (CP-RN-22) |
 
-- Nenhuma coluna nova em `fiscal_xml_sync_control`. A ordem da fila passa a considerar os pedidos de
-  `capture_priority_requests` (CP-RN-15).
+- A ordem da fila passa a considerar os pedidos de `capture_priority_requests` (CP-RN-15).
 - Os dois índices da V78 são criados com DDL online do MySQL 8 (`ALGORITHM=INPLACE, LOCK=NONE`). Conferir o tamanho
   das tabelas na EC2 antes do deploy (Riscos).
-- Opcional, se a P-CP-06 for aceita: V79 com `received_prev_month char(7)`, `received_prev_total_sieg`,
-  `received_prev_imported`, `issued_prev_month`, `issued_prev_total_sieg` e `issued_prev_imported` em
-  `fiscal_xml_sync_control`.
 
 ## 10. Configuração nova
 
@@ -663,6 +711,7 @@ Esboço do corpo (os nomes valem como contrato para o front):
 | `TAXIFY_CAPTURE_PANEL_DIRECT_FRESH_HOURS` | `3` (P-CP-03) | Janela de "em dia" da SEFAZ e do ADN (rodam de hora em hora) |
 | `TAXIFY_CAPTURE_PANEL_STALLED_MINUTES` | `30` | Fila SIEG "parada" (precisa ser maior que o intervalo do cron mais a duração de uma rodada) |
 | `TAXIFY_CAPTURE_PANEL_MAX_PAGE_SIZE` | `100` | Tamanho máximo da página |
+| `TAXIFY_CAPTURE_PANEL_PLATFORM_ENABLED` | `false` (P-CP-01) | Liga a visão da plataforma. Na EC2, só depois de a política de privacidade e o acordo de operador citarem a exceção, e com aprovação do Tony |
 | `TAXIFY_CAPTURE_PRIORITY_ENABLED` | `true` | Liga o "Sincronizar agora" |
 | `TAXIFY_CAPTURE_PRIORITY_SLOTS_PER_TICK` | `1` (P-CP-04) | Vagas do lote para pedidos (no máximo `batch-size − 1`) |
 | `TAXIFY_CAPTURE_PRIORITY_COOLDOWN_MINUTES` | `60` (P-CP-05) | Espera entre dois pedidos atendidos da mesma empresa |
@@ -680,19 +729,21 @@ da seção 8.
 | # | Área | Tarefa | Depende de |
 |---|---|---|---|
 | B-CP-1 | Backend | `ultima_verificacao_em` e `issued_checked_at` gravados com o `Clock` de Recife (`FiscalXmlIntegrationService`), com teste de JVM em UTC (CP-RN-21, CT-CP-64) | — |
-| B-CP-2 | Backend | V76 + `CaptureStageRecorder` (upsert em `REQUIRES_NEW`, sucesso, falha, aviso, `consecutive_failures`, falha ao gravar só no log) + `CaptureFailureClassifier` (lista fechada da CP-RN-11, sem ler mensagem, `provider_status` só com dígitos) + status HTTP na `SiegIntegrationException` + instrumentação das etapas SIEG no `FiscalXmlSyncScheduler` (lados, eventos, NFS-e, recuperação), sem mudar o fluxo da captura. Testes CT-CP-10 a 19 e 65 | — |
+| B-CP-2 | Backend | V76 + `CaptureStageRecorder` (upsert em `REQUIRES_NEW`, sucesso, falha, aviso, `consecutive_failures`, falha ao gravar só no log) + `CaptureFailureClassifier` (lista fechada da CP-RN-11, sem ler mensagem, `provider_status` só com dígitos) + status HTTP na `SiegIntegrationException` + o `SiegClient` sem o corpo da resposta no log (P-CP-09) + instrumentação das etapas SIEG no `FiscalXmlSyncScheduler` (lados, eventos, NFS-e, recuperação), sem mudar o fluxo da captura. Testes CT-CP-10 a 19 e 65 | — |
 | B-CP-3 | Backend | Instrumentação de `SefazDistService` e `NfseAdnService` com os códigos de pré-condição, `cStat`, HTTP, tempo e rede (CT-CP-24 a 26). `last_detail` continua como está | B-CP-2 |
-| B-CP-4 | Backend | `CaptureSituationRules`, uma função pura com testes unitários de todas as linhas das CP-RN-06 a 08. `CapturePanelQueryService`: a projeção agregada, o direito compartilhado com os agendadores (CT-CP-63), o `RoutineGate` por escritório, a ordem da fila, o resumo, as estimativas, o filtro, a ordem e a página em memória, e os detalhes da página em consultas agrupadas. V78 (índices). Endpoints `GET /capture-panel`, `GET /capture-panel/companies/{id}` e as rotas `GET` da plataforma, com o log de acesso da plataforma; teste-guarda; teste de número fixo de consultas (CT-CP-59) | B-CP-2, P-CP-01 (só as rotas da plataforma) |
+| B-CP-4 | Backend | `CaptureSituationRules`, uma função pura com testes unitários de todas as linhas das CP-RN-06 a 08. `CapturePanelQueryService`: a projeção agregada, o direito compartilhado com os agendadores (CT-CP-63), o `RoutineGate` por escritório, a ordem da fila (posição a partir de 0), o resumo, as estimativas, o filtro, a ordem e a página em memória, e os detalhes da página em consultas agrupadas. V78 (índices). Endpoints `GET /capture-panel`, `GET /capture-panel/companies/{id}` e as rotas `GET` da plataforma atrás de `TAXIFY_CAPTURE_PANEL_PLATFORM_ENABLED`, com o log de acesso da plataforma; teste-guarda; teste de número fixo de consultas (CT-CP-59) | B-CP-2 |
 | B-CP-5 | Backend | V77 + `CapturePriorityService` (verificações da CP-RN-17 na ordem, chave `open_key`, idempotência, `retryAt`) + os dois `POST sync-now` + mudança na fila do `FiscalXmlSyncScheduler` (vagas de prioridade, alternância com lote 1, contagem forçada, `SERVED`/`CANCELED`/`EXPIRED`) + limpeza de 90 dias + logs da CP-RN-19. Testes CT-CP-41 a 56 | B-CP-4 |
-| B-CP-6 | Backend | (Só se a P-CP-06 for aceita.) V79 + gravação dos contadores do mês anterior na virada, em `updateSyncControl`, e exibição "nov/2026 fechou com 20 NF-e recebidas não importadas" | P-CP-06 |
-| F-CP-1 | Frontend | Rota `/captura` (`permissionGuard('INVOICES_SYNC')`), item "Captura de XML" no menu; cartões do resumo clicáveis; saúde da fila (rodando, parada, desligada); volta observada e teórica com o texto da CP-RN-12; filtros na URL; tabela paginada no servidor; legenda das situações | contrato da seção 8 |
-| F-CP-2 | Frontend | Detalhe da empresa (painel lateral) com a memória da CP-RN-09: contadores com a janela e "no Taxify (qualquer origem)", última nota por origem, SEFAZ e ADN com o link para a aba Certificado, falhas por etapa (resolvida ou não), recuperação em andamento | F-CP-1 |
-| F-CP-3 | Frontend | Botão "Sincronizar agora" só para ADMIN e plataforma, com confirmação ("A empresa vai para o início da fila. Estimativa: {hora}"); estado "na fila" com a posição; mensagens de 403, 409, 429 (com `retryAt`) e 503; botão escondido no escritório bloqueado | B-CP-5 |
-| F-CP-4 | Frontend | Rota `/plataforma/captura` (`platformAdminGuard`), o mesmo componente com coluna e filtro de escritório e sem CNPJ; item no menu do console | F-CP-1, P-CP-01 |
-| Q-CP-1 | QA | CT-CP-01 a CT-CP-65 com dados fictícios, SIEG, SEFAZ e ADN simulados (WireMock ou mocks dos clientes) e `Clock` fixo | B-CP-1 a B-CP-5 |
+| B-CP-6 | Backend | V79 + gravação dos contadores do mês anterior na virada, em `updateSyncControl`, e a pendência do mês anterior na `CaptureSituationRules` (CP-RN-22, CT-CP-66 a 68) | B-CP-4 |
+| B-CP-7 | Backend | `GET /fiscal-xml-sync-control` marcado como obsoleto: `@Deprecated`, Javadoc apontando para `/capture-panel` e cabeçalho `Deprecation: true` (CP-RN-23, CT-CP-70) | — |
+| F-CP-1 | Frontend | Rota `/captura` (`permissionGuard('INVOICES_SYNC')`), item "Captura de XML" no menu; cartões do resumo clicáveis; saúde da fila (rodando, parada, desligada); volta observada e teórica com o texto da CP-RN-12; filtros na URL; tabela paginada no servidor; legenda das situações; a posição mostrada somando 1 | contrato da seção 8 |
+| F-CP-2 | Frontend | Detalhe da empresa (painel lateral) com a memória da CP-RN-09: contadores com a janela e "no Taxify (qualquer origem)", como o mês anterior fechou, última nota por origem, SEFAZ e ADN com o link para a aba Certificado, falhas por etapa (resolvida ou não), recuperação em andamento | F-CP-1 |
+| F-CP-3 | Frontend | Botão "Sincronizar agora" só para ADMIN e plataforma, com confirmação ("A empresa vai para o início da fila. Estimativa: {hora}"); estado "na fila" com a posição (somando 1); mensagens de 403, 409, 429 (com `retryAt`) e 503; botão escondido no escritório bloqueado | B-CP-5 |
+| F-CP-4 | Frontend | Rota `/plataforma/captura` (`platformAdminGuard`), o mesmo componente com coluna e filtro de escritório e sem CNPJ; item no menu do console, escondido quando a visão da plataforma está desligada (o front trata o 404 da rota como "desligada") | F-CP-1 |
+| Q-CP-1 | QA | CT-CP-01 a CT-CP-70 com dados fictícios, SIEG, SEFAZ e ADN simulados (WireMock ou mocks dos clientes) e `Clock` fixo | B-CP-1 a B-CP-7 |
 | Q-CP-2 | QA | Desempenho: massa fictícia de 5.000 empresas em 50 escritórios num **MySQL local** (nunca no banco da EC2: o `mvn test` usa o datasource do `application-default`, conferir o `DB_HOST`), medir p95 e contar consultas (CA-CP-21) | B-CP-4 |
-| Q-CP-3 | QA | Segurança: isolamento entre escritórios (404/403), carteira do FISCAL, rotas da plataforma, ausência de CNPJ completo na visão da plataforma, ausência de `last_detail`, corpo de resposta do provedor, token e chave de API no banco, na resposta e nos logs `capture.*` (CT-CP-14, 38 a 40) | B-CP-2 a B-CP-5 |
+| Q-CP-3 | QA | Segurança: isolamento entre escritórios (404/403), carteira do FISCAL, rotas da plataforma (inclusive desligadas), ausência de CNPJ completo na visão da plataforma, ausência de `last_detail`, corpo de resposta do provedor, token e chave de API no banco, na resposta e em todos os logs (CT-CP-14, 38 a 40, 69) | B-CP-2 a B-CP-5 |
 | Q-CP-4 | QA | Paralelo de 4 semanas: toda segunda-feira, comparar o painel com o resultado do `scripts/sql/diagnostico-captura-nfe.sql` rodado no mesmo minuto (só leitura) para 20 empresas, e registrar as diferenças com a explicação | go-live |
+| Q-CP-5 | QA | Antes de ligar `TAXIFY_CAPTURE_PANEL_PLATFORM_ENABLED` na EC2: conferir que a política de privacidade e o acordo de operador publicados citam a exceção da CP-RN-02, e que a aprovação do Tony está registrada | B-CP-4, F-CP-4 |
 
 ---
 
@@ -705,60 +756,91 @@ da seção 8.
   `fiscal_xml_sync_control`, `sefaz_dist_control`, `nfse_adn_control`, `company_certificates`, `fiscal_xml_documents`
   (só o máximo de `created_date` por origem), `service_invoices` (idem), `recovery_tasks`, `users` e `user_companies`.
 - **Tabelas novas:** `capture_stage_status`, `capture_priority_requests` (seção 9).
-- **Escritas novas na captura:** o resultado de cada etapa (CP-RN-10) e o estado do pedido de prioridade
-  (CP-RN-15 e CP-RN-18). Nenhuma mudança na janela, na paginação, na deduplicação ou nos contadores da captura.
+- **Escritas novas na captura:**
+  - o resultado de cada etapa (CP-RN-10);
+  - o estado do pedido de prioridade (CP-RN-15 e CP-RN-18);
+  - os contadores do mês anterior na virada (CP-RN-22).
+- **Sem mudança** na janela, na paginação, na deduplicação ou nos contadores do mês corrente.
 
 ## 13. Requisitos de acesso, LGPD e sigilo
 
 - Isolamento por `accounting_firm` em todas as rotas do escritório, com o escritório tirado do usuário logado e a
   carteira aplicada na consulta (CP-RN-01). Contexto sem escritório: 403.
-- A visão da plataforma é a primeira a mostrar nomes de empresas clientes fora do escritório: só para
-  `@PlatformAdminOnly`, sem CNPJ completo e com log de acesso (CP-RN-02, P-CP-01). Precisa constar no acordo de operador
-  que a CS Hub, como operadora, vê o nome das empresas clientes para dar suporte à captura.
+- **Exceção à F1-RN-15 (decisão P-CP-01).** A visão da plataforma é a primeira a mostrar nomes de empresas clientes
+  fora do escritório:
+  - só para `@PlatformAdminOnly`;
+  - só nome, número do estabelecimento, contagens e datas, sem CNPJ completo;
+  - com log de cada acesso (CP-RN-02).
+  - **Pré-requisito de go-live:** a política de privacidade e o acordo de operador citam que a CS Hub, como operadora,
+    vê esses dados para dar suporte à captura. A visão nasce desligada (`TAXIFY_CAPTURE_PANEL_PLATFORM_ENABLED=false`).
+  - Fora deste painel, a F1-RN-15 continua valendo como está.
 - A tabela de falhas guarda só códigos de uma lista fechada e números de status (CP-RN-11): nada de mensagem do
-  provedor, CNPJ, chave, token ou chave de API.
+  provedor, CNPJ, chave, token ou chave de API. O `SiegClient` deixa de gravar no log o corpo da resposta de erro.
 - Logs da feature só com ids e códigos.
 - Nada de dado real em fixture, log ou commit: todos os exemplos são fictícios. A massa de desempenho é gerada.
 
 ## 14. Fora do escopo
 
-- Pendência nova `SIEG_CAPTURE_ERROR` e aviso por e-mail de captura parada (P-CP-11).
+- Pendência nova `SIEG_CAPTURE_ERROR` e aviso por e-mail de captura parada (v2, decisão P-CP-11).
 - Histórico de falhas (só a última por etapa). O `capture_runs` continua só para SEFAZ, ADN e certidão.
+- Buscar de novo as notas que faltaram no mês anterior (o painel só mostra, CP-RN-22).
 - Mudar o fluxo da captura: a falha de um lado continuar abortando o resto da empresa, tirar as empresas inativas da
-  fila (P-CP-07), o limitador do SIEG por chave de API em vez de global, várias instâncias dividindo o limite.
+  fila (decisão P-CP-07: mudança à parte), o limitador do SIEG por chave de API em vez de global, várias instâncias
+  dividindo o limite.
 - "Sincronizar agora" para SEFAZ (já existe na aba Certificado) e para o ADN.
 - Escolher o período da sincronização manual (meses anteriores): continua o `POST /integrations/xmls/sincronizar`, sem tela.
-- O fuso da janela do mês do agendador (pergunta 2 da spec de captura; P-CP-08).
+- O fuso da janela do mês do agendador (pergunta 2 da spec de captura; decisão P-CP-08).
 - Exportar o painel em CSV ou PDF.
-- Remover ou mudar o `GET /fiscal-xml-sync-control` (P-CP-10).
+- Remover o `GET /fiscal-xml-sync-control` (só é marcado como obsoleto, CP-RN-23).
 - CT-e e NFC-e (o SIEG captura só NF-e na rotina).
 
 ---
 
-## 15. Perguntas em aberto
+## 15. Decisões do Tony (2026-11-27)
 
-Nenhuma delas é regra fiscal. Todas são decisões de produto ou de acesso.
+Nenhuma decisão é regra fiscal. P-CP-01 foi aceita como exceção limitada, e P-CP-02 a P-CP-11 foram aceitas exatamente
+como recomendadas.
 
-### Bloqueiam (só a visão da plataforma)
-
-| # | Pergunta | Recomendação |
+| # | Decisão | RN |
 |---|---|---|
-| P-CP-01 | A F1-RN-15 (decisão 11) diz que o console da plataforma **nunca** traz nome, CNPJ ou dado fiscal das empresas clientes. A decisão nova ("a plataforma vê todas as empresas de todos os escritórios") é uma exceção a isso. Confirma a exceção, e que o acordo de operador e a política de privacidade passam a citá-la? | **Sim, com limite:** nome da empresa e número do estabelecimento (`/0001`) para distinguir matriz e filial, contagens de notas e datas. Sem CNPJ completo, sem valores, sem chave e sem nome de terceiro, com log de cada acesso. **Sem a confirmação**, a visão da plataforma sai com os dados agregados por escritório (contagens por situação e saúde da fila), sem a lista de empresas. A visão do escritório e o resto da spec não dependem desta pergunta |
+| P-CP-01 | **Exceção limitada à F1-RN-15.** A plataforma vê nome da empresa e estabelecimento (`/0001`), contagens e datas, sem CNPJ completo e com log de cada acesso. A política de privacidade e o acordo de operador passam a citar a exceção, o que vira **pré-requisito de go-live** da visão da plataforma | CP-RN-02, seção 13 |
+| P-CP-02 | O FISCAL (`INVOICES_SYNC`) **vê só a carteira**; só o ADMIN e a plataforma pedem "Sincronizar agora"; ACCOUNTING e MANAGEMENT ficam de fora | CP-RN-01, 16 |
+| P-CP-03 | "Em dia": SIEG verificado nas **últimas 24 h**; SEFAZ e ADN consultados nas **últimas 3 h**; configuráveis | CP-RN-06, 07 |
+| P-CP-04 | **1 das 2 vagas** do lote para os pedidos de prioridade | CP-RN-15 |
+| P-CP-05 | **1 pedido aberto por empresa, 60 min entre atendimentos, 5 abertos e 10 por dia por escritório**, valendo também para a plataforma | CP-RN-17 |
+| P-CP-06 | **Guardar os contadores do mês anterior** e mostrar o que ficou de fora na virada | CP-RN-22 |
+| P-CP-07 | Empresa inativa **escondida no painel** por padrão; tirar da fila é mudança à parte | CP-RN-08 |
+| P-CP-08 | **Não mexer** no fuso da janela do mês aqui (pergunta 2 da spec de captura) | CP-RN-21 |
+| P-CP-09 | O `SiegClient` **para de gravar o corpo** da resposta de erro no log | CP-RN-11 |
+| P-CP-10 | `GET /fiscal-xml-sync-control` **fica e é marcado como obsoleto** | CP-RN-23 |
+| P-CP-11 | Pendência `SIEG_CAPTURE_ERROR` e e-mail de fila parada **ficam para a v2** | Fora do escopo |
 
-### Têm recomendação aceitável (o desenvolvimento segue com ela)
+**Ajuste na F1-RN-15** (spec [Taxify SaaS, fase 1](2026-11-26-taxify-saas-assinatura-do-escritorio.md)). A regra
+"nunca traz nome, CNPJ ou dado fiscal das empresas clientes" passa a ter uma exceção, registrada aqui: o painel de captura
+da plataforma (`GET /platform/capture-panel`) mostra o nome da empresa, o número do estabelecimento, as contagens e as
+datas da captura, nos termos da CP-RN-02. O `GET /platform/firms` e o resto do console não mudam.
 
-| # | Pergunta | Recomendação |
-|---|---|---|
-| P-CP-02 | Além do ADMIN, outros perfis veem o painel? E pedem "Sincronizar agora"? | **Ver, sim, quem tem `INVOICES_SYNC` (perfil FISCAL), só a carteira.** É o analista que precisa saber se pode começar a conferência. **Pedir, não, na v1:** só o ADMIN e a plataforma, porque a fila e o limite do SIEG são compartilhados. ACCOUNTING e MANAGEMENT ficam de fora (403). Se o time pedir, o FISCAL passa a pedir com os mesmos limites do escritório |
-| P-CP-03 | Qual janela define "em dia"? | **SIEG: verificado nas últimas 24 h**, porque a volta leva de 12 a 20 h. Com uma janela menor, metade da carteira apareceria atrasada o tempo todo. **SEFAZ e ADN: 3 h**, porque rodam de hora em hora. Os dois ficam configuráveis. Se a volta encurtar, a janela do SIEG baixa |
-| P-CP-04 | Quantas vagas do lote vão para "Sincronizar agora"? | **1 das 2.** Isso dá no máximo 12 pedidos por hora na plataforma inteira, e a fila normal nunca para. O custo é que a volta normal fica até 2 vezes mais lenta enquanto houver pedido |
-| P-CP-05 | Limites anti-abuso do "Sincronizar agora" | **1 pedido aberto por empresa; 60 min entre dois atendimentos da mesma empresa; 5 abertos e 10 por dia por escritório.** Valem também para a plataforma, contados no escritório da empresa: é a mesma fila, e um pedido da CS Hub tira vaga dos outros do mesmo jeito |
-| P-CP-06 | Guardar os contadores do mês anterior? Hoje, na virada do mês, a rotina começa o mês novo do zero, e as notas que faltaram no mês anterior não aparecem em lugar nenhum (só o mês corrente é sincronizado) | **Sim, numa tarefa à parte (B-CP-6):** 6 colunas, gravadas na virada, e a tela diz "nov/2026 fechou com 20 NF-e recebidas não importadas". É o caso em que uma nota some de vez sem ninguém ver. Buscar essas notas de novo é outra decisão (fora do escopo) |
-| P-CP-07 | Empresa inativa: aparece no painel? E deveria sair da fila do SIEG? Hoje o agendador não filtra empresa inativa e gasta chamadas com ela | **No painel:** escondida por padrão, com o filtro "incluir inativas", e fora do resumo. **Na fila:** recomendo tirar, numa mudança à parte, porque libera vaga para as ativas. Fica fora desta spec |
-| P-CP-08 | O "hoje" e a janela do mês do agendador usam o fuso da JVM, e as notas emitidas depois das 21 h do último dia caem no mês seguinte (pergunta 2 da spec de captura) | **Não mexer aqui.** O painel usa Recife e só corrige o horário gravado na verificação (CP-RN-21). O fuso da janela é decisão do Tony na spec de captura |
-| P-CP-09 | O `SiegClient` grava no log os primeiros 500 caracteres do corpo de erro do SIEG, que podem trazer CNPJ | **Parar de gravar o corpo** e manter só o status e o código. É uma linha, e dá para entrar no B-CP-2 se o Tony aceitar |
-| P-CP-10 | O `GET /fiscal-xml-sync-control` (sem tela, só o lado recebido) fica? | **Fica como está nesta spec** e é marcado como obsoleto. Pode ser removido numa limpeza depois do go-live do painel (responde também a pergunta 6 da spec de captura) |
-| P-CP-11 | Avisar quando a captura parar (pendência `SIEG_CAPTURE_ERROR` ou e-mail para a CS Hub)? | **Não na v1.** Primeiro o painel e o código seguro. Na v2, uma pendência ALTA para a empresa com 3 falhas seguidas e um e-mail para a CS Hub quando a fila ficar "parada", usando o resumo da spec de avisos |
+### Perguntas em aberto
+
+Nenhuma.
+
+### Respondidas
+
+As perguntas abaixo foram respondidas pelo Tony em 2026-11-27.
+
+| # | Pergunta | Recomendação | Decisão |
+|---|---|---|---|
+| P-CP-01 | A F1-RN-15 (decisão 11) diz que o console da plataforma nunca traz nome, CNPJ ou dado fiscal das empresas clientes. A decisão "a plataforma vê todas as empresas de todos os escritórios" é uma exceção. Confirma a exceção, e que o acordo de operador e a política de privacidade passam a citá-la? | Sim, com limite: nome, estabelecimento, contagens e datas, sem CNPJ completo, com log de cada acesso | **Aceita a exceção limitada**, com a citação na política de privacidade e no acordo de operador como pré-requisito de go-live da visão da plataforma |
+| P-CP-02 | Além do ADMIN, outros perfis veem o painel? E pedem "Sincronizar agora"? | Ver: o FISCAL, só a carteira. Pedir: só o ADMIN e a plataforma | Aceita |
+| P-CP-03 | Qual janela define "em dia"? | SIEG 24 h (a volta leva de 12 a 20 h); SEFAZ e ADN 3 h | Aceita |
+| P-CP-04 | Quantas vagas do lote vão para "Sincronizar agora"? | 1 das 2: no máximo 12 pedidos por hora na plataforma, e a fila normal nunca para | Aceita |
+| P-CP-05 | Limites anti-abuso do "Sincronizar agora" | 1 aberto por empresa, 60 min, 5 abertos e 10 por dia por escritório, também para a plataforma | Aceita |
+| P-CP-06 | Guardar os contadores do mês anterior? | Sim: 6 colunas gravadas na virada | Aceita |
+| P-CP-07 | Empresa inativa: aparece no painel? Sai da fila? | Escondida por padrão; tirar da fila é mudança à parte | Aceita |
+| P-CP-08 | Fuso da janela do mês do agendador | Não mexer aqui; o painel usa Recife e só corrige o horário da verificação | Aceita |
+| P-CP-09 | O `SiegClient` grava no log 500 caracteres do corpo de erro, que podem trazer CNPJ | Parar de gravar o corpo | Aceita |
+| P-CP-10 | O `GET /fiscal-xml-sync-control` fica? | Fica e é marcado como obsoleto | Aceita |
+| P-CP-11 | Avisar quando a captura parar? | Não na v1 | Aceita |
 
 ## 16. Riscos
 
@@ -778,3 +860,7 @@ Nenhuma delas é regra fiscal. Todas são decisões de produto ou de acesso.
   pode estar 3 h adiantada e uma empresa pode aparecer "em dia" por até 3 h a mais.
 - **Erros antigos sem código.** SEFAZ e ADN com `ERRO` antes do deploy mostram `LEGACY_ERROR` até a próxima execução
   (no máximo 1 h).
+- **Mês anterior só a partir do deploy.** As colunas `prev_*` só se preenchem na primeira virada depois da B-CP-6. O
+  que faltou nos meses anteriores ao deploy não aparece.
+- **Visão da plataforma desligada até o jurídico.** Sem a política de privacidade e o acordo de operador atualizados, a
+  CS Hub continua sem a lista de empresas no console e depende do SQL de diagnóstico para o suporte.

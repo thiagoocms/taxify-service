@@ -222,6 +222,28 @@ taxify:
     default-on: ${TAXIFY_PENDENCY_ALERT_DEFAULT_ON:true}
     max-per-day: ${TAXIFY_PENDENCY_ALERT_MAX_PER_DAY:200}
     max-companies-listed: ${TAXIFY_PENDENCY_ALERT_MAX_COMPANIES_LISTED:30}
+  # Painel da captura de XML (spec 2026-11-27, seção 10). Janelas de "em dia" decididas pelo Tony (P-CP-03).
+  capture-panel:
+    sieg-fresh-hours: ${TAXIFY_CAPTURE_PANEL_SIEG_FRESH_HOURS:24}
+    direct-fresh-hours: ${TAXIFY_CAPTURE_PANEL_DIRECT_FRESH_HOURS:3}
+    # Fila SIEG "parada": maior que o intervalo do cron mais a duração de uma rodada.
+    stalled-minutes: ${TAXIFY_CAPTURE_PANEL_STALLED_MINUTES:30}
+    max-page-size: ${TAXIFY_CAPTURE_PANEL_MAX_PAGE_SIZE:100}
+    # Visão da plataforma (/platform/capture-panel, 404 quando false). Nasce desligada: ligar na EC2 só depois de a
+    # política de privacidade e o acordo de operador citarem a exceção à F1-RN-15, e com aprovação do Tony.
+    platform-enabled: ${TAXIFY_CAPTURE_PANEL_PLATFORM_ENABLED:false}
+  # "Sincronizar agora" (CP-RN-15 a CP-RN-20; limites da P-CP-04 e P-CP-05). Só muda a ordem da fila SIEG.
+  capture-priority:
+    enabled: ${TAXIFY_CAPTURE_PRIORITY_ENABLED:true}
+    slots-per-tick: ${TAXIFY_CAPTURE_PRIORITY_SLOTS_PER_TICK:1}
+    cooldown-minutes: ${TAXIFY_CAPTURE_PRIORITY_COOLDOWN_MINUTES:60}
+    max-open-per-firm: ${TAXIFY_CAPTURE_PRIORITY_MAX_OPEN_PER_FIRM:5}
+    per-firm-per-day: ${TAXIFY_CAPTURE_PRIORITY_PER_FIRM_PER_DAY:10}
+    expire-hours: ${TAXIFY_CAPTURE_PRIORITY_EXPIRE_HOURS:24}
+    # Limpeza diária dos pedidos com mais de N dias (horário de Recife).
+    retention-days: ${TAXIFY_CAPTURE_PRIORITY_RETENTION_DAYS:90}
+    purge-cron: ${TAXIFY_CAPTURE_PRIORITY_PURGE_CRON:0 45 3 * * *}
+    purge-enabled: ${TAXIFY_CAPTURE_PRIORITY_PURGE_ENABLED:true}
 
 # Timeouts of the Feign clients. OpenFeign 4+ reads only "spring.cloud.openfeign.client.config" - under the old
 # "feign.client.config" prefix these were ignored and every client ran on the defaults (10s connect, 60s read),

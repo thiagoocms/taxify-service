@@ -332,6 +332,23 @@ class BlockedPeriodRecoveryServiceTest {
                 .isTrue();
     }
 
+    /** Capture panel (SIEG_RECOVERY): the step reports its failure, and the last one reports the give-up. */
+    @Test
+    void theStepReportsTheFailureAndTheGiveUp() {
+        schedule(LocalDate.of(2026, 12, 25));
+        when(provider.recoverPage(any(), any(), any(), any(), anyInt())).thenThrow(new IllegalStateException("fora"));
+
+        BlockedPeriodRecoveryService.SiegStep first = service.runNextSiegStepReporting(provider, company);
+        assertThat(first.ran()).isTrue();
+        assertThat(first.failure()).isInstanceOf(IllegalStateException.class);
+        assertThat(first.gaveUp()).isFalse();
+        BlockedPeriodRecoveryService.SiegStep last = first;
+        for (int i = 1; i < BlockedPeriodRecoveryService.MAX_ATTEMPTS; i++) {
+            last = service.runNextSiegStepReporting(provider, company);
+        }
+        assertThat(last.gaveUp()).isTrue();
+    }
+
     /** Review 2: pieces of an earlier cycle that fell behind the limit are closed on the next reactivation, and listed. */
     @Test
     void stalePiecesBeyondTheLimitAreClosed() {

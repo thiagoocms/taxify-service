@@ -76,6 +76,8 @@ class PermissionAuthorizationManagerTest {
             "AuthResource#auth",
             "SignupResource#signup", "SignupResource#verify", "SignupResource#resend",
             "PlatformFirmResource#apply", "PlatformFirmResource#updateContact",
+            // @AllowedWhenBlocked - /platform/** is always allowed for the platform admin (F1-RN-09); capture panel CP-RN-16
+            "PlatformCapturePanelResource#syncNow",
             // @AllowedWhenBlocked - password is a credential, the notice a personal preference (P-SN-05, AV-RN-08)
             "PasswordResetResource#forgot", "PasswordResetResource#check", "PasswordResetResource#reset",
             "MyAccountResource#changePassword", "MyAccountResource#updateNotificationSettings");
@@ -162,6 +164,15 @@ class PermissionAuthorizationManagerTest {
         assertThat(rule(br.com.cshub.taxify.rest.PlatformFirmResource.class, "apply")).hasValueSatisfying(r -> assertThat(r.platformAdmin()).isTrue());
         assertThat(rule(br.com.cshub.taxify.rest.PlatformFirmResource.class, "events")).hasValueSatisfying(r -> assertThat(r.platformAdmin()).isTrue());
         assertThat(rule(br.com.cshub.taxify.rest.PlatformFirmResource.class, "updateContact")).hasValueSatisfying(r -> assertThat(r.platformAdmin()).isTrue());
+        // capture panel (CP-RN-02, CP-RN-16): the platform view is the platform admin's only; the firm view needs
+        // INVOICES_SYNC (ADMIN always passes) and its sync-now is the firm ADMIN's only
+        for (String endpoint : java.util.List.of("panel", "company", "syncNow")) {
+            assertThat(rule(br.com.cshub.taxify.rest.PlatformCapturePanelResource.class, endpoint))
+                    .hasValueSatisfying(r -> assertThat(r.platformAdmin()).isTrue());
+        }
+        assertThat(rule(br.com.cshub.taxify.rest.CapturePanelResource.class, "panel")).contains(Requirement.anyOf(Permission.INVOICES_SYNC));
+        assertThat(rule(br.com.cshub.taxify.rest.CapturePanelResource.class, "company")).contains(Requirement.anyOf(Permission.INVOICES_SYNC));
+        assertThat(rule(br.com.cshub.taxify.rest.CapturePanelResource.class, "syncNow")).contains(Requirement.admin());
 
         PlatformController denied = proxied(new PlatformController(), new PermissionAuthorizationManager(auth -> false));
         authenticateAs("ADMIN");

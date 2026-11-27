@@ -44,8 +44,12 @@ public class SiegFiscalXmlProvider implements FiscalXmlProvider {
                 request.side()
         );
 
-        XmlDownloadResultDTO result = integrationService.syncFromSieg(filter, request.knownPending());
-        return new FiscalXmlSyncResult(result.totalPersistedNew(), result.totalDuplicatedSkipped(), result.totalParseErrors());
+        FiscalXmlIntegrationService.SiegSideOutcome outcome = request.side() == null
+                ? new FiscalXmlIntegrationService.SiegSideOutcome(integrationService.syncFromSieg(filter, request.knownPending()), false)
+                : integrationService.syncSideFromSieg(filter, request.knownPending());
+        XmlDownloadResultDTO result = outcome.result();
+        return new FiscalXmlSyncResult(result.totalPersistedNew(), result.totalDuplicatedSkipped(), result.totalParseErrors(),
+                outcome.countFailed());
     }
 
     @Override

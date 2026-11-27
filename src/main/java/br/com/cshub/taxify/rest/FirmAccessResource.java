@@ -2,6 +2,7 @@ package br.com.cshub.taxify.rest;
 
 import br.com.cshub.taxify.common.CurrentFirmService;
 import br.com.cshub.taxify.common.PlatformAdminService;
+import br.com.cshub.taxify.config.CapturePanelProperties;
 import br.com.cshub.taxify.constants.AppConstants;
 import br.com.cshub.taxify.dto.firmaccess.FirmAccessDTO;
 import br.com.cshub.taxify.mapper.FirmAccessMapper;
@@ -30,10 +31,13 @@ public class FirmAccessResource {
     private final CurrentFirmService currentFirmService;
     private final BlockedPeriodRecoveryService recoveryService;
     private final FirmAccessMapper mapper;
+    private final CapturePanelProperties capturePanelProperties;
 
     public FirmAccessResource(FirmAccessService accessService, PlanLimitService planLimitService,
                               PlatformAdminService platformAdminService, CurrentFirmService currentFirmService,
-                              BlockedPeriodRecoveryService recoveryService, FirmAccessMapper mapper) {
+                              BlockedPeriodRecoveryService recoveryService, FirmAccessMapper mapper,
+                              CapturePanelProperties capturePanelProperties) {
+        this.capturePanelProperties = capturePanelProperties;
         this.accessService = accessService;
         this.planLimitService = planLimitService;
         this.platformAdminService = platformAdminService;
@@ -47,6 +51,7 @@ public class FirmAccessResource {
         FirmAccess access = accessService.currentAccess()
                 .orElseGet(() -> accessService.accessOf(currentFirmService.requireId()));
         return ResponseEntity.ok(mapper.toModel(access, planLimitService.limitsFor(access),
-                platformAdminService.isCurrentUserPlatformAdmin(), recoveryService.pendingMonths(access.firmId())));
+                platformAdminService.isCurrentUserPlatformAdmin(), recoveryService.pendingMonths(access.firmId()),
+                capturePanelProperties.isPlatformEnabled()));
     }
 }

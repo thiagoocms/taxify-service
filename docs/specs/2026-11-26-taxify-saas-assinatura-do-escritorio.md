@@ -563,6 +563,11 @@ implementar.
       CNPJ, e-mail nem telefone.
     - Não conta como revisão (F1-RN-14). Responde com a linha atualizada do console.
   - **Nunca** traz nome, CNPJ ou dado fiscal das empresas clientes, nem dados de colaboradores que não sejam ADMIN.
+  - **Exceção (2026-11-27, P-CP-01 da spec [Painel de controle da captura de XML](2026-11-27-painel-captura-xml.md)):**
+    o painel de captura da plataforma (`GET /platform/capture-panel`) mostra o nome da empresa, o número do
+    estabelecimento (`/0001`), as contagens de notas e as datas da captura, sem CNPJ completo, com log de cada acesso.
+    Go-live só depois de a política de privacidade e o acordo de operador citarem a exceção. O `GET /platform/firms`
+    não muda.
   - Filtros: situação, "liberado na migração e não revisado" (`migrated = true` e `reviewed_at` nulo) e busca pelo
     nome ou CNPJ do escritório.
   - As consultas são agregações próprias (`count … group by accounting_firm_id`) e não passam pelos `CrudService` com

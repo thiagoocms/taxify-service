@@ -1,5 +1,7 @@
 package br.com.cshub.taxify.service;
 
+import br.com.cshub.taxify.enumerated.CaptureFailureCode;
+import br.com.cshub.taxify.service.capture.CaptureFailureClassifier;
 import br.com.cshub.taxify.domain.company.Company;
 import br.com.cshub.taxify.domain.xml.SefazNoteSummary;
 import br.com.cshub.taxify.domain.xml.SefazNoteSummary.CienciaStatus;
@@ -74,8 +76,14 @@ public class SefazManifestService {
     }
 
     /** What the ciência / fetch step did in one run, for the control row. */
-    public record Outcome(int cienciasSent, int cienciaErrors, int fetched, boolean blocked, String error) {
-        static final Outcome NONE = new Outcome(0, 0, 0, false, null);
+    public record Outcome(int cienciasSent, int cienciaErrors, int fetched, boolean blocked, String error,
+                          CaptureFailureCode errorCode) {
+        static final Outcome NONE = new Outcome(0, 0, 0, false, null, null);
+
+        /** @param error the text that goes to last_detail; the panel's safe code is {@link #errorCode()} */
+        public Outcome(int cienciasSent, int cienciaErrors, int fetched, boolean blocked, String error) {
+            this(cienciasSent, cienciaErrors, fetched, blocked, error, null);
+        }
     }
 
     /**
@@ -142,6 +150,7 @@ public class SefazManifestService {
         int fetched = 0;
         boolean blocked = false;
         String error = null;
+        CaptureFailureCode errorCode = null;
         try {
             List<SefazNoteSummary> waiting = summaryRepository.findAwaitingCiencia(company.getId(),
                     properties.getCienciaMaxAttempts(), PageRequest.of(0, Math.max(1, properties.getCienciaPerRun())));
@@ -169,10 +178,12 @@ public class SefazManifestService {
         } catch (IOException e) {
             log.warn("SEFAZ ciência / fetch failed for company {}", company.getId(), e);
             error = "Falha de conexão com a SEFAZ na ciência: " + e.getMessage();
+            errorCode = CaptureFailureClassifier.sefazIo(e);
         } catch (GeneralSecurityException e) {
             error = "Certificado recusado na ciência: " + e.getMessage();
+            errorCode = CaptureFailureCode.CERT_INVALID;
         }
-        return new Outcome(sent, errors, fetched, blocked, error);
+        return new Outcome(sent, errors, fetched, blocked, error, errorCode);
     }
 
     /** The server allows it (sefaz.dist.auto-ciencia) and today's plan has the manifestation service. */

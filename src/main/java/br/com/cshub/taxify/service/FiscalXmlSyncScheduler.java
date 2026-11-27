@@ -1,6 +1,12 @@
 package br.com.cshub.taxify.service;
 
 import br.com.cshub.taxify.common.DuplicateKeys;
+import br.com.cshub.taxify.domain.capture.CapturePriorityRequest;
+import br.com.cshub.taxify.enumerated.CaptureFailureCode;
+import br.com.cshub.taxify.enumerated.CaptureStage;
+import br.com.cshub.taxify.service.capture.CaptureFailureClassifier;
+import br.com.cshub.taxify.service.capture.CapturePriorityService;
+import br.com.cshub.taxify.service.capture.CaptureStageRecorder;
 import br.com.cshub.taxify.integration.fiscalxml.FiscalXmlSide;
 import br.com.cshub.taxify.domain.company.Company;
 import br.com.cshub.taxify.domain.subscription.Subscription;
@@ -19,6 +25,7 @@ import br.com.cshub.taxify.service.firmaccess.FirmAccessService;
 import br.com.cshub.taxify.service.firmaccess.RoutineGate;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
+import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.scheduling.annotation.Scheduled;
 import org.springframework.stereotype.Component;
 
@@ -30,11 +37,13 @@ import java.time.LocalDateTime;
 import java.time.YearMonth;
 import java.util.ArrayList;
 import java.util.Comparator;
+import java.util.HashMap;
 import java.util.HashSet;
 import java.util.List;
 import java.util.Map;
 import java.util.Set;
 import java.util.UUID;
+import java.util.stream.Collectors;
 
 /**
  * Periodically pulls new fiscal XMLs for companies, so the search endpoint can serve
@@ -100,6 +109,10 @@ public class FiscalXmlSyncScheduler {
     private final BlockedPeriodRecoveryService recoveryService;
     /** America/Recife (ClockConfig) - the queue's last_attempt_at. */
     private final Clock clock;
+    /** The capture panel's result of each stage (CP-RN-10); never throws, never changes the capture's flow. */
+    private final CaptureStageRecorder stageRecorder;
+    /** "Sincronizar agora" (CP-RN-15); null = no priority (tests built without it). */
+    private final CapturePriorityService priorityService;
 
     public FiscalXmlSyncScheduler(CompanyRepository companyRepository, FiscalXmlSyncControlRepository syncControlRepository,
                                    SubscriptionRepository subscriptionRepository, Map<String, FiscalXmlProvider> providers,
@@ -108,11 +121,22 @@ public class FiscalXmlSyncScheduler {
                 Clock.system(ZoneId.of("America/Recife")));
     }
 
-    @org.springframework.beans.factory.annotation.Autowired
     public FiscalXmlSyncScheduler(CompanyRepository companyRepository, FiscalXmlSyncControlRepository syncControlRepository,
                                    SubscriptionRepository subscriptionRepository, Map<String, FiscalXmlProvider> providers,
                                    FiscalXmlSyncProperties properties, FirmAccessService firmAccessService,
                                    BlockedPeriodRecoveryService recoveryService, Clock clock) {
+        this(companyRepository, syncControlRepository, subscriptionRepository, providers, properties, firmAccessService,
+                recoveryService, clock, null, null);
+    }
+
+    @Autowired
+    public FiscalXmlSyncScheduler(CompanyRepository companyRepository, FiscalXmlSyncControlRepository syncControlRepository,
+                                   SubscriptionRepository subscriptionRepository, Map<String, FiscalXmlProvider> providers,
+                                   FiscalXmlSyncProperties properties, FirmAccessService firmAccessService,
+                                   BlockedPeriodRecoveryService recoveryService, Clock clock,
+                                   CaptureStageRecorder stageRecorder, CapturePriorityService priorityService) {
+        this.stageRecorder = stageRecorder == null ? CaptureStageRecorder.noop() : stageRecorder;
+        this.priorityService = priorityService;
         this.clock = clock;
         this.firmAccessService = firmAccessService;
         this.recoveryService = recoveryService;
@@ -152,23 +176,56 @@ public class FiscalXmlSyncScheduler {
             // recovery pieces of companies this capture no longer serves are skipped, so the firm can finish
             recoveryService.skipSiegOrphans(controls.stream().map(control -> control.getCompany().getId()).toList(), gate);
         }
+        // CP-RN-18: before anything else, the open "Sincronizar agora" requests that expired or that this capture no
+        // longer serves (blocked firm, lost entitlement) are closed - even when nobody is left to sync
+        List<CapturePriorityRequest> open = openPriorityRequests(controls);
         if (controls.isEmpty()) {
             return;
         }
 
         List<FiscalXmlSyncControl> queue = controls.stream().sorted(queueOrder()).toList();
         LocalDateTime head = queue.getFirst().getLastAttemptAt();
-        List<FiscalXmlSyncControl> batch = nextBatch(queue, properties.getBatchSize());
-        log.info("Starting scheduled fiscal XML sync (provider={}): {} of {} entitled companies this tick, first in queue last attempted at {}",
-                properties.getProvider(), batch.size(), controls.size(), head == null ? "never" : head);
+        List<Slot> batch = nextBatch(queue, properties.getBatchSize(), open);
+        log.info("Starting scheduled fiscal XML sync (provider={}): {} of {} entitled companies this tick ({} priority), first in queue last attempted at {}",
+                properties.getProvider(), batch.size(), controls.size(), batch.stream().filter(Slot::forced).count(),
+                head == null ? "never" : head);
 
-        for (FiscalXmlSyncControl control : batch) {
+        for (Slot slot : batch) {
+            FiscalXmlSyncControl control = slot.control();
             try {
-                syncCompany(provider, control, today);
+                syncCompany(provider, control, today, slot.forced());
             } catch (Exception e) {
                 log.warn("Scheduled fiscal XML sync failed for company {}", control.getCompany().getId(), e);
+            } finally {
+                if (slot.request() != null) {
+                    priorityService.served(slot.request());
+                }
             }
         }
+    }
+
+    /**
+     * The open "Sincronizar agora" requests for this tick. A failure here (the requests table unavailable) never takes the
+     * SIEG round down: the tick goes on as a regular one, without priority, and the requests wait for the next tick.
+     */
+    private List<CapturePriorityRequest> openPriorityRequests(List<FiscalXmlSyncControl> controls) {
+        if (priorityService == null) {
+            return List.of();
+        }
+        try {
+            return priorityService.prepareTick(controls.stream().map(control -> control.getCompany().getId())
+                    .collect(Collectors.toSet()));
+        } catch (RuntimeException e) {
+            log.warn("capture.priority.tick.failed - this tick runs without priority: {}", e.getClass().getSimpleName());
+            return List.of();
+        }
+    }
+
+    /**
+     * One company of the tick. {@code request}: the open "Sincronizar agora" it serves (null = none); {@code forced}: the
+     * attempt counts both sides again on the provider even when a side looks up to date (CP-RN-15).
+     */
+    record Slot(FiscalXmlSyncControl control, CapturePriorityRequest request, boolean forced) {
     }
 
     /**
@@ -242,15 +299,49 @@ public class FiscalXmlSyncScheduler {
      * The first {@code batchSize} companies of the queue that this instance manages to reserve ({@link #reserve}): one
      * taken meanwhile by another instance is skipped and the next one in the queue is tried, until the batch is full.
      */
-    private List<FiscalXmlSyncControl> nextBatch(List<FiscalXmlSyncControl> queue, int batchSize) {
+    private List<Slot> nextBatch(List<FiscalXmlSyncControl> queue, int batchSize, List<CapturePriorityRequest> open) {
         int wanted = Math.min(Math.max(batchSize, 1), queue.size());
-        List<FiscalXmlSyncControl> batch = new ArrayList<>(wanted);
+        List<Slot> batch = new ArrayList<>(wanted);
+        Set<UUID> taken = new HashSet<>();
+        Map<UUID, CapturePriorityRequest> openByCompany = new HashMap<>();
+        open.forEach(request -> openByCompany.putIfAbsent(request.getCompanyId(), request));
+
+        // CP-RN-15: the first slots go to the open requests, oldest first (at most batch-size - 1; with 1, every other tick)
+        int prioritySlots = priorityService == null ? 0 : Math.min(wanted, priorityService.prioritySlots(batchSize, open.size()));
+        if (prioritySlots > 0) {
+            Map<UUID, FiscalXmlSyncControl> byCompany = new HashMap<>();
+            queue.forEach(control -> byCompany.put(control.getCompany().getId(), control));
+            for (CapturePriorityRequest request : open) {
+                if (batch.size() >= prioritySlots) {
+                    break;
+                }
+                FiscalXmlSyncControl control = byCompany.get(request.getCompanyId());
+                if (control == null || taken.contains(request.getCompanyId())) {
+                    continue;
+                }
+                if (reserve(control)) {
+                    priorityService.reserved(request);
+                    taken.add(request.getCompanyId());
+                    batch.add(new Slot(control, request, true));
+                }
+            }
+        }
         for (FiscalXmlSyncControl control : queue) {
             if (batch.size() >= wanted) {
                 break;
             }
+            UUID companyId = control.getCompany().getId();
+            if (taken.contains(companyId)) {
+                continue;
+            }
             if (reserve(control)) {
-                batch.add(control);
+                taken.add(companyId);
+                // CP-RN-18: the regular queue reached a company with an open request - that attempt serves it
+                CapturePriorityRequest request = openByCompany.get(companyId);
+                if (request != null) {
+                    priorityService.reserved(request);
+                }
+                batch.add(new Slot(control, request, request != null));
             }
         }
         return batch;
@@ -293,10 +384,15 @@ public class FiscalXmlSyncScheduler {
         }
     }
 
-    /** Received notes first (what most fiscal work starts from), then the company's own; NFS-e once a day. */
-    private void syncCompany(FiscalXmlProvider provider, FiscalXmlSyncControl control, LocalDate today) {
+    /**
+     * Received notes first (what most fiscal work starts from), then the company's own; NFS-e once a day. A side that
+     * fails still aborts the rest of the company for this attempt (unchanged): the stages that did not run record nothing.
+     *
+     * @param forced a "Sincronizar agora": both sides are counted on the provider again, even the ones up to date today
+     */
+    private void syncCompany(FiscalXmlProvider provider, FiscalXmlSyncControl control, LocalDate today, boolean forced) {
         for (FiscalXmlSide side : FiscalXmlSide.values()) {
-            syncSide(provider, control, side, today);
+            syncSide(provider, control, side, today, forced);
             refreshEventsOncePerDay(provider, control, side, today);
         }
         syncServiceInvoicesOncePerDay(provider, control, today);
@@ -306,17 +402,43 @@ public class FiscalXmlSyncScheduler {
     /**
      * QA-02: after the firm's reactivation, one step of the months that stayed out of the regular window (one SIEG page,
      * or one NFS-e window) on each of the company's turns - the rotation keeps SIEG's rate limit. A failure stays
-     * pending for the next turn.
+     * pending for the next turn. Recorded as SIEG_RECOVERY: the step's result; a piece given up after too many failures
+     * is a warning (SIEG_RECOVERY_GAVE_UP), not a permanent error; with nothing left to recover, an open failure of the
+     * stage is closed the same way (it would never be retried).
      */
     private void recoverBlockedMonths(FiscalXmlProvider provider, FiscalXmlSyncControl control) {
         if (recoveryService == null) {
             return;
         }
+        UUID companyId = control.getCompany().getId();
         try {
-            recoveryService.runNextSiegStep(provider, control.getCompany());
+            BlockedPeriodRecoveryService.SiegStep step = recoveryService.runNextSiegStepReporting(provider, control.getCompany());
+            if (step == null || !step.ran()) {
+                stageRecorder.closeFailure(companyId, CaptureStage.SIEG_RECOVERY, CaptureFailureCode.SIEG_RECOVERY_GAVE_UP);
+            } else if (step.failure() == null) {
+                stageRecorder.success(companyId, CaptureStage.SIEG_RECOVERY);
+            } else if (step.gaveUp()) {
+                stageRecorder.success(companyId, CaptureStage.SIEG_RECOVERY, CaptureFailureCode.SIEG_RECOVERY_GAVE_UP, null);
+            } else {
+                recordSiegFailure(control, CaptureStage.SIEG_RECOVERY, step.failure());
+            }
         } catch (Exception e) {
-            log.warn("Blocked-months recovery failed for company {}", control.getCompany().getId(), e);
+            log.warn("Blocked-months recovery failed for company {}", companyId, e);
+            recordSiegFailure(control, CaptureStage.SIEG_RECOVERY, e);
         }
+    }
+
+    /**
+     * CP-RN-11: the safe code of a SIEG stage's failure, chosen by the error's type - a company without a CNPJ by the
+     * company itself (the capture breaks on it before any call). Only ids and the code reach the log.
+     */
+    private void recordSiegFailure(FiscalXmlSyncControl control, CaptureStage stage, Throwable error) {
+        Company company = control.getCompany();
+        boolean withoutCnpj = company.getDocument() == null || company.getDocument().getNumber() == null
+                || company.getDocument().getNumber().isBlank();
+        stageRecorder.failure(company.getId(), stage, withoutCnpj
+                ? new CaptureFailureClassifier.Classified(CaptureFailureCode.COMPANY_WITHOUT_CNPJ, null)
+                : CaptureFailureClassifier.sieg(error));
     }
 
     /**
@@ -338,9 +460,11 @@ public class FiscalXmlSyncScheduler {
             if (created > 0) {
                 log.info("Service invoices for company {}: {} new", companyId, created);
             }
+            stageRecorder.success(companyId, CaptureStage.SIEG_NFSE);
         } catch (Exception e) {
             // not marked - the next tick tries again
             log.warn("Service invoice sync failed for company {}", companyId, e);
+            recordSiegFailure(control, CaptureStage.SIEG_NFSE, e);
         }
     }
 
@@ -365,17 +489,22 @@ public class FiscalXmlSyncScheduler {
             if (events > 0) {
                 log.info("Event sweep for company {} ({}): {} new events", companyId, side, events);
             }
+            stageRecorder.success(companyId, CaptureStage.siegEvents(side == FiscalXmlSide.ISSUED));
         } catch (Exception e) {
             // not marked - the next tick tries again
             log.warn("Event sweep failed for company {} ({})", companyId, side, e);
+            recordSiegFailure(control, CaptureStage.siegEvents(side == FiscalXmlSide.ISSUED), e);
         }
     }
 
-    private void syncSide(FiscalXmlProvider provider, FiscalXmlSyncControl control, FiscalXmlSide side, LocalDate today) {
+    private void syncSide(FiscalXmlProvider provider, FiscalXmlSyncControl control, FiscalXmlSide side, LocalDate today,
+                          boolean forced) {
         Company company = control.getCompany();
         SideState state = SideState.of(control, side);
+        CaptureStage stage = CaptureStage.siegSide(side == FiscalXmlSide.ISSUED);
 
-        if (state.isUpToDate(today)) {
+        if (state.isUpToDate(today) && !forced) {
+            // skipped without a call: nothing recorded (CP-RN-10)
             log.info("Company {} {} side already fully synced for {} ({} of {} imported) - skipping, no request spent",
                     company.getId(), side, today, state.imported(), state.totalSieg());
             return;
@@ -387,12 +516,26 @@ public class FiscalXmlSyncScheduler {
         boolean sameMonthAsLastCheck = state.checkedAt() != null
                 && YearMonth.from(state.checkedAt()).equals(YearMonth.from(today));
         int alreadyImportedCount = sameMonthAsLastCheck ? state.imported() : 0;
-        boolean knownPending = sameMonthAsLastCheck && state.totalSieg() > 0 && state.imported() < state.totalSieg();
+        // a forced attempt counts again: the user knows a note arrived after the last check (CP-RN-15)
+        boolean knownPending = !forced && sameMonthAsLastCheck && state.totalSieg() > 0 && state.imported() < state.totalSieg();
 
-        FiscalXmlSyncResult result = provider.sync(new FiscalXmlSyncRequest(
-                company.getId(), today.withDayOfMonth(1), today, alreadyImportedCount, knownPending, side));
+        FiscalXmlSyncResult result;
+        try {
+            result = provider.sync(new FiscalXmlSyncRequest(
+                    company.getId(), today.withDayOfMonth(1), today, alreadyImportedCount, knownPending, side));
+        } catch (RuntimeException e) {
+            recordSiegFailure(control, stage, e);
+            throw e;
+        }
         log.info("Fiscal XML sync for company {} ({}): {} new, {} duplicated, {} parse errors",
                 company.getId(), side, result.persistedNew(), result.duplicated(), result.parseErrors());
+        if (result.countFailed()) {
+            stageRecorder.success(company.getId(), stage, CaptureFailureCode.SIEG_COUNT_FAILED, null);
+        } else if (result.parseErrors() > 0) {
+            stageRecorder.success(company.getId(), stage, CaptureFailureCode.XML_PARSE_ERRORS, result.parseErrors());
+        } else {
+            stageRecorder.success(company.getId(), stage);
+        }
     }
 
     /** One side's bookkeeping, read from its own columns on the control row (null = never checked). */

@@ -199,13 +199,30 @@ public class BlockedPeriodRecoveryService {
      * @return true quando havia algo a fazer
      */
     public boolean runNextSiegStep(FiscalXmlProvider provider, Company company) {
+        return runNextSiegStepReporting(provider, company).ran();
+    }
+
+    /**
+     * O passo da recuperação e o resultado dele, para o painel da captura (etapa SIEG_RECOVERY, CP-RN-10).
+     *
+     * @param ran     havia um passo a fazer
+     * @param failure a falha do passo (o passo continua PENDING, ou é desistido depois de tentativas demais); null = deu certo
+     * @param gaveUp  o passo falhou vezes demais e foi desistido (SKIPPED): não vai mais ser tentado
+     */
+    public record SiegStep(boolean ran, RuntimeException failure, boolean gaveUp) {
+        static final SiegStep NOTHING = new SiegStep(false, null, false);
+    }
+
+    public SiegStep runNextSiegStepReporting(FiscalXmlProvider provider, Company company) {
         Optional<RecoveryTask> next = taskRepository.findFirstByCompanyIdAndStatusAndSourceInAndDeletedIsFalseOrderByPeriodStartAscSourceAsc(
                 company.getId(), RecoveryTaskStatus.PENDING, SIEG_SOURCES);
         if (next.isEmpty()) {
-            return false;
+            return SiegStep.NOTHING;
         }
         RecoveryTask task = next.get();
         LocalDateTime now = LocalDateTime.now(clock);
+        RuntimeException failure = null;
+        boolean gaveUp = false;
         try {
             switch (task.getSource()) {
                 case SIEG_NFE_RECEIVED, SIEG_NFE_ISSUED -> {
@@ -231,9 +248,11 @@ public class BlockedPeriodRecoveryService {
                 default -> task.finish(RecoveryTaskStatus.SKIPPED, "not a SIEG source", now);
             }
         } catch (RuntimeException e) {
+            failure = e;
             task.failed(e.getClass().getSimpleName());
             if (task.getAttempts() >= MAX_ATTEMPTS) {
                 task.finish(RecoveryTaskStatus.SKIPPED, "gave up after " + MAX_ATTEMPTS + " failures: " + e.getClass().getSimpleName(), now);
+                gaveUp = true;
                 log.warn("recovery.step.gave.up firm={} company={} source={} attempts={}", task.getAccountingFirmId(),
                         company.getId(), task.getSource(), MAX_ATTEMPTS);
             } else {
@@ -245,7 +264,7 @@ public class BlockedPeriodRecoveryService {
         if (!task.isPending()) {
             completeIfFinished(task.getAccountingFirmId());
         }
-        return true;
+        return new SiegStep(true, failure, gaveUp);
     }
 
     /**

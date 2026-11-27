@@ -22,6 +22,16 @@ public class FirmAccessMapper {
         return new FirmAccessDTO(access.status().name(), access.exempt(), access.readOnly(),
                 access.reason() == null ? null : access.reason().name(), access.blockedSince(), access.trialEndsOn(),
                 access.accessUntil(), access.trialDaysLeft(), access.capturesStoppedDays(), SEFAZ_RETENTION_DAYS,
-                limits, platformAdmin, !recoveryMonths.isEmpty(), recoveryMonths);
+                limits, platformAdmin, !recoveryMonths.isEmpty(), recoveryMonths, false);
+    }
+
+    /** @param capturePanelPlatformEnabled the platform view of the capture panel is on (and the user can use it) */
+    public FirmAccessDTO toModel(FirmAccess access, FirmAccessLimitsDTO limits, boolean platformAdmin,
+                                 List<String> recoveryMonths, boolean capturePanelPlatformEnabled) {
+        FirmAccessDTO base = toModel(access, limits, platformAdmin, recoveryMonths);
+        return new FirmAccessDTO(base.status(), base.exempt(), base.readOnly(), base.reason(), base.blockedSince(),
+                base.trialEndsOn(), base.accessUntil(), base.trialDaysLeft(), base.capturesStoppedDays(),
+                base.sefazRetentionDays(), base.limits(), base.platformAdmin(), base.recoveryPending(), base.recoveryMonths(),
+                capturePanelPlatformEnabled && platformAdmin);
     }
 }

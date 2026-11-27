@@ -100,6 +100,66 @@ public class FiscalXmlSyncControl extends AbstractAuditingEntity {
     @Column(name = "service_invoices_checked_on")
     private LocalDate serviceInvoicesCheckedOn;
 
+    /*
+     * CP-RN-22 (painel da captura): como o último mês verificado de cada lado fechou - copiados em
+     * FiscalXmlIntegrationService#updateSyncControl quando a janela passa para um mês novo, antes dos contadores do
+     * lado serem trocados. yyyy-MM; nulos até a primeira virada.
+     */
+    @Column(name = "received_prev_month", length = 7, columnDefinition = "char(7)")
+    private String receivedPrevMonth;
+
+    @Column(name = "received_prev_total_sieg")
+    private Integer receivedPrevTotalSieg;
+
+    @Column(name = "received_prev_imported")
+    private Integer receivedPrevImported;
+
+    @Column(name = "issued_prev_month", length = 7, columnDefinition = "char(7)")
+    private String issuedPrevMonth;
+
+    @Column(name = "issued_prev_total_sieg")
+    private Integer issuedPrevTotalSieg;
+
+    @Column(name = "issued_prev_imported")
+    private Integer issuedPrevImported;
+
+    public String getReceivedPrevMonth() {
+        return receivedPrevMonth;
+    }
+
+    public Integer getReceivedPrevTotalSieg() {
+        return receivedPrevTotalSieg;
+    }
+
+    public Integer getReceivedPrevImported() {
+        return receivedPrevImported;
+    }
+
+    public String getIssuedPrevMonth() {
+        return issuedPrevMonth;
+    }
+
+    public Integer getIssuedPrevTotalSieg() {
+        return issuedPrevTotalSieg;
+    }
+
+    public Integer getIssuedPrevImported() {
+        return issuedPrevImported;
+    }
+
+    /** O lado recebido fechou {@code month} com {@code totalSieg} no SIEG e {@code imported} no Taxify. */
+    public void closeReceivedMonth(String month, Integer totalSieg, Integer imported) {
+        this.receivedPrevMonth = month;
+        this.receivedPrevTotalSieg = totalSieg;
+        this.receivedPrevImported = imported;
+    }
+
+    public void closeIssuedMonth(String month, Integer totalSieg, Integer imported) {
+        this.issuedPrevMonth = month;
+        this.issuedPrevTotalSieg = totalSieg;
+        this.issuedPrevImported = imported;
+    }
+
     public UUID getId() {
         return id;
     }

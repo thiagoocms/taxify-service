@@ -1,9 +1,14 @@
 package br.com.cshub.taxify.service;
 
+import org.springframework.beans.factory.annotation.Autowired;
 import br.com.cshub.taxify.domain.certificate.CompanyCertificate;
 import br.com.cshub.taxify.domain.company.Company;
 import br.com.cshub.taxify.domain.pendency.CaptureRun;
 import br.com.cshub.taxify.domain.xml.NfseAdnControl;
+import br.com.cshub.taxify.enumerated.CaptureFailureCode;
+import br.com.cshub.taxify.enumerated.CaptureStage;
+import br.com.cshub.taxify.service.capture.CaptureFailureClassifier;
+import br.com.cshub.taxify.service.capture.CaptureStageRecorder;
 import br.com.cshub.taxify.domain.xml.NfseAdnControl.Status;
 import br.com.cshub.taxify.integration.nfse.AdnClient;
 import br.com.cshub.taxify.integration.nfse.AdnProperties;
@@ -48,6 +53,14 @@ public class NfseAdnService {
     private final AdnClient client;
     private final AdnProperties properties;
     private final CaptureRunRepository captureRunRepository;
+    private CaptureStageRecorder stageRecorder = CaptureStageRecorder.noop();
+
+    @Autowired(required = false)
+    public void setStageRecorder(CaptureStageRecorder stageRecorder) {
+        if (stageRecorder != null) {
+            this.stageRecorder = stageRecorder;
+        }
+    }
 
     public NfseAdnService(NfseAdnControlRepository controlRepository, CompanyCertificateService certificateService,
                           ServiceInvoiceService serviceInvoiceService, AdnClient client, AdnProperties properties,
@@ -88,10 +101,10 @@ public class NfseAdnService {
             runBatches(company, control, run);
         } catch (IOException e) {
             log.warn("ADN capture failed for company {}", company.getId(), e);
-            run.error = "Falha de conexão com o Ambiente Nacional: " + e.getMessage();
+            run.fail("Falha de conexão com o Ambiente Nacional: " + e.getMessage(), CaptureFailureClassifier.adnIo(e), null);
         } catch (RuntimeException e) {
             log.warn("ADN capture failed for company {}", company.getId(), e);
-            run.error = "Erro inesperado: " + e.getMessage();
+            run.fail("Erro inesperado: " + e.getMessage(), CaptureFailureCode.INTERNAL_ERROR, null);
         }
         control.setLastRunAt(LocalDateTime.now());
         control.setLastNewNotes(run.newNotes);
@@ -99,6 +112,12 @@ public class NfseAdnService {
         control.setLastDetail(truncate(run.detail()));
         NfseAdnControl saved = controlRepository.save(control);
         recordRun(company, startedAt, control);
+        // CP-RN-10/11: the safe code in capture_stage_status (own transaction, never fails the capture)
+        if (run.error != null) {
+            stageRecorder.failure(company.getId(), CaptureStage.NFSE_ADN, run.code, run.providerStatus);
+        } else {
+            stageRecorder.success(company.getId(), CaptureStage.NFSE_ADN);
+        }
         log.info("ADN capture for company {}: {} - {} new notes, {} canceled", company.getId(), control.getLastStatus(),
                 run.newNotes, run.canceled);
         return saved;
@@ -107,23 +126,23 @@ public class NfseAdnService {
     private void runBatches(Company company, NfseAdnControl control, Run run) throws IOException {
         String cnpj = CompanyCertificateService.cnpjOf(company);
         if (cnpj == null) {
-            run.error = "A empresa não tem CNPJ.";
+            run.fail("A empresa não tem CNPJ.", CaptureFailureCode.COMPANY_WITHOUT_CNPJ, null);
             return;
         }
         Optional<CompanyCertificate> stored = certificateService.resolve(company);
         if (stored.isEmpty()) {
-            run.error = "Sem certificado A1.";
+            run.fail("Sem certificado A1.", CaptureFailureCode.CERT_MISSING, null);
             return;
         }
         if (stored.get().getValidUntil().isBefore(LocalDateTime.now())) {
-            run.error = "Certificado vencido em " + stored.get().getValidUntil().format(DATE) + ".";
+            run.fail("Certificado vencido em " + stored.get().getValidUntil().format(DATE) + ".", CaptureFailureCode.CERT_EXPIRED, null);
             return;
         }
         A1Certificate certificate;
         try {
             certificate = certificateService.open(stored.get());
         } catch (IOException | GeneralSecurityException | IllegalStateException e) {
-            run.error = "Não foi possível abrir o certificado: " + e.getMessage();
+            run.fail("Não foi possível abrir o certificado: " + e.getMessage(), CaptureFailureClassifier.certificate(e), null);
             return;
         }
 
@@ -132,7 +151,7 @@ public class NfseAdnService {
             try {
                 response = client.fetch(certificate, cnpj, control.getUltNsu());
             } catch (GeneralSecurityException e) {
-                run.error = "Certificado recusado na conexão: " + e.getMessage();
+                run.fail("Certificado recusado na conexão: " + e.getMessage(), CaptureFailureCode.CERT_INVALID, null);
                 return;
             }
             if (response.throttled()) {
@@ -142,7 +161,8 @@ public class NfseAdnService {
                 return;
             }
             if (response.failed()) {
-                run.error = response.errors().isEmpty() ? "HTTP " + response.httpStatus() : String.join("; ", response.errors());
+                run.fail(response.errors().isEmpty() ? "HTTP " + response.httpStatus() : String.join("; ", response.errors()),
+                        CaptureFailureCode.ADN_REJECTED, response.httpStatus() > 0 ? String.valueOf(response.httpStatus()) : null);
                 return;
             }
             if (response.nothingNew()) {
@@ -227,6 +247,15 @@ public class NfseAdnService {
         int canceled;
         String error;
         String note;
+        /** The safe code of the error (CP-RN-11) - the text above stays only in last_detail, as before. */
+        CaptureFailureCode code;
+        String providerStatus;
+
+        void fail(String message, CaptureFailureCode failureCode, String status) {
+            error = message;
+            code = failureCode == null ? CaptureFailureCode.INTERNAL_ERROR : failureCode;
+            providerStatus = status;
+        }
 
         Status status() {
             if (error != null) {

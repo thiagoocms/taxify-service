@@ -2,9 +2,12 @@ package br.com.cshub.taxify.repository;
 
 import br.com.cshub.taxify.common.AbstractJpaRepository;
 import br.com.cshub.taxify.domain.subscription.Subscription;
+import org.springframework.data.jpa.repository.Query;
+import org.springframework.data.repository.query.Param;
 import org.springframework.stereotype.Repository;
 
 import java.time.LocalDate;
+import java.util.List;
 import java.util.Optional;
 import java.util.UUID;
 
@@ -21,4 +24,13 @@ public interface SubscriptionRepository extends AbstractJpaRepository<Subscripti
     // "Vigente": entity.startDate <= referenceDate <= entity.endDate. Pass the same date (today) for both.
     Optional<Subscription> findFirstByCompanyIdAndDeletedIsFalseAndStartDateLessThanEqualAndEndDateGreaterThanEqualOrderByStartDateDesc(
             UUID companyId, LocalDate referenceDateForStart, LocalDate referenceDateForEnd);
+
+    /**
+     * Every "vigente" subscription on {@code day} - company id, start date, subscription id, plan id - in one query, for
+     * the capture panel (CP-RN-05): the same filter as the method above; the most recent start is picked in memory
+     * (CaptureEntitlement).
+     */
+    @Query("select s.company.id, s.startDate, s.id, s.plan.id from Subscription s"
+            + " where s.deleted = false and s.startDate <= :day and s.endDate >= :day")
+    List<Object[]> findCurrentPlans(@Param("day") LocalDate day);
 }

@@ -1,5 +1,6 @@
 package br.com.cshub.taxify.service;
 
+import org.springframework.beans.factory.annotation.Autowired;
 import br.com.cshub.taxify.domain.certificate.CompanyCertificate;
 import br.com.cshub.taxify.domain.company.Company;
 import br.com.cshub.taxify.domain.xml.SefazDistControl;
@@ -12,6 +13,10 @@ import br.com.cshub.taxify.integration.sefaz.SefazProperties;
 import br.com.cshub.taxify.repository.SefazDistControlRepository;
 import br.com.cshub.taxify.repository.CaptureRunRepository;
 import br.com.cshub.taxify.domain.pendency.CaptureRun;
+import br.com.cshub.taxify.enumerated.CaptureFailureCode;
+import br.com.cshub.taxify.enumerated.CaptureStage;
+import br.com.cshub.taxify.service.capture.CaptureFailureClassifier;
+import br.com.cshub.taxify.service.capture.CaptureStageRecorder;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 import org.springframework.stereotype.Service;
@@ -50,6 +55,14 @@ public class SefazDistService {
     private final SefazProperties properties;
     private final SefazManifestService manifestService;
     private final CaptureRunRepository captureRunRepository;
+    private CaptureStageRecorder stageRecorder = CaptureStageRecorder.noop();
+
+    @Autowired(required = false)
+    public void setStageRecorder(CaptureStageRecorder stageRecorder) {
+        if (stageRecorder != null) {
+            this.stageRecorder = stageRecorder;
+        }
+    }
 
     public SefazDistService(SefazDistControlRepository controlRepository, CompanyCertificateService certificateService,
                             FiscalXmlIntegrationService integrationService, SefazDistClient client, SefazProperties properties,
@@ -90,15 +103,16 @@ public class SefazDistService {
                     control.setNextQueryAt(LocalDateTime.now().plusMinutes(WAIT_MINUTES));
                 }
                 if (outcome.error() != null && run.error == null) {
-                    run.error(outcome.error());
+                    run.error(outcome.error(), outcome.errorCode() == null ? CaptureFailureCode.SEFAZ_CONNECTION
+                            : outcome.errorCode(), null);
                 }
             }
         } catch (IOException e) {
             log.warn("SEFAZ distribution failed for company {}", company.getId(), e);
-            run.error("Falha de conexão com a SEFAZ: " + e.getMessage());
+            run.error("Falha de conexão com a SEFAZ: " + e.getMessage(), CaptureFailureClassifier.sefazIo(e), null);
         } catch (RuntimeException e) {
             log.warn("SEFAZ distribution failed for company {}", company.getId(), e);
-            run.error("Erro inesperado: " + e.getMessage());
+            run.error("Erro inesperado: " + e.getMessage(), CaptureFailureCode.INTERNAL_ERROR, null);
         }
 
         control.setLastRunAt(LocalDateTime.now());
@@ -111,7 +125,17 @@ public class SefazDistService {
                 run.error == null ? "" : " (" + run.error + ")");
         SefazDistControl saved = controlRepository.save(control);
         recordRun(company, startedAt, control);
+        recordStage(company, run);
         return saved;
+    }
+
+    /** CP-RN-10/11: the run's safe code in capture_stage_status (own transaction, never fails the capture). */
+    private void recordStage(Company company, Run run) {
+        if (run.error != null) {
+            stageRecorder.failure(company.getId(), CaptureStage.SEFAZ_DIST, run.code, run.providerStatus);
+        } else {
+            stageRecorder.success(company.getId(), CaptureStage.SEFAZ_DIST, run.warning, null);
+        }
     }
 
     /** History of the runs - the integrations' health on the pendencies screen. Never fails the capture. */
@@ -136,20 +160,20 @@ public class SefazDistService {
     private A1Certificate runBatches(Company company, SefazDistControl control, Run run) throws IOException {
         String cnpj = CompanyCertificateService.cnpjOf(company);
         if (cnpj == null) {
-            run.error("A empresa não tem CNPJ.");
+            run.error("A empresa não tem CNPJ.", CaptureFailureCode.COMPANY_WITHOUT_CNPJ, null);
             return null;
         }
         if (SefazDistClient.ufCode(company.getUf()) == null) {
-            run.error("UF da empresa não informada.");
+            run.error("UF da empresa não informada.", CaptureFailureCode.COMPANY_WITHOUT_UF, null);
             return null;
         }
         Optional<CompanyCertificate> stored = certificateService.resolve(company);
         if (stored.isEmpty()) {
-            run.error("Sem certificado A1.");
+            run.error("Sem certificado A1.", CaptureFailureCode.CERT_MISSING, null);
             return null;
         }
         if (stored.get().getValidUntil().isBefore(LocalDateTime.now())) {
-            run.error("Certificado vencido em " + stored.get().getValidUntil().format(DATE) + ".");
+            run.error("Certificado vencido em " + stored.get().getValidUntil().format(DATE) + ".", CaptureFailureCode.CERT_EXPIRED, null);
             return null;
         }
         A1Certificate certificate;
@@ -158,14 +182,15 @@ public class SefazDistService {
         } catch (java.nio.file.NoSuchFileException e) {
             // e.g. uploaded by a backend with another storage (a local run on disk) - not a SEFAZ problem
             log.warn("Certificate file of company {} not found in the storage: {}", company.getId(), e.getMessage());
-            run.error("Arquivo do certificado não encontrado no armazenamento - envie o certificado novamente.");
+            run.error("Arquivo do certificado não encontrado no armazenamento - envie o certificado novamente.",
+                    CaptureFailureCode.CERT_FILE_MISSING, null);
             return null;
         } catch (IOException e) {
             log.warn("Could not read the certificate file of company {}", company.getId(), e);
-            run.error("Não foi possível ler o arquivo do certificado: " + e.getMessage());
+            run.error("Não foi possível ler o arquivo do certificado: " + e.getMessage(), CaptureFailureCode.INTERNAL_ERROR, null);
             return null;
         } catch (GeneralSecurityException | IllegalStateException e) {
-            run.error("Não foi possível abrir o certificado: " + e.getMessage());
+            run.error("Não foi possível abrir o certificado: " + e.getMessage(), CaptureFailureCode.CERT_INVALID, null);
             return null;
         }
 
@@ -174,11 +199,12 @@ public class SefazDistService {
             try {
                 response = client.fetch(certificate, company.getUf(), cnpj, control.getUltNsu());
             } catch (GeneralSecurityException e) {
-                run.error("Certificado recusado na conexão: " + e.getMessage());
+                run.error("Certificado recusado na conexão: " + e.getMessage(), CaptureFailureCode.CERT_INVALID, null);
                 return null;
             }
             if ("656".equals(response.cStat())) {
                 run.blocked = true;
+                run.warning = CaptureFailureCode.SEFAZ_CONSUMO_INDEVIDO;
                 control.setNextQueryAt(LocalDateTime.now().plusMinutes(WAIT_MINUTES));
                 String motivo = response.xMotivo() == null ? "" : " " + response.xMotivo();
                 // "Deve ser utilizado o ultNSU nas solicitações subsequentes": SEFAZ already delivered up
@@ -199,7 +225,7 @@ public class SefazDistService {
                 return certificate;
             }
             if (!"137".equals(response.cStat()) && !"138".equals(response.cStat())) {
-                run.error(response.cStat() + " " + response.xMotivo());
+                run.error(response.cStat() + " " + response.xMotivo(), CaptureFailureCode.SEFAZ_REJECTED, response.cStat());
                 return null;
             }
             store(company, response, run);
@@ -261,9 +287,15 @@ public class SefazDistService {
         boolean blocked;
         String error;
         String note;
+        /** The safe code of the error (CP-RN-11) - the text above stays only in last_detail, as before. */
+        CaptureFailureCode code;
+        String providerStatus;
+        CaptureFailureCode warning;
 
-        void error(String message) {
+        void error(String message, CaptureFailureCode failureCode, String status) {
             error = message;
+            code = failureCode == null ? CaptureFailureCode.INTERNAL_ERROR : failureCode;
+            providerStatus = status;
         }
 
         void note(String message) {

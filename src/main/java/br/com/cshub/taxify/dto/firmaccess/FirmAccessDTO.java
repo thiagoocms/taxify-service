@@ -16,9 +16,11 @@ import java.util.List;
  * @param platformAdmin       o usuário é admin da plataforma (mostra o menu "Plataforma")
  * @param recoveryPending     depois da reativação: os meses bloqueados ainda estão sendo recuperados (SIEG, e-Fisco)
  * @param recoveryMonths      esses meses, "AAAA-MM", em ordem; vazio quando nada falta
+ * @param capturePanelPlatformEnabled o painel da captura da plataforma está ligado e o usuário é admin da plataforma
+ *                            (mostra o item "Captura de XML" no console; TAXIFY_CAPTURE_PANEL_PLATFORM_ENABLED)
  */
 public record FirmAccessDTO(String status, boolean exempt, boolean readOnly, String reason, LocalDate blockedSince,
                              LocalDate trialEndsOn, LocalDate accessUntil, Integer trialDaysLeft,
                              Integer capturesStoppedDays, int sefazRetentionDays, FirmAccessLimitsDTO limits, boolean platformAdmin,
-                             boolean recoveryPending, List<String> recoveryMonths) {
+                             boolean recoveryPending, List<String> recoveryMonths, boolean capturePanelPlatformEnabled) {
 }

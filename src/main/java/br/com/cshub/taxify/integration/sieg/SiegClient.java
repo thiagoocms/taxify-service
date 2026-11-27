@@ -53,6 +53,12 @@ public class SiegClient {
             Integer nfe = response.data().nfe();
             return nfe != null ? nfe : 0;
         } catch (FeignException e) {
+            if (e.status() >= 400) {
+                // the status only: the exception's message carries the response body (P-CP-09)
+                log.warn("SIEG contar-xmls returned HTTP {} (error.sieg.integration.failed)", e.status());
+                throw new SiegIntegrationException("error.sieg.integration.failed", messageService.getMessage("error.sieg.integration.failed"),
+                        e.status());
+            }
             throw new SiegIntegrationException("error.sieg.integration.failed", messageService.getMessage("error.sieg.integration.failed"), e);
         }
     }
@@ -73,8 +79,10 @@ public class SiegClient {
                 return List.of();
             }
             if (response.status() >= 400) {
-                log.warn("SIEG baixar-xmls returned HTTP {}: {}", response.status(), errorSnippet(body));
-                throw new SiegIntegrationException("error.sieg.integration.failed", messageService.getMessage("error.sieg.integration.failed"));
+                // P-CP-09: never the body - it can carry a CNPJ, a key or a token. Only the status and the code.
+                log.warn("SIEG baixar-xmls returned HTTP {} (error.sieg.integration.failed)", response.status());
+                throw new SiegIntegrationException("error.sieg.integration.failed", messageService.getMessage("error.sieg.integration.failed"),
+                        response.status());
             }
             return packageExtractor.extract(body);
         } catch (FeignException e) {

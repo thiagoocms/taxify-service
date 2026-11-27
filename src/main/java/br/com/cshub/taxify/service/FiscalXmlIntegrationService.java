@@ -1,5 +1,7 @@
 package br.com.cshub.taxify.service;
 
+import br.com.cshub.taxify.config.ClockConfig;
+import org.springframework.beans.factory.annotation.Autowired;
 import br.com.cshub.taxify.common.IssuePeriod;
 import java.util.Optional;
 import br.com.cshub.taxify.integration.fiscalxml.FiscalEventParser;
@@ -74,6 +76,15 @@ public class FiscalXmlIntegrationService {
     private final FiscalXmlEventService eventService;
     private final SefazNoteSummaryRepository summaryRepository;
     private final ServiceInvoiceService serviceInvoiceService;
+    /**
+     * CP-RN-21: the verification times ({@code ultima_verificacao_em}, {@code issued_checked_at}) in America/Recife, like
+     * the queue's {@code last_attempt_at} - never the JVM's zone (UTC in the container). The ClockConfig bean replaces it.
+     */
+    private Clock clock = Clock.system(ClockConfig.RECIFE);
+
+    /** One SIEG side synced by the scheduler: the result and whether contar-xmls failed and the download went on (RN-07). */
+    public record SiegSideOutcome(XmlDownloadResultDTO result, boolean countFailed) {
+    }
 
     public FiscalXmlIntegrationService(SiegClient siegClient, FiscalXmlMetadataParser metadataParser,
                                        FiscalXmlFileStorage fileStorage, FiscalXmlPackageExtractor packageExtractor,
@@ -96,6 +107,13 @@ public class FiscalXmlIntegrationService {
         this.companyValidation = companyValidation;
         this.messageService = messageService;
         this.properties = properties;
+    }
+
+    @Autowired(required = false)
+    public void setClock(Clock clock) {
+        if (clock != null) {
+            this.clock = clock;
+        }
     }
 
     /**
@@ -139,10 +157,26 @@ public class FiscalXmlIntegrationService {
     }
 
     /**
+     * The scheduler's call (one side, {@code filter.side()} required): same as {@link #syncFromSieg(XmlDownloadFilterDTO,
+     * boolean)}, plus whether the count failed and the download went on anyway - the stage's warning
+     * {@code SIEG_COUNT_FAILED} on the capture panel (CP-RN-10).
+     */
+    @Transactional
+    public SiegSideOutcome syncSideFromSieg(XmlDownloadFilterDTO filter, boolean skipCountCheck) {
+        Company company = findCompanyWithCnpj(filter.companyId());
+        FiscalXmlSide side = filter.side() == null ? FiscalXmlSide.RECEIVED : filter.side();
+        return syncSideOutcome(company, filter, side, skipCountCheck);
+    }
+
+    private XmlDownloadResultDTO syncSide(Company company, XmlDownloadFilterDTO filter, FiscalXmlSide side, boolean skipCountCheck) {
+        return syncSideOutcome(company, filter, side, skipCountCheck).result();
+    }
+
+    /**
      * One side of the company: RECEIVED asks SIEG for notes where it's the recipient
      * ("CNPJdest"), ISSUED where it's the issuer ("CNPJemit").
      */
-    private XmlDownloadResultDTO syncSide(Company company, XmlDownloadFilterDTO filter, FiscalXmlSide side, boolean skipCountCheck) {
+    private SiegSideOutcome syncSideOutcome(Company company, XmlDownloadFilterDTO filter, FiscalXmlSide side, boolean skipCountCheck) {
         String cnpj = DocumentNumbers.onlyDigits(company.getDocument().getNumber());
         SiegBaixarXmlsRequest request = new SiegBaixarXmlsRequest(
                 filter.xmlType(),
@@ -165,7 +199,7 @@ public class FiscalXmlIntegrationService {
             // gone from SIEG, or counted but never downloadable): drop it, so the next tick counts
             // again instead of asking for this empty page forever.
             updateSyncControl(company, side, filter.dataEmissaoInicio(), filter.dataEmissaoFim(), null, xmlContents.isEmpty());
-            return result;
+            return new SiegSideOutcome(result, false);
         }
 
         int totalSieg = countPendingNfe(company, request, apiKey);
@@ -183,7 +217,7 @@ public class FiscalXmlIntegrationService {
             updateSyncControl(company, side, filter.dataEmissaoInicio(), filter.dataEmissaoFim(), totalSieg);
         }
 
-        return result;
+        return new SiegSideOutcome(result, totalSieg < 0);
     }
 
     private static XmlDownloadResultDTO merge(XmlDownloadResultDTO a, XmlDownloadResultDTO b) {
@@ -227,7 +261,7 @@ public class FiscalXmlIntegrationService {
                     FiscalXmlSyncControl created = new FiscalXmlSyncControl();
                     created.setCompany(company);
                     created.setDeleted(false);
-                    created.setUltimaVerificacaoEm(LocalDateTime.now());
+                    created.setUltimaVerificacaoEm(LocalDateTime.now(clock));
                     return created;
                 });
         LocalDateTime from = IssuePeriod.start(dataEmissaoInicio);
@@ -235,6 +269,7 @@ public class FiscalXmlIntegrationService {
 
         int imported = (int) xmlDocumentRepository.countByCompany_IdAndOwnIssueAndIssueDateBetween(
                 company.getId(), side.ownIssue(), from, to);
+        closePreviousMonth(control, dataEmissaoInicio);
         control.setDataEmissaoInicio(dataEmissaoInicio);
         control.setDataEmissaoFim(dataEmissaoFim);
         if (clearPending) {
@@ -245,15 +280,37 @@ public class FiscalXmlIntegrationService {
                 control.setIssuedTotalSieg(totalSieg);
             }
             control.setIssuedTotalImported(imported);
-            control.setIssuedCheckedAt(LocalDateTime.now());
+            control.setIssuedCheckedAt(LocalDateTime.now(clock));
         } else {
             if (totalSieg != null) {
                 control.setTotalSieg(totalSieg);
             }
             control.setTotalImportado(imported);
-            control.setUltimaVerificacaoEm(LocalDateTime.now());
+            control.setUltimaVerificacaoEm(LocalDateTime.now(clock));
         }
         syncControlRepository.save(control);
+    }
+
+    /**
+     * CP-RN-22: the window moves to a later month - each side's counters are still the old month's, so they are kept as
+     * "how that month closed" before being replaced. The window is shared by both sides: the first side to write the new
+     * month closes both. A side last checked before the old window (stale counters, or never checked) is not closed. A
+     * manual sync of an earlier month (window going back) closes nothing.
+     */
+    static void closePreviousMonth(FiscalXmlSyncControl control, LocalDate newWindowStart) {
+        LocalDate oldStart = control.getDataEmissaoInicio();
+        if (oldStart == null || newWindowStart == null || !YearMonth.from(newWindowStart).isAfter(YearMonth.from(oldStart))) {
+            return;
+        }
+        String month = YearMonth.from(oldStart).toString();
+        // one day of margin: the window's day comes from the JVM's zone, the verification time from Recife's
+        LocalDate checkedFrom = oldStart.minusDays(1);
+        if (control.getUltimaVerificacaoEm() != null && !control.getUltimaVerificacaoEm().toLocalDate().isBefore(checkedFrom)) {
+            control.closeReceivedMonth(month, control.getTotalSieg(), control.getTotalImportado());
+        }
+        if (control.getIssuedCheckedAt() != null && !control.getIssuedCheckedAt().toLocalDate().isBefore(checkedFrom)) {
+            control.closeIssuedMonth(month, control.getIssuedTotalSieg(), control.getIssuedTotalImported());
+        }
     }
 
     /**
