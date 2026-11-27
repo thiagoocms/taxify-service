@@ -25,7 +25,7 @@ import java.util.Set;
  *   other id (FD-RN-20);</li>
  *   <li><b>goods</b> (NF-e, NFC-e, CT-e) by company × month of {@code issue_date} (no date = its own bucket) × type ×
  *   direction: count, canceled, deleted, total, ICMS, ICMS-ST, IPI, PIS, COFINS, the five withholdings, IBS and CBS
- *   (the goods totals don't exist for the CT-e, which is copied with the common block only, FD-RN-15);</li>
+ *   (ICMS-ST, IPI, PIS and COFINS don't exist for the CT-e, copied with the common block plus the ICMS, FD-RN-15);</li>
  *   <li><b>NFS-e</b> by company × month × direction: count, canceled, deleted, service, ISS, withheld ISS, IRRF, PIS,
  *   COFINS, CSLL, INSS, net, ISS base, deductions and the two withheld flags;</li>
  *   <li><b>items</b> by company × month × trimmed CFOP: count, total, ICMS, ICMS-ST, IPI, PIS, COFINS, IBS, CBS;</li>

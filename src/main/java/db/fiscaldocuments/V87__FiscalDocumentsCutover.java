@@ -251,10 +251,11 @@ public class V87__FiscalDocumentsCutover extends BaseJavaMigration {
     // ------------------------------------------------------------------ 5. capture counts
 
     /**
-     * Per control row and side (3.11): the current month (window start), the previous month of V79 (closed) and the
-     * month of the V85 known gap when it is neither (closed, unless it is the current month). The first row written
-     * for a (side, month) wins - a previous month equal to the current one (window moved back by a manual sync) keeps
-     * the current counters.
+     * Per control row and side (3.11), the rules of {@code LegacyFiscalDocumentTranslator.fromSyncControl}: the current
+     * month (window start; the issued side only when it was ever checked, with the received side's window), the previous
+     * month of V79 (closed; not copied when it is the current month) and, for each of the two V85 gap slots
+     * ({@code known_gap}, {@code earlier_gap}), the gap on its month's row - or a row of its own, closed unless it is the
+     * current month. {@code stored_any_source_total} goes on the current month. Absent V85 columns read as NULL.
      */
     private void copyCaptureCounts(CutoverDatabase db) {
         if (!SyncControlCounters.present(db)) {
