@@ -119,6 +119,42 @@ public class ServiceInvoiceService {
         return result;
     }
 
+    /**
+     * A1 in shadow (decision of 2026-11-27): [from, to] is downloaded exactly as without the gate, and the current month
+     * ([first day of {@code to}'s month, to]) is checked with the counts this attempt already has - free, no request of its
+     * own: one log line per company with ids and counts, saying what the gate would have done. A line "would have MISSED"
+     * means the gate would have skipped a month that brought new notes - the gate is not safe to turn on.
+     */
+    @Transactional
+    public SyncResult syncWithShadowGate(UUID companyId, LocalDate from, LocalDate to, Integer issuerCount, Integer recipientCount) {
+        LocalDate monthStart = to.withDayOfMonth(1);
+        boolean counted = issuerCount != null && recipientCount != null;
+        long before = counted ? siegDelivered(companyId, monthStart, to) : 0;
+        SyncResult result = syncFromSieg(companyId, from, to);
+        if (!counted) {
+            log.info("NFS-e shadow gate company {} ({} to {}): no count from this attempt - not evaluated", companyId, monthStart, to);
+            return result;
+        }
+        long after = siegDelivered(companyId, monthStart, to);
+        int siegTotal = issuerCount + recipientCount;
+        boolean wouldSkip = before >= siegTotal;
+        if (wouldSkip && after > before) {
+            log.warn("NFS-e shadow gate company {} ({} to {}): SIEG counts {} (issuer {} + recipient {}), {} delivered before, {} new"
+                    + " in the month - the gate would have MISSED them", companyId, monthStart, to, siegTotal, issuerCount,
+                    recipientCount, before, after - before);
+        } else {
+            log.info("NFS-e shadow gate company {} ({} to {}): SIEG counts {} (issuer {} + recipient {}), {} delivered before, {} new"
+                    + " in the month - the gate would have {}", companyId, monthStart, to, siegTotal, issuerCount, recipientCount,
+                    before, after - before, wouldSkip ? "skipped the month" : "downloaded the month");
+        }
+        return result;
+    }
+
+    private long siegDelivered(UUID companyId, LocalDate from, LocalDate to) {
+        return repository.countByCompany_IdAndIssueDateBetweenAndFoundInSiegAtIsNotNull(companyId, IssuePeriod.start(from),
+                IssuePeriod.end(to));
+    }
+
     /** SIEG's NFS-e count for one filter of the window; null = the count failed. */
     private Integer countNfse(Company company, String apiKey, String cnpjEmit, String cnpjDest, LocalDate from, LocalDate to) {
         try {

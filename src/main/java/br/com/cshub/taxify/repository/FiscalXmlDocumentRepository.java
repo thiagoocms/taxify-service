@@ -34,6 +34,10 @@ public interface FiscalXmlDocumentRepository extends AbstractJpaRepository<Fisca
 
     List<FiscalXmlDocument> findByIssueDateBeforeAndDeletedIsFalse(LocalDateTime cutoff);
 
+    /** What a sync side holds in a window from any source - shown on the capture panel next to SIEG's numbers. */
+    long countByCompany_IdAndOwnIssueAndIssueDateBetween(UUID companyId, Boolean ownIssue,
+                                                         LocalDateTime issueDateFrom, LocalDateTime issueDateTo);
+
     /**
      * What SIEG itself delivered of a sync side in a window ({@code found_in_sieg_at}): SIEG's skip and the side's
      * "importado" (B1). Index idx_fxd_company_issue (company_id, issue_date).

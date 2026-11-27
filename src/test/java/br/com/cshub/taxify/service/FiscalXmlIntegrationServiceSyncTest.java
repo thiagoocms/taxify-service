@@ -207,10 +207,35 @@ class FiscalXmlIntegrationServiceSyncTest {
         verify(siegClient).baixarXmls(any(), any());
     }
 
+    /**
+     * B1 replaces RN-08's "total = imported": SIEG said 200, the pass from the first page ended with 120 delivered - SIEG's
+     * total stays 200 and the 80 are kept as the month's known difference (the scheduler counts the side as up to date).
+     */
     @Test
-    void emptyPageWhenSkippingTheCountClearsThePendingSoTheNextTickCountsAgain() {
-        // SIEG said 200, 120 imported, but the page after the 120 is empty (its 404
-        // "Nenhum arquivo XML localizado"): without clearing, every tick would ask for it again.
+    void aCompletePassThatEndsShortKeepsTheDifferenceNotATotalOfItsOwn() {
+        FiscalXmlSyncControl existing = new FiscalXmlSyncControl();
+        existing.setId(UUID.randomUUID());
+        existing.setTotalSieg(200);
+        when(syncControlRepository.findByCompany_Id(companyId)).thenReturn(Optional.of(existing));
+        when(siegClient.baixarXmls(any(), any())).thenReturn(List.of());
+        when(xmlDocumentRepository.countByCompany_IdAndOwnIssueAndIssueDateBetweenAndFoundInSiegAtIsNotNull(eq(companyId), eq(false), any(), any())).thenReturn(120L);
+        when(xmlDocumentRepository.countByCompany_IdAndOwnIssueAndIssueDateBetween(eq(companyId), eq(false), any(), any())).thenReturn(130L);
+
+        service.syncFromSieg(filter(LocalDate.of(2026, 11, 1), LocalDate.of(2026, 11, 27)), true);
+
+        ArgumentCaptor<FiscalXmlSyncControl> captor = ArgumentCaptor.forClass(FiscalXmlSyncControl.class);
+        verify(syncControlRepository).save(captor.capture());
+        FiscalXmlSyncControl control = captor.getValue();
+        assertThat(control.getTotalSieg()).isEqualTo(200);
+        assertThat(control.getTotalImportado()).isEqualTo(120);
+        assertThat(control.knownGap(false, "2026-11")).isEqualTo(80);
+        assertThat(control.getReceivedStoredAnySource()).as("the panel's 'no Taxify (qualquer origem)'").isEqualTo(130);
+        assertThat(control.getUltimaVerificacaoEm()).isNotNull();
+    }
+
+    /** B1: the paging ended short after skip 120 - a reconciliation is asked for, to run outside this transaction. */
+    @Test
+    void aShortEndAfterTheFirstPageAsksForAReconciliation() {
         FiscalXmlSyncControl existing = new FiscalXmlSyncControl();
         existing.setId(UUID.randomUUID());
         existing.setTotalSieg(200);
@@ -218,14 +243,44 @@ class FiscalXmlIntegrationServiceSyncTest {
         when(siegClient.baixarXmls(any(), any())).thenReturn(List.of());
         when(xmlDocumentRepository.countByCompany_IdAndOwnIssueAndIssueDateBetweenAndFoundInSiegAtIsNotNull(eq(companyId), eq(false), any(), any())).thenReturn(120L);
 
-        service.syncFromSieg(filter(), true);
+        FiscalXmlIntegrationService.SiegSideOutcome outcome = service.syncSideFromSieg(
+                filter(LocalDate.of(2026, 11, 1), LocalDate.of(2026, 11, 27)), true);
 
-        ArgumentCaptor<FiscalXmlSyncControl> captor = ArgumentCaptor.forClass(FiscalXmlSyncControl.class);
-        verify(syncControlRepository).save(captor.capture());
-        FiscalXmlSyncControl control = captor.getValue();
-        assertThat(control.getTotalSieg()).isEqualTo(120);
-        assertThat(control.getTotalImportado()).isEqualTo(120);
-        assertThat(control.getUltimaVerificacaoEm()).isNotNull();
+        assertThat(outcome.reconciliation()).isEqualTo(new FiscalXmlIntegrationService.ReconciliationNeed(companyId,
+                FiscalXmlSide.RECEIVED, LocalDate.of(2026, 11, 1), LocalDate.of(2026, 11, 27), 200, 120));
+        assertThat(outcome.reconciliation().pages()).isEqualTo(4);
+        verify(siegClient).baixarXmls(any(), any()); // only the regular page here
+    }
+
+    /** B1: the same difference the month's last complete pass left (80) - no reconciliation again. */
+    @Test
+    void theSameDifferenceAsTheLastPassIsNotReconciledAgain() {
+        FiscalXmlSyncControl existing = new FiscalXmlSyncControl();
+        existing.setId(UUID.randomUUID());
+        existing.setTotalSieg(200);
+        existing.recordKnownGap(false, "2026-11", 80);
+        when(syncControlRepository.findByCompany_Id(companyId)).thenReturn(Optional.of(existing));
+        when(siegClient.baixarXmls(any(), any())).thenReturn(List.of());
+        when(xmlDocumentRepository.countByCompany_IdAndOwnIssueAndIssueDateBetweenAndFoundInSiegAtIsNotNull(eq(companyId), eq(false), any(), any())).thenReturn(120L);
+
+        FiscalXmlIntegrationService.SiegSideOutcome outcome = service.syncSideFromSieg(
+                filter(LocalDate.of(2026, 11, 1), LocalDate.of(2026, 11, 27)), true);
+
+        assertThat(outcome.reconciliation()).isNull();
+    }
+
+    /** The count never inherits the page's skip: always the whole window from 0. */
+    @Test
+    void theCountIsAlwaysFromSkipZero() {
+        when(xmlDocumentRepository.countByCompany_IdAndOwnIssueAndIssueDateBetweenAndFoundInSiegAtIsNotNull(eq(companyId), eq(false), any(), any())).thenReturn(20L);
+        when(siegClient.contarXmls(any(SiegBaixarXmlsRequest.class), any())).thenReturn(new SiegDocumentCounts(20, 0));
+
+        service.syncSideFromSieg(filter(LocalDate.of(2026, 11, 1), LocalDate.of(2026, 11, 27)), false);
+
+        ArgumentCaptor<SiegBaixarXmlsRequest> count = ArgumentCaptor.forClass(SiegBaixarXmlsRequest.class);
+        verify(siegClient).contarXmls(count.capture(), any());
+        assertThat(count.getValue().skip()).isZero();
+        verify(siegClient, never()).baixarXmls(any(), any()); // 20 counted, 20 delivered
     }
 
     @Test
@@ -242,12 +297,12 @@ class FiscalXmlIntegrationServiceSyncTest {
         assertThat(captor.getValue().getId()).isEqualTo(existing.getId());
     }
 
-    /** A2: no note of the side issued in the sweep's window - SIEG is not asked (a local query only). */
+    /** A2: no note of the side issued in the sweep window (one day earlier locally: SIEG days are UTC) - SIEG is not asked. */
     @Test
     void theEventSweepOfASideWithoutRecentNotesCostsNoRequest() {
         LocalDate from = LocalDate.of(2026, 11, 25);
         LocalDate to = LocalDate.of(2026, 11, 27);
-        when(xmlDocumentRepository.existsByCompany_IdAndOwnIssueAndIssueDateBetween(companyId, true, from.atStartOfDay(),
+        when(xmlDocumentRepository.existsByCompany_IdAndOwnIssueAndIssueDateBetween(companyId, true, from.minusDays(1).atStartOfDay(),
                 to.atTime(java.time.LocalTime.MAX))).thenReturn(false);
 
         assertThat(service.refreshRecentEvents(companyId, FiscalXmlSide.ISSUED, from, to)).isZero();

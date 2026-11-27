@@ -93,11 +93,10 @@ fiscal-xml:
     storage-path: ${FISCAL_XML_STORAGE_PATH}
     # Economia de chamadas ao SIEG (limite de 2 req/min para a conta inteira).
     # Lado com total 0 verificado hoje fica "em dia" por N horas antes de recontar (0 = reconta a cada tentativa).
-    zero-total-recount-hours: ${TAXIFY_SIEG_ZERO_TOTAL_RECOUNT_HOURS:12}
-    # NFS-e: baixa o mês só quando a contagem do SIEG passa do que o SIEG já entregou (false = 35 dias todo dia).
-    service-invoice-count-gate: ${TAXIFY_SIEG_NFSE_COUNT_GATE:true}
-    # Até este dia do mês, confere também as NFS-e do mês anterior.
-    service-invoice-previous-month-days: ${TAXIFY_SIEG_NFSE_PREVIOUS_MONTH_DAYS:5}
+    zero-total-recount-hours: ${TAXIFY_SIEG_ZERO_TOTAL_RECOUNT_HOURS:6}
+    # NFS-e pela contagem do SIEG: off (35 dias todo dia), shadow (baixa como off e só loga o que pularia) ou on
+    # (baixa o mês só quando a contagem passa do que o SIEG já entregou).
+    service-invoice-count-gate: ${TAXIFY_SIEG_NFSE_COUNT_GATE:shadow}
   # Where the XML files go: local (the volume at storage-path) or s3. With s3, files already on
   # disk keep being read from there; migrate-local=true copies them to the bucket in background.
   # AWS credentials: EC2 instance role (recommended) or AWS_ACCESS_KEY_ID/AWS_SECRET_ACCESS_KEY.

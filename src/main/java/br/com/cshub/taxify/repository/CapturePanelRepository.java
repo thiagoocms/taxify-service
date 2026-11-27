@@ -36,7 +36,8 @@ public class CapturePanelRepository {
                              String receivedPrevMonth, Integer receivedPrevTotalSieg, Integer receivedPrevImported,
                              String issuedPrevMonth, Integer issuedPrevTotalSieg, Integer issuedPrevImported,
                              boolean sefazRow, LocalDateTime sefazLastRunAt, String sefazLastStatus, LocalDateTime sefazNextQueryAt,
-                             boolean adnRow, LocalDateTime adnLastRunAt, String adnLastStatus, LocalDateTime adnNextQueryAt) {
+                             boolean adnRow, LocalDateTime adnLastRunAt, String adnLastStatus, LocalDateTime adnNextQueryAt,
+                             Integer receivedStoredAnySource, Integer issuedStoredAnySource) {
     }
 
     /** Uma linha da fila SIEG da plataforma (passo 3): o que a ordem do agendador usa. */
@@ -73,6 +74,7 @@ public class CapturePanelRepository {
             + " x.received_events_checked_on, x.issued_events_checked_on, x.service_invoices_checked_on,"
             + " x.received_prev_month, x.received_prev_total_sieg, x.received_prev_imported,"
             + " x.issued_prev_month, x.issued_prev_total_sieg, x.issued_prev_imported,"
+            + " x.received_stored_any_source, x.issued_stored_any_source,"
             + " sd.id AS sd_id, sd.last_run_at AS sd_last_run_at, sd.last_status AS sd_last_status, sd.next_query_at AS sd_next_query_at,"
             + " na.id AS na_id, na.last_run_at AS na_last_run_at, na.last_status AS na_last_status, na.next_query_at AS na_next_query_at"
             + " FROM companies c"
@@ -113,7 +115,8 @@ public class CapturePanelRepository {
                 rs.getString("received_prev_month"), integer(rs, "received_prev_total_sieg"), integer(rs, "received_prev_imported"),
                 rs.getString("issued_prev_month"), integer(rs, "issued_prev_total_sieg"), integer(rs, "issued_prev_imported"),
                 rs.getString("sd_id") != null, time(rs, "sd_last_run_at"), rs.getString("sd_last_status"), time(rs, "sd_next_query_at"),
-                rs.getString("na_id") != null, time(rs, "na_last_run_at"), rs.getString("na_last_status"), time(rs, "na_next_query_at")));
+                rs.getString("na_id") != null, time(rs, "na_last_run_at"), rs.getString("na_last_status"), time(rs, "na_next_query_at"),
+                integer(rs, "received_stored_any_source"), integer(rs, "issued_stored_any_source")));
     }
 
     /**

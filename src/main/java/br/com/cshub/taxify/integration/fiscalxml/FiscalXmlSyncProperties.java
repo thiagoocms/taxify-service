@@ -3,6 +3,8 @@ package br.com.cshub.taxify.integration.fiscalxml;
 import org.springframework.boot.context.properties.ConfigurationProperties;
 import org.springframework.stereotype.Component;
 
+import br.com.cshub.taxify.enumerated.ServiceInvoiceCountGate;
+
 import java.time.LocalDate;
 
 /**
@@ -33,17 +35,12 @@ public class FiscalXmlSyncProperties {
     private String storagePath = "./data/fiscal-xml";
     /**
      * TAXIFY_SIEG_ZERO_TOTAL_RECOUNT_HOURS - a side checked today whose provider total is 0 counts as up to date for this
-     * many hours, then it is counted again (A3). 0 = counted on every attempt (the old behavior).
+     * many hours, then it is counted again (A3; 6 h, decision of 2026-11-27). 0 = counted on every attempt (the old
+     * behavior).
      */
-    private int zeroTotalRecountHours = 12;
-    /**
-     * TAXIFY_SIEG_NFSE_COUNT_GATE - the daily NFS-e check downloads a month only when the provider's count is above what it
-     * already delivered (A1), the current month always and the previous one in the first days; false = the old daily
-     * download of the last 35 days.
-     */
-    private boolean serviceInvoiceCountGate = true;
-    /** TAXIFY_SIEG_NFSE_PREVIOUS_MONTH_DAYS - up to this day of the month, the previous month's NFS-e are checked too. */
-    private int serviceInvoicePreviousMonthDays = 5;
+    private int zeroTotalRecountHours = 6;
+    /** TAXIFY_SIEG_NFSE_COUNT_GATE - off, shadow (default) or on: see {@link ServiceInvoiceCountGate}. */
+    private ServiceInvoiceCountGate serviceInvoiceCountGate = ServiceInvoiceCountGate.SHADOW;
 
     public int getZeroTotalRecountHours() {
         return zeroTotalRecountHours;
@@ -53,22 +50,13 @@ public class FiscalXmlSyncProperties {
         this.zeroTotalRecountHours = zeroTotalRecountHours;
     }
 
-    public boolean isServiceInvoiceCountGate() {
+    public ServiceInvoiceCountGate getServiceInvoiceCountGate() {
         return serviceInvoiceCountGate;
     }
 
-    public void setServiceInvoiceCountGate(boolean serviceInvoiceCountGate) {
+    public void setServiceInvoiceCountGate(ServiceInvoiceCountGate serviceInvoiceCountGate) {
         this.serviceInvoiceCountGate = serviceInvoiceCountGate;
     }
-
-    public int getServiceInvoicePreviousMonthDays() {
-        return serviceInvoicePreviousMonthDays;
-    }
-
-    public void setServiceInvoicePreviousMonthDays(int serviceInvoicePreviousMonthDays) {
-        this.serviceInvoicePreviousMonthDays = serviceInvoicePreviousMonthDays;
-    }
-
 
     public boolean isEnabled() {
         return enabled;

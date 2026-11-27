@@ -4,6 +4,7 @@ import br.com.cshub.taxify.domain.accountingfirm.AccountingFirm;
 import br.com.cshub.taxify.domain.billing.FirmIntegration;
 import br.com.cshub.taxify.domain.xml.FiscalXmlSyncControl;
 import br.com.cshub.taxify.enumerated.IntegrationType;
+import br.com.cshub.taxify.enumerated.ServiceInvoiceCountGate;
 import br.com.cshub.taxify.integration.fiscalxml.FiscalXmlProvider;
 import br.com.cshub.taxify.integration.fiscalxml.FiscalXmlSide;
 import br.com.cshub.taxify.integration.fiscalxml.FiscalXmlSyncProperties;
@@ -119,8 +120,11 @@ class SiegCallSavingsIntegrationTest {
     private String cnpj;
     /** SIEG's own order of the month's received notes (the company as CnpjDest). */
     private final List<byte[]> siegNotes = Collections.synchronizedList(new ArrayList<>());
-    /** SIEG's NFS-e with the company as CnpjDest. */
-    private final List<byte[]> siegServiceInvoices = Collections.synchronizedList(new ArrayList<>());
+    /** SIEG's NFS-e with the company as CnpjDest, with their issue day (SIEG filters them by the request's UTC days). */
+    private final List<ServiceInvoiceEntry> siegServiceInvoices = Collections.synchronizedList(new ArrayList<>());
+
+    private record ServiceInvoiceEntry(LocalDate issued, byte[] xml) {
+    }
     /** Notes SIEG counts on the received side but never delivers. */
     private int undeliverable;
     /** The received side's NF-e download pages (TipoXml 1, CnpjDest). */
@@ -143,7 +147,7 @@ class SiegCallSavingsIntegrationTest {
             }
             calls.add("count");
             return cnpj.equals(request.cnpjDest())
-                    ? new SiegDocumentCounts(siegNotes.size() + undeliverable, siegServiceInvoices.size())
+                    ? new SiegDocumentCounts(siegNotes.size() + undeliverable, serviceInvoicesOf(request).size())
                     : new SiegDocumentCounts(0, 0);
         });
         when(siegClient.baixarXmls(any(), anyString())).thenAnswer(inv -> {
@@ -159,13 +163,22 @@ class SiegCallSavingsIntegrationTest {
             if (!nfse) {
                 downloads.add(request);
             }
-            List<byte[]> source = nfse ? siegServiceInvoices : siegNotes;
-            synchronized (source) {
+            List<byte[]> source = nfse ? serviceInvoicesOf(request) : siegNotes;
+            synchronized (siegNotes) {
                 int from = Math.min(request.skip(), source.size());
                 int to = Math.min(from + request.take(), source.size());
                 return new ArrayList<>(source.subList(from, to));
             }
         });
+    }
+
+    private List<byte[]> serviceInvoicesOf(SiegBaixarXmlsRequest request) {
+        LocalDate from = request.dataEmissaoInicio().atZone(java.time.ZoneOffset.UTC).toLocalDate();
+        LocalDate to = request.dataEmissaoFim().atZone(java.time.ZoneOffset.UTC).toLocalDate();
+        synchronized (siegServiceInvoices) {
+            return siegServiceInvoices.stream().filter(entry -> !entry.issued().isBefore(from) && !entry.issued().isAfter(to))
+                    .map(ServiceInvoiceEntry::xml).toList();
+        }
     }
 
     private boolean mine(SiegBaixarXmlsRequest request) {
@@ -229,22 +242,86 @@ class SiegCallSavingsIntegrationTest {
         assertThat(control.getTotalSieg()).isEqualTo(65);
     }
 
-    /** SIEG counts notes it never delivers: after the reconciliation the pending is cleared (RN-08) - no endless loop. */
+    /**
+     * SIEG counts 3 notes it never delivers: one reconciliation finds nothing more and leaves the difference (3) for the
+     * month; SIEG's total stays 63. The next attempts of the day and of the next day do not re-read the month: only a
+     * bigger difference would.
+     */
     @Test
-    void notesSiegCountsButNeverDeliversStopBeingAskedAfterOneReconciliation() {
+    void notesSiegCountsButNeverDeliversAreReadOnceNotEveryDay() {
         siegMonth(60);
         undeliverable = 3;
         attempt();
         attempt();
-        int calls = downloads.size();
+        // skip 0 (full page), then skip 50 (10 notes, the end, 60 of 63) + the reconciliation: pages 0 and 50
+        assertThat(downloads).extracting(SiegBaixarXmlsRequest::skip).containsExactly(0, 50, 0, 50);
         assertThat(stored()).isEqualTo(60);
-        FiscalXmlSyncControl control = controlRepository.findByCompany_Id(UUID.fromString(companyId)).orElseThrow();
-        assertThat(control.getTotalSieg()).as("cleared to what was imported").isEqualTo(60);
+        Map<String, Object> row = control();
+        assertThat(row.get("total_sieg")).as("SIEG's own total, not cleared").isEqualTo(63);
+        assertThat(row.get("total_importado")).isEqualTo(60);
+        assertThat(row.get("received_known_gap")).isEqualTo(3);
+        assertThat(row.get("received_known_gap_month").toString().strip()).isEqualTo("2026-12");
 
         downloads.clear();
         attempt();
-        assertThat(downloads).as("an up to date side is no longer paged").isEmpty();
-        assertThat(calls).isLessThanOrEqualTo(4);
+        assertThat(downloads).as("the same day: up to date with the known difference").isEmpty();
+
+        clock.set(LocalDateTime.of(2026, 12, 21, 10, 0));
+        attempt(true);
+        assertThat(downloads).as("the next day: counted (63), nothing beyond the known difference - no page").isEmpty();
+        attempt(true);
+        assertThat(downloads).isEmpty();
+
+        // one more note that SIEG does deliver: the difference does not grow, only the page after the 60 is asked
+        siegNotes.add(nfe(key(), SUPPLIER, cnpj, "2026-12-20T09:00:00-03:00"));
+        attempt(true);
+        assertThat(downloads).extracting(SiegBaixarXmlsRequest::skip).containsExactly(60);
+        assertThat(stored()).isEqualTo(61);
+    }
+
+    /** The reconciliation runs page by page in its own transactions: a failure keeps what came and records nothing. */
+    @Test
+    void aReconciliationThatFailsKeepsWhatCameAndIsAskedAgain() {
+        siegMonth(60);
+        attempt();
+        attempt();
+        List<String> late = new ArrayList<>();
+        for (int i = 0; i < 3; i++) {
+            String key = key();
+            late.add(key);
+            siegNotes.add(10 + i, nfe(key, SUPPLIER, cnpj, "2026-12-03T09:00:00-03:00"));
+        }
+        for (int i = 0; i < 3; i++) {
+            siegNotes.add(55 + i, nfe(key(), SUPPLIER, cnpj, "2026-12-04T09:00:00-03:00"));
+        }
+        // the reconciliation's second page fails
+        java.util.concurrent.atomic.AtomicInteger reconcilePages = new java.util.concurrent.atomic.AtomicInteger();
+        org.mockito.Mockito.doAnswer(inv -> {
+            SiegBaixarXmlsRequest request = inv.getArgument(0);
+            downloads.add(request);
+            if (br.com.cshub.taxify.integration.fiscalxml.ProviderCallContext.current()
+                    == br.com.cshub.taxify.integration.fiscalxml.ProviderCallPurpose.RECONCILE && reconcilePages.incrementAndGet() == 2) {
+                throw new br.com.cshub.taxify.exception.SiegIntegrationException("error.sieg.integration.failed", "x", 503);
+            }
+            synchronized (siegNotes) {
+                int from = Math.min(request.skip(), siegNotes.size());
+                int to = Math.min(from + request.take(), siegNotes.size());
+                return new ArrayList<>(siegNotes.subList(from, to));
+            }
+        }).when(siegClient).baixarXmls(any(), anyString());
+        downloads.clear();
+        attempt(true); // counts 66, page at 60 (6 known/new), the end with 63 of 66: reconcile 0 (ok), 50 (fails)
+
+        assertThat(missing(late)).as("the first page's notes were kept").isEmpty();
+        Map<String, Object> row = control();
+        assertThat(row.get("received_known_gap")).as("an interrupted pass records nothing").isNull();
+        assertThat(reconcilePages.get()).isEqualTo(2);
+
+        // the next attempt (the pending still known) asks for the reconciliation again and completes it
+        downloads.clear();
+        attempt();
+        assertThat(stored()).isEqualTo(66);
+        assertThat(control().get("received_known_gap")).isEqualTo(0);
     }
 
     /**
@@ -254,7 +331,7 @@ class SiegCallSavingsIntegrationTest {
      */
     @Test
     void aQuietCompanyCostsTwoCountsADayAndOnlyWhatIsNewOnTopOfThat() {
-        FiscalXmlSyncScheduler scheduler = scheduler();
+        FiscalXmlSyncScheduler scheduler = scheduler(ServiceInvoiceCountGate.ON);
 
         clock.set(LocalDateTime.of(2026, 12, 19, 10, 0)); // first day: the row is created, the NFS-e go 3 months back
         scheduler.syncAllCompanies();
@@ -262,7 +339,9 @@ class SiegCallSavingsIntegrationTest {
 
         clock.set(LocalDateTime.of(2026, 12, 20, 10, 0));
         scheduler.syncAllCompanies();
-        assertThat(calls).as("the next day, nothing new: the two counts only").containsExactly("count", "count");
+        // nothing new: the two NF-e counts (which also bring December's NFS-e count) and the NFS-e count of the
+        // 15th to the 30th of November (today - 35 falls in it), as issuer and as taker
+        assertThat(calls).as("the next day, nothing new: counts only").containsExactly("count", "count", "count", "count");
         Map<String, Object> row = control();
         assertThat(row.get("received_events_checked_on").toString()).as("swept without a call").isEqualTo("2026-12-20");
         assertThat(row.get("issued_events_checked_on").toString()).isEqualTo("2026-12-20");
@@ -275,14 +354,15 @@ class SiegCallSavingsIntegrationTest {
 
         // the next day SIEG has one supplier note (issued yesterday) and two NFS-e taken by the company
         siegNotes.add(nfe(key(), SUPPLIER, cnpj, "2026-12-20T15:00:00-03:00"));
-        siegServiceInvoices.add(serviceInvoice(cnpj, "2026-12-18T10:00:00-03:00"));
-        siegServiceInvoices.add(serviceInvoice(cnpj, "2026-12-19T10:00:00-03:00"));
+        siegServiceInvoices.add(new ServiceInvoiceEntry(LocalDate.of(2026, 12, 18), serviceInvoice(cnpj, "2026-12-18T10:00:00-03:00")));
+        siegServiceInvoices.add(new ServiceInvoiceEntry(LocalDate.of(2026, 12, 19), serviceInvoice(cnpj, "2026-12-19T10:00:00-03:00")));
         calls.clear();
         clock.set(LocalDateTime.of(2026, 12, 21, 10, 0));
         scheduler.syncAllCompanies();
 
-        // counts (received, issued), the received page, the received event sweep, the NFS-e window as issuer and as taker
-        assertThat(calls).containsExactly("count", "nfe", "nfe", "count", "nfse", "nfse");
+        // counts (received, issued), the received page, the received event sweep, November's NFS-e counts, and
+        // December's NFS-e window (its count came with the NF-e ones) as issuer and as taker
+        assertThat(calls).containsExactly("count", "nfe", "nfe", "count", "count", "count", "nfse", "nfse");
         assertThat(stored()).isOne();
         assertThat(jdbc.queryForObject("SELECT COUNT(*) FROM service_invoices WHERE company_id = ? AND found_in_sieg_at IS NOT NULL",
                 Integer.class, companyId)).isEqualTo(2);
@@ -295,14 +375,31 @@ class SiegCallSavingsIntegrationTest {
         clock.set(LocalDateTime.of(2026, 12, 22, 10, 0));
         scheduler.syncAllCompanies();
         // the received side's count matches what SIEG delivered: no page; the note of the 20th is still in the sweep's
-        // window (20 to 22): one event page; the NFS-e are all there: no download
-        assertThat(calls).containsExactly("count", "nfe", "count");
+        // window (20 to 22): one event page; November counted again; December's NFS-e are all there: no download
+        assertThat(calls).containsExactly("count", "nfe", "count", "count", "count");
         assertThat(downloads.getLast().dataEmissaoInicio()).as("the event sweep: today - 2")
                 .isEqualTo(java.time.Instant.parse("2026-12-20T00:00:00Z"));
     }
 
-    private FiscalXmlSyncScheduler scheduler() {
+    /** The default (shadow): the NFS-e are downloaded as before - 35 days, 2 windows x 2 filters - and nothing is counted for them. */
+    @Test
+    void theShadowGateDownloadsTheNfseAsBefore() {
+        FiscalXmlSyncScheduler scheduler = scheduler(ServiceInvoiceCountGate.SHADOW);
+        clock.set(LocalDateTime.of(2026, 12, 19, 10, 0));
+        scheduler.syncAllCompanies();
+        siegServiceInvoices.add(new ServiceInvoiceEntry(LocalDate.of(2026, 12, 19), serviceInvoice(cnpj, "2026-12-19T10:00:00-03:00")));
+        calls.clear();
+
+        clock.set(LocalDateTime.of(2026, 12, 20, 10, 0));
+        scheduler.syncAllCompanies();
+
+        assertThat(calls).containsExactly("count", "count", "nfse", "nfse", "nfse", "nfse");
+        assertThat(jdbc.queryForObject("SELECT COUNT(*) FROM service_invoices WHERE company_id = ?", Integer.class, companyId)).isOne();
+    }
+
+    private FiscalXmlSyncScheduler scheduler(ServiceInvoiceCountGate gate) {
         FiscalXmlSyncProperties properties = new FiscalXmlSyncProperties();
+        properties.setServiceInvoiceCountGate(gate);
         properties.setEnabled(true);
         properties.setBatchSize(1000); // whatever else the local database holds; the SIEG mock only answers for this company
         return new FiscalXmlSyncScheduler(companyRepository, controlRepository, subscriptionRepository, providers, properties,
@@ -349,8 +446,9 @@ class SiegCallSavingsIntegrationTest {
         boolean sameMonth = control != null && control.getDataEmissaoInicio() != null
                 && YearMonth.from(control.getUltimaVerificacaoEm()).equals(YearMonth.from(today));
         int imported = sameMonth ? control.getTotalImportado() : 0;
-        boolean knownPending = !nextDay && sameMonth && control.getTotalSieg() > 0 && imported < control.getTotalSieg();
-        if (!nextDay && sameMonth && control.getTotalSieg() > 0 && imported >= control.getTotalSieg()) {
+        int gap = control == null ? 0 : control.knownGap(false, YearMonth.from(today).toString());
+        boolean knownPending = !nextDay && sameMonth && control.getTotalSieg() > 0 && imported + gap < control.getTotalSieg();
+        if (!nextDay && sameMonth && control.getTotalSieg() > 0 && imported + gap >= control.getTotalSieg()) {
             return; // up to date today (FiscalXmlSyncScheduler.SideState#isUpToDate)
         }
         providers.get("sieg").sync(new FiscalXmlSyncRequest(UUID.fromString(companyId), today.withDayOfMonth(1), today, imported,

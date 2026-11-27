@@ -47,6 +47,18 @@ public interface FiscalXmlProvider {
         return syncServiceInvoices(companyId, from, to);
     }
 
+    /**
+     * The count gate in shadow (A1): the service invoices of [from, to] are downloaded as without the gate, and the
+     * current month's counts already known from this attempt are compared with what the provider had delivered - only
+     * logged. Providers without a count just download.
+     *
+     * @return new notes stored
+     */
+    default int syncServiceInvoicesShadow(UUID companyId, LocalDate from, LocalDate to, Integer issuerCount,
+                                          Integer recipientCount) {
+        return syncServiceInvoices(companyId, from, to);
+    }
+
     /** One page of a past period's notes, outside the regular bookkeeping. {@code lastPage}: nothing more to ask. */
     record RecoveryPage(int notes, int persistedNew, boolean lastPage) {
     }

@@ -259,17 +259,17 @@ class FiscalXmlSyncSchedulerTest {
         verify(provider).syncServiceInvoices(companyA.getId(), LocalDate.of(2026, 5, 1), today);
         verify(syncControlRepository).markServiceInvoicesChecked(never.getId(), today);
 
-        // A1: afterwards only the current month, and only when the provider's count shows something missing
+        // afterwards the last 35 days (A1 in shadow by default: downloaded as before, the count only logged)
         FiscalXmlSyncControl checkedYesterday = controlFor(companyA, 0);
         checkedYesterday.setServiceInvoicesCheckedOn(today.minusDays(1));
         scheduler.syncServiceInvoicesOncePerDay(provider, checkedYesterday, today);
-        verify(provider).syncServiceInvoicesIfMissing(companyA.getId(), LocalDate.of(2026, 8, 1), today, null, null);
+        verify(provider).syncServiceInvoicesShadow(companyA.getId(), today.minusDays(35), today, null, null);
 
         FiscalXmlSyncControl checkedToday = controlFor(companyA, 0);
         checkedToday.setServiceInvoicesCheckedOn(today);
         scheduler.syncServiceInvoicesOncePerDay(provider, checkedToday, today);
         verify(provider, times(1)).syncServiceInvoices(any(), any(), any());
-        verify(provider, times(1)).syncServiceInvoicesIfMissing(any(), any(), any(), any(), any());
+        verify(provider, times(1)).syncServiceInvoicesShadow(any(), any(), any(), any(), any());
     }
 
     @Test

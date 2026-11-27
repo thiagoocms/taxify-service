@@ -7,6 +7,7 @@ import br.com.cshub.taxify.domain.subscription.Subscription;
 import br.com.cshub.taxify.domain.xml.FiscalXmlSyncControl;
 import br.com.cshub.taxify.enumerated.DocumentTypeEnum;
 import br.com.cshub.taxify.enumerated.PlanServiceEnum;
+import br.com.cshub.taxify.enumerated.ServiceInvoiceCountGate;
 import br.com.cshub.taxify.integration.fiscalxml.FiscalXmlProvider;
 import br.com.cshub.taxify.integration.fiscalxml.FiscalXmlSide;
 import br.com.cshub.taxify.integration.fiscalxml.FiscalXmlSyncProperties;
@@ -105,23 +106,23 @@ class FiscalXmlSyncSchedulerSavingsTest {
 
     // ------------------------------------------------------------------ A3
 
-    /** A3: a side checked today at 08:00 with total 0 is up to date at 19:59 (12 h by default) - no request. */
+    /** A3: a side checked today at 08:00 with total 0 is up to date at 13:59 (6 h by default) - no request. */
     @Test
     void aZeroTotalCheckedTodayIsUpToDateWithinTheRecountWindow() {
         when(syncControlRepository.findAllWithCompany()).thenReturn(List.of(zeroControl(LocalDateTime.of(2026, 11, 27, 8, 0))));
 
-        scheduler(LocalDateTime.of(2026, 11, 27, 19, 59)).syncAllCompanies();
+        scheduler(LocalDateTime.of(2026, 11, 27, 13, 59)).syncAllCompanies();
 
         verify(provider, never()).sync(any());
     }
 
-    /** A3: after the 12 h the zero side is counted again. */
+    /** A3: after the 6 h the zero side is counted again. */
     @Test
     void aZeroTotalIsCountedAgainAfterTheRecountWindow() {
         when(syncControlRepository.findAllWithCompany()).thenReturn(List.of(zeroControl(LocalDateTime.of(2026, 11, 27, 8, 0))));
         when(provider.sync(any())).thenReturn(new FiscalXmlSyncResult(0, 0, 0));
 
-        scheduler(LocalDateTime.of(2026, 11, 27, 20, 1)).syncAllCompanies();
+        scheduler(LocalDateTime.of(2026, 11, 27, 14, 1)).syncAllCompanies();
 
         verify(provider).sync(argThat(request -> request != null && request.side() == FiscalXmlSide.RECEIVED));
         verify(provider).sync(argThat(request -> request != null && request.side() == FiscalXmlSide.ISSUED));
@@ -153,11 +154,11 @@ class FiscalXmlSyncSchedulerSavingsTest {
     // ------------------------------------------------------------------ A1
 
     /**
-     * A1: the NFS-e check reuses the NFS-e counts both NF-e sides got in this attempt - the issued side's (CnpjEmit) as
-     * the issuer count, the received side's (CnpjDest) as the recipient count - for the current month only (day 27).
+     * A1 in shadow (the default): the last 35 days are downloaded as before, with the free counts both NF-e sides got in
+     * this attempt - the issued side's (CnpjEmit) as the issuer count, the received side's (CnpjDest) as the recipient's.
      */
     @Test
-    void serviceInvoicesReuseTheCountsOfThisAttempt() {
+    void theShadowGateDownloadsAsBeforeWithThisAttemptsCounts() {
         FiscalXmlSyncControl control = zeroControl(LocalDateTime.of(2026, 11, 26, 9, 0));
         when(syncControlRepository.findAllWithCompany()).thenReturn(List.of(control));
         when(provider.sync(argThat(request -> request != null && request.side() == FiscalXmlSide.RECEIVED)))
@@ -167,44 +168,75 @@ class FiscalXmlSyncSchedulerSavingsTest {
 
         scheduler(LocalDateTime.of(2026, 11, 27, 9, 0)).syncAllCompanies();
 
-        verify(provider).syncServiceInvoicesIfMissing(company.getId(), LocalDate.of(2026, 11, 1), LocalDate.of(2026, 11, 27), 6, 4);
-        verify(provider, never()).syncServiceInvoices(any(), any(), any());
+        verify(provider).syncServiceInvoicesShadow(company.getId(), LocalDate.of(2026, 10, 23), LocalDate.of(2026, 11, 27), 6, 4);
+        verify(provider, never()).syncServiceInvoicesIfMissing(any(), any(), any(), any(), any());
         verify(syncControlRepository).markServiceInvoicesChecked(control.getId(), LocalDate.of(2026, 11, 27));
     }
 
-    /** A1: up to day 5 the previous month is checked too (its own count - the NF-e counts are of this month). */
+    /**
+     * A1 on: the 35 days in calendar-month windows, each only when the count shows something missing - the previous month
+     * as long as today - 35 falls in it (its own count), the current month with this attempt's counts.
+     */
     @Test
-    void theFirstDaysAlsoCheckThePreviousMonth() {
-        FiscalXmlSyncControl control = zeroControl(LocalDateTime.of(2026, 12, 2, 9, 0));
-        FiscalXmlSyncScheduler scheduler = scheduler(LocalDateTime.of(2026, 12, 3, 9, 0));
+    void theGateOnChecksEveryMonthOfTheLast35Days() {
+        properties.setServiceInvoiceCountGate(ServiceInvoiceCountGate.ON);
+        FiscalXmlSyncControl control = zeroControl(LocalDateTime.of(2026, 12, 19, 9, 0));
 
-        scheduler.syncServiceInvoicesOncePerDay(provider, control, LocalDate.of(2026, 12, 3), 1, 2);
+        scheduler(LocalDateTime.of(2026, 12, 20, 9, 0)).syncServiceInvoicesOncePerDay(provider, control, LocalDate.of(2026, 12, 20), 1, 2);
 
-        verify(provider).syncServiceInvoicesIfMissing(company.getId(), LocalDate.of(2026, 11, 1), LocalDate.of(2026, 11, 30), null, null);
-        verify(provider).syncServiceInvoicesIfMissing(company.getId(), LocalDate.of(2026, 12, 1), LocalDate.of(2026, 12, 3), 1, 2);
+        verify(provider).syncServiceInvoicesIfMissing(company.getId(), LocalDate.of(2026, 11, 15), LocalDate.of(2026, 11, 30), null, null);
+        verify(provider).syncServiceInvoicesIfMissing(company.getId(), LocalDate.of(2026, 12, 1), LocalDate.of(2026, 12, 20), 1, 2);
+        verify(provider, never()).syncServiceInvoices(any(), any(), any());
     }
 
-    /** A1: from day 6 on, only the current month. */
+    /** A1 on, early in a short month: today - 35 falls two months back - three windows. */
     @Test
-    void afterTheFirstDaysOnlyTheCurrentMonth() {
-        FiscalXmlSyncControl control = zeroControl(LocalDateTime.of(2026, 12, 5, 9, 0));
-
-        scheduler(LocalDateTime.of(2026, 12, 6, 9, 0)).syncServiceInvoicesOncePerDay(provider, control, LocalDate.of(2026, 12, 6), null, null);
-
-        verify(provider).syncServiceInvoicesIfMissing(company.getId(), LocalDate.of(2026, 12, 1), LocalDate.of(2026, 12, 6), null, null);
-        verify(provider, org.mockito.Mockito.times(1)).syncServiceInvoicesIfMissing(any(), any(), any(), any(), any());
+    void theLookbackCanSpanThreeMonths() {
+        assertThat(FiscalXmlSyncScheduler.monthWindows(LocalDate.of(2027, 1, 27), LocalDate.of(2027, 3, 3)))
+                .extracting(window -> window[0] + ".." + window[1])
+                .containsExactly("2027-01-27..2027-01-31", "2027-02-01..2027-02-28", "2027-03-01..2027-03-03");
     }
 
     /** A1 off: the old daily download of the last 35 days. */
     @Test
     void withTheGateOffTheLast35DaysAreDownloaded() {
-        properties.setServiceInvoiceCountGate(false);
+        properties.setServiceInvoiceCountGate(ServiceInvoiceCountGate.OFF);
         FiscalXmlSyncControl control = zeroControl(LocalDateTime.of(2026, 12, 5, 9, 0));
 
         scheduler(LocalDateTime.of(2026, 12, 6, 9, 0)).syncServiceInvoicesOncePerDay(provider, control, LocalDate.of(2026, 12, 6), 1, 2);
 
         verify(provider).syncServiceInvoices(company.getId(), LocalDate.of(2026, 11, 1), LocalDate.of(2026, 12, 6));
         verify(provider, never()).syncServiceInvoicesIfMissing(any(), any(), any(), any(), any());
+        verify(provider, never()).syncServiceInvoicesShadow(any(), any(), any(), any(), any());
+    }
+
+    /** B1: the difference a complete pass left this month counts as delivered - 60 of 63 with 3 known missing is up to date. */
+    @Test
+    void aKnownGapMakesTheSideUpToDate() {
+        FiscalXmlSyncControl control = zeroControl(LocalDateTime.of(2026, 11, 27, 8, 0));
+        control.setTotalSieg(63);
+        control.setTotalImportado(60);
+        control.recordKnownGap(false, "2026-11", 3);
+        when(syncControlRepository.findAllWithCompany()).thenReturn(List.of(control));
+
+        scheduler(LocalDateTime.of(2026, 11, 27, 9, 0)).syncAllCompanies();
+
+        verify(provider, never()).sync(any());
+    }
+
+    /** B1: a gap of another month does not count - the side is still pending. */
+    @Test
+    void aKnownGapOfAnotherMonthDoesNotCount() {
+        FiscalXmlSyncControl control = zeroControl(LocalDateTime.of(2026, 11, 27, 8, 0));
+        control.setTotalSieg(63);
+        control.setTotalImportado(60);
+        control.recordKnownGap(false, "2026-10", 3);
+        when(syncControlRepository.findAllWithCompany()).thenReturn(List.of(control));
+        when(provider.sync(any())).thenReturn(new FiscalXmlSyncResult(0, 0, 0));
+
+        scheduler(LocalDateTime.of(2026, 11, 27, 9, 0)).syncAllCompanies();
+
+        verify(provider).sync(argThat(request -> request != null && request.side() == FiscalXmlSide.RECEIVED && request.knownPending()));
     }
 
     // ------------------------------------------------------------------ A5
@@ -225,7 +257,7 @@ class FiscalXmlSyncSchedulerSavingsTest {
             seen.add(ProviderCallContext.current());
             return 0;
         });
-        when(provider.syncServiceInvoicesIfMissing(any(), any(), any(), any(), any())).thenAnswer(inv -> {
+        when(provider.syncServiceInvoicesShadow(any(), any(), any(), any(), any())).thenAnswer(inv -> {
             seen.add(ProviderCallContext.current());
             return 0;
         });
@@ -246,6 +278,22 @@ class FiscalXmlSyncSchedulerSavingsTest {
                 () -> seen.add(ProviderCallContext.current())));
 
         assertThat(seen).containsExactly(ProviderCallPurpose.PRIORITY, ProviderCallPurpose.EVENTS);
+        assertThat(ProviderCallContext.current()).isNull();
+    }
+
+    /** A stage that throws puts the outer scope back - nothing leaks to the next company on the thread. */
+    @Test
+    void aFailingStageRestoresTheOuterScope() {
+        ProviderCallContext.run(ProviderCallPurpose.PAGE, () -> {
+            org.assertj.core.api.Assertions.assertThatThrownBy(() -> ProviderCallContext.run(ProviderCallPurpose.EVENTS, () -> {
+                throw new IllegalStateException("x");
+            })).isInstanceOf(IllegalStateException.class);
+            assertThat(ProviderCallContext.current()).isEqualTo(ProviderCallPurpose.PAGE);
+            org.assertj.core.api.Assertions.assertThatThrownBy(() -> ProviderCallContext.priority(true, () -> {
+                throw new IllegalStateException("y");
+            })).isInstanceOf(IllegalStateException.class);
+            assertThat(ProviderCallContext.current()).isEqualTo(ProviderCallPurpose.PAGE);
+        });
         assertThat(ProviderCallContext.current()).isNull();
     }
 }

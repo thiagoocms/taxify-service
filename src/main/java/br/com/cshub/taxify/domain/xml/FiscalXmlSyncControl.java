@@ -123,6 +123,62 @@ public class FiscalXmlSyncControl extends AbstractAuditingEntity {
     @Column(name = "issued_prev_imported")
     private Integer issuedPrevImported;
 
+    /*
+     * B1: what was still missing (SIEG's total - what SIEG delivered) after a complete pass from the first page, and its
+     * month (yyyy-MM) - the reconciliation only runs again when that month's difference grows. Panel: the side's notes of
+     * the window in Taxify from any source, at the last check. Nulls until the first time (V85).
+     */
+    @Column(name = "received_known_gap_month", length = 7, columnDefinition = "char(7)")
+    private String receivedKnownGapMonth;
+
+    @Column(name = "received_known_gap")
+    private Integer receivedKnownGap;
+
+    @Column(name = "issued_known_gap_month", length = 7, columnDefinition = "char(7)")
+    private String issuedKnownGapMonth;
+
+    @Column(name = "issued_known_gap")
+    private Integer issuedKnownGap;
+
+    @Column(name = "received_stored_any_source")
+    private Integer receivedStoredAnySource;
+
+    @Column(name = "issued_stored_any_source")
+    private Integer issuedStoredAnySource;
+
+    /** The difference a complete pass left on the side for {@code month} (yyyy-MM); 0 = none known. */
+    public int knownGap(boolean issued, String month) {
+        String gapMonth = issued ? issuedKnownGapMonth : receivedKnownGapMonth;
+        Integer gap = issued ? issuedKnownGap : receivedKnownGap;
+        return gap == null || gapMonth == null || !gapMonth.strip().equals(month) ? 0 : gap;
+    }
+
+    public void recordKnownGap(boolean issued, String month, int gap) {
+        if (issued) {
+            this.issuedKnownGapMonth = month;
+            this.issuedKnownGap = gap;
+        } else {
+            this.receivedKnownGapMonth = month;
+            this.receivedKnownGap = gap;
+        }
+    }
+
+    public void setStoredAnySource(boolean issued, int stored) {
+        if (issued) {
+            this.issuedStoredAnySource = stored;
+        } else {
+            this.receivedStoredAnySource = stored;
+        }
+    }
+
+    public Integer getReceivedStoredAnySource() {
+        return receivedStoredAnySource;
+    }
+
+    public Integer getIssuedStoredAnySource() {
+        return issuedStoredAnySource;
+    }
+
     public String getReceivedPrevMonth() {
         return receivedPrevMonth;
     }
