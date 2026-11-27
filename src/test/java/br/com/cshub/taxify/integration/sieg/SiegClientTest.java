@@ -46,22 +46,22 @@ class SiegClientTest {
 
     @Test
     void throwsWhenApiKeyIsMissing() {
-        assertThatThrownBy(() -> client.baixarXmls(sampleRequest(), " "))
+        assertThatThrownBy(() -> client.downloadXmls(sampleRequest(), " "))
                 .isInstanceOf(SiegIntegrationException.class);
     }
 
     @Test
-    void contarXmlsNfeThrowsWhenApiKeyIsMissing() {
-        assertThatThrownBy(() -> client.contarXmls(sampleRequest(), " "))
+    void countXmlsThrowsWhenApiKeyIsMissing() {
+        assertThatThrownBy(() -> client.countXmls(sampleRequest(), " "))
                 .isInstanceOf(SiegIntegrationException.class);
     }
 
     @Test
     void extractsASingleXmlBodyAsReturnedRaw() {
         String xml = "<nfeProc></nfeProc>";
-        when(feignClient.baixarXmls(any(), any())).thenReturn(jsonResponse(200, xml.getBytes(StandardCharsets.UTF_8)));
+        when(feignClient.downloadXmls(any(), any())).thenReturn(jsonResponse(200, xml.getBytes(StandardCharsets.UTF_8)));
 
-        List<byte[]> result = client.baixarXmls(sampleRequest(), API_KEY);
+        List<byte[]> result = client.downloadXmls(sampleRequest(), API_KEY);
 
         assertThat(result).hasSize(1);
         assertThat(new String(result.get(0), StandardCharsets.UTF_8)).isEqualTo(xml);
@@ -81,9 +81,9 @@ class SiegClientTest {
             zos.write(xmlTwo.getBytes(StandardCharsets.UTF_8));
             zos.closeEntry();
         }
-        when(feignClient.baixarXmls(any(), any())).thenReturn(jsonResponse(200, zipBytes.toByteArray()));
+        when(feignClient.downloadXmls(any(), any())).thenReturn(jsonResponse(200, zipBytes.toByteArray()));
 
-        List<byte[]> result = client.baixarXmls(sampleRequest(), API_KEY);
+        List<byte[]> result = client.downloadXmls(sampleRequest(), API_KEY);
 
         assertThat(result).hasSize(2);
         assertThat(result.stream().map(b -> new String(b, StandardCharsets.UTF_8)))
@@ -92,47 +92,47 @@ class SiegClientTest {
 
     @Test
     void throwsWhenSiegRespondsWithAnErrorStatus() {
-        when(feignClient.baixarXmls(any(), any()))
+        when(feignClient.downloadXmls(any(), any()))
                 .thenReturn(jsonResponse(400, "{\"success\":false,\"message\":\"boom\"}".getBytes(StandardCharsets.UTF_8)));
 
-        assertThatThrownBy(() -> client.baixarXmls(sampleRequest(), API_KEY))
+        assertThatThrownBy(() -> client.downloadXmls(sampleRequest(), API_KEY))
                 .isInstanceOf(SiegIntegrationException.class);
     }
 
     @Test
-    void contarXmlsReturnsTheNfeAndNfseCountsFromASuccessfulResponse() {
-        when(feignClient.contarXmls(any(), any())).thenReturn(new SiegContarXmlsResponse(
-                true, "", 200, new SiegContarXmlsDataDTO(310, 999, 0, 0, 12), false));
+    void countXmlsReturnsTheNfeAndNfseCountsFromASuccessfulResponse() {
+        when(feignClient.countXmls(any(), any())).thenReturn(new SiegCountXmlsResponse(
+                true, "", 200, new SiegCountXmlsDataDTO(310, 999, 0, 0, 12), false));
 
-        assertThat(client.contarXmls(sampleRequest(), API_KEY)).isEqualTo(new SiegDocumentCounts(310, 12));
+        assertThat(client.countXmls(sampleRequest(), API_KEY)).isEqualTo(new SiegDocumentCounts(310, 12));
     }
 
     @Test
-    void contarXmlsReturnsZeroWhenAFieldIsNull() {
-        when(feignClient.contarXmls(any(), any())).thenReturn(new SiegContarXmlsResponse(
-                true, "", 200, new SiegContarXmlsDataDTO(null, 999, 0, 0, null), false));
+    void countXmlsReturnsZeroWhenAFieldIsNull() {
+        when(feignClient.countXmls(any(), any())).thenReturn(new SiegCountXmlsResponse(
+                true, "", 200, new SiegCountXmlsDataDTO(null, 999, 0, 0, null), false));
 
-        assertThat(client.contarXmls(sampleRequest(), API_KEY)).isEqualTo(new SiegDocumentCounts(0, 0));
+        assertThat(client.countXmls(sampleRequest(), API_KEY)).isEqualTo(new SiegDocumentCounts(0, 0));
     }
 
     @Test
-    void contarXmlsNfeThrowsWhenTheResponseReportsFailure() {
-        when(feignClient.contarXmls(any(), any())).thenReturn(new SiegContarXmlsResponse(
+    void countXmlsThrowsWhenTheResponseReportsFailure() {
+        when(feignClient.countXmls(any(), any())).thenReturn(new SiegCountXmlsResponse(
                 false, "boom", 500, null, true));
 
-        assertThatThrownBy(() -> client.contarXmls(sampleRequest(), API_KEY))
+        assertThatThrownBy(() -> client.countXmls(sampleRequest(), API_KEY))
                 .isInstanceOf(SiegIntegrationException.class);
     }
 
     @Test
-    void contarXmlsNfePropagatesFeignExceptionAsSiegIntegrationException() {
+    void countXmlsPropagatesFeignExceptionAsSiegIntegrationException() {
         Request request = Request.create(Request.HttpMethod.POST, "/api/v1/contar-xmls",
                 Map.of(), null, new RequestTemplate());
-        when(feignClient.contarXmls(any(), any()))
+        when(feignClient.countXmls(any(), any()))
                 .thenThrow(new FeignException.InternalServerError("boom", request,
                         "err".getBytes(StandardCharsets.UTF_8), Map.of()));
 
-        assertThatThrownBy(() -> client.contarXmls(sampleRequest(), API_KEY))
+        assertThatThrownBy(() -> client.countXmls(sampleRequest(), API_KEY))
                 .isInstanceOf(SiegIntegrationException.class);
     }
 
@@ -140,29 +140,29 @@ class SiegClientTest {
     void propagatesFeignExceptionAsSiegIntegrationException() {
         Request request = Request.create(Request.HttpMethod.POST, "/api/v1/baixar-xmls",
                 Map.of(), null, new RequestTemplate());
-        when(feignClient.baixarXmls(any(), any()))
+        when(feignClient.downloadXmls(any(), any()))
                 .thenThrow(new FeignException.InternalServerError("boom", request,
                         "err".getBytes(StandardCharsets.UTF_8), Map.of()));
 
-        assertThatThrownBy(() -> client.baixarXmls(sampleRequest(), API_KEY))
+        assertThatThrownBy(() -> client.downloadXmls(sampleRequest(), API_KEY))
                 .isInstanceOf(SiegIntegrationException.class);
     }
 
     @Test
     void notFoundWithNoXmlMessageIsAnEmptyPageNotAFailure() {
-        when(feignClient.baixarXmls(any(), any())).thenReturn(jsonResponse(404,
+        when(feignClient.downloadXmls(any(), any())).thenReturn(jsonResponse(404,
                 "{\"IsSuccess\":false,\"ErrorMessage\":\"Nenhum arquivo XML localizado.\",\"StatusCode\":404}"
                         .getBytes(StandardCharsets.UTF_8)));
 
-        assertThat(client.baixarXmls(sampleRequest(), API_KEY)).isEmpty();
+        assertThat(client.downloadXmls(sampleRequest(), API_KEY)).isEmpty();
     }
 
     @Test
     void otherNotFoundIsStillAFailure() {
-        when(feignClient.baixarXmls(any(), any())).thenReturn(jsonResponse(404,
+        when(feignClient.downloadXmls(any(), any())).thenReturn(jsonResponse(404,
                 "{\"ErrorMessage\":\"Rota inexistente\"}".getBytes(StandardCharsets.UTF_8)));
 
-        assertThatThrownBy(() -> client.baixarXmls(sampleRequest(), API_KEY)).isInstanceOf(SiegIntegrationException.class);
+        assertThatThrownBy(() -> client.downloadXmls(sampleRequest(), API_KEY)).isInstanceOf(SiegIntegrationException.class);
     }
 
     private Response jsonResponse(int status, byte[] body) {
@@ -175,7 +175,7 @@ class SiegClientTest {
                 .build();
     }
 
-    private SiegBaixarXmlsRequest sampleRequest() {
-        return new SiegBaixarXmlsRequest(1, 50, 0, null, null, "12345678000199", null, true);
+    private SiegDownloadXmlsRequest sampleRequest() {
+        return new SiegDownloadXmlsRequest(1, 50, 0, null, null, "12345678000199", null, true);
     }
 }

@@ -10,15 +10,15 @@ import java.time.Instant;
  * contract at integracoes.sieg.com/sistema-externo/docs/baixar-xmls-2.
  */
 @JsonInclude(JsonInclude.Include.NON_NULL)
-public record SiegBaixarXmlsRequest(
-        @JsonProperty("TipoXml") Integer tipoXml,
+public record SiegDownloadXmlsRequest(
+        @JsonProperty("TipoXml") Integer xmlType,
         @JsonProperty("Take") Integer take,
         @JsonProperty("Skip") Integer skip,
-        @JsonProperty("DataEmissaoInicio") Instant dataEmissaoInicio,
-        @JsonProperty("DataEmissaoFim") Instant dataEmissaoFim,
+        @JsonProperty("DataEmissaoInicio") Instant issueDateFrom,
+        @JsonProperty("DataEmissaoFim") Instant issueDateTo,
         @JsonProperty("CNPJemit") String cnpjEmit,
         @JsonProperty("CNPJdest") String cnpjDest,
         /** true = each page also brings the notes' events (cancelamento, CC-e, manifestação), beyond the 50 notes. */
-        @JsonProperty("BaixarEventos") Boolean baixarEventos
+        @JsonProperty("BaixarEventos") Boolean includeEvents
 ) {
 }

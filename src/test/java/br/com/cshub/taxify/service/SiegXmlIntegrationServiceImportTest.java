@@ -157,15 +157,15 @@ class SiegXmlIntegrationServiceImportTest {
         company.setDocument(new Document("11594485000105", DocumentTypeEnum.CNPJ));
         company.setAccountingFirm(new br.com.cshub.taxify.domain.accountingfirm.AccountingFirm(UUID.randomUUID()));
         when(companyValidation.checkExist(companyId)).thenReturn(company);
-        when(siegClient.baixarXmls(any(), any())).thenReturn(java.util.List.of(NFE_XML.getBytes(StandardCharsets.UTF_8)));
+        when(siegClient.downloadXmls(any(), any())).thenReturn(java.util.List.of(NFE_XML.getBytes(StandardCharsets.UTF_8)));
 
         XmlDownloadResultDTO result = service.syncPeriodPageFromSieg(companyId,
                 br.com.cshub.taxify.integration.fiscalxml.FiscalXmlSide.RECEIVED,
                 java.time.LocalDate.of(2026, 12, 1), java.time.LocalDate.of(2026, 12, 31), 2);
 
         assertThat(result.totalPersistedNew()).isEqualTo(1);
-        org.mockito.ArgumentCaptor<br.com.cshub.taxify.integration.sieg.SiegBaixarXmlsRequest> request = org.mockito.ArgumentCaptor.captor();
-        verify(siegClient).baixarXmls(request.capture(), any());
+        org.mockito.ArgumentCaptor<br.com.cshub.taxify.integration.sieg.SiegDownloadXmlsRequest> request = org.mockito.ArgumentCaptor.captor();
+        verify(siegClient).downloadXmls(request.capture(), any());
         assertThat(request.getValue().skip()).isEqualTo(100);
         assertThat(request.getValue().cnpjDest()).isEqualTo("11594485000105");
         assertThat(request.getValue().cnpjEmit()).isNull();
@@ -179,7 +179,7 @@ class SiegXmlIntegrationServiceImportTest {
         company.setDocument(new Document("11594485000105", DocumentTypeEnum.CNPJ));
         company.setAccountingFirm(new br.com.cshub.taxify.domain.accountingfirm.AccountingFirm(UUID.randomUUID()));
         when(companyValidation.checkExist(companyId)).thenReturn(company);
-        when(siegClient.baixarXmls(any(), any())).thenReturn(java.util.List.of(NFE_XML.getBytes(StandardCharsets.UTF_8)));
+        when(siegClient.downloadXmls(any(), any())).thenReturn(java.util.List.of(NFE_XML.getBytes(StandardCharsets.UTF_8)));
         when(xmlDocumentRepository.existsByCompany_IdAndAccessKey(companyId, "35240112345678000199550010000000011000000010")).thenReturn(true);
 
         XmlDownloadResultDTO result = service.syncPeriodPageFromSieg(companyId,

@@ -47,7 +47,7 @@ class CaptureFailureClassifierTest {
     @Test
     void feignStatusesAndNetworkFailures() {
         Request request = Request.create(Request.HttpMethod.POST, "/contar-xmls", Map.of(), null, new RequestTemplate());
-        FeignException unavailable = FeignException.errorStatus("contarXmls", feign.Response.builder().status(502)
+        FeignException unavailable = FeignException.errorStatus("countXmls", feign.Response.builder().status(502)
                 .request(request).body("{\"cnpj\":\"12345678000190\"}", StandardCharsets.UTF_8).build());
         assertThat(CaptureFailureClassifier.sieg(new SiegIntegrationException("error.sieg.integration.failed", "x", unavailable)))
                 .isEqualTo(new CaptureFailureClassifier.Classified(CaptureFailureCode.SIEG_UNAVAILABLE, "502"));

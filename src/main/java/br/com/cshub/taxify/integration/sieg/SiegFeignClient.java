@@ -23,7 +23,7 @@ import org.springframework.web.bind.annotation.RequestHeader;
 public interface SiegFeignClient {
 
     @PostMapping(path = "/api/v1/baixar-xmls", produces = MediaType.APPLICATION_JSON_VALUE)
-    Response baixarXmls(@RequestHeader("X-API-Key") String apiKey, @RequestBody SiegBaixarXmlsRequest request);
+    Response downloadXmls(@RequestHeader("X-API-Key") String apiKey, @RequestBody SiegDownloadXmlsRequest request);
 
     /**
      * Counts how many fiscal documents match the filter, broken down by document type
@@ -31,5 +31,5 @@ public interface SiegFeignClient {
      * but this one is a real JSON response, not a raw zip.
      */
     @PostMapping(path = "/api/v1/contar-xmls", produces = MediaType.APPLICATION_JSON_VALUE)
-    SiegContarXmlsResponse contarXmls(@RequestHeader("X-API-Key") String apiKey, @RequestBody SiegBaixarXmlsRequest request);
+    SiegCountXmlsResponse countXmls(@RequestHeader("X-API-Key") String apiKey, @RequestBody SiegDownloadXmlsRequest request);
 }

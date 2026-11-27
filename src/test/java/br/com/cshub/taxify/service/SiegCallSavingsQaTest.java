@@ -8,7 +8,7 @@ import br.com.cshub.taxify.integration.fiscalxml.FiscalEventParserTest;
 import br.com.cshub.taxify.integration.fiscalxml.FiscalXmlProvider;
 import br.com.cshub.taxify.integration.fiscalxml.FiscalXmlSyncProperties;
 import br.com.cshub.taxify.integration.fiscalxml.ProviderCallContext;
-import br.com.cshub.taxify.integration.sieg.SiegBaixarXmlsRequest;
+import br.com.cshub.taxify.integration.sieg.SiegDownloadXmlsRequest;
 import br.com.cshub.taxify.integration.sieg.SiegClient;
 import br.com.cshub.taxify.integration.sieg.SiegDocumentCounts;
 import br.com.cshub.taxify.repository.AccountingFirmRepository;
@@ -145,24 +145,24 @@ class SiegCallSavingsQaTest {
         final List<Nfse> nfses = new CopyOnWriteArrayList<>();
         final Map<String, List<byte[]>> events = new java.util.concurrent.ConcurrentHashMap<>();
         final List<Call> calls = Collections.synchronizedList(new ArrayList<>());
-        volatile Predicate<SiegBaixarXmlsRequest> failDownload = r -> false;
+        volatile Predicate<SiegDownloadXmlsRequest> failDownload = r -> false;
         /** when set, NFS-e count answers this instead of the truth (a stale/lying count) */
         volatile Integer nfseCountLie;
         volatile String day = "";
 
-        List<Nfe> matchNfe(SiegBaixarXmlsRequest r) {
-            return nfes.stream().filter(n -> !n.issued().isBefore(r.dataEmissaoInicio()) && !n.issued().isAfter(r.dataEmissaoFim()))
+        List<Nfe> matchNfe(SiegDownloadXmlsRequest r) {
+            return nfes.stream().filter(n -> !n.issued().isBefore(r.issueDateFrom()) && !n.issued().isAfter(r.issueDateTo()))
                     .filter(n -> r.cnpjDest() == null || r.cnpjDest().equals(n.dest()))
                     .filter(n -> r.cnpjEmit() == null || r.cnpjEmit().equals(n.emit())).toList();
         }
 
-        List<Nfse> matchNfse(SiegBaixarXmlsRequest r) {
-            return nfses.stream().filter(n -> !n.issued().isBefore(r.dataEmissaoInicio()) && !n.issued().isAfter(r.dataEmissaoFim()))
+        List<Nfse> matchNfse(SiegDownloadXmlsRequest r) {
+            return nfses.stream().filter(n -> !n.issued().isBefore(r.issueDateFrom()) && !n.issued().isAfter(r.issueDateTo()))
                     .filter(n -> r.cnpjDest() == null || r.cnpjDest().equals(n.toma()))
                     .filter(n -> r.cnpjEmit() == null || r.cnpjEmit().equals(n.prest())).toList();
         }
 
-        String filterOf(SiegBaixarXmlsRequest r) {
+        String filterOf(SiegDownloadXmlsRequest r) {
             return r.cnpjDest() != null ? "R" : r.cnpjEmit() != null ? "I" : "-";
         }
 
@@ -183,18 +183,18 @@ class SiegCallSavingsQaTest {
                 "only against a local MySQL - connected to " + connection);
         System.out.println("QA-JDBC " + connection);
         fixture();
-        when(siegClient.contarXmls(any(), anyString())).thenAnswer(inv -> {
-            SiegBaixarXmlsRequest r = inv.getArgument(0);
+        when(siegClient.countXmls(any(), anyString())).thenAnswer(inv -> {
+            SiegDownloadXmlsRequest r = inv.getArgument(0);
             sieg.calls.add(new Call(sieg.day, "count", sieg.filterOf(r), r.skip() == null ? 0 : r.skip(), purpose(), window(r)));
-            if (sieg.failDownload.test(r) && r.tipoXml() == 99) {
+            if (sieg.failDownload.test(r) && r.xmlType() == 99) {
                 throw new RuntimeException("x");
             }
             int nfse = sieg.nfseCountLie != null ? (r.cnpjDest() != null ? sieg.nfseCountLie : 0) : sieg.matchNfse(r).size();
             return new SiegDocumentCounts(sieg.matchNfe(r).size(), nfse);
         });
-        when(siegClient.baixarXmls(any(), anyString())).thenAnswer(inv -> {
-            SiegBaixarXmlsRequest r = inv.getArgument(0);
-            boolean nfse = r.tipoXml() != null && r.tipoXml() == 3;
+        when(siegClient.downloadXmls(any(), anyString())).thenAnswer(inv -> {
+            SiegDownloadXmlsRequest r = inv.getArgument(0);
+            boolean nfse = r.xmlType() != null && r.xmlType() == 3;
             sieg.calls.add(new Call(sieg.day, nfse ? "nfse" : "nfe", sieg.filterOf(r), r.skip(), purpose(), window(r)));
             if (sieg.failDownload.test(r)) {
                 throw new br.com.cshub.taxify.exception.SiegIntegrationException("error.sieg.integration.failed", "x", 503);
@@ -209,7 +209,7 @@ class SiegCallSavingsQaTest {
                 int from = Math.min(r.skip(), all.size());
                 for (Nfe n : all.subList(from, Math.min(from + r.take(), all.size()))) {
                     page.add(n.xml());
-                    if (Boolean.TRUE.equals(r.baixarEventos())) {
+                    if (Boolean.TRUE.equals(r.includeEvents())) {
                         page.addAll(sieg.events.getOrDefault(n.key(), List.of()));
                     }
                 }
@@ -227,8 +227,8 @@ class SiegCallSavingsQaTest {
         return String.valueOf(ProviderCallContext.current());
     }
 
-    private static String window(SiegBaixarXmlsRequest r) {
-        return r.dataEmissaoInicio().toString().substring(0, 10) + ".." + r.dataEmissaoFim().toString().substring(0, 10);
+    private static String window(SiegDownloadXmlsRequest r) {
+        return r.issueDateFrom().toString().substring(0, 10) + ".." + r.issueDateTo().toString().substring(0, 10);
     }
 
     @AfterEach

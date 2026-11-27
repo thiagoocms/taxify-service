@@ -9,7 +9,7 @@ import br.com.cshub.taxify.integration.fiscalxml.FiscalXmlSide;
 import br.com.cshub.taxify.integration.fiscalxml.FiscalXmlSyncProperties;
 import br.com.cshub.taxify.integration.fiscalxml.FiscalXmlSyncRequest;
 import br.com.cshub.taxify.integration.fiscalxml.FiscalXmlSyncResult;
-import br.com.cshub.taxify.integration.sieg.SiegBaixarXmlsRequest;
+import br.com.cshub.taxify.integration.sieg.SiegDownloadXmlsRequest;
 import br.com.cshub.taxify.integration.sieg.SiegClient;
 import br.com.cshub.taxify.repository.CompanyRepository;
 import br.com.cshub.taxify.repository.FirmCertificateRepository;
@@ -152,7 +152,7 @@ class RecoveryAndSyncQueueIntegrationTest {
 
     private final Set<String> firms = new LinkedHashSet<>();
     private Set<String> baselineControls = Set.of();
-    private final List<SiegBaixarXmlsRequest> downloads = Collections.synchronizedList(new ArrayList<>());
+    private final List<SiegDownloadXmlsRequest> downloads = Collections.synchronizedList(new ArrayList<>());
 
     @BeforeEach
     void setUp() {
@@ -187,7 +187,7 @@ class RecoveryAndSyncQueueIntegrationTest {
         String k3 = key();
         // 10/12: a nota K1 ja foi importada (antes do bloqueio)
         clock.set(LocalDateTime.of(2026, 12, 10, 10, 0));
-        when(siegClient.baixarXmls(any(), anyString())).thenAnswer(inv -> List.of(nfe(k1, "99999999000191", cnpj, "2026-12-10T10:00:00-03:00")));
+        when(siegClient.downloadXmls(any(), anyString())).thenAnswer(inv -> List.of(nfe(k1, "99999999000191", cnpj, "2026-12-10T10:00:00-03:00")));
         integrationService.syncPeriodPageFromSieg(UUID.fromString(company), FiscalXmlSide.RECEIVED, LocalDate.of(2026, 12, 1),
                 LocalDate.of(2026, 12, 31), 0);
         assertThat(documents(company, k1)).isOne();
@@ -383,7 +383,7 @@ class RecoveryAndSyncQueueIntegrationTest {
             rounds++;
         }
         assertThat(rounds).as("one step per round: 6 NF-e + 2 NFS-e").isEqualTo(8);
-        assertThat(downloads).allSatisfy(r -> assertThat(r.dataEmissaoInicio().atZone(ZoneId.of("UTC")).toLocalDate()).isAfterOrEqualTo(LocalDate.of(2026, 10, 1)));
+        assertThat(downloads).allSatisfy(r -> assertThat(r.issueDateFrom().atZone(ZoneId.of("UTC")).toLocalDate()).isAfterOrEqualTo(LocalDate.of(2026, 10, 1)));
         JsonNode done = eventAfter(f.firmId(), "RECOVERY_DONE");
         assertThat(done.get("EFISCO").toString()).isEqualTo("[\"2026-10\",\"2026-11\"]");
         assertThat(done.get("SIEG_NFE_RECEIVED").toString()).isEqualTo("[\"2026-10\",\"2026-11\",\"2026-12\"]");
@@ -636,25 +636,25 @@ class RecoveryAndSyncQueueIntegrationTest {
     // ================================================================== helpers: SIEG mock and data
 
     private interface SiegAnswer {
-        List<byte[]> answer(SiegBaixarXmlsRequest request);
+        List<byte[]> answer(SiegDownloadXmlsRequest request);
     }
 
     private void mockSieg(SiegAnswer answer) {
         Mockito.reset(siegClient);
         downloads.clear();
-        when(siegClient.baixarXmls(any(), anyString())).thenAnswer(inv -> {
-            SiegBaixarXmlsRequest request = inv.getArgument(0);
+        when(siegClient.downloadXmls(any(), anyString())).thenAnswer(inv -> {
+            SiegDownloadXmlsRequest request = inv.getArgument(0);
             downloads.add(request);
             return answer.answer(request);
         });
     }
 
-    private static boolean december(SiegBaixarXmlsRequest request) {
-        return request.tipoXml() != null && request.tipoXml() == 1 && Boolean.TRUE.equals(request.baixarEventos())
-                && request.dataEmissaoInicio().atZone(ZoneId.of("UTC")).toLocalDate().equals(LocalDate.of(2026, 12, 1));
+    private static boolean december(SiegDownloadXmlsRequest request) {
+        return request.xmlType() != null && request.xmlType() == 1 && Boolean.TRUE.equals(request.includeEvents())
+                && request.issueDateFrom().atZone(ZoneId.of("UTC")).toLocalDate().equals(LocalDate.of(2026, 12, 1));
     }
 
-    private List<SiegBaixarXmlsRequest> decemberDownloads() {
+    private List<SiegDownloadXmlsRequest> decemberDownloads() {
         synchronized (downloads) {
             return downloads.stream().filter(RecoveryAndSyncQueueIntegrationTest::december).toList();
         }

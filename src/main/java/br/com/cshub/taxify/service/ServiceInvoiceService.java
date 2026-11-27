@@ -7,7 +7,7 @@ import br.com.cshub.taxify.domain.xml.ServiceInvoice;
 import br.com.cshub.taxify.enumerated.IntegrationType;
 import br.com.cshub.taxify.integration.nfse.NfseXml;
 import br.com.cshub.taxify.integration.sieg.FiscalXmlFileStorage;
-import br.com.cshub.taxify.integration.sieg.SiegBaixarXmlsRequest;
+import br.com.cshub.taxify.integration.sieg.SiegDownloadXmlsRequest;
 import br.com.cshub.taxify.integration.sieg.SiegClient;
 import br.com.cshub.taxify.repository.ServiceInvoiceRepository;
 import br.com.cshub.taxify.validation.CompanyValidation;
@@ -160,9 +160,9 @@ public class ServiceInvoiceService {
     /** SIEG's NFS-e count for one filter of the window; null = the count failed. */
     private Integer countNfse(Company company, String apiKey, String cnpjEmit, String cnpjDest, LocalDate from, LocalDate to) {
         try {
-            SiegBaixarXmlsRequest request = new SiegBaixarXmlsRequest(TIPO_XML_NFSE, PAGE_SIZE, 0, startOfDay(from), endOfDay(to),
+            SiegDownloadXmlsRequest request = new SiegDownloadXmlsRequest(TIPO_XML_NFSE, PAGE_SIZE, 0, startOfDay(from), endOfDay(to),
                     cnpjEmit, cnpjDest, null);
-            return siegClient.contarXmls(request, apiKey).nfse();
+            return siegClient.countXmls(request, apiKey).nfse();
         } catch (RuntimeException e) {
             log.warn("Could not count SIEG NFS-e for company {} - downloading the window: {}", company.getId(),
                     e.getClass().getSimpleName());
@@ -175,9 +175,9 @@ public class ServiceInvoiceService {
         SyncResult result = new SyncResult(0, 0, 0);
         for (boolean asProvider : new boolean[]{true, false}) {
             for (int page = 0; page < MAX_PAGES; page++) {
-                SiegBaixarXmlsRequest request = new SiegBaixarXmlsRequest(TIPO_XML_NFSE, PAGE_SIZE, page * PAGE_SIZE,
+                SiegDownloadXmlsRequest request = new SiegDownloadXmlsRequest(TIPO_XML_NFSE, PAGE_SIZE, page * PAGE_SIZE,
                         startOfDay(from), endOfDay(to), asProvider ? cnpj : null, asProvider ? null : cnpj, null);
-                List<byte[]> xmls = siegClient.baixarXmls(request, apiKey);
+                List<byte[]> xmls = siegClient.downloadXmls(request, apiKey);
                 for (byte[] xml : xmls) {
                     result = result.plus(store(company, xml, "SIEG"));
                 }

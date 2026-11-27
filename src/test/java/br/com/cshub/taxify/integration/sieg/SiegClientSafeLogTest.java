@@ -57,11 +57,11 @@ class SiegClientSafeLogTest {
     }
 
     @Test
-    void baixarXmlsErrorKeepsOnlyTheStatus() {
-        when(feignClient.baixarXmls(any(), any())).thenReturn(Response.builder().status(400).request(request())
+    void downloadXmlsErrorKeepsOnlyTheStatus() {
+        when(feignClient.downloadXmls(any(), any())).thenReturn(Response.builder().status(400).request(request())
                 .body(BODY.getBytes(StandardCharsets.UTF_8)).build());
 
-        assertThatThrownBy(() -> client.baixarXmls(new SiegBaixarXmlsRequest(1, 50, 0, null, null, null, "11594485000105", true), "key"))
+        assertThatThrownBy(() -> client.downloadXmls(new SiegDownloadXmlsRequest(1, 50, 0, null, null, null, "11594485000105", true), "key"))
                 .isInstanceOfSatisfying(SiegIntegrationException.class, e -> {
                     assertThat(e.getHttpStatus()).isEqualTo(400);
                     assertThat(e.getMessage()).doesNotContain("12345678000190").doesNotContain("abc123");
@@ -73,12 +73,12 @@ class SiegClientSafeLogTest {
     }
 
     @Test
-    void contarXmlsErrorKeepsOnlyTheStatus() {
-        FeignException error = FeignException.errorStatus("contarXmls", Response.builder().status(401).request(request())
+    void countXmlsErrorKeepsOnlyTheStatus() {
+        FeignException error = FeignException.errorStatus("countXmls", Response.builder().status(401).request(request())
                 .body(BODY, StandardCharsets.UTF_8).build());
-        when(feignClient.contarXmls(any(), any())).thenThrow(error);
+        when(feignClient.countXmls(any(), any())).thenThrow(error);
 
-        assertThatThrownBy(() -> client.contarXmls(new SiegBaixarXmlsRequest(1, 50, 0, null, null, null, "11594485000105", null), "key"))
+        assertThatThrownBy(() -> client.countXmls(new SiegDownloadXmlsRequest(1, 50, 0, null, null, null, "11594485000105", null), "key"))
                 .isInstanceOfSatisfying(SiegIntegrationException.class, e -> {
                     assertThat(e.getHttpStatus()).isEqualTo(401);
                     assertThat(e.getCause()).as("the Feign exception (with the body) is not carried").isNull();

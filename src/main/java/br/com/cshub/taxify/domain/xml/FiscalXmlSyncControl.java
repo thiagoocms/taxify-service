@@ -14,7 +14,7 @@ import java.util.UUID;
  * One row per company, tracking sync progress: how many NFe SIEG reports for the
  * current sync window ({@link #issueDateFrom}/{@link #issueDateTo}, always the
  * whole current month - see {@link br.com.cshub.taxify.service.FiscalXmlSyncScheduler}),
- * updated by {@link br.com.cshub.taxify.integration.sieg.SiegClient#contarXmlsNfe},
+ * updated by {@link br.com.cshub.taxify.integration.sieg.SiegClient#countXmls},
  * against how many are actually persisted for that company. Updated on every
  * {@link br.com.cshub.taxify.service.FiscalXmlIntegrationService#syncFromSieg} call -
  * not written to when the contar-xmls check itself fails, so totalSieg only ever

@@ -7,7 +7,7 @@ package br.com.cshub.taxify.integration.sieg;
  */
 public record SiegDocumentCounts(int nfe, int nfse) {
 
-    static SiegDocumentCounts of(SiegContarXmlsDataDTO data) {
+    static SiegDocumentCounts of(SiegCountXmlsDataDTO data) {
         return new SiegDocumentCounts(valueOf(data.nfe()), valueOf(data.nfse()));
     }
 

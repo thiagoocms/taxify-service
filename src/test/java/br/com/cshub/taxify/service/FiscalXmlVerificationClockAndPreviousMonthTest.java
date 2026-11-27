@@ -89,7 +89,7 @@ class FiscalXmlVerificationClockAndPreviousMonthTest {
     void verificationTimeIsRecifeEvenWithTheJvmInUtc() {
         service.setClock(Clock.fixed(Instant.parse("2026-11-27T13:00:00Z"), ZoneId.of("America/Recife")));
         when(controls.findByCompany_Id(companyId)).thenReturn(Optional.empty());
-        when(siegClient.contarXmls(any(), any())).thenReturn(new SiegDocumentCounts(0, 0));
+        when(siegClient.countXmls(any(), any())).thenReturn(new SiegDocumentCounts(0, 0));
 
         service.syncFromSieg(filter(LocalDate.of(2026, 11, 1), LocalDate.of(2026, 11, 27), FiscalXmlSide.ISSUED));
         service.syncFromSieg(filter(LocalDate.of(2026, 11, 1), LocalDate.of(2026, 11, 27), FiscalXmlSide.RECEIVED));
@@ -106,8 +106,8 @@ class FiscalXmlVerificationClockAndPreviousMonthTest {
         service.setClock(Clock.fixed(Instant.parse("2026-12-01T06:00:00Z"), ZoneId.of("America/Recife")));
         FiscalXmlSyncControl y = novemberControl(200, 180, 12, 12);
         when(controls.findByCompany_Id(companyId)).thenReturn(Optional.of(y));
-        when(siegClient.contarXmls(any(), any())).thenReturn(new SiegDocumentCounts(3, 0));
-        when(siegClient.baixarXmls(any(), any())).thenReturn(List.of());
+        when(siegClient.countXmls(any(), any())).thenReturn(new SiegDocumentCounts(3, 0));
+        when(siegClient.downloadXmls(any(), any())).thenReturn(List.of());
         when(documents.countByCompany_IdAndOwnIssueAndIssueDateBetweenAndFoundInSiegAtIsNotNull(eq(companyId), eq(false), any(), any())).thenReturn(0L);
 
         service.syncFromSieg(filter(LocalDate.of(2026, 12, 1), LocalDate.of(2026, 12, 1), FiscalXmlSide.RECEIVED));

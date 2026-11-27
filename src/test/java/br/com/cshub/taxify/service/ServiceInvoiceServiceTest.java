@@ -8,7 +8,7 @@ import br.com.cshub.taxify.enumerated.DocumentTypeEnum;
 import br.com.cshub.taxify.enumerated.IntegrationType;
 import br.com.cshub.taxify.integration.nfse.NfseXmlTest;
 import br.com.cshub.taxify.integration.sieg.FiscalXmlFileStorage;
-import br.com.cshub.taxify.integration.sieg.SiegBaixarXmlsRequest;
+import br.com.cshub.taxify.integration.sieg.SiegDownloadXmlsRequest;
 import br.com.cshub.taxify.integration.sieg.SiegClient;
 import br.com.cshub.taxify.repository.ServiceInvoiceRepository;
 import br.com.cshub.taxify.validation.CompanyValidation;
@@ -132,14 +132,14 @@ class ServiceInvoiceServiceTest {
 
     @Test
     void siegIsAskedForNfseAsProviderAndAsTakerPageByPage() {
-        when(siegClient.baixarXmls(any(), eq("key"))).thenReturn(List.of(bytes(NfseXmlTest.ABRASF)));
+        when(siegClient.downloadXmls(any(), eq("key"))).thenReturn(List.of(bytes(NfseXmlTest.ABRASF)));
 
         ServiceInvoiceService.SyncResult result = service.syncFromSieg(company.getId(), LocalDate.of(2026, 10, 1),
                 LocalDate.of(2026, 10, 31));
 
-        ArgumentCaptor<SiegBaixarXmlsRequest> requests = ArgumentCaptor.captor();
-        verify(siegClient, times(2)).baixarXmls(requests.capture(), eq("key"));
-        assertThat(requests.getAllValues()).extracting(SiegBaixarXmlsRequest::tipoXml).containsOnly(3);
+        ArgumentCaptor<SiegDownloadXmlsRequest> requests = ArgumentCaptor.captor();
+        verify(siegClient, times(2)).downloadXmls(requests.capture(), eq("key"));
+        assertThat(requests.getAllValues()).extracting(SiegDownloadXmlsRequest::xmlType).containsOnly(3);
         assertThat(requests.getAllValues().get(0).cnpjEmit()).isEqualTo("11222333000181");
         assertThat(requests.getAllValues().get(1).cnpjDest()).isEqualTo("11222333000181");
         assertThat(result.persistedNew()).isEqualTo(2); // the mock has no memory: both pages "new"
@@ -166,53 +166,53 @@ class ServiceInvoiceServiceTest {
                 LocalDate.of(2026, 11, 27), 6, 4);
 
         assertThat(result.persistedNew()).isZero();
-        verify(siegClient, never()).contarXmls(any(), any());
-        verify(siegClient, never()).baixarXmls(any(), any());
+        verify(siegClient, never()).countXmls(any(), any());
+        verify(siegClient, never()).downloadXmls(any(), any());
     }
 
     /** A1: SIEG counts 11 and 10 came from it - the window is downloaded, both filters. */
     @Test
     void aDifferenceDownloadsTheWindow() {
         when(repository.countByCompany_IdAndIssueDateBetweenAndFoundInSiegAtIsNotNull(eq(company.getId()), any(), any())).thenReturn(10L);
-        when(siegClient.baixarXmls(any(), eq("key"))).thenReturn(List.of());
+        when(siegClient.downloadXmls(any(), eq("key"))).thenReturn(List.of());
 
         service.syncMonthIfMissing(company.getId(), LocalDate.of(2026, 11, 1), LocalDate.of(2026, 11, 27), 7, 4);
 
-        ArgumentCaptor<SiegBaixarXmlsRequest> requests = ArgumentCaptor.captor();
-        verify(siegClient, times(2)).baixarXmls(requests.capture(), eq("key"));
-        assertThat(requests.getAllValues()).extracting(SiegBaixarXmlsRequest::cnpjEmit).containsExactly("11222333000181", null);
-        assertThat(requests.getAllValues()).extracting(SiegBaixarXmlsRequest::cnpjDest).containsExactly(null, "11222333000181");
-        assertThat(requests.getAllValues()).extracting(SiegBaixarXmlsRequest::skip).containsOnly(0);
+        ArgumentCaptor<SiegDownloadXmlsRequest> requests = ArgumentCaptor.captor();
+        verify(siegClient, times(2)).downloadXmls(requests.capture(), eq("key"));
+        assertThat(requests.getAllValues()).extracting(SiegDownloadXmlsRequest::cnpjEmit).containsExactly("11222333000181", null);
+        assertThat(requests.getAllValues()).extracting(SiegDownloadXmlsRequest::cnpjDest).containsExactly(null, "11222333000181");
+        assertThat(requests.getAllValues()).extracting(SiegDownloadXmlsRequest::skip).containsOnly(0);
     }
 
     /** A1: the previous month has no count from this attempt - one contar-xmls per filter, NFS-e field, same window. */
     @Test
     void unknownCountsAreAskedOncePerFilter() {
-        when(siegClient.contarXmls(any(), eq("key"))).thenReturn(new br.com.cshub.taxify.integration.sieg.SiegDocumentCounts(99, 2));
+        when(siegClient.countXmls(any(), eq("key"))).thenReturn(new br.com.cshub.taxify.integration.sieg.SiegDocumentCounts(99, 2));
         when(repository.countByCompany_IdAndIssueDateBetweenAndFoundInSiegAtIsNotNull(eq(company.getId()),
                 eq(LocalDate.of(2026, 9, 30).atTime(21, 0)), eq(LocalDate.of(2026, 10, 31).atTime(java.time.LocalTime.MAX).minusHours(3)))).thenReturn(4L); // SIEG's UTC days in Recife time
 
         service.syncMonthIfMissing(company.getId(), LocalDate.of(2026, 10, 1), LocalDate.of(2026, 10, 31), null, null);
 
-        ArgumentCaptor<SiegBaixarXmlsRequest> counts = ArgumentCaptor.captor();
-        verify(siegClient, times(2)).contarXmls(counts.capture(), eq("key"));
-        assertThat(counts.getAllValues()).extracting(SiegBaixarXmlsRequest::cnpjEmit).containsExactly("11222333000181", null);
-        assertThat(counts.getAllValues()).extracting(SiegBaixarXmlsRequest::cnpjDest).containsExactly(null, "11222333000181");
+        ArgumentCaptor<SiegDownloadXmlsRequest> counts = ArgumentCaptor.captor();
+        verify(siegClient, times(2)).countXmls(counts.capture(), eq("key"));
+        assertThat(counts.getAllValues()).extracting(SiegDownloadXmlsRequest::cnpjEmit).containsExactly("11222333000181", null);
+        assertThat(counts.getAllValues()).extracting(SiegDownloadXmlsRequest::cnpjDest).containsExactly(null, "11222333000181");
         // 2 + 2 = 4 delivered: the NF-e count (99) is not looked at
-        verify(siegClient, never()).baixarXmls(any(), any());
+        verify(siegClient, never()).downloadXmls(any(), any());
     }
 
     /** A1: a count that fails is "unknown" - the window is downloaded, as before the gate. */
     @Test
     void aFailedCountDownloadsTheWindow() {
-        when(siegClient.contarXmls(any(), eq("key"))).thenThrow(new br.com.cshub.taxify.exception.SiegIntegrationException(
+        when(siegClient.countXmls(any(), eq("key"))).thenThrow(new br.com.cshub.taxify.exception.SiegIntegrationException(
                 "error.sieg.integration.failed", "x", 503));
         when(repository.countByCompany_IdAndIssueDateBetweenAndFoundInSiegAtIsNotNull(eq(company.getId()), any(), any())).thenReturn(50L);
-        when(siegClient.baixarXmls(any(), eq("key"))).thenReturn(List.of());
+        when(siegClient.downloadXmls(any(), eq("key"))).thenReturn(List.of());
 
         service.syncMonthIfMissing(company.getId(), LocalDate.of(2026, 10, 1), LocalDate.of(2026, 10, 31), null, 3);
 
-        verify(siegClient, times(1)).contarXmls(any(), any());
-        verify(siegClient, times(2)).baixarXmls(any(), any());
+        verify(siegClient, times(1)).countXmls(any(), any());
+        verify(siegClient, times(2)).downloadXmls(any(), any());
     }
 }

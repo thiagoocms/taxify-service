@@ -9,7 +9,7 @@ import br.com.cshub.taxify.integration.fiscalxml.FiscalXmlProvider;
 import br.com.cshub.taxify.integration.fiscalxml.FiscalXmlSide;
 import br.com.cshub.taxify.integration.fiscalxml.FiscalXmlSyncProperties;
 import br.com.cshub.taxify.integration.fiscalxml.FiscalXmlSyncRequest;
-import br.com.cshub.taxify.integration.sieg.SiegBaixarXmlsRequest;
+import br.com.cshub.taxify.integration.sieg.SiegDownloadXmlsRequest;
 import br.com.cshub.taxify.integration.sieg.SiegClient;
 import br.com.cshub.taxify.integration.sieg.SiegDocumentCounts;
 import br.com.cshub.taxify.repository.AccountingFirmRepository;
@@ -128,7 +128,7 @@ class SiegCallSavingsIntegrationTest {
     /** Notes SIEG counts on the received side but never delivers. */
     private int undeliverable;
     /** The received side's NF-e download pages (TipoXml 1, CnpjDest). */
-    private final List<SiegBaixarXmlsRequest> downloads = Collections.synchronizedList(new ArrayList<>());
+    private final List<SiegDownloadXmlsRequest> downloads = Collections.synchronizedList(new ArrayList<>());
     /** Every request about the company, in order: "count", "nfe", "nfse". */
     private final List<String> calls = Collections.synchronizedList(new ArrayList<>());
 
@@ -140,8 +140,8 @@ class SiegCallSavingsIntegrationTest {
                 "only against a local MySQL - connected to " + connection);
         clock.set(LocalDateTime.of(2026, 12, 20, 10, 0));
         fixture();
-        when(siegClient.contarXmls(any(), anyString())).thenAnswer(inv -> {
-            SiegBaixarXmlsRequest request = inv.getArgument(0);
+        when(siegClient.countXmls(any(), anyString())).thenAnswer(inv -> {
+            SiegDownloadXmlsRequest request = inv.getArgument(0);
             if (!mine(request)) {
                 return new SiegDocumentCounts(0, 0);
             }
@@ -150,12 +150,12 @@ class SiegCallSavingsIntegrationTest {
                     ? new SiegDocumentCounts(siegNotes.size() + undeliverable, serviceInvoicesOf(request).size())
                     : new SiegDocumentCounts(0, 0);
         });
-        when(siegClient.baixarXmls(any(), anyString())).thenAnswer(inv -> {
-            SiegBaixarXmlsRequest request = inv.getArgument(0);
+        when(siegClient.downloadXmls(any(), anyString())).thenAnswer(inv -> {
+            SiegDownloadXmlsRequest request = inv.getArgument(0);
             if (!mine(request)) {
                 return List.of();
             }
-            boolean nfse = request.tipoXml() != null && request.tipoXml() == 3;
+            boolean nfse = request.xmlType() != null && request.xmlType() == 3;
             calls.add(nfse ? "nfse" : "nfe");
             if (!cnpj.equals(request.cnpjDest())) {
                 return List.of();
@@ -172,16 +172,16 @@ class SiegCallSavingsIntegrationTest {
         });
     }
 
-    private List<byte[]> serviceInvoicesOf(SiegBaixarXmlsRequest request) {
-        LocalDate from = request.dataEmissaoInicio().atZone(java.time.ZoneOffset.UTC).toLocalDate();
-        LocalDate to = request.dataEmissaoFim().atZone(java.time.ZoneOffset.UTC).toLocalDate();
+    private List<byte[]> serviceInvoicesOf(SiegDownloadXmlsRequest request) {
+        LocalDate from = request.issueDateFrom().atZone(java.time.ZoneOffset.UTC).toLocalDate();
+        LocalDate to = request.issueDateTo().atZone(java.time.ZoneOffset.UTC).toLocalDate();
         synchronized (siegServiceInvoices) {
             return siegServiceInvoices.stream().filter(entry -> !entry.issued().isBefore(from) && !entry.issued().isAfter(to))
                     .map(ServiceInvoiceEntry::xml).toList();
         }
     }
 
-    private boolean mine(SiegBaixarXmlsRequest request) {
+    private boolean mine(SiegDownloadXmlsRequest request) {
         return cnpj.equals(request.cnpjDest()) || cnpj.equals(request.cnpjEmit());
     }
 
@@ -236,7 +236,7 @@ class SiegCallSavingsIntegrationTest {
         assertThat(missing(late)).isEmpty();
         // the regular page at skip 60 (5 known notes, the end) + the reconciliation from 0 (at most ceil(65/50) = 2 pages),
         // which stops on the first page: the 5 late notes were there
-        assertThat(downloads).extracting(SiegBaixarXmlsRequest::skip).containsExactly(60, 0);
+        assertThat(downloads).extracting(SiegDownloadXmlsRequest::skip).containsExactly(60, 0);
         FiscalXmlSyncControl control = controlRepository.findByCompany_Id(UUID.fromString(companyId)).orElseThrow();
         assertThat(control.getTotalImported()).isEqualTo(65);
         assertThat(control.getTotalSieg()).isEqualTo(65);
@@ -254,7 +254,7 @@ class SiegCallSavingsIntegrationTest {
         attempt();
         attempt();
         // skip 0 (full page), then skip 50 (10 notes, the end, 60 of 63) + the reconciliation: pages 0 and 50
-        assertThat(downloads).extracting(SiegBaixarXmlsRequest::skip).containsExactly(0, 50, 0, 50);
+        assertThat(downloads).extracting(SiegDownloadXmlsRequest::skip).containsExactly(0, 50, 0, 50);
         assertThat(stored()).isEqualTo(60);
         Map<String, Object> row = control();
         assertThat(row.get("total_sieg")).as("SIEG's own total, not cleared").isEqualTo(63);
@@ -275,7 +275,7 @@ class SiegCallSavingsIntegrationTest {
         // one more note that SIEG does deliver: the difference does not grow, only the page after the 60 is asked
         siegNotes.add(nfe(key(), SUPPLIER, cnpj, "2026-12-20T09:00:00-03:00"));
         attempt(true);
-        assertThat(downloads).extracting(SiegBaixarXmlsRequest::skip).containsExactly(60);
+        assertThat(downloads).extracting(SiegDownloadXmlsRequest::skip).containsExactly(60);
         assertThat(stored()).isEqualTo(61);
     }
 
@@ -297,7 +297,7 @@ class SiegCallSavingsIntegrationTest {
         // the reconciliation's second page fails
         java.util.concurrent.atomic.AtomicInteger reconcilePages = new java.util.concurrent.atomic.AtomicInteger();
         org.mockito.Mockito.doAnswer(inv -> {
-            SiegBaixarXmlsRequest request = inv.getArgument(0);
+            SiegDownloadXmlsRequest request = inv.getArgument(0);
             downloads.add(request);
             if (br.com.cshub.taxify.integration.fiscalxml.ProviderCallContext.current()
                     == br.com.cshub.taxify.integration.fiscalxml.ProviderCallPurpose.RECONCILE && reconcilePages.incrementAndGet() == 2) {
@@ -308,7 +308,7 @@ class SiegCallSavingsIntegrationTest {
                 int to = Math.min(from + request.take(), siegNotes.size());
                 return new ArrayList<>(siegNotes.subList(from, to));
             }
-        }).when(siegClient).baixarXmls(any(), anyString());
+        }).when(siegClient).downloadXmls(any(), anyString());
         downloads.clear();
         attempt(true); // counts 66, page at 60 (6 known/new), the end with 63 of 66: reconcile 0 (ok), 50 (fails)
 
@@ -321,7 +321,7 @@ class SiegCallSavingsIntegrationTest {
         downloads.clear();
         attempt();
         attempt();
-        assertThat(downloads).extracting(SiegBaixarXmlsRequest::skip).containsExactly(63, 63);
+        assertThat(downloads).extracting(SiegDownloadXmlsRequest::skip).containsExactly(63, 63);
         assertThat(reconcilePages.get()).isEqualTo(2);
         assertThat(stored()).isEqualTo(63);
 
@@ -329,7 +329,7 @@ class SiegCallSavingsIntegrationTest {
         clock.set(LocalDateTime.of(2026, 12, 21, 10, 0));
         downloads.clear();
         attempt();
-        assertThat(downloads).extracting(SiegBaixarXmlsRequest::skip).containsExactly(63, 0, 50);
+        assertThat(downloads).extracting(SiegDownloadXmlsRequest::skip).containsExactly(63, 0, 50);
         assertThat(stored()).isEqualTo(66);
         assertThat(control().get("received_known_gap")).isEqualTo(0);
     }
@@ -387,7 +387,7 @@ class SiegCallSavingsIntegrationTest {
         // the received side's count matches what SIEG delivered: no page; the note of the 20th is still in the sweep's
         // window (20 to 22): one event page; November counted again; December's NFS-e are all there: no download
         assertThat(calls).containsExactly("count", "nfe", "count", "count", "count");
-        assertThat(downloads.getLast().dataEmissaoInicio()).as("the event sweep: today - 2")
+        assertThat(downloads.getLast().issueDateFrom()).as("the event sweep: today - 2")
                 .isEqualTo(java.time.Instant.parse("2026-12-20T00:00:00Z"));
     }
 

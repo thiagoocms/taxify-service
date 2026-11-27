@@ -33,19 +33,19 @@ public class SiegClient {
 
     /**
      * How many documents match this filter, per SIEG's own count (not the size of a downloaded batch) - checked before
-     * calling {@link #baixarXmls} so a company with nothing pending doesn't spend a rate-limited download call for nothing.
+     * calling {@link #downloadXmls} so a company with nothing pending doesn't spend a rate-limited download call for nothing.
      * SIEG answers every type at once (NFe/NFCe/CTe/CFe/NFSe) whatever the request's TipoXml: the NF-e and NFS-e counts
      * are kept ({@link SiegDocumentCounts}), so the NFS-e check reuses the NF-e side's count without a request of its own.
      *
      * @param apiKey the calling AccountingFirm's own SIEG "X-API-Key" (FirmIntegration of type SIEG)
      */
-    public SiegDocumentCounts contarXmls(SiegBaixarXmlsRequest request, String apiKey) {
+    public SiegDocumentCounts countXmls(SiegDownloadXmlsRequest request, String apiKey) {
         if (apiKey == null || apiKey.isBlank()) {
             throw new SiegIntegrationException("error.sieg.api.key.missing", messageService.getMessage("error.sieg.api.key.missing"));
         }
 
         try {
-            SiegContarXmlsResponse response = feignClient.contarXmls(apiKey, request);
+            SiegCountXmlsResponse response = feignClient.countXmls(apiKey, request);
             if (response == null || !response.isSuccess() || response.data() == null) {
                 throw new SiegIntegrationException("error.sieg.integration.failed", messageService.getMessage("error.sieg.integration.failed"));
             }
@@ -64,12 +64,12 @@ public class SiegClient {
     /**
      * @param apiKey the calling AccountingFirm's own SIEG "X-API-Key" (FirmIntegration of type SIEG)
      */
-    public List<byte[]> baixarXmls(SiegBaixarXmlsRequest request, String apiKey) {
+    public List<byte[]> downloadXmls(SiegDownloadXmlsRequest request, String apiKey) {
         if (apiKey == null || apiKey.isBlank()) {
             throw new SiegIntegrationException("error.sieg.api.key.missing", messageService.getMessage("error.sieg.api.key.missing"));
         }
 
-        try (Response response = feignClient.baixarXmls(apiKey, request)) {
+        try (Response response = feignClient.downloadXmls(apiKey, request)) {
             byte[] body = readBody(response);
             if (response.status() == 404 && errorSnippet(body).contains("Nenhum arquivo XML localizado")) {
                 // SIEG's way of saying "this page is empty" - not a failure

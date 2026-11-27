@@ -214,7 +214,7 @@ public class FiscalXmlIntegrationService {
      */
     private SiegSideOutcome syncSideOutcome(Company company, XmlDownloadFilterDTO filter, FiscalXmlSide side, boolean skipCountCheck) {
         String cnpj = DocumentNumbers.onlyDigits(company.getDocument().getNumber());
-        SiegBaixarXmlsRequest request = new SiegBaixarXmlsRequest(
+        SiegDownloadXmlsRequest request = new SiegDownloadXmlsRequest(
                 filter.xmlType(),
                 filter.take(),
                 normalizeSkip(filter.skip()),
@@ -232,7 +232,7 @@ public class FiscalXmlIntegrationService {
 
         if (skipCountCheck) {
             log.info("Skipping contar-xmls for company {} ({}) - already known pending from a previous check", company.getId(), side);
-            List<byte[]> xmlContents = siegClient.baixarXmls(request, apiKey);
+            List<byte[]> xmlContents = siegClient.downloadXmls(request, apiKey);
             XmlDownloadResultDTO page = persistAll(company, xmlContents, FiscalXmlSource.SIEG);
             Integer knownTotal = known == null ? null
                     : side == FiscalXmlSide.ISSUED ? known.getIssuedTotalSieg() : Integer.valueOf(known.getTotalSieg());
@@ -257,7 +257,7 @@ public class FiscalXmlIntegrationService {
                     totalSieg, company.getId(), side, request.skip(), knownGap);
             result = new XmlDownloadResultDTO(0, 0, 0, 0, 0, List.of(), List.of(), 0);
         } else {
-            List<byte[]> xmlContents = siegClient.baixarXmls(request, apiKey);
+            List<byte[]> xmlContents = siegClient.downloadXmls(request, apiKey);
             result = persistAll(company, xmlContents, FiscalXmlSource.SIEG);
             if (totalSieg > 0) {
                 end = pagingEnd(company, side, filter, request.skip(), totalSieg, xmlContents.size(), knownGap, true);
@@ -316,12 +316,12 @@ public class FiscalXmlIntegrationService {
         Company company = findCompanyWithCnpj(need.companyId().toString());
         String cnpj = DocumentNumbers.onlyDigits(company.getDocument().getNumber());
         String apiKey = firmIntegrationService.getApiKey(company.getAccountingFirm().getId(), IntegrationType.SIEG);
-        SiegBaixarXmlsRequest request = new SiegBaixarXmlsRequest(TIPO_XML_NFE, PAGE_SIZE, index * PAGE_SIZE,
+        SiegDownloadXmlsRequest request = new SiegDownloadXmlsRequest(TIPO_XML_NFE, PAGE_SIZE, index * PAGE_SIZE,
                 startOfDayUtc(need.from()), endOfDayUtc(need.to()),
                 need.side() == FiscalXmlSide.ISSUED ? cnpj : null,
                 need.side() == FiscalXmlSide.RECEIVED ? cnpj : null,
                 true);
-        List<byte[]> xmlContents = siegClient.baixarXmls(request, apiKey);
+        List<byte[]> xmlContents = siegClient.downloadXmls(request, apiKey);
         XmlDownloadResultDTO result = persistAll(company, xmlContents, FiscalXmlSource.SIEG, false);
         return new ReconciledPage(xmlContents.size(), result.totalPersistedNew(),
                 siegDelivered(company.getId(), need.side(), need.from(), need.to()));
@@ -366,7 +366,7 @@ public class FiscalXmlIntegrationService {
         String cnpj = DocumentNumbers.onlyDigits(company.getDocument().getNumber());
         String apiKey = firmIntegrationService.getApiKey(company.getAccountingFirm().getId(), IntegrationType.SIEG);
         int delivered = siegDelivered(companyId, side, from, to);
-        SiegBaixarXmlsRequest request = new SiegBaixarXmlsRequest(TIPO_XML_NFE, PAGE_SIZE, delivered, startOfDayUtc(from),
+        SiegDownloadXmlsRequest request = new SiegDownloadXmlsRequest(TIPO_XML_NFE, PAGE_SIZE, delivered, startOfDayUtc(from),
                 endOfDayUtc(to), side == FiscalXmlSide.ISSUED ? cnpj : null, side == FiscalXmlSide.RECEIVED ? cnpj : null, true);
         SiegDocumentCounts counts = countDocuments(company, request, apiKey);
         XmlDownloadResultDTO none = new XmlDownloadResultDTO(0, 0, 0, 0, 0, List.of(), List.of(), 0);
@@ -385,7 +385,7 @@ public class FiscalXmlIntegrationService {
         }
         log.info("SIEG counts {} NFe of company {} ({}) for {}, {} delivered and {} known missing - asking for the rest",
                 counts.nfe(), companyId, side, month, delivered, knownGap);
-        List<byte[]> xmlContents = siegClient.baixarXmls(request, apiKey);
+        List<byte[]> xmlContents = siegClient.downloadXmls(request, apiKey);
         XmlDownloadResultDTO result = persistAll(company, xmlContents, FiscalXmlSource.SIEG, false);
         XmlDownloadFilterDTO window = new XmlDownloadFilterDTO(companyId.toString(), TIPO_XML_NFE, from, to, PAGE_SIZE, delivered,
                 null, side);
@@ -426,11 +426,11 @@ public class FiscalXmlIntegrationService {
      * SIEG's count for the side's filter (NF-e and NFS-e); null = the count failed (RN-07: the download goes on). Always
      * from Skip 0 and without BaixarEventos: the whole window, notes only - comparable with what's stored.
      */
-    private SiegDocumentCounts countDocuments(Company company, SiegBaixarXmlsRequest request, String apiKey) {
+    private SiegDocumentCounts countDocuments(Company company, SiegDownloadXmlsRequest request, String apiKey) {
         try {
-            SiegBaixarXmlsRequest countRequest = new SiegBaixarXmlsRequest(request.tipoXml(), request.take(), 0,
-                    request.dataEmissaoInicio(), request.dataEmissaoFim(), request.cnpjEmit(), request.cnpjDest(), null);
-            return siegClient.contarXmls(countRequest, apiKey);
+            SiegDownloadXmlsRequest countRequest = new SiegDownloadXmlsRequest(request.xmlType(), request.take(), 0,
+                    request.issueDateFrom(), request.issueDateTo(), request.cnpjEmit(), request.cnpjDest(), null);
+            return siegClient.countXmls(countRequest, apiKey);
         } catch (Exception e) {
             log.warn("Could not count pending SIEG NFe for company {} - proceeding with baixar-xmls anyway: {}", company.getId(),
                     e.getClass().getSimpleName());
@@ -738,12 +738,12 @@ public class FiscalXmlIntegrationService {
         String apiKey = firmIntegrationService.getApiKey(company.getAccountingFirm().getId(), IntegrationType.SIEG);
         int events = 0;
         for (int page = 0; page < EVENT_SWEEP_MAX_PAGES; page++) {
-            SiegBaixarXmlsRequest request = new SiegBaixarXmlsRequest(TIPO_XML_NFE, PAGE_SIZE, page * PAGE_SIZE,
+            SiegDownloadXmlsRequest request = new SiegDownloadXmlsRequest(TIPO_XML_NFE, PAGE_SIZE, page * PAGE_SIZE,
                     startOfDayUtc(from), endOfDayUtc(to),
                     side == FiscalXmlSide.ISSUED ? cnpj : null,
                     side == FiscalXmlSide.RECEIVED ? cnpj : null,
                     true);
-            XmlDownloadResultDTO result = persistAll(company, siegClient.baixarXmls(request, apiKey), FiscalXmlSource.SIEG);
+            XmlDownloadResultDTO result = persistAll(company, siegClient.downloadXmls(request, apiKey), FiscalXmlSource.SIEG);
             events += result.totalEventsRecorded();
             if (result.totalXmlsCounted() < PAGE_SIZE) {
                 break;
@@ -764,13 +764,13 @@ public class FiscalXmlIntegrationService {
         Company company = findCompanyWithCnpj(companyId.toString());
         String cnpj = DocumentNumbers.onlyDigits(company.getDocument().getNumber());
         String apiKey = firmIntegrationService.getApiKey(company.getAccountingFirm().getId(), IntegrationType.SIEG);
-        SiegBaixarXmlsRequest request = new SiegBaixarXmlsRequest(TIPO_XML_NFE, PAGE_SIZE, page * PAGE_SIZE,
+        SiegDownloadXmlsRequest request = new SiegDownloadXmlsRequest(TIPO_XML_NFE, PAGE_SIZE, page * PAGE_SIZE,
                 startOfDayUtc(from), endOfDayUtc(to),
                 side == FiscalXmlSide.ISSUED ? cnpj : null,
                 side == FiscalXmlSide.RECEIVED ? cnpj : null,
                 true);
         // counts and keys only - the recovery never answers with the XMLs themselves
-        return persistAll(company, siegClient.baixarXmls(request, apiKey), FiscalXmlSource.SIEG, false);
+        return persistAll(company, siegClient.downloadXmls(request, apiKey), FiscalXmlSource.SIEG, false);
     }
 
     public static int pageSize() {
