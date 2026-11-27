@@ -715,6 +715,7 @@
                     "month" : "String",
                     "totalSieg" : "Integer"
                   },
+                  "storedAnySource" : "Integer",
                   "to" : "LocalDate",
                   "totalSieg" : "Integer"
                 },
@@ -746,6 +747,7 @@
                     "month" : "String",
                     "totalSieg" : "Integer"
                   },
+                  "storedAnySource" : "Integer",
                   "to" : "LocalDate",
                   "totalSieg" : "Integer"
                 },
@@ -902,6 +904,7 @@
               "month" : "String",
               "totalSieg" : "Integer"
             },
+            "storedAnySource" : "Integer",
             "to" : "LocalDate",
             "totalSieg" : "Integer"
           },
@@ -933,6 +936,7 @@
               "month" : "String",
               "totalSieg" : "Integer"
             },
+            "storedAnySource" : "Integer",
             "to" : "LocalDate",
             "totalSieg" : "Integer"
           },
@@ -2687,6 +2691,7 @@
                     "month" : "String",
                     "totalSieg" : "Integer"
                   },
+                  "storedAnySource" : "Integer",
                   "to" : "LocalDate",
                   "totalSieg" : "Integer"
                 },
@@ -2718,6 +2723,7 @@
                     "month" : "String",
                     "totalSieg" : "Integer"
                   },
+                  "storedAnySource" : "Integer",
                   "to" : "LocalDate",
                   "totalSieg" : "Integer"
                 },
@@ -2874,6 +2880,7 @@
               "month" : "String",
               "totalSieg" : "Integer"
             },
+            "storedAnySource" : "Integer",
             "to" : "LocalDate",
             "totalSieg" : "Integer"
           },
@@ -2905,6 +2912,7 @@
               "month" : "String",
               "totalSieg" : "Integer"
             },
+            "storedAnySource" : "Integer",
             "to" : "LocalDate",
             "totalSieg" : "Integer"
           },
@@ -3078,6 +3086,58 @@
         "id" : "String",
         "reason" : "String",
         "type" : "String"
+      }
+    }
+  },
+  "GET /api/v1/platform/ibs-cbs-rates" : {
+    "params" : { },
+    "response" : {
+      "warnings" : {
+        "array" : {
+          "text" : "String",
+          "type" : "String",
+          "year" : "int"
+        }
+      },
+      "years" : {
+        "array" : {
+          "cbsRate" : "BigDecimal",
+          "changedAt" : "OffsetDateTime",
+          "changedBy" : "String",
+          "generatesFindings" : "Boolean",
+          "ibsMunicipalRate" : "BigDecimal",
+          "ibsStateRate" : "BigDecimal",
+          "legalBasis" : "String",
+          "sourceUrl" : "String",
+          "status" : "String",
+          "version" : "Integer",
+          "year" : "Integer"
+        }
+      }
+    }
+  },
+  "GET /api/v1/platform/ibs-cbs-rates/{year}/history" : {
+    "params" : {
+      "path:year" : {
+        "type" : "Integer",
+        "required" : true
+      }
+    },
+    "response" : {
+      "array" : {
+        "action" : "String",
+        "cbsAfter" : "BigDecimal",
+        "cbsBefore" : "BigDecimal",
+        "changedAt" : "OffsetDateTime",
+        "changedBy" : "String",
+        "ibsMunicipalAfter" : "BigDecimal",
+        "ibsMunicipalBefore" : "BigDecimal",
+        "ibsStateAfter" : "BigDecimal",
+        "ibsStateBefore" : "BigDecimal",
+        "legalBasisAfter" : "String",
+        "sourceUrlAfter" : "String",
+        "statusAfter" : "String",
+        "statusBefore" : "String"
       }
     }
   },
@@ -3305,6 +3365,246 @@
       "ncmCorreto" : "String",
       "observacoes" : "String",
       "origemMercadoria" : "String"
+    }
+  },
+  "GET /api/v1/reform/features" : {
+    "params" : { },
+    "response" : {
+      "stockCredit" : {
+        "closed" : "boolean",
+        "closesOn" : "LocalDate",
+        "enabled" : "boolean"
+      }
+    }
+  },
+  "GET /api/v1/reform/ibs-cbs-rates" : {
+    "params" : { },
+    "response" : {
+      "warnings" : {
+        "array" : {
+          "text" : "String",
+          "type" : "String",
+          "year" : "int"
+        }
+      },
+      "years" : {
+        "array" : {
+          "cbsRate" : "BigDecimal",
+          "generatesFindings" : "boolean",
+          "ibsMunicipalRate" : "BigDecimal",
+          "ibsStateRate" : "BigDecimal",
+          "legalBasis" : "String",
+          "sourceUrl" : "String",
+          "status" : "String",
+          "year" : "Integer"
+        }
+      }
+    }
+  },
+  "GET /api/v1/reform/stock-credit" : {
+    "params" : {
+      "query:year" : {
+        "type" : "Integer",
+        "required" : false
+      },
+      "query:classification" : {
+        "multi" : true,
+        "type" : "String",
+        "required" : false
+      },
+      "query:status" : {
+        "multi" : true,
+        "type" : "String",
+        "required" : false
+      },
+      "query:coverage" : {
+        "multi" : true,
+        "type" : "String",
+        "required" : false
+      },
+      "query:search" : {
+        "type" : "String",
+        "required" : false
+      },
+      "query:page" : {
+        "type" : "Integer",
+        "required" : false
+      },
+      "query:size" : {
+        "type" : "Integer",
+        "required" : false
+      },
+      "query:sort" : {
+        "type" : "String",
+        "required" : false
+      }
+    },
+    "response" : {
+      "notice" : "String",
+      "page" : {
+        "content" : {
+          "array" : {
+            "calculatedAt" : "OffsetDateTime",
+            "classification" : "String",
+            "classificationReason" : "String",
+            "cnpj" : "String",
+            "companyId" : "java.util.UUID",
+            "companyName" : "String",
+            "coverage" : "String",
+            "firstInbound" : "LocalDate",
+            "inboundInvoices" : "int",
+            "lastInbound" : "LocalDate",
+            "monthsEvaluated" : "int",
+            "monthsWithInbound" : "int",
+            "nextYearRegime" : "String",
+            "note" : "String",
+            "purchaseItems" : "int",
+            "referenceRegime" : "String",
+            "status" : "String",
+            "statusChangedAt" : "OffsetDateTime",
+            "statusChangedBy" : "String",
+            "version" : "int",
+            "yearPurchases" : "BigDecimal"
+          }
+        },
+        "number" : "int",
+        "size" : "int",
+        "totalElements" : "long",
+        "totalPages" : "int"
+      },
+      "summary" : {
+        "byClassification" : {
+          "mapKey" : "String",
+          "mapValue" : "Long"
+        },
+        "byStatus" : {
+          "mapKey" : "String",
+          "mapValue" : "Long"
+        },
+        "companies" : "long",
+        "notCalculated" : "long",
+        "oldestCalculatedAt" : "OffsetDateTime",
+        "yearPurchasesTotal" : "BigDecimal"
+      }
+    }
+  },
+  "GET /api/v1/reform/stock-credit/export.csv" : {
+    "params" : {
+      "query:year" : {
+        "type" : "Integer",
+        "required" : false
+      },
+      "query:classification" : {
+        "multi" : true,
+        "type" : "String",
+        "required" : false
+      },
+      "query:status" : {
+        "multi" : true,
+        "type" : "String",
+        "required" : false
+      },
+      "query:coverage" : {
+        "multi" : true,
+        "type" : "String",
+        "required" : false
+      },
+      "query:search" : {
+        "type" : "String",
+        "required" : false
+      },
+      "query:sort" : {
+        "type" : "String",
+        "required" : false
+      }
+    },
+    "response" : "byte[]"
+  },
+  "GET /api/v1/reform/stock-credit/{companyId}" : {
+    "params" : {
+      "path:companyId" : {
+        "type" : "UUID",
+        "required" : true
+      },
+      "query:year" : {
+        "type" : "Integer",
+        "required" : false
+      }
+    },
+    "response" : {
+      "closed" : "boolean",
+      "memory" : {
+        "array" : "String"
+      },
+      "notice" : "String",
+      "purchasesByMonth" : {
+        "array" : {
+          "amount" : "BigDecimal",
+          "invoices" : "int",
+          "month" : "String"
+        }
+      },
+      "purchasesByPisCst" : {
+        "array" : {
+          "amount" : "BigDecimal",
+          "cst" : "String",
+          "items" : "int"
+        }
+      },
+      "referenceRegimeSince" : "LocalDate",
+      "referenceRegimeSource" : "String",
+      "refreshAvailableAt" : "OffsetDateTime",
+      "row" : {
+        "calculatedAt" : "OffsetDateTime",
+        "classification" : "String",
+        "classificationReason" : "String",
+        "cnpj" : "String",
+        "companyId" : "java.util.UUID",
+        "companyName" : "String",
+        "coverage" : "String",
+        "firstInbound" : "LocalDate",
+        "inboundInvoices" : "int",
+        "lastInbound" : "LocalDate",
+        "monthsEvaluated" : "int",
+        "monthsWithInbound" : "int",
+        "nextYearRegime" : "String",
+        "note" : "String",
+        "purchaseItems" : "int",
+        "referenceRegime" : "String",
+        "status" : "String",
+        "statusChangedAt" : "OffsetDateTime",
+        "statusChangedBy" : "String",
+        "version" : "int",
+        "yearPurchases" : "BigDecimal"
+      },
+      "topNcm" : {
+        "array" : {
+          "amount" : "BigDecimal",
+          "items" : "int",
+          "ncm" : "String"
+        }
+      }
+    }
+  },
+  "GET /api/v1/reform/stock-credit/{companyId}/history" : {
+    "params" : {
+      "path:companyId" : {
+        "type" : "UUID",
+        "required" : true
+      },
+      "query:year" : {
+        "type" : "Integer",
+        "required" : false
+      }
+    },
+    "response" : {
+      "array" : {
+        "changedAt" : "OffsetDateTime",
+        "changedBy" : "String",
+        "from" : "String",
+        "note" : "String",
+        "to" : "String"
+      }
     }
   },
   "GET /api/v1/relatorios/curva-abc" : {
@@ -6597,6 +6897,72 @@
       "origemMercadoria" : "String"
     }
   },
+  "POST /api/v1/reform/stock-credit/{companyId}/refresh" : {
+    "params" : {
+      "path:companyId" : {
+        "type" : "UUID",
+        "required" : true
+      },
+      "query:year" : {
+        "type" : "Integer",
+        "required" : false
+      }
+    },
+    "response" : {
+      "closed" : "boolean",
+      "memory" : {
+        "array" : "String"
+      },
+      "notice" : "String",
+      "purchasesByMonth" : {
+        "array" : {
+          "amount" : "BigDecimal",
+          "invoices" : "int",
+          "month" : "String"
+        }
+      },
+      "purchasesByPisCst" : {
+        "array" : {
+          "amount" : "BigDecimal",
+          "cst" : "String",
+          "items" : "int"
+        }
+      },
+      "referenceRegimeSince" : "LocalDate",
+      "referenceRegimeSource" : "String",
+      "refreshAvailableAt" : "OffsetDateTime",
+      "row" : {
+        "calculatedAt" : "OffsetDateTime",
+        "classification" : "String",
+        "classificationReason" : "String",
+        "cnpj" : "String",
+        "companyId" : "java.util.UUID",
+        "companyName" : "String",
+        "coverage" : "String",
+        "firstInbound" : "LocalDate",
+        "inboundInvoices" : "int",
+        "lastInbound" : "LocalDate",
+        "monthsEvaluated" : "int",
+        "monthsWithInbound" : "int",
+        "nextYearRegime" : "String",
+        "note" : "String",
+        "purchaseItems" : "int",
+        "referenceRegime" : "String",
+        "status" : "String",
+        "statusChangedAt" : "OffsetDateTime",
+        "statusChangedBy" : "String",
+        "version" : "int",
+        "yearPurchases" : "BigDecimal"
+      },
+      "topNcm" : {
+        "array" : {
+          "amount" : "BigDecimal",
+          "items" : "int",
+          "ncm" : "String"
+        }
+      }
+    }
+  },
   "POST /api/v1/retencoes/conferencia" : {
     "params" : {
       "body" : {
@@ -7409,6 +7775,40 @@
       "usersInUse" : "long"
     }
   },
+  "PUT /api/v1/platform/ibs-cbs-rates/{year}" : {
+    "params" : {
+      "path:year" : {
+        "type" : "Integer",
+        "required" : true
+      },
+      "body" : {
+        "cbsRate" : "BigDecimal",
+        "changedAt" : "OffsetDateTime",
+        "changedBy" : "String",
+        "generatesFindings" : "Boolean",
+        "ibsMunicipalRate" : "BigDecimal",
+        "ibsStateRate" : "BigDecimal",
+        "legalBasis" : "String",
+        "sourceUrl" : "String",
+        "status" : "String",
+        "version" : "Integer",
+        "year" : "Integer"
+      }
+    },
+    "response" : {
+      "cbsRate" : "BigDecimal",
+      "changedAt" : "OffsetDateTime",
+      "changedBy" : "String",
+      "generatesFindings" : "Boolean",
+      "ibsMunicipalRate" : "BigDecimal",
+      "ibsStateRate" : "BigDecimal",
+      "legalBasis" : "String",
+      "sourceUrl" : "String",
+      "status" : "String",
+      "version" : "Integer",
+      "year" : "Integer"
+    }
+  },
   "PUT /api/v1/product-fiscal-rules/{id}" : {
     "params" : {
       "path:id" : {
@@ -7463,6 +7863,43 @@
       "ncmCorreto" : "String",
       "observacoes" : "String",
       "origemMercadoria" : "String"
+    }
+  },
+  "PUT /api/v1/reform/stock-credit/{companyId}/status" : {
+    "params" : {
+      "path:companyId" : {
+        "type" : "UUID",
+        "required" : true
+      },
+      "body" : {
+        "note" : "String",
+        "status" : "String",
+        "version" : "Integer",
+        "year" : "Integer"
+      }
+    },
+    "response" : {
+      "calculatedAt" : "OffsetDateTime",
+      "classification" : "String",
+      "classificationReason" : "String",
+      "cnpj" : "String",
+      "companyId" : "java.util.UUID",
+      "companyName" : "String",
+      "coverage" : "String",
+      "firstInbound" : "LocalDate",
+      "inboundInvoices" : "int",
+      "lastInbound" : "LocalDate",
+      "monthsEvaluated" : "int",
+      "monthsWithInbound" : "int",
+      "nextYearRegime" : "String",
+      "note" : "String",
+      "purchaseItems" : "int",
+      "referenceRegime" : "String",
+      "status" : "String",
+      "statusChangedAt" : "OffsetDateTime",
+      "statusChangedBy" : "String",
+      "version" : "int",
+      "yearPurchases" : "BigDecimal"
     }
   },
   "PUT /api/v1/subscriptions/{id}" : {
