@@ -60,7 +60,7 @@ public class BillingChargeValidation extends AbstractCrudValidation<BillingCharg
     @Override
     protected BillingCharge checkUpdateConsistence(UUID id, BillingCharge toUpdateEntity) {
         if (Objects.isNull(id) || Objects.isNull(toUpdateEntity.getId()) || id.compareTo(toUpdateEntity.getId()) != 0) {
-            throw new BadRequestException(messageService.getMessage("error.generic.bad.request"));
+            throw new BadRequestException("error.generic.bad.request", messageService.getMessage("error.generic.bad.request"));
         }
         BillingCharge persisted = checkExist(id);
         assertManual(persisted);
@@ -71,7 +71,7 @@ public class BillingChargeValidation extends AbstractCrudValidation<BillingCharg
     /** Synced charges belong to the provider. */
     public void assertManual(BillingCharge charge) {
         if (charge.getSource() != BillingProviderType.MANUAL) {
-            throw new BadRequestException(messageService.getMessage("error.billing.charge.synced"));
+            throw new BadRequestException("error.billing.charge.synced", messageService.getMessage("error.billing.charge.synced"));
         }
     }
 
@@ -81,7 +81,7 @@ public class BillingChargeValidation extends AbstractCrudValidation<BillingCharg
         if (charge.getSubscription() != null) {
             Subscription subscription = subscriptionValidation.checkExist(charge.getSubscription().getId());
             if (!subscription.getCompany().getId().equals(charge.getCompany().getId())) {
-                throw new BadRequestException(messageService.getMessage("error.billing.charge.subscription.company"));
+                throw new BadRequestException("error.billing.charge.subscription.company", messageService.getMessage("error.billing.charge.subscription.company"));
             }
             charge.setSubscription(subscription);
         }
@@ -93,7 +93,7 @@ public class BillingChargeValidation extends AbstractCrudValidation<BillingCharg
     protected void checkValidationsExtras(BillingCharge charge) {
         BigDecimal paid = charge.getPaidAmount() == null ? BigDecimal.ZERO : charge.getPaidAmount();
         if (paid.compareTo(charge.getAmount()) > 0) {
-            throw new BadRequestException(messageService.getMessage("error.billing.charge.overpaid"));
+            throw new BadRequestException("error.billing.charge.overpaid", messageService.getMessage("error.billing.charge.overpaid"));
         }
         charge.setPaidAmount(paid);
         charge.setOpenAmount(charge.getAmount().subtract(paid));

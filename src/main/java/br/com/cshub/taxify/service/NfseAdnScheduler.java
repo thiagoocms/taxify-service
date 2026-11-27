@@ -8,6 +8,8 @@ import br.com.cshub.taxify.integration.nfse.AdnProperties;
 import br.com.cshub.taxify.repository.CompanyCertificateRepository;
 import br.com.cshub.taxify.repository.CompanyRepository;
 import br.com.cshub.taxify.repository.SubscriptionRepository;
+import br.com.cshub.taxify.service.firmaccess.FirmAccessService;
+import br.com.cshub.taxify.service.firmaccess.RoutineGate;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 import org.springframework.scheduling.annotation.Scheduled;
@@ -37,9 +39,12 @@ public class NfseAdnScheduler {
     private final NfseAdnService service;
     private final AdnProperties properties;
     private final AtomicBoolean running = new AtomicBoolean(false);
+    private final FirmAccessService firmAccessService;
 
     public NfseAdnScheduler(CompanyCertificateRepository certificateRepository, CompanyRepository companyRepository,
-                            SubscriptionRepository subscriptionRepository, NfseAdnService service, AdnProperties properties) {
+                            SubscriptionRepository subscriptionRepository, NfseAdnService service, AdnProperties properties,
+                            FirmAccessService firmAccessService) {
+        this.firmAccessService = firmAccessService;
         this.certificateRepository = certificateRepository;
         this.companyRepository = companyRepository;
         this.subscriptionRepository = subscriptionRepository;
@@ -81,7 +86,10 @@ public class NfseAdnScheduler {
                 .collect(Collectors.groupingBy(company -> company.getAccountingFirm().getId(),
                         Collectors.mapping(company -> CompanyCertificateService.cnpjOf(company).substring(0, 8), Collectors.toSet())));
         LocalDate today = LocalDate.now();
-        return rootsByFirm.entrySet().stream()
+        // F1-RN-10: no capture for a blocked firm; the NSU of NfseAdnControl stays as it was
+        RoutineGate gate = firmAccessService.routineGate("nfse-adn");
+        List<Company> result = rootsByFirm.entrySet().stream()
+                .filter(entry -> gate.allowsFirm(entry.getKey()))
                 .flatMap(entry -> companyRepository.findByAccountingFirm_IdAndDeletedIsFalseOrderByNameAsc(entry.getKey()).stream()
                         .filter(company -> {
                             String cnpj = CompanyCertificateService.cnpjOf(company);
@@ -89,6 +97,8 @@ public class NfseAdnScheduler {
                         }))
                 .filter(company -> entitled(company.getId(), today))
                 .toList();
+        gate.logSkipped();
+        return result;
     }
 
     /** Today's plan has the fiscal XML import with the national NFS-e integration. */

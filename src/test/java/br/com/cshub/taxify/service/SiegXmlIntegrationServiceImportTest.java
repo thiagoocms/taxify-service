@@ -147,6 +147,50 @@ class SiegXmlIntegrationServiceImportTest {
         verify(eventService).record(any(), org.mockito.ArgumentMatchers.<FiscalEventData>argThat(FiscalEventData::isCancellation));
     }
 
+    /**
+     * QA-02: a page of a blocked month - asked by issue date, the side's CNPJ and with events; stored like any SIEG note,
+     * and the monthly sync bookkeeping is never touched (the current month's counts stay right).
+     */
+    @Test
+    void aRecoveryPageStoresTheNotesWithoutTouchingTheSyncBookkeeping() {
+        Company company = new Company(companyId);
+        company.setDocument(new Document("11594485000105", DocumentTypeEnum.CNPJ));
+        company.setAccountingFirm(new br.com.cshub.taxify.domain.accountingfirm.AccountingFirm(UUID.randomUUID()));
+        when(companyValidation.checkExist(companyId)).thenReturn(company);
+        when(siegClient.baixarXmls(any(), any())).thenReturn(java.util.List.of(NFE_XML.getBytes(StandardCharsets.UTF_8)));
+
+        XmlDownloadResultDTO result = service.syncPeriodPageFromSieg(companyId,
+                br.com.cshub.taxify.integration.fiscalxml.FiscalXmlSide.RECEIVED,
+                java.time.LocalDate.of(2026, 12, 1), java.time.LocalDate.of(2026, 12, 31), 2);
+
+        assertThat(result.totalPersistedNew()).isEqualTo(1);
+        org.mockito.ArgumentCaptor<br.com.cshub.taxify.integration.sieg.SiegBaixarXmlsRequest> request = org.mockito.ArgumentCaptor.captor();
+        verify(siegClient).baixarXmls(request.capture(), any());
+        assertThat(request.getValue().skip()).isEqualTo(100);
+        assertThat(request.getValue().cnpjDest()).isEqualTo("11594485000105");
+        assertThat(request.getValue().cnpjEmit()).isNull();
+        org.mockito.Mockito.verifyNoInteractions(syncControlRepository);
+    }
+
+    /** QA-02 "sem duplicar notas": a note the regular sync already stored comes back in the recovery page - skipped. */
+    @Test
+    void aRecoveryPageNeverDuplicatesAStoredNote() {
+        Company company = new Company(companyId);
+        company.setDocument(new Document("11594485000105", DocumentTypeEnum.CNPJ));
+        company.setAccountingFirm(new br.com.cshub.taxify.domain.accountingfirm.AccountingFirm(UUID.randomUUID()));
+        when(companyValidation.checkExist(companyId)).thenReturn(company);
+        when(siegClient.baixarXmls(any(), any())).thenReturn(java.util.List.of(NFE_XML.getBytes(StandardCharsets.UTF_8)));
+        when(xmlDocumentRepository.existsByCompany_IdAndAccessKey(companyId, "35240112345678000199550010000000011000000010")).thenReturn(true);
+
+        XmlDownloadResultDTO result = service.syncPeriodPageFromSieg(companyId,
+                br.com.cshub.taxify.integration.fiscalxml.FiscalXmlSide.RECEIVED,
+                java.time.LocalDate.of(2026, 12, 1), java.time.LocalDate.of(2026, 12, 31), 0);
+
+        assertThat(result.totalPersistedNew()).isZero();
+        assertThat(result.totalDuplicatedSkipped()).isEqualTo(1);
+        verify(xmlDocumentRepository, org.mockito.Mockito.never()).save(any());
+    }
+
     @Test
     void skipsAnAlreadyPersistedAccessKeyAsDuplicate() {
         when(xmlDocumentRepository.existsByCompany_IdAndAccessKey(companyId, "35240112345678000199550010000000011000000010")).thenReturn(true);

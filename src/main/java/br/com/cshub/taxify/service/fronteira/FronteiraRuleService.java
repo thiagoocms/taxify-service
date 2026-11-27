@@ -195,7 +195,7 @@ public class FronteiraRuleService {
     /** {@code global} null = either scope (review, enable). */
     private FronteiraRule find(UUID id, Boolean global) {
         FronteiraRule rule = repository.findById(id).filter(found -> !found.isDeleted())
-                .orElseThrow(() -> new ResourceNotFoundException(messageService.getMessage("error.entity.not.found")));
+                .orElseThrow(() -> new ResourceNotFoundException("error.entity.not.found", messageService.getMessage("error.entity.not.found")));
         if (rule.getCompany() != null) {
             companyValidation.checkExist(rule.getCompany().getId()); // tenant access
         }
@@ -298,14 +298,14 @@ public class FronteiraRuleService {
     }
 
     private BadRequestException invalid(String detail) {
-        return new BadRequestException(messageService.getMessage("error.fronteira.rule.invalid", detail));
+        return new BadRequestException("error.fronteira.rule.invalid", messageService.getMessage("error.fronteira.rule.invalid", detail));
     }
 
     private Company company(String companyId) {
         try {
             return companyValidation.checkExist(UUID.fromString(companyId.strip()));
         } catch (IllegalArgumentException e) {
-            throw new BadRequestException(messageService.getMessage("error.generic.bad.request"));
+            throw new BadRequestException("error.generic.bad.request", messageService.getMessage("error.generic.bad.request"));
         }
     }
 

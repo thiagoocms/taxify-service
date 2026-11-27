@@ -52,7 +52,8 @@ class SefazDistSchedulerTest {
 
     @BeforeEach
     void setUp() {
-        scheduler = new SefazDistScheduler(certificateRepository, companyRepository, subscriptionRepository, service, properties);
+        scheduler = new SefazDistScheduler(certificateRepository, companyRepository, subscriptionRepository, service, properties,
+                br.com.cshub.taxify.service.firmaccess.FirmAccessTestSupport.allowAll());
         headOffice = company("11222333000181", "PE");
         branch = company("11222333000262", "PE");
         CompanyCertificate certificate = new CompanyCertificate();
@@ -93,6 +94,15 @@ class SefazDistSchedulerTest {
         plan(branch, PlanServiceEnum.SEFAZ_INTEGRATION);
 
         assertThat(scheduler.candidates()).isEmpty();
+    }
+
+    /** CA1-12 / CT1-20 (F1-RN-10): a blocked firm's companies are left out; the others' run as usual. */
+    @Test
+    void aBlockedFirmIsNotCaptured() {
+        SefazDistScheduler blocked = new SefazDistScheduler(certificateRepository, companyRepository, subscriptionRepository,
+                service, properties, br.com.cshub.taxify.service.firmaccess.FirmAccessTestSupport.blocking(Set.of(firm.getId())));
+
+        assertThat(blocked.candidates()).isEmpty();
     }
 
     @Test

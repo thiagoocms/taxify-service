@@ -54,6 +54,13 @@ public class SiegFiscalXmlProvider implements FiscalXmlProvider {
     }
 
     @Override
+    public java.util.Optional<RecoveryPage> recoverPage(UUID companyId, FiscalXmlSide side, LocalDate from, LocalDate to, int page) {
+        XmlDownloadResultDTO result = integrationService.syncPeriodPageFromSieg(companyId, side, from, to, page);
+        return java.util.Optional.of(new RecoveryPage(result.totalXmlsCounted(), result.totalPersistedNew(),
+                result.totalXmlsCounted() < br.com.cshub.taxify.service.FiscalXmlIntegrationService.pageSize()));
+    }
+
+    @Override
     public int syncServiceInvoices(UUID companyId, LocalDate from, LocalDate to) {
         return serviceInvoiceService.syncFromSieg(companyId, from, to).persistedNew();
     }

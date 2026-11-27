@@ -90,7 +90,7 @@ public class ServiceInvoiceQueryService {
         try {
             return fileStorage.read(invoice.getXmlFilePath());
         } catch (IOException e) {
-            throw new BadRequestException(messageService.getMessage("error.sieg.xml.storage.failed"));
+            throw new BadRequestException("error.sieg.xml.storage.failed", messageService.getMessage("error.sieg.xml.storage.failed"));
         }
     }
 
@@ -119,7 +119,7 @@ public class ServiceInvoiceQueryService {
 
     private ServiceInvoice owned(UUID id) {
         ServiceInvoice invoice = repository.findById(id).filter(found -> !found.isDeleted())
-                .orElseThrow(() -> new BadRequestException(messageService.getMessage("error.generic.bad.request")));
+                .orElseThrow(() -> new BadRequestException("error.generic.bad.request", messageService.getMessage("error.generic.bad.request")));
         companyValidation.checkExist(invoice.getCompany().getId());
         return invoice;
     }

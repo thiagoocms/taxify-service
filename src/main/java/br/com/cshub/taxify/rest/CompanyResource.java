@@ -99,7 +99,7 @@ public class CompanyResource extends AbstractCrudResource<UUID, CompanyDTO, Comp
     public ResponseEntity<CompanyCertificateDTO> captureFromSefaz(@PathVariable UUID id) {
         Company company = companyValidation.checkExist(id);
         if (!certificateService.sefazInPlan(id)) {
-            throw new BadRequestException(messageService.getMessage("error.sefaz.not.in.plan"));
+            throw new BadRequestException("error.sefaz.not.in.plan", messageService.getMessage("error.sefaz.not.in.plan"));
         }
         sefazDistService.capture(company);
         return ResponseEntity.ok(certificateService.status(id));
@@ -129,7 +129,7 @@ public class CompanyResource extends AbstractCrudResource<UUID, CompanyDTO, Comp
     public ResponseEntity<br.com.cshub.taxify.dto.company.NfseAdnStatusDTO> captureNfseAdn(@PathVariable UUID id) {
         Company company = companyValidation.checkExist(id);
         if (!nfseAdnScheduler.entitled(id, java.time.LocalDate.now())) {
-            throw new BadRequestException(messageService.getMessage("error.nfse.adn.not.in.plan"));
+            throw new BadRequestException("error.nfse.adn.not.in.plan", messageService.getMessage("error.nfse.adn.not.in.plan"));
         }
         nfseAdnService.capture(company);
         return ResponseEntity.ok(nfseAdnService.status(company, true));

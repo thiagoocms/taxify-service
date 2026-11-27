@@ -107,7 +107,7 @@ public class CertidaoService {
     @Transactional(readOnly = true)
     public List<CertidaoDTOs.Summary> carteira() {
         UUID firmId = tenantAccessService.getCurrentAccountingFirmId()
-                .orElseThrow(() -> new BadRequestException(messageService.getMessage("error.pendency.firm.required")));
+                .orElseThrow(() -> new BadRequestException("error.pendency.firm.required", messageService.getMessage("error.pendency.firm.required")));
         List<UUID> companyIds = tenantAccessService.accessibleCompanyIds(
                 companyRepository.findByAccountingFirm_IdAndDeletedIsFalseOrderByNameAsc(firmId).stream()
                         .filter(company -> notApplicable(company) == null)
@@ -145,12 +145,12 @@ public class CertidaoService {
     public byte[] pdf(String certidaoId) {
         CertidaoEstadual certidao = owned(certidaoId);
         if (certidao.getPdfPath() == null) {
-            throw new ResourceNotFoundException(messageService.getMessage("error.entity.not.found"));
+            throw new ResourceNotFoundException("error.entity.not.found", messageService.getMessage("error.entity.not.found"));
         }
         try {
             return storage.read(certidao.getPdfPath());
         } catch (IOException e) {
-            throw new ResourceNotFoundException(messageService.getMessage("error.entity.not.found"));
+            throw new ResourceNotFoundException("error.entity.not.found", messageService.getMessage("error.entity.not.found"));
         }
     }
 
@@ -161,13 +161,13 @@ public class CertidaoService {
     public CertidaoDTOs.CompanyCertidao upload(String companyId, String fileName, byte[] pdf) {
         Company company = applicable(company(companyId));
         if (pdf == null || pdf.length == 0) {
-            throw new BadRequestException(messageService.getMessage("error.certidao.file.required"));
+            throw new BadRequestException("error.certidao.file.required", messageService.getMessage("error.certidao.file.required"));
         }
         CertidaoPdfParser.Certidao read;
         try {
             read = parser.parse(pdf);
         } catch (CertidaoPdfParser.InvalidCertidaoException e) {
-            throw new BadRequestException(messageService.getMessage("error.certidao.invalid", e.getMessage()));
+            throw new BadRequestException("error.certidao.invalid", messageService.getMessage("error.certidao.invalid", e.getMessage()));
         }
         keep(company, read, pdf, fileName, CertidaoEstadual.ORIGEM_UPLOAD);
         refreshPendencies(company);
@@ -245,7 +245,7 @@ public class CertidaoService {
     private void keep(Company company, CertidaoPdfParser.Certidao read, byte[] pdf, String fileName, String origem) {
         String cnpj = cnpjOf(company);
         if (read.cnpj() != null && !read.cnpj().equals(cnpj)) {
-            throw new BadRequestException(messageService.getMessage("error.certidao.other.cnpj", formatCnpj(read.cnpj())));
+            throw new BadRequestException("error.certidao.other.cnpj", messageService.getMessage("error.certidao.other.cnpj", formatCnpj(read.cnpj())));
         }
         // the same certidão sent again replaces the one kept (its PDF too)
         CertidaoEstadual certidao = read.numero() == null ? null : repository
@@ -337,7 +337,7 @@ public class CertidaoService {
     private Company applicable(Company company) {
         String motivo = notApplicable(company);
         if (motivo != null) {
-            throw new BadRequestException(messageService.getMessage("error.certidao.not.applicable", motivo));
+            throw new BadRequestException("error.certidao.not.applicable", messageService.getMessage("error.certidao.not.applicable", motivo));
         }
         return company;
     }
@@ -346,7 +346,7 @@ public class CertidaoService {
         try {
             return companyValidation.checkExist(UUID.fromString(companyId.strip()));
         } catch (IllegalArgumentException | NullPointerException e) {
-            throw new BadRequestException(messageService.getMessage("error.generic.bad.request"));
+            throw new BadRequestException("error.generic.bad.request", messageService.getMessage("error.generic.bad.request"));
         }
     }
 
@@ -354,9 +354,9 @@ public class CertidaoService {
         CertidaoEstadual certidao;
         try {
             certidao = repository.findFirstByIdAndDeletedIsFalse(UUID.fromString(certidaoId.strip()))
-                    .orElseThrow(() -> new ResourceNotFoundException(messageService.getMessage("error.entity.not.found")));
+                    .orElseThrow(() -> new ResourceNotFoundException("error.entity.not.found", messageService.getMessage("error.entity.not.found")));
         } catch (IllegalArgumentException | NullPointerException e) {
-            throw new BadRequestException(messageService.getMessage("error.generic.bad.request"));
+            throw new BadRequestException("error.generic.bad.request", messageService.getMessage("error.generic.bad.request"));
         }
         tenantAccessService.assertCompanyAccess(certidao.getCompany());
         return certidao;

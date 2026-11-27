@@ -3,6 +3,8 @@ package br.com.cshub.taxify.service.pendency;
 import br.com.cshub.taxify.domain.company.Company;
 import br.com.cshub.taxify.repository.CaptureRunRepository;
 import br.com.cshub.taxify.repository.CompanyRepository;
+import br.com.cshub.taxify.service.firmaccess.FirmAccessService;
+import br.com.cshub.taxify.service.firmaccess.RoutineGate;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 import org.springframework.beans.factory.annotation.Value;
@@ -29,10 +31,12 @@ public class PendencyScheduler {
     private final CaptureRunRepository captureRunRepository;
     private final boolean enabled;
     private final AtomicBoolean running = new AtomicBoolean(false);
+    private final FirmAccessService firmAccessService;
 
     public PendencyScheduler(CompanyRepository companyRepository, PendencyService service,
                              CaptureRunRepository captureRunRepository,
-                             @Value("${pendencies.enabled:true}") boolean enabled) {
+                             @Value("${pendencies.enabled:true}") boolean enabled, FirmAccessService firmAccessService) {
+        this.firmAccessService = firmAccessService;
         this.companyRepository = companyRepository;
         this.service = service;
         this.captureRunRepository = captureRunRepository;
@@ -65,9 +69,13 @@ public class PendencyScheduler {
     }
 
     void refreshAll() {
+        // F1-RN-10 (decision 15): pendencies of a blocked firm stay as they were until it is reactivated
+        RoutineGate gate = firmAccessService.routineGate("pendencies");
         List<Company> companies = companyRepository.findAll().stream()
                 .filter(company -> !company.isDeleted() && !Boolean.FALSE.equals(company.getActive()))
+                .filter(gate::allows)
                 .toList();
+        gate.logSkipped();
         int open = 0;
         for (Company company : companies) {
             try {

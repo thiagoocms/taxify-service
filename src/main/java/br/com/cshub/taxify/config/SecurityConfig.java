@@ -1,5 +1,6 @@
 package br.com.cshub.taxify.config;
 
+import br.com.cshub.taxify.security.SecurityErrorHandler;
 import br.com.cshub.taxify.constants.AppConstants;
 import br.com.cshub.taxify.enumerated.UserProfileEnum;
 import com.nimbusds.jose.jwk.JWK;
@@ -13,10 +14,7 @@ import org.springframework.context.annotation.Bean;
 import org.springframework.context.annotation.Configuration;
 import org.springframework.http.HttpMethod;
 import org.springframework.security.authentication.AuthenticationManager;
-import org.springframework.security.authorization.AuthenticatedAuthorizationManager;
 import org.springframework.security.authorization.AuthorityAuthorizationManager;
-import org.springframework.security.authorization.AuthorizationManagers;
-import org.springframework.security.config.Customizer;
 import org.springframework.security.config.annotation.authentication.configuration.AuthenticationConfiguration;
 import org.springframework.security.config.annotation.web.builders.HttpSecurity;
 import org.springframework.security.config.annotation.web.configuration.EnableWebSecurity;
@@ -48,18 +46,22 @@ public class SecurityConfig {
     private static final String ADMIN = UserProfileEnum.ADMIN.name();
 
     @Bean
-    SecurityFilterChain filterChain(HttpSecurity http) throws Exception {
+    SecurityFilterChain filterChain(HttpSecurity http, SecurityErrorHandler securityErrors) throws Exception {
         String base = AppConstants.API + AppConstants.V1;
         http.csrf(AbstractHttpConfigurer::disable)
                 .sessionManagement(session -> session.sessionCreationPolicy(SessionCreationPolicy.STATELESS))
                 .authorizeHttpRequests(
                         auth -> auth
                                 .requestMatchers(HttpMethod.POST, base + "/auth").permitAll()
-                                // Public signup (creates a new firm, owner = ADMIN) or an ADMIN adding a
-                                // teammate - never a logged-in non-admin (that would let them create admins).
+                                // Public signup of a new firm (its owner is always ADMIN), the e-mail verification
+                                // and its resend, and whether signup is open - see SignupResource (F1-RN-01).
+                                .requestMatchers(HttpMethod.POST, base + "/signup", base + "/signup/verify",
+                                        base + "/signup/resend").permitAll()
+                                .requestMatchers(HttpMethod.GET, base + "/signup/config").permitAll()
+                                // Only a logged-in ADMIN adds a teammate - the public signup is POST /signup now
+                                // (F1-RN-01): POST /users is no longer anonymous.
                                 .requestMatchers(HttpMethod.POST, base + "/users")
-                                .access(AuthorizationManagers.anyOf(AuthenticatedAuthorizationManager.anonymous(),
-                                        AuthorityAuthorizationManager.hasAuthority(ADMIN)))
+                                .access(AuthorityAuthorizationManager.hasAuthority(ADMIN))
                                 .requestMatchers("/v3/api-docs/**", "/swagger-ui.html", "/swagger-ui/**").permitAll()
                                 // Actuator health - see application.yaml's management.endpoints comment
                                 // for why it's the only one exposed.
@@ -69,9 +71,14 @@ public class SecurityConfig {
                                 // @RequiresPermission / @AdminOnly - see MethodSecurityConfig.
                                 .anyRequest().authenticated()
                 )
-                .httpBasic(Customizer.withDefaults())
+                // No HTTP Basic: every client logs in through POST /auth and sends the JWT. Basic let any endpoint
+                // authenticate with login:password directly, skipping AuthService's checks (e.g. the e-mail not
+                // verified yet - F1-RN-03) and open to password guessing on every route.
+                .httpBasic(AbstractHttpConfigurer::disable)
+                // 401/403 answered by the filters leave in the API's single error body (keeping WWW-Authenticate: Bearer)
+                .exceptionHandling(errors -> errors.authenticationEntryPoint(securityErrors).accessDeniedHandler(securityErrors))
                 .oauth2ResourceServer(
-                        conf -> conf.jwt(
+                        conf -> conf.authenticationEntryPoint(securityErrors).accessDeniedHandler(securityErrors).jwt(
                                 jwt -> jwt.decoder(jwtDecoder())
                                         .jwtAuthenticationConverter(jwtAuthenticationConverter())));
         return http.build();

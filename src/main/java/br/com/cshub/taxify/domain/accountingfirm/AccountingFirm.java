@@ -46,6 +46,18 @@ public class AccountingFirm extends AbstractAuditingEntity {
     @Column(name = "billing_provider", length = 30)
     private BillingProviderType billingProvider;
 
+    /** CNPJ do escritório, só dígitos - único entre os escritórios, fora de {@code documents} (F1-RN-02). Nulo nos migrados. */
+    @Column(name = "document_number", length = 14)
+    private String documentNumber;
+
+    /** E-mail financeiro, separado do login (F1-RN-02). */
+    @Column(name = "billing_email", length = 300)
+    private String billingEmail;
+
+    /** Telefone/WhatsApp de contato, só dígitos (DDD + número). */
+    @Column(name = "contact_phone", length = 11)
+    private String contactPhone;
+
     public AccountingFirm() {
     }
 
@@ -75,5 +87,29 @@ public class AccountingFirm extends AbstractAuditingEntity {
 
     public void setBillingProvider(BillingProviderType billingProvider) {
         this.billingProvider = billingProvider;
+    }
+
+    public String getDocumentNumber() {
+        return documentNumber;
+    }
+
+    public void setDocumentNumber(String documentNumber) {
+        this.documentNumber = documentNumber;
+    }
+
+    public String getBillingEmail() {
+        return billingEmail;
+    }
+
+    public void setBillingEmail(String billingEmail) {
+        this.billingEmail = billingEmail;
+    }
+
+    public String getContactPhone() {
+        return contactPhone;
+    }
+
+    public void setContactPhone(String contactPhone) {
+        this.contactPhone = contactPhone;
     }
 }

@@ -44,6 +44,6 @@ public class CurrentFirmService {
     }
 
     private ResourceNotFoundException notFound() {
-        return new ResourceNotFoundException(messageService.getMessage("error.accountingFirm.not.found"));
+        return new ResourceNotFoundException("error.accountingFirm.not.found", messageService.getMessage("error.accountingFirm.not.found"));
     }
 }

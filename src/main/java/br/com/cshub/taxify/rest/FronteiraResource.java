@@ -1,5 +1,6 @@
 package br.com.cshub.taxify.rest;
 
+import br.com.cshub.taxify.security.ReadOnlyOperation;
 import br.com.cshub.taxify.constants.AppConstants;
 import br.com.cshub.taxify.dto.fronteira.FronteiraDTOs;
 import br.com.cshub.taxify.dto.fronteira.FronteiraRuleDTOs;
@@ -53,6 +54,7 @@ public class FronteiraResource {
 
     /** Fetches the note's memória from e-Fisco now, with the accountant's certificate, and keeps it. */
     @RequiresPermission(Permission.INVOICES_AUDIT)
+    @ReadOnlyOperation
     @PostMapping("/memoria/buscar")
     public ResponseEntity<EfiscoMemoryService.MemoryDTO> fetchEfiscoMemory(@RequestParam String companyId, @RequestParam String registro) {
         return ResponseEntity.ok(efiscoMemoryService.fetch(service.companyOfPernambuco(companyId), registro));
@@ -152,6 +154,7 @@ public class FronteiraResource {
     }
 
     /** Checks a formula and works it out - with a note item's values ({@code variaveis}) or with sample ones. */
+    @ReadOnlyOperation
     @PostMapping("/regras/testar")
     public ResponseEntity<FronteiraRuleDTOs.FormulaCheck> check(@RequestBody FormulaTest body) {
         return ResponseEntity.ok(ruleService.check(body.formula(), body.variaveis()));

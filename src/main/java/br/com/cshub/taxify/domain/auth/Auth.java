@@ -11,7 +11,15 @@ import java.util.List;
 
 public class Auth extends User implements UserDetails {
 
+    /** The firm's e-mail is not verified yet (F1-RN-03): no login, whatever the path. */
+    private boolean pendingVerification;
+
     public Auth() {
+    }
+
+    public Auth(User user, boolean pendingVerification) {
+        this(user);
+        this.pendingVerification = pendingVerification;
     }
 
     public Auth(User user) {
@@ -40,6 +48,20 @@ public class Auth extends User implements UserDetails {
     @Override
     public String getUsername() {
         return getLogin();
+    }
+
+    /**
+     * False while the firm's e-mail is not verified (F1-RN-03). This check and not isEnabled(): Spring checks
+     * isEnabled() before the password, which would tell anyone that the login exists and is pending; this one is
+     * checked only after the right password (CredentialsExpiredException, answered as 403 by AuthService).
+     */
+    @Override
+    public boolean isCredentialsNonExpired() {
+        return !pendingVerification;
+    }
+
+    public boolean isPendingVerification() {
+        return pendingVerification;
     }
 
 }

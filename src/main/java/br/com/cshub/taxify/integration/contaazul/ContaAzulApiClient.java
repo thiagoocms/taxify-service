@@ -243,10 +243,11 @@ public class ContaAzulApiClient {
                     continue;
                 }
                 log.warn("Conta Azul API answered {} for firm {}: {}", e.getStatusCode(), firmId, e.getResponseBodyAsString());
-                throw new ContaAzulIntegrationException(messageFor(e.getStatusCode().value()), e);
+                String key = messageKeyFor(e.getStatusCode().value());
+                throw new ContaAzulIntegrationException(key, messageService.getMessage(key), e);
             } catch (RestClientException e) {
                 log.warn("Conta Azul API unreachable for firm {}", firmId, e);
-                throw new ContaAzulIntegrationException(messageService.getMessage("error.contaAzul.integration.failed"), e);
+                throw new ContaAzulIntegrationException("error.contaAzul.integration.failed", messageService.getMessage("error.contaAzul.integration.failed"), e);
             }
         }
     }
@@ -282,13 +283,13 @@ public class ContaAzulApiClient {
         }
     }
 
-    private String messageFor(int status) {
+    private static String messageKeyFor(int status) {
         if (status == HttpStatus.TOO_MANY_REQUESTS.value()) {
-            return messageService.getMessage("error.contaAzul.rate.limited");
+            return "error.contaAzul.rate.limited";
         }
         if (status == HttpStatus.UNAUTHORIZED.value() || status == HttpStatus.FORBIDDEN.value()) {
-            return messageService.getMessage("error.contaAzul.refresh.rejected");
+            return "error.contaAzul.refresh.rejected";
         }
-        return messageService.getMessage("error.contaAzul.integration.failed");
+        return "error.contaAzul.integration.failed";
     }
 }

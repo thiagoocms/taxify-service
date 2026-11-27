@@ -2,6 +2,9 @@ package br.com.cshub.taxify.service.fronteira;
 
 import br.com.cshub.taxify.domain.certificate.FirmCertificate;
 import br.com.cshub.taxify.repository.FirmCertificateRepository;
+import br.com.cshub.taxify.service.firmaccess.BlockedPeriodRecoveryService;
+import br.com.cshub.taxify.service.firmaccess.FirmAccessService;
+import br.com.cshub.taxify.service.firmaccess.RoutineGate;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 import org.springframework.beans.factory.annotation.Value;
@@ -29,9 +32,21 @@ public class EfiscoSyncScheduler {
     private final EfiscoSyncService syncService;
     private final boolean enabled;
     private final AtomicBoolean running = new AtomicBoolean(false);
+    private final FirmAccessService firmAccessService;
+    /** Recovery of the blocked months (QA-02); null = no recovery (tests built without it). */
+    private final BlockedPeriodRecoveryService recoveryService;
 
     public EfiscoSyncScheduler(FirmCertificateRepository certificateRepository, EfiscoSyncService syncService,
-                               @Value("${efisco.sync.enabled:true}") boolean enabled) {
+                               boolean enabled, FirmAccessService firmAccessService) {
+        this(certificateRepository, syncService, enabled, firmAccessService, null);
+    }
+
+    @org.springframework.beans.factory.annotation.Autowired
+    public EfiscoSyncScheduler(FirmCertificateRepository certificateRepository, EfiscoSyncService syncService,
+                               @Value("${efisco.sync.enabled:true}") boolean enabled, FirmAccessService firmAccessService,
+                               BlockedPeriodRecoveryService recoveryService) {
+        this.firmAccessService = firmAccessService;
+        this.recoveryService = recoveryService;
         this.certificateRepository = certificateRepository;
         this.syncService = syncService;
         this.enabled = enabled;
@@ -60,12 +75,30 @@ public class EfiscoSyncScheduler {
     void syncAll() {
         YearMonth current = YearMonth.now();
         List<YearMonth> periods = List.of(current.minusMonths(1), current);
+        // F1-RN-10: no e-Fisco capture for a blocked firm
+        RoutineGate gate = firmAccessService.routineGate("efisco");
+        java.util.Set<java.util.UUID> served = new java.util.HashSet<>();
         for (FirmCertificate certificate : certificateRepository.findAllActive()) {
-            if (certificate.getValidUntil().isBefore(LocalDateTime.now())) {
+            if (certificate.getValidUntil().isBefore(LocalDateTime.now())
+                    || !gate.allowsFirm(certificate.getAccountingFirm().getId())) {
                 continue;
             }
             EfiscoSyncService.SyncResult result = syncService.syncFirm(certificate.getAccountingFirm().getId(), periods);
             log.info("e-Fisco sync of firm {}: {} - {}", certificate.getAccountingFirm().getId(), result.status(), result.detail());
+            java.util.UUID firmId = certificate.getAccountingFirm().getId();
+            served.add(firmId);
+            if (recoveryService != null) {
+                // QA-02: the blocked months before the previous one, once, after the reactivation
+                try {
+                    recoveryService.runEfisco(firmId, months -> syncService.syncFirm(firmId, months).status());
+                } catch (RuntimeException e) {
+                    log.warn("Blocked-months e-Fisco recovery failed for firm {}", firmId, e);
+                }
+            }
+        }
+        gate.logSkipped();
+        if (recoveryService != null) {
+            recoveryService.skipEfiscoOrphans(served, gate);
         }
     }
 }

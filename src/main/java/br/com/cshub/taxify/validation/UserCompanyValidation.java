@@ -46,11 +46,11 @@ public class UserCompanyValidation extends AbstractCrudValidation<UserCompany, U
     @Override
     protected UserCompany checkUpdateConsistence(UserCompanyId id, UserCompany toUpdateEntity) {
         if (Objects.isNull(id) || Objects.isNull(toUpdateEntity.getId())) {
-            throw new BadRequestException(messageService.getMessage("error.generic.bad.request"));
+            throw new BadRequestException("error.generic.bad.request", messageService.getMessage("error.generic.bad.request"));
         }
 
         if (id.compareTo(toUpdateEntity.getId()) != 0) {
-            throw new BadRequestException(messageService.getMessage("error.generic.bad.request"));
+            throw new BadRequestException("error.generic.bad.request", messageService.getMessage("error.generic.bad.request"));
         }
 
         var persistedEntity = checkExist(id);

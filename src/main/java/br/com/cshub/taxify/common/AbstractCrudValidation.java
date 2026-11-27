@@ -29,7 +29,7 @@ public abstract class AbstractCrudValidation<E, ID extends Serializable> {
 
     public E checkExist(ID id) {
         var entityOpt = repository.findFirstByIdAndDeletedIsFalse(id);
-        return entityOpt.orElseThrow(() -> new ResourceNotFoundException(messageService.getMessage(messageNotFound)));
+        return entityOpt.orElseThrow(() -> new ResourceNotFoundException(messageNotFound, messageService.getMessage(messageNotFound)));
     }
 
     public void setMessageNotFound(String messageNotFound) {

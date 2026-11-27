@@ -51,11 +51,11 @@ public class SubscriptionValidation extends AbstractCrudValidation<Subscription,
     @Override
     protected Subscription checkUpdateConsistence(UUID id, Subscription toUpdateEntity) {
         if (Objects.isNull(id) || Objects.isNull(toUpdateEntity.getId())) {
-            throw new BadRequestException(messageService.getMessage("error.generic.bad.request"));
+            throw new BadRequestException("error.generic.bad.request", messageService.getMessage("error.generic.bad.request"));
         }
 
         if (id.compareTo(toUpdateEntity.getId()) != 0) {
-            throw new BadRequestException(messageService.getMessage("error.generic.bad.request"));
+            throw new BadRequestException("error.generic.bad.request", messageService.getMessage("error.generic.bad.request"));
         }
 
         var persistedEntity = checkExist(id);
@@ -95,7 +95,7 @@ public class SubscriptionValidation extends AbstractCrudValidation<Subscription,
     @Override
     protected void checkValidationsExtras(Subscription entity) {
         if (entity.getStartDate().isAfter(entity.getEndDate())) {
-            throw new BadRequestException(messageService.getMessage("error.subscription.invalid.dates"));
+            throw new BadRequestException("error.subscription.invalid.dates", messageService.getMessage("error.subscription.invalid.dates"));
         }
 
         boolean overlaps = entity.getId() == null
@@ -105,7 +105,7 @@ public class SubscriptionValidation extends AbstractCrudValidation<Subscription,
                         entity.getCompany().getId(), entity.getId(), entity.getEndDate(), entity.getStartDate());
 
         if (overlaps) {
-            throw new ConflictException(messageService.getMessage("error.subscription.overlap"));
+            throw new ConflictException("error.subscription.overlap", messageService.getMessage("error.subscription.overlap"));
         }
     }
 }

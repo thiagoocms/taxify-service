@@ -293,7 +293,7 @@ public class ReportService {
         try {
             return companyValidation.checkExist(UUID.fromString(companyId.strip()));
         } catch (IllegalArgumentException | NullPointerException e) {
-            throw new BadRequestException(messageService.getMessage("error.generic.bad.request"));
+            throw new BadRequestException("error.generic.bad.request", messageService.getMessage("error.generic.bad.request"));
         }
     }
 

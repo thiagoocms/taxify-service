@@ -49,14 +49,14 @@ public class SiegTokenService {
 
     private String requestNewToken() {
         if (!isConfigured()) {
-            throw new SiegIntegrationException(messageService.getMessage("error.sieg.oauth.not.configured"));
+            throw new SiegIntegrationException("error.sieg.oauth.not.configured", messageService.getMessage("error.sieg.oauth.not.configured"));
         }
 
         try {
             String accessToken = stripJsonQuotes(tokenClient.createJwt(properties.getClientSecret(), properties.getClientId(), "{}"));
 
             if (accessToken == null || accessToken.isBlank()) {
-                throw new SiegIntegrationException(messageService.getMessage("error.sieg.oauth.invalid.response"));
+                throw new SiegIntegrationException("error.sieg.oauth.invalid.response", messageService.getMessage("error.sieg.oauth.invalid.response"));
             }
 
             Instant expiresAt = Instant.now().plusSeconds(DEFAULT_TOKEN_TTL_SECONDS);
@@ -64,7 +64,7 @@ public class SiegTokenService {
             cachedToken = new CachedToken(accessToken, expiresAt);
             return accessToken;
         } catch (FeignException e) {
-            throw new SiegIntegrationException(messageService.getMessage("error.sieg.oauth.failed"), e);
+            throw new SiegIntegrationException("error.sieg.oauth.failed", messageService.getMessage("error.sieg.oauth.failed"), e);
         }
     }
 

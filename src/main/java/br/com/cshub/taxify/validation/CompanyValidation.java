@@ -8,6 +8,7 @@ import br.com.cshub.taxify.domain.company.Company;
 import br.com.cshub.taxify.exception.BadRequestException;
 import br.com.cshub.taxify.mapper.CompanyMapper;
 import br.com.cshub.taxify.repository.CompanyRepository;
+import br.com.cshub.taxify.service.firmaccess.PlanLimitService;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.stereotype.Component;
 
@@ -22,11 +23,14 @@ public class CompanyValidation extends AbstractCrudValidation<Company, UUID> {
     private final DocumentValidation documentValidation;
     private final TenantAccessService tenantAccessService;
     private final CurrentUserService currentUserService;
+    private final PlanLimitService planLimitService;
 
     @Autowired
     public CompanyValidation(CompanyMapper mapper, CompanyRepository repository, MessageService messageService, DocumentValidation documentValidation,
-                              TenantAccessService tenantAccessService, CurrentUserService currentUserService) {
+                              TenantAccessService tenantAccessService, CurrentUserService currentUserService,
+                              PlanLimitService planLimitService) {
         super(repository, messageService);
+        this.planLimitService = planLimitService;
         this.documentValidation = documentValidation;
         this.tenantAccessService = tenantAccessService;
         this.currentUserService = currentUserService;
@@ -53,22 +57,32 @@ public class CompanyValidation extends AbstractCrudValidation<Company, UUID> {
         entity.setId(null);
         entity.setDeleted(false);
         currentUserService.getCurrentUser().ifPresent(user -> entity.setAccountingFirm(user.getAccountingFirm()));
+        // limite do teste grátis (F1-RN-10a), antes de gravar qualquer coisa (nem o documento): só a empresa em uso
+        // ocupa vaga - uma criada já inativa não
+        if (entity.getAccountingFirm() != null && !Boolean.FALSE.equals(entity.getActive())) {
+            planLimitService.assertCompanySlot(entity.getAccountingFirm().getId());
+        }
     }
 
     @Override
     protected Company checkUpdateConsistence(UUID id, Company toUpdateEntity) {
         if (Objects.isNull(id) || Objects.isNull(toUpdateEntity.getId())) {
-            throw new BadRequestException(messageService.getMessage("error.generic.bad.request"));
+            throw new BadRequestException("error.generic.bad.request", messageService.getMessage("error.generic.bad.request"));
         }
 
         if (id.compareTo(toUpdateEntity.getId()) != 0) {
-            throw new BadRequestException(messageService.getMessage("error.generic.bad.request"));
+            throw new BadRequestException("error.generic.bad.request", messageService.getMessage("error.generic.bad.request"));
         }
 
         var persistedEntity = checkExist(id);
+        boolean wasInactive = Boolean.FALSE.equals(persistedEntity.getActive());
 
         mapper.merge(toUpdateEntity, persistedEntity);
 
+        // reativar (active de false para true ou nulo) ocupa vaga no teste (F1-RN-10a); editar uma ativa, nunca
+        if (wasInactive && !Boolean.FALSE.equals(persistedEntity.getActive())) {
+            planLimitService.assertCompanySlot(persistedEntity.getAccountingFirm().getId());
+        }
         return persistedEntity;
     }
 

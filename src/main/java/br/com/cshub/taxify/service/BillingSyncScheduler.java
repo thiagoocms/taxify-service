@@ -3,6 +3,8 @@ package br.com.cshub.taxify.service;
 import br.com.cshub.taxify.domain.accountingfirm.AccountingFirm;
 import br.com.cshub.taxify.enumerated.BillingProviderType;
 import br.com.cshub.taxify.repository.AccountingFirmRepository;
+import br.com.cshub.taxify.service.firmaccess.FirmAccessService;
+import br.com.cshub.taxify.service.firmaccess.RoutineGate;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 import org.springframework.beans.factory.annotation.Value;
@@ -22,9 +24,11 @@ public class BillingSyncScheduler {
     private final AccountingFirmRepository accountingFirmRepository;
     private final BillingSyncService syncService;
     private final boolean enabled;
+    private final FirmAccessService firmAccessService;
 
     public BillingSyncScheduler(AccountingFirmRepository accountingFirmRepository, BillingSyncService syncService,
-                                @Value("${billing.sync-enabled:true}") boolean enabled) {
+                                @Value("${billing.sync-enabled:true}") boolean enabled, FirmAccessService firmAccessService) {
+        this.firmAccessService = firmAccessService;
         this.accountingFirmRepository = accountingFirmRepository;
         this.syncService = syncService;
         this.enabled = enabled;
@@ -35,8 +39,10 @@ public class BillingSyncScheduler {
         if (!enabled) {
             return;
         }
+        // F1-RN-10 (decision 15): the firm's own Conta Azul sync stops while it is blocked
+        RoutineGate gate = firmAccessService.routineGate("billing-sync");
         for (AccountingFirm firm : accountingFirmRepository.findAll()) {
-            if (firm.isDeleted() || firm.getBillingProvider() == BillingProviderType.MANUAL) {
+            if (firm.isDeleted() || firm.getBillingProvider() == BillingProviderType.MANUAL || !gate.allowsFirm(firm.getId())) {
                 continue;
             }
             try {
@@ -45,5 +51,6 @@ public class BillingSyncScheduler {
                 log.warn("Scheduled billing sync not started for firm {}: {}", firm.getId(), e.getMessage());
             }
         }
+        gate.logSkipped();
     }
 }

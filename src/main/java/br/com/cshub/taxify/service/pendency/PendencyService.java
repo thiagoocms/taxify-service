@@ -234,7 +234,7 @@ public class PendencyService {
     @Transactional
     public PendencyDTOs.Pendency close(UUID id, PendencyStatus status, String comment) {
         if (status == PendencyStatus.ABERTA) {
-            throw new BadRequestException(messageService.getMessage("error.generic.bad.request"));
+            throw new BadRequestException("error.generic.bad.request", messageService.getMessage("error.generic.bad.request"));
         }
         Pendency pendency = owned(id);
         pendency.setStatus(status);
@@ -264,7 +264,7 @@ public class PendencyService {
     private Pendency owned(UUID id) {
         Pendency pendency = repository.findById(id)
                 .filter(found -> !found.isDeleted())
-                .orElseThrow(() -> new BadRequestException(messageService.getMessage("error.generic.bad.request")));
+                .orElseThrow(() -> new BadRequestException("error.generic.bad.request", messageService.getMessage("error.generic.bad.request")));
         tenantAccessService.assertCompanyAccess(pendency.getCompany());
         return pendency;
     }
@@ -276,12 +276,12 @@ public class PendencyService {
             try {
                 id = UUID.fromString(companyId.strip());
             } catch (IllegalArgumentException e) {
-                throw new BadRequestException(messageService.getMessage("error.generic.bad.request"));
+                throw new BadRequestException("error.generic.bad.request", messageService.getMessage("error.generic.bad.request"));
             }
             return List.of(companyValidation.checkExist(id).getId());
         }
         UUID firmId = tenantAccessService.getCurrentAccountingFirmId()
-                .orElseThrow(() -> new BadRequestException(messageService.getMessage("error.pendency.firm.required")));
+                .orElseThrow(() -> new BadRequestException("error.pendency.firm.required", messageService.getMessage("error.pendency.firm.required")));
         return tenantAccessService.accessibleCompanyIds(
                 companyRepository.findByAccountingFirm_IdAndDeletedIsFalseOrderByNameAsc(firmId).stream()
                         .filter(company -> !Boolean.FALSE.equals(company.getActive()))

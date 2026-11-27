@@ -46,16 +46,16 @@ public class FiscalXmlReviewService {
     @Transactional
     public int review(Collection<UUID> documentIds, ReviewStatus status, String note) {
         if (documentIds == null || documentIds.isEmpty()) {
-            throw new BadRequestException(messageService.getMessage("error.review.documents.required"));
+            throw new BadRequestException("error.review.documents.required", messageService.getMessage("error.review.documents.required"));
         }
         if (status == ReviewStatus.DIVERGENT && (note == null || note.isBlank())) {
-            throw new BadRequestException(messageService.getMessage("error.review.note.required"));
+            throw new BadRequestException("error.review.note.required", messageService.getMessage("error.review.note.required"));
         }
         List<FiscalXmlDocument> documents = documentRepository.findAllById(documentIds).stream()
                 .filter(document -> !document.isDeleted())
                 .toList();
         if (documents.size() != documentIds.stream().distinct().count()) {
-            throw new ResourceNotFoundException(messageService.getMessage("error.entity.not.found"));
+            throw new ResourceNotFoundException("error.entity.not.found", messageService.getMessage("error.entity.not.found"));
         }
         documents.forEach(document -> tenantAccessService.assertCompanyAccess(document.getCompany()));
 

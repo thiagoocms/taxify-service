@@ -59,19 +59,19 @@ public class FirmCertificateService {
     public FirmCertificateDTO uploadForCurrentFirm(byte[] pfx, String password) {
         AccountingFirm firm = currentFirmService.require();
         if (pfx == null || pfx.length == 0) {
-            throw new BadRequestException(messageService.getMessage("error.certificate.empty"));
+            throw new BadRequestException("error.certificate.empty", messageService.getMessage("error.certificate.empty"));
         }
         A1Certificate certificate;
         try {
             certificate = A1Certificate.open(pfx, password);
         } catch (GeneralSecurityException e) {
-            throw new BadRequestException(messageService.getMessage("error.certificate.invalid"));
+            throw new BadRequestException("error.certificate.invalid", messageService.getMessage("error.certificate.invalid"));
         }
         if (certificate.validUntil().isBefore(LocalDateTime.now())) {
-            throw new BadRequestException(messageService.getMessage("error.certificate.expired"));
+            throw new BadRequestException("error.certificate.expired", messageService.getMessage("error.certificate.expired"));
         }
         if (certificate.cpf() == null) {
-            throw new BadRequestException(messageService.getMessage("error.certificate.not.ecpf"));
+            throw new BadRequestException("error.certificate.not.ecpf", messageService.getMessage("error.certificate.not.ecpf"));
         }
 
         boolean encrypt = cipher.isConfigured();

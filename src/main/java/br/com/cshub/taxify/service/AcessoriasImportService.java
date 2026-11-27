@@ -20,6 +20,7 @@ import br.com.cshub.taxify.repository.CompanyRepository;
 import br.com.cshub.taxify.repository.DocumentRepository;
 import br.com.cshub.taxify.repository.UserCompanyRepository;
 import br.com.cshub.taxify.repository.UserRepository;
+import br.com.cshub.taxify.service.firmaccess.PlanLimitService;
 import br.com.cshub.taxify.service.job.IntegrationJobRunner;
 import br.com.cshub.taxify.service.job.SyncProgress;
 import org.slf4j.Logger;
@@ -74,12 +75,15 @@ public class AcessoriasImportService {
     private final FirmIntegrationService firmIntegrationService;
     private final IntegrationJobRunner jobRunner;
     private final MessageService messageService;
+    private final PlanLimitService planLimitService;
 
     public AcessoriasImportService(AcessoriasClient acessoriasClient, CompanyRepository companyRepository,
                                    DocumentRepository documentRepository, UserRepository userRepository,
                                    UserCompanyRepository userCompanyRepository, CurrentFirmService currentFirmService,
                                    FirmIntegrationService firmIntegrationService, IntegrationJobRunner jobRunner,
-                                   MessageService messageService, CompanyTaxRegimeService taxRegimeService) {
+                                   MessageService messageService, CompanyTaxRegimeService taxRegimeService,
+                                   PlanLimitService planLimitService) {
+        this.planLimitService = planLimitService;
         this.taxRegimeService = taxRegimeService;
         this.acessoriasClient = acessoriasClient;
         this.companyRepository = companyRepository;
@@ -125,6 +129,8 @@ public class AcessoriasImportService {
         progress.total(source.size());
 
         ImportRun run = new ImportRun(firm, source.size());
+        // free trial (F1-RN-10a): creating or reactivating a company takes a slot, checked company by company
+        run.limited = planLimitService.isLimited(firm.getId());
         for (AcessoriasCompanyDTO item : source) {
             try {
                 importCompany(run, item);
@@ -137,9 +143,9 @@ public class AcessoriasImportService {
 
         firmIntegrationService.markSynced(firm.getId(), IntegrationType.ACESSORIAS, startedAt);
 
-        log.info("Acessórias import for firm {}: {} received, {} created, {} updated, {} unchanged, {} links, {} skipped, {} errors",
+        log.info("Acessórias import for firm {}: {} received, {} created, {} updated, {} unchanged, {} links, {} skipped ({} by the trial limit), {} errors",
                 firm.getId(), run.received, run.created, run.updated, run.unchanged, run.linksCreated,
-                run.skipped.size(), run.errors.size());
+                run.skipped.size(), run.skippedByLimit, run.errors.size());
         return run.toResult();
     }
 
@@ -166,12 +172,41 @@ public class AcessoriasImportService {
                 run.skipped.add(label(item) + ": " + messageService.getMessage("acessorias.import.skipped.document.exists"));
                 return;
             }
-            company = createCompany(run.firm, item, digits, type, active);
+            if (run.limited) {
+                // the slot check and the insert in one transaction, locking the firm - per company, never the whole job
+                Company created = planLimitService.withCompanySlot(run.firm.getId(),
+                        () -> createCompany(run.firm, item, digits, type, active)).orElse(null);
+                if (created == null) {
+                    run.skipped.add(label(item) + ": " + messageService.getMessage("acessorias.import.skipped.limit"));
+                    run.skippedByLimit++;
+                    return;
+                }
+                company = created;
+            } else {
+                company = createCompany(run.firm, item, digits, type, active);
+            }
             run.companiesByDocument.put(digits, company);
             run.created++;
         } else if (company.isDeleted()) {
             run.skipped.add(label(item) + ": " + messageService.getMessage("acessorias.import.skipped.deleted"));
             return;
+        } else if (run.limited && active && Boolean.FALSE.equals(company.getActive())) {
+            // an inactive company back to "Ativa" takes a slot: without one, its data is updated and it stays inactive
+            Company reactivating = company;
+            Company saved = planLimitService.withCompanySlot(run.firm.getId(), () -> {
+                applyRegistrationData(reactivating, item, true);
+                return companyRepository.save(reactivating);
+            }).orElse(null);
+            if (saved == null) {
+                applyRegistrationData(company, item, true);
+                company.setActive(false);
+                company = companyRepository.save(company);
+                run.skipped.add(label(item) + ": " + messageService.getMessage("acessorias.import.skipped.limit.reactivation"));
+                run.skippedByLimit++;
+            } else {
+                company = saved;
+            }
+            run.updated++;
         } else if (applyRegistrationData(company, item, active)) {
             company = companyRepository.save(company);
             run.updated++;
@@ -338,6 +373,8 @@ public class AcessoriasImportService {
         private int updated;
         private int unchanged;
         private int linksCreated;
+        private int skippedByLimit;
+        private boolean limited;
         private final List<String> skipped = new ArrayList<>();
         private final Set<String> responsiblesNotFound = new LinkedHashSet<>();
         private final List<String> errors = new ArrayList<>();
@@ -359,7 +396,7 @@ public class AcessoriasImportService {
 
         private AcessoriasImportResultDTO toResult() {
             return new AcessoriasImportResultDTO(received, created, updated, unchanged, linksCreated,
-                    List.copyOf(skipped), List.copyOf(responsiblesNotFound), List.copyOf(errors));
+                    List.copyOf(skipped), List.copyOf(responsiblesNotFound), List.copyOf(errors), skippedByLimit);
         }
     }
 }

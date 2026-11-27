@@ -93,8 +93,47 @@ services:
       # Opcional: chave que cifra os certificados A1 e as senhas (openssl rand -base64 32). Vazia = sem essa criptografia.
       CERT_ENCRYPTION_KEY: ${CERT_ENCRYPTION_KEY:-}
       # Logins da CS Hub (vírgula, perfil ADMIN) que alteram as regras gerais - tabela de ICMS do Fronteira e regras
-      # da auditoria, que valem para todos os escritórios. Os demais escritórios só leem essas regras.
-      PLATFORM_ADMIN_LOGINS: ${PLATFORM_ADMIN_LOGINS:-admin}
+      # da auditoria, que valem para todos os escritórios - e usam o console da plataforma. Só valem para usuários do
+      # escritório PLATFORM_FIRM_ID (F1-RN-04). Sem padrão: vazio = ninguém é admin da plataforma (aviso no log).
+      PLATFORM_ADMIN_LOGINS: ${PLATFORM_ADMIN_LOGINS:-}
+      # Id do escritório da CS Hub: admin da plataforma e o único isento de teste, bloqueio e limite (F1-RN-12).
+      PLATFORM_FIRM_ID: ${PLATFORM_FIRM_ID:-}
+      # Taxify SaaS fase 1. O cadastro público fica fechado até a versão real dos termos e o SES configurado (I1-1);
+      # ligar TAXIFY_SIGNUP_ENABLED na EC2 só com aprovação do Tony.
+      TAXIFY_SIGNUP_ENABLED: ${TAXIFY_SIGNUP_ENABLED:-false}
+      TAXIFY_TERMS_VERSION: ${TAXIFY_TERMS_VERSION:-}
+      TAXIFY_TERMS_URL: ${TAXIFY_TERMS_URL:-}
+      TAXIFY_PRIVACY_URL: ${TAXIFY_PRIVACY_URL:-}
+      TAXIFY_DPA_URL: ${TAXIFY_DPA_URL:-}
+      TAXIFY_TRIAL_DAYS: ${TAXIFY_TRIAL_DAYS:-14}
+      TAXIFY_TRIAL_MAX_COMPANIES: ${TAXIFY_TRIAL_MAX_COMPANIES:-5}
+      TAXIFY_TRIAL_MAX_USERS: ${TAXIFY_TRIAL_MAX_USERS:-2}
+      TAXIFY_SIGNUP_MAX_PER_IP_PER_DAY: ${TAXIFY_SIGNUP_MAX_PER_IP_PER_DAY:-3}
+      TAXIFY_EMAIL_VERIFICATION_HOURS: ${TAXIFY_EMAIL_VERIFICATION_HOURS:-24}
+      TAXIFY_EMAIL_RESEND_PER_HOUR: ${TAXIFY_EMAIL_RESEND_PER_HOUR:-3}
+      # Teto diário dos reenvios do link de verificação (dia de Recife), por login e por IP.
+      TAXIFY_EMAIL_RESEND_PER_DAY: ${TAXIFY_EMAIL_RESEND_PER_DAY:-5}
+      TAXIFY_EMAIL_RESEND_PER_IP_PER_DAY: ${TAXIFY_EMAIL_RESEND_PER_IP_PER_DAY:-10}
+      TAXIFY_UNVERIFIED_PURGE_DAYS: ${TAXIFY_UNVERIFIED_PURGE_DAYS:-7}
+      # Na reativação, os meses bloqueados são recuperados (SIEG e e-Fisco) até N meses atrás do mês atual.
+      TAXIFY_UNBLOCK_RECOVERY_MONTHS: ${TAXIFY_UNBLOCK_RECOVERY_MONTHS:-3}
+      TAXIFY_TRIAL_NOTICE_CRON: ${TAXIFY_TRIAL_NOTICE_CRON:-0 0 9 * * *}
+      TAXIFY_PUBLIC_URL: ${TAXIFY_PUBLIC_URL:-https://taxify.cshub.com.br}
+      # De quem o X-Forwarded-For é aceito (IPs ou CIDR, vírgula). Vazio = loopback e redes privadas (Caddy e nginx do Docker).
+      TAXIFY_TRUSTED_PROXIES: ${TAXIFY_TRUSTED_PROXIES:-}
+      # Agendadores diários (horário de Recife): registro do BLOCKED e expurgo dos cadastros não verificados.
+      TAXIFY_ACCESS_CRON: ${TAXIFY_ACCESS_CRON:-0 10 0 * * *}
+      TAXIFY_UNVERIFIED_PURGE_CRON: ${TAXIFY_UNVERIFIED_PURGE_CRON:-0 20 3 * * *}
+      # Liga/desliga os agendadores diários (vencimento do teste/liberação, expurgo e avisos do fim do teste).
+      TAXIFY_ACCESS_ENABLED: ${TAXIFY_ACCESS_ENABLED:-true}
+      TAXIFY_UNVERIFIED_PURGE_ENABLED: ${TAXIFY_UNVERIFIED_PURGE_ENABLED:-true}
+      TAXIFY_TRIAL_NOTICE_ENABLED: ${TAXIFY_TRIAL_NOTICE_ENABLED:-true}
+      # E-mail: LOG não envia nada; SES envia pela role IAM da EC2 (depois da I1-1).
+      TAXIFY_MAIL_PROVIDER: ${TAXIFY_MAIL_PROVIDER:-LOG}
+      TAXIFY_MAIL_FROM: ${TAXIFY_MAIL_FROM:-nao-responda@cshub.com.br}
+      TAXIFY_MAIL_SES_REGION: ${TAXIFY_MAIL_SES_REGION:-us-east-2}
+      # Só desenvolvimento: o LOG mostra o corpo do e-mail (com o link de verificação). Em produção, false.
+      TAXIFY_MAIL_LOG_BODY: ${TAXIFY_MAIL_LOG_BODY:-false}
       ACESSORIAS_SYNC_ENABLED: true
       ACESSORIAS_SYNC_CRON: 0 0 3 * * *
       BILLING_SYNC_ENABLED: true

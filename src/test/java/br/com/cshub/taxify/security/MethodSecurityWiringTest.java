@@ -16,7 +16,7 @@ import static org.assertj.core.api.Assertions.assertThatThrownBy;
  * permission interceptor - this calls the actual CompanyResource bean and expects the
  * call to be refused before reaching the service.
  */
-@SpringBootTest
+@SpringBootTest(properties = {"taxify.saas.purge-enabled=false", "taxify.saas.trial-notice-enabled=false"})
 class MethodSecurityWiringTest {
 
     @Autowired

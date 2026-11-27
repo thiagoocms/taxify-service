@@ -44,7 +44,7 @@ public class SubscriptionService extends CompanyScopedCrudService<Subscription, 
         var today = LocalDate.now();
         var entity = repository
                 .findFirstByCompanyIdAndDeletedIsFalseAndStartDateLessThanEqualAndEndDateGreaterThanEqualOrderByStartDateDesc(companyId, today, today)
-                .orElseThrow(() -> new ResourceNotFoundException(messageService.getMessage("error.subscription.not.found")));
+                .orElseThrow(() -> new ResourceNotFoundException("error.subscription.not.found", messageService.getMessage("error.subscription.not.found")));
         return toModel(entity);
     }
 

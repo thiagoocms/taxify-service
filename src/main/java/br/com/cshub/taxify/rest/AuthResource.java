@@ -3,6 +3,7 @@ package br.com.cshub.taxify.rest;
 import br.com.cshub.taxify.constants.AppConstants;
 import br.com.cshub.taxify.dto.auth.AuthLoginDTO;
 import br.com.cshub.taxify.dto.auth.AuthenticatedDTO;
+import br.com.cshub.taxify.security.AllowedWhenBlocked;
 import br.com.cshub.taxify.service.AuthService;
 import jakarta.validation.Valid;
 import org.springframework.beans.factory.annotation.Autowired;
@@ -12,6 +13,8 @@ import org.springframework.web.bind.annotation.RequestBody;
 import org.springframework.web.bind.annotation.RequestMapping;
 import org.springframework.web.bind.annotation.RestController;
 
+/** Login - sempre liberado, mesmo com o escritório bloqueado (F1-RN-09). */
+@AllowedWhenBlocked
 @RestController
 @RequestMapping(AppConstants.API + AppConstants.V1 + "/auth")
 public class AuthResource {

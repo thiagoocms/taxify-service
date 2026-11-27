@@ -83,7 +83,7 @@ public class TaxAssessmentService {
     @Transactional(readOnly = true)
     public List<TaxAssessmentDTO> assessFirm(String month) {
         UUID firmId = tenantAccessService.getCurrentAccountingFirmId()
-                .orElseThrow(() -> new BadRequestException(messageService.getMessage("error.assessment.firm.required")));
+                .orElseThrow(() -> new BadRequestException("error.assessment.firm.required", messageService.getMessage("error.assessment.firm.required")));
         YearMonth period = parseMonth(month);
         List<Company> companies = tenantAccessService.filterAccessible(
                 companyRepository.findByAccountingFirm_IdAndDeletedIsFalseOrderByNameAsc(firmId).stream()
@@ -145,7 +145,7 @@ public class TaxAssessmentService {
         try {
             return YearMonth.parse(month.strip());
         } catch (DateTimeParseException e) {
-            throw new BadRequestException(messageService.getMessage("error.assessment.month.invalid"));
+            throw new BadRequestException("error.assessment.month.invalid", messageService.getMessage("error.assessment.month.invalid"));
         }
     }
 

@@ -79,19 +79,19 @@ public class ContaAzulOAuthClient {
                     .retrieve()
                     .body(TokenResponse.class);
             if (response == null || response.accessToken() == null || response.accessToken().isBlank()) {
-                throw new ContaAzulIntegrationException(messageService.getMessage("error.contaAzul.integration.failed"));
+                throw new ContaAzulIntegrationException("error.contaAzul.integration.failed", messageService.getMessage("error.contaAzul.integration.failed"));
             }
             return response;
         } catch (RestClientResponseException e) {
             // 400/401 here = code expired/reused or refresh token revoked: the firm must log in again.
             log.warn("Conta Azul token endpoint answered {}: {}", e.getStatusCode(), e.getResponseBodyAsString());
             if (e.getStatusCode().is4xxClientError()) {
-                throw new ContaAzulIntegrationException(messageService.getMessage(rejectedMessageKey), e);
+                throw new ContaAzulIntegrationException(rejectedMessageKey, messageService.getMessage(rejectedMessageKey), e);
             }
-            throw new ContaAzulIntegrationException(messageService.getMessage("error.contaAzul.integration.failed"), e);
+            throw new ContaAzulIntegrationException("error.contaAzul.integration.failed", messageService.getMessage("error.contaAzul.integration.failed"), e);
         } catch (RestClientException e) {
             log.warn("Conta Azul token endpoint unreachable", e);
-            throw new ContaAzulIntegrationException(messageService.getMessage("error.contaAzul.integration.failed"), e);
+            throw new ContaAzulIntegrationException("error.contaAzul.integration.failed", messageService.getMessage("error.contaAzul.integration.failed"), e);
         }
     }
 }

@@ -5,6 +5,8 @@ import br.com.cshub.taxify.domain.subscription.Subscription;
 import br.com.cshub.taxify.enumerated.PlanServiceEnum;
 import br.com.cshub.taxify.repository.CompanyRepository;
 import br.com.cshub.taxify.repository.SubscriptionRepository;
+import br.com.cshub.taxify.service.firmaccess.FirmAccessService;
+import br.com.cshub.taxify.service.firmaccess.RoutineGate;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 import org.springframework.beans.factory.annotation.Value;
@@ -30,9 +32,12 @@ public class AuditScheduler {
     private final AuditService auditService;
     private final boolean enabled;
     private final AtomicBoolean running = new AtomicBoolean(false);
+    private final FirmAccessService firmAccessService;
 
     public AuditScheduler(CompanyRepository companyRepository, SubscriptionRepository subscriptionRepository,
-                          AuditService auditService, @Value("${audit.enabled:true}") boolean enabled) {
+                          AuditService auditService, @Value("${audit.enabled:true}") boolean enabled,
+                          FirmAccessService firmAccessService) {
+        this.firmAccessService = firmAccessService;
         this.companyRepository = companyRepository;
         this.subscriptionRepository = subscriptionRepository;
         this.auditService = auditService;
@@ -67,8 +72,11 @@ public class AuditScheduler {
 
     List<Company> candidates() {
         LocalDate today = LocalDate.now();
-        return companyRepository.findAll().stream()
+        // F1-RN-10 (decision 15): no automatic audit for a blocked firm
+        RoutineGate gate = firmAccessService.routineGate("audit");
+        List<Company> result = companyRepository.findAll().stream()
                 .filter(company -> !company.isDeleted() && !Boolean.FALSE.equals(company.getActive()))
+                .filter(gate::allows)
                 .filter(company -> subscriptionRepository
                         .findFirstByCompanyIdAndDeletedIsFalseAndStartDateLessThanEqualAndEndDateGreaterThanEqualOrderByStartDateDesc(
                                 company.getId(), today, today)
@@ -76,5 +84,7 @@ public class AuditScheduler {
                         .map(plan -> plan.getServices().contains(PlanServiceEnum.INVOICE_AUDIT))
                         .orElse(false))
                 .toList();
+        gate.logSkipped();
+        return result;
     }
 }

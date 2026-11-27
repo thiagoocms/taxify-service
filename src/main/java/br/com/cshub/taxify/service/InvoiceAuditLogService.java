@@ -30,12 +30,12 @@ public class InvoiceAuditLogService extends CompanyScopedCrudService<InvoiceAudi
     /** The trail is append-only. */
     @Override
     public InvoiceAuditLogDTO update(UUID id, InvoiceAuditLogDTO model) {
-        throw new BadRequestException(messageService.getMessage("error.auditLog.immutable"));
+        throw new BadRequestException("error.auditLog.immutable", messageService.getMessage("error.auditLog.immutable"));
     }
 
     @Override
     public void delete(UUID id) {
-        throw new BadRequestException(messageService.getMessage("error.auditLog.immutable"));
+        throw new BadRequestException("error.auditLog.immutable", messageService.getMessage("error.auditLog.immutable"));
     }
 
 

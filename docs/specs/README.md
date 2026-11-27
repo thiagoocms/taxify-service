@@ -38,4 +38,4 @@ Cada feature nova entra aqui com a data em que a spec foi escrita.
 
 | Data | Feature | Status |
 |---|---|---|
-| — | — | — |
+| 2026-11-26 | [Taxify SaaS: teste grátis, assinatura e limites](2026-11-26-taxify-saas-assinatura-do-escritorio.md) | Fase 1 pronta para implementação; fases 2 e 3 em especificação |

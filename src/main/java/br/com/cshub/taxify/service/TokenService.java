@@ -46,8 +46,8 @@ public class TokenService {
                 .claim("accessProfiles", auth.getAccessProfiles().stream().map(Enum::name).sorted().toList())
                 .claim("permissions", auth.getPermissions().stream().map(Enum::name).sorted().toList())
                 .claim("tenantId", auth.getAccountingFirm().getId())
-                // CS Hub: altera as regras que valem para todos os escritórios (ver PlatformAdminService)
-                .claim("platformAdmin", platformAdminService.isPlatformAdmin(auth.getUsername(), auth.getProfile()));
+                // CS Hub: regras gerais e console da plataforma (ver PlatformAdminService) - o backend confere de novo a cada chamada
+                .claim("platformAdmin", platformAdminService.isPlatformAdmin(auth));
 
 
         return encoder.encode(

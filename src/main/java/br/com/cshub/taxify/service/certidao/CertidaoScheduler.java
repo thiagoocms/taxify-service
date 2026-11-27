@@ -1,6 +1,8 @@
 package br.com.cshub.taxify.service.certidao;
 
 import br.com.cshub.taxify.domain.company.Company;
+import br.com.cshub.taxify.service.firmaccess.FirmAccessService;
+import br.com.cshub.taxify.service.firmaccess.RoutineGate;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 import org.springframework.beans.factory.annotation.Value;
@@ -28,8 +30,11 @@ public class CertidaoScheduler {
     private final CertidaoService service;
     private final boolean enabled;
     private final AtomicBoolean running = new AtomicBoolean(false);
+    private final FirmAccessService firmAccessService;
 
-    public CertidaoScheduler(CertidaoService service, @Value("${efisco.certidao.enabled:true}") boolean enabled) {
+    public CertidaoScheduler(CertidaoService service, @Value("${efisco.certidao.enabled:true}") boolean enabled,
+                             FirmAccessService firmAccessService) {
+        this.firmAccessService = firmAccessService;
         this.service = service;
         this.enabled = enabled;
     }
@@ -55,7 +60,10 @@ public class CertidaoScheduler {
     }
 
     void runAll() {
-        List<Company> due = service.dueCompanies();
+        // F1-RN-10 (decision 15): no certidão attempt for a blocked firm
+        RoutineGate gate = firmAccessService.routineGate("certidao");
+        List<Company> due = service.dueCompanies().stream().filter(gate::allows).toList();
+        gate.logSkipped();
         int issued = 0;
         String stoppedBy = null;
         for (Company company : due) {

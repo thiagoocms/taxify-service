@@ -74,7 +74,7 @@ public class BillingService {
     public BillingSettingsDTO updateSettings(BillingSettingsUpdateDTO update) {
         BillingProviderType provider = update.provider();
         if (provider != BillingProviderType.MANUAL && registry.find(provider).isEmpty()) {
-            throw new BadRequestException(messageService.getMessage("error.billing.provider.not.connected"));
+            throw new BadRequestException("error.billing.provider.not.connected", messageService.getMessage("error.billing.provider.not.connected"));
         }
         AccountingFirm firm = currentFirmService.require();
         firm.setBillingProvider(provider);
@@ -100,7 +100,7 @@ public class BillingService {
     @Transactional(readOnly = true)
     public CompanyBillingDTO getCompanyBilling(UUID companyId) {
         Company company = companyRepository.findFirstByIdAndDeletedIsFalse(companyId)
-                .orElseThrow(() -> new ResourceNotFoundException(messageService.getMessage("error.entity.not.found")));
+                .orElseThrow(() -> new ResourceNotFoundException("error.entity.not.found", messageService.getMessage("error.entity.not.found")));
         tenantAccessService.assertCompanyAccess(company);
 
         BillingProviderType provider = company.getAccountingFirm().getBillingProvider();

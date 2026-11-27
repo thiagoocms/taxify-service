@@ -63,6 +63,32 @@ public class FiscalXmlSyncControl extends AbstractAuditingEntity {
     @Column(name = "issued_checked_at")
     private LocalDateTime issuedCheckedAt;
 
+    /**
+     * Last time the scheduler picked this company (success, failure or skipped as up to date) - the queue order. Not
+     * a verification: a brand-new row has {@code ultimaVerificacaoEm} filled on creation but was never checked.
+     */
+    @Column(name = "last_attempt_at")
+    private LocalDateTime lastAttemptAt;
+
+    public LocalDateTime getLastAttemptAt() {
+        return lastAttemptAt;
+    }
+
+    public void setLastAttemptAt(LocalDateTime lastAttemptAt) {
+        this.lastAttemptAt = lastAttemptAt;
+    }
+
+    /**
+     * When both sides were really checked: the older of the two; null (never) while the issued side was never checked -
+     * the received side's time is filled on the row's creation and does not count alone.
+     */
+    public LocalDateTime getVerifiedAt() {
+        if (issuedCheckedAt == null || ultimaVerificacaoEm == null) {
+            return null;
+        }
+        return issuedCheckedAt.isBefore(ultimaVerificacaoEm) ? issuedCheckedAt : ultimaVerificacaoEm;
+    }
+
     /** Last day the recent notes' events (cancelamentos...) were re-read, per side - see FiscalXmlSyncScheduler. */
     @Column(name = "received_events_checked_on")
     private LocalDate receivedEventsCheckedOn;

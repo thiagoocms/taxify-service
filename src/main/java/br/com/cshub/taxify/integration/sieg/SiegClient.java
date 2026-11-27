@@ -42,18 +42,18 @@ public class SiegClient {
      */
     public int contarXmlsNfe(SiegBaixarXmlsRequest request, String apiKey) {
         if (apiKey == null || apiKey.isBlank()) {
-            throw new SiegIntegrationException(messageService.getMessage("error.sieg.api.key.missing"));
+            throw new SiegIntegrationException("error.sieg.api.key.missing", messageService.getMessage("error.sieg.api.key.missing"));
         }
 
         try {
             SiegContarXmlsResponse response = feignClient.contarXmls(apiKey, request);
             if (response == null || !response.isSuccess() || response.data() == null) {
-                throw new SiegIntegrationException(messageService.getMessage("error.sieg.integration.failed"));
+                throw new SiegIntegrationException("error.sieg.integration.failed", messageService.getMessage("error.sieg.integration.failed"));
             }
             Integer nfe = response.data().nfe();
             return nfe != null ? nfe : 0;
         } catch (FeignException e) {
-            throw new SiegIntegrationException(messageService.getMessage("error.sieg.integration.failed"), e);
+            throw new SiegIntegrationException("error.sieg.integration.failed", messageService.getMessage("error.sieg.integration.failed"), e);
         }
     }
 
@@ -62,7 +62,7 @@ public class SiegClient {
      */
     public List<byte[]> baixarXmls(SiegBaixarXmlsRequest request, String apiKey) {
         if (apiKey == null || apiKey.isBlank()) {
-            throw new SiegIntegrationException(messageService.getMessage("error.sieg.api.key.missing"));
+            throw new SiegIntegrationException("error.sieg.api.key.missing", messageService.getMessage("error.sieg.api.key.missing"));
         }
 
         try (Response response = feignClient.baixarXmls(apiKey, request)) {
@@ -74,11 +74,11 @@ public class SiegClient {
             }
             if (response.status() >= 400) {
                 log.warn("SIEG baixar-xmls returned HTTP {}: {}", response.status(), errorSnippet(body));
-                throw new SiegIntegrationException(messageService.getMessage("error.sieg.integration.failed"));
+                throw new SiegIntegrationException("error.sieg.integration.failed", messageService.getMessage("error.sieg.integration.failed"));
             }
             return packageExtractor.extract(body);
         } catch (FeignException e) {
-            throw new SiegIntegrationException(messageService.getMessage("error.sieg.integration.failed"), e);
+            throw new SiegIntegrationException("error.sieg.integration.failed", messageService.getMessage("error.sieg.integration.failed"), e);
         }
     }
 
@@ -89,7 +89,7 @@ public class SiegClient {
         try (InputStream in = response.body().asInputStream()) {
             return in.readAllBytes();
         } catch (IOException e) {
-            throw new SiegIntegrationException(messageService.getMessage("error.sieg.integration.failed"), e);
+            throw new SiegIntegrationException("error.sieg.integration.failed", messageService.getMessage("error.sieg.integration.failed"), e);
         }
     }
 

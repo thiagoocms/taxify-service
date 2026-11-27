@@ -76,7 +76,7 @@ public class AcessoriasClient {
 
     private <T> List<T> listAll(String apiToken, Class<T> type, IntFunction<String> pathForPage) {
         if (apiToken == null || apiToken.isBlank()) {
-            throw new AcessoriasIntegrationException(messageService.getMessage("error.acessorias.api.token.missing"));
+            throw new AcessoriasIntegrationException("error.acessorias.api.token.missing", messageService.getMessage("error.acessorias.api.token.missing"));
         }
         String authorization = "Bearer ".concat(apiToken.trim());
 
@@ -97,17 +97,17 @@ public class AcessoriasClient {
             byte[] body = readBody(response);
 
             if (response.status() == 401 || response.status() == 403) {
-                throw new AcessoriasIntegrationException(messageService.getMessage("error.acessorias.api.token.invalid"));
+                throw new AcessoriasIntegrationException("error.acessorias.api.token.invalid", messageService.getMessage("error.acessorias.api.token.invalid"));
             }
             if (response.status() == 429) {
-                throw new AcessoriasIntegrationException(messageService.getMessage("error.acessorias.rate.limited"));
+                throw new AcessoriasIntegrationException("error.acessorias.rate.limited", messageService.getMessage("error.acessorias.rate.limited"));
             }
             if (response.status() == 204 || response.status() == 404 || body.length == 0) {
                 return List.of();
             }
             if (response.status() >= 400) {
                 log.warn("Acessórias {} returned HTTP {}: {}", path, response.status(), errorSnippet(body));
-                throw new AcessoriasIntegrationException(messageService.getMessage("error.acessorias.integration.failed"));
+                throw new AcessoriasIntegrationException("error.acessorias.integration.failed", messageService.getMessage("error.acessorias.integration.failed"));
             }
 
             JsonNode root = objectMapper.readTree(body);
@@ -120,10 +120,10 @@ public class AcessoriasClient {
             }
             return items;
         } catch (FeignException e) {
-            throw new AcessoriasIntegrationException(messageService.getMessage("error.acessorias.integration.failed"), e);
+            throw new AcessoriasIntegrationException("error.acessorias.integration.failed", messageService.getMessage("error.acessorias.integration.failed"), e);
         } catch (JacksonException e) {
             log.warn("Could not parse Acessórias response for {}", path, e);
-            throw new AcessoriasIntegrationException(messageService.getMessage("error.acessorias.integration.failed"), e);
+            throw new AcessoriasIntegrationException("error.acessorias.integration.failed", messageService.getMessage("error.acessorias.integration.failed"), e);
         }
     }
 
@@ -139,10 +139,10 @@ public class AcessoriasClient {
             return List.of();
         }
         if (normalized.contains("token")) {
-            throw new AcessoriasIntegrationException(messageService.getMessage("error.acessorias.api.token.invalid"));
+            throw new AcessoriasIntegrationException("error.acessorias.api.token.invalid", messageService.getMessage("error.acessorias.api.token.invalid"));
         }
         log.warn("Acessórias {} answered with an error: {}", path, message);
-        throw new AcessoriasIntegrationException(messageService.getMessage("error.acessorias.api.error", message));
+        throw new AcessoriasIntegrationException("error.acessorias.api.error", messageService.getMessage("error.acessorias.api.error", message));
     }
 
     private byte[] readBody(Response response) {
@@ -152,7 +152,7 @@ public class AcessoriasClient {
         try (InputStream in = response.body().asInputStream()) {
             return in.readAllBytes();
         } catch (IOException e) {
-            throw new AcessoriasIntegrationException(messageService.getMessage("error.acessorias.integration.failed"), e);
+            throw new AcessoriasIntegrationException("error.acessorias.integration.failed", messageService.getMessage("error.acessorias.integration.failed"), e);
         }
     }
 

@@ -90,20 +90,20 @@ public class CompanyCertificateService {
     public CompanyCertificateDTO upload(UUID companyId, byte[] pfx, String password) {
         Company company = companyValidation.checkExist(companyId);
         if (pfx == null || pfx.length == 0) {
-            throw new BadRequestException(messageService.getMessage("error.certificate.empty"));
+            throw new BadRequestException("error.certificate.empty", messageService.getMessage("error.certificate.empty"));
         }
         A1Certificate certificate;
         try {
             certificate = A1Certificate.open(pfx, password);
         } catch (GeneralSecurityException e) {
-            throw new BadRequestException(messageService.getMessage("error.certificate.invalid"));
+            throw new BadRequestException("error.certificate.invalid", messageService.getMessage("error.certificate.invalid"));
         }
         if (certificate.validUntil().isBefore(LocalDateTime.now())) {
-            throw new BadRequestException(messageService.getMessage("error.certificate.expired"));
+            throw new BadRequestException("error.certificate.expired", messageService.getMessage("error.certificate.expired"));
         }
         String companyCnpj = cnpjOf(company);
         if (certificate.cnpj() != null && companyCnpj != null && !certificate.cnpj().startsWith(companyCnpj.substring(0, 8))) {
-            throw new BadRequestException(messageService.getMessage("error.certificate.other.company", certificate.cnpj()));
+            throw new BadRequestException("error.certificate.other.company", messageService.getMessage("error.certificate.other.company", certificate.cnpj()));
         }
 
         boolean encrypt = cipher.isConfigured();

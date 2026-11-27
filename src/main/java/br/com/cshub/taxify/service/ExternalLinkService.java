@@ -63,7 +63,7 @@ public class ExternalLinkService {
         AccountingFirm firm = company.getAccountingFirm();
         BillingProvider provider = registry.requireConnected(firm);
         ExternalCustomer customer = provider.findCustomerByDocument(firm, DocumentNumbers.onlyDigits(document))
-                .orElseThrow(() -> new BadRequestException(messageService.getMessage("error.billing.link.customer.not.found")));
+                .orElseThrow(() -> new BadRequestException("error.billing.link.customer.not.found", messageService.getMessage("error.billing.link.customer.not.found")));
         return toDto(upsert(company, provider.type(), customer.id(), customer.name()));
     }
 
@@ -80,7 +80,7 @@ public class ExternalLinkService {
     private BillingProviderType providerOf(AccountingFirm firm) {
         BillingProviderType provider = firm.getBillingProvider();
         if (provider == null || provider == BillingProviderType.MANUAL) {
-            throw new BadRequestException(messageService.getMessage("error.billing.provider.manual"));
+            throw new BadRequestException("error.billing.provider.manual", messageService.getMessage("error.billing.provider.manual"));
         }
         return provider;
     }

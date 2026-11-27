@@ -1,5 +1,10 @@
 package br.com.cshub.taxify.config;
 
+import br.com.cshub.taxify.security.FirmAccessInterceptor;
+import jakarta.servlet.http.HttpServletRequest;
+import jakarta.servlet.http.HttpServletResponse;
+import org.springframework.beans.factory.ObjectProvider;
+import org.springframework.web.servlet.HandlerInterceptor;
 import org.springframework.context.MessageSource;
 import org.springframework.context.annotation.Bean;
 import org.springframework.context.annotation.Configuration;
@@ -16,6 +21,12 @@ import java.util.Locale;
 @Configuration
 @EnableWebMvc
 public class WebMvcConfig implements WebMvcConfigurer {
+
+    private final ObjectProvider<FirmAccessInterceptor> firmAccessInterceptor;
+
+    public WebMvcConfig(ObjectProvider<FirmAccessInterceptor> firmAccessInterceptor) {
+        this.firmAccessInterceptor = firmAccessInterceptor;
+    }
 
     // CORS é tratado exclusivamente pelo CorsFilter (HIGHEST_PRECEDENCE) para
     // evitar headers Access-Control-Allow-Origin duplicados/conflitantes.
@@ -36,6 +47,13 @@ public class WebMvcConfig implements WebMvcConfigurer {
         LocaleChangeInterceptor localeChangeInterceptor = new LocaleChangeInterceptor();
         localeChangeInterceptor.setParamName("language");
         registry.addInterceptor(localeChangeInterceptor);
+        // somente leitura do escritório bloqueado (F1-RN-08) - resolvido tarde: depende do messageSource daqui
+        registry.addInterceptor(new HandlerInterceptor() {
+            @Override
+            public boolean preHandle(HttpServletRequest request, HttpServletResponse response, Object handler) throws Exception {
+                return firmAccessInterceptor.getObject().preHandle(request, response, handler);
+            }
+        });
     }
 
     @Bean

@@ -146,7 +146,7 @@ public class SefazManifestationScreenService {
         try {
             type = Manifestation.valueOf(request.tipo().strip().toUpperCase());
         } catch (IllegalArgumentException e) {
-            throw new BadRequestException(messageService.getMessage("error.generic.bad.request"));
+            throw new BadRequestException("error.generic.bad.request", messageService.getMessage("error.generic.bad.request"));
         }
         List<String> keys = request.chaves().stream()
                 .filter(key -> key != null && !key.isBlank())
@@ -154,18 +154,18 @@ public class SefazManifestationScreenService {
                 .distinct()
                 .toList();
         if (keys.isEmpty() || keys.size() > MAX_PER_REQUEST || keys.stream().anyMatch(key -> key.length() != 44)) {
-            throw new BadRequestException(messageService.getMessage("error.sefaz.manifestation.notes"));
+            throw new BadRequestException("error.sefaz.manifestation.notes", messageService.getMessage("error.sefaz.manifestation.notes"));
         }
         String justification = request.justificativa() == null ? null : request.justificativa().replaceAll("\\s+", " ").strip();
         if (type.needsJustification() && (justification == null || justification.length() < 15 || justification.length() > 255)) {
-            throw new BadRequestException(messageService.getMessage("error.sefaz.manifestation.justification"));
+            throw new BadRequestException("error.sefaz.manifestation.justification", messageService.getMessage("error.sefaz.manifestation.justification"));
         }
         if (!manifestService.manifests(company.getId())) {
-            throw new BadRequestException(messageService.getMessage("error.sefaz.manifestation.not.in.plan"));
+            throw new BadRequestException("error.sefaz.manifestation.not.in.plan", messageService.getMessage("error.sefaz.manifestation.not.in.plan"));
         }
         String cnpj = CompanyCertificateService.cnpjOf(company);
         A1Certificate certificate = openCertificate(company)
-                .orElseThrow(() -> new BadRequestException(messageService.getMessage("error.sefaz.manifestation.no.certificate")));
+                .orElseThrow(() -> new BadRequestException("error.sefaz.manifestation.no.certificate", messageService.getMessage("error.sefaz.manifestation.no.certificate")));
 
         List<ManifestationDTOs.Result.Item> items = new ArrayList<>();
         for (int from = 0; from < keys.size(); from += SefazEventClient.MAX_PER_BATCH) {

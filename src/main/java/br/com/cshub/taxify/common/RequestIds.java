@@ -14,7 +14,7 @@ public final class RequestIds {
         try {
             return UUID.fromString(value);
         } catch (IllegalArgumentException | NullPointerException e) {
-            throw new BadRequestException(messageService.getMessage("error.generic.bad.request"));
+            throw new BadRequestException("error.generic.bad.request", messageService.getMessage("error.generic.bad.request"));
         }
     }
 }

@@ -1,5 +1,6 @@
 package br.com.cshub.taxify.rest;
 
+import br.com.cshub.taxify.security.ReadOnlyOperation;
 import br.com.cshub.taxify.constants.AppConstants;
 import br.com.cshub.taxify.dto.fiscalxml.ServiceInvoiceDTOs;
 import br.com.cshub.taxify.enumerated.Permission;
@@ -44,11 +45,13 @@ public class ServiceInvoiceResource {
         this.companyValidation = companyValidation;
     }
 
+    @ReadOnlyOperation
     @PostMapping("/buscar")
     public ResponseEntity<Page<ServiceInvoiceDTOs.Summary>> search(@Valid @RequestBody ServiceInvoiceDTOs.Filter filter) {
         return ResponseEntity.ok(queryService.search(filter));
     }
 
+    @ReadOnlyOperation
     @PostMapping("/totais")
     public ResponseEntity<ServiceInvoiceDTOs.Totals> totals(@Valid @RequestBody ServiceInvoiceDTOs.Filter filter) {
         return ResponseEntity.ok(queryService.totals(filter));

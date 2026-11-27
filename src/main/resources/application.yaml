@@ -144,8 +144,51 @@ taxify:
     key: ${CERT_ENCRYPTION_KEY:}
   platform:
     # Logins (vírgula) da CS Hub que alteram as regras gerais (tabela de ICMS do Fronteira, regras da auditoria),
-    # que valem para todos os escritórios. Precisa ter o perfil ADMIN. Vazio = ninguém altera.
+    # que valem para todos os escritórios, e usam o console da plataforma (/platform). Precisa ter o perfil ADMIN e
+    # ser do escritório PLATFORM_FIRM_ID (F1-RN-04). Vazio = ninguém é admin da plataforma.
     admin-logins: ${PLATFORM_ADMIN_LOGINS:}
+    # Id (UUID) do escritório da CS Hub: o único isento de teste, bloqueio e limite (F1-RN-12). Vazio = nenhum.
+    firm-id: ${PLATFORM_FIRM_ID:}
+  # Taxify SaaS fase 1: cadastro público, teste grátis e liberação (spec 2026-11-26, seção 11).
+  saas:
+    # O cadastro público só abre com true E uma versão real dos termos (nem vazia, nem começando com RASCUNHO).
+    # Ligar na EC2 é deploy de produção: só com aprovação do Tony.
+    signup-enabled: ${TAXIFY_SIGNUP_ENABLED:false}
+    terms-version: ${TAXIFY_TERMS_VERSION:}
+    terms-url: ${TAXIFY_TERMS_URL:}
+    privacy-url: ${TAXIFY_PRIVACY_URL:}
+    dpa-url: ${TAXIFY_DPA_URL:}
+    trial-days: ${TAXIFY_TRIAL_DAYS:14}
+    trial-max-companies: ${TAXIFY_TRIAL_MAX_COMPANIES:5}
+    trial-max-users: ${TAXIFY_TRIAL_MAX_USERS:2}
+    signup-max-per-ip-per-day: ${TAXIFY_SIGNUP_MAX_PER_IP_PER_DAY:3}
+    email-verification-hours: ${TAXIFY_EMAIL_VERIFICATION_HOURS:24}
+    email-resend-per-hour: ${TAXIFY_EMAIL_RESEND_PER_HOUR:3}
+    # Teto diário dos reenvios do link (dia civil de Recife): por login e por IP. Acima dele: 202 sem envio.
+    email-resend-per-day: ${TAXIFY_EMAIL_RESEND_PER_DAY:5}
+    email-resend-per-ip-per-day: ${TAXIFY_EMAIL_RESEND_PER_IP_PER_DAY:10}
+    unverified-purge-days: ${TAXIFY_UNVERIFIED_PURGE_DAYS:7}
+    # Na reativação, recupera os meses bloqueados (SIEG e e-Fisco) até N meses atrás do mês atual.
+    unblock-recovery-months: ${TAXIFY_UNBLOCK_RECOVERY_MONTHS:3}
+    # Endereço do Taxify nos links dos e-mails (verificação e avisos).
+    public-url: ${TAXIFY_PUBLIC_URL:https://taxify.cshub.com.br}
+    # De quem o X-Forwarded-For é aceito (vírgula: IPs ou prefixos CIDR). Vazio = loopback e redes privadas (Docker).
+    trusted-proxies: ${TAXIFY_TRUSTED_PROXIES:}
+    # Agendadores diários, horário de Recife: vencimento do teste/liberação, expurgo dos não verificados e avisos.
+    access-cron: ${TAXIFY_ACCESS_CRON:0 10 0 * * *}
+    purge-cron: ${TAXIFY_UNVERIFIED_PURGE_CRON:0 20 3 * * *}
+    trial-notice-cron: ${TAXIFY_TRIAL_NOTICE_CRON:0 0 9 * * *}
+    # Liga/desliga cada um desses agendadores (padrão ligado).
+    access-enabled: ${TAXIFY_ACCESS_ENABLED:true}
+    purge-enabled: ${TAXIFY_UNVERIFIED_PURGE_ENABLED:true}
+    trial-notice-enabled: ${TAXIFY_TRIAL_NOTICE_ENABLED:true}
+  # E-mail (F1-RN-17): LOG só registra (desenvolvimento e testes, nunca envia); SES envia pela role IAM da EC2 (I1-1).
+  mail:
+    provider: ${TAXIFY_MAIL_PROVIDER:LOG}
+    from: ${TAXIFY_MAIL_FROM:nao-responda@cshub.com.br}
+    ses-region: ${TAXIFY_MAIL_SES_REGION:us-east-2}
+    # Só desenvolvimento: o LOG mostra o corpo (com o link de verificação). Em produção fica false.
+    log-body: ${TAXIFY_MAIL_LOG_BODY:false}
 
 # Timeouts of the Feign clients. OpenFeign 4+ reads only "spring.cloud.openfeign.client.config" - under the old
 # "feign.client.config" prefix these were ignored and every client ran on the defaults (10s connect, 60s read),

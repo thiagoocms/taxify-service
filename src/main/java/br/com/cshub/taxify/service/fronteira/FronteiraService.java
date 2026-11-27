@@ -125,16 +125,16 @@ public class FronteiraService {
 
     private FronteiraDTOs.Report importExtract(Company company, String fileName, byte[] pdf, String importedBy) {
         if (company.getUf() != null && !UF.equalsIgnoreCase(company.getUf().strip())) {
-            throw new BadRequestException(messageService.getMessage("error.fronteira.company.not.pe"));
+            throw new BadRequestException("error.fronteira.company.not.pe", messageService.getMessage("error.fronteira.company.not.pe"));
         }
         if (pdf == null || pdf.length == 0) {
-            throw new BadRequestException(messageService.getMessage("error.fronteira.file.required"));
+            throw new BadRequestException("error.fronteira.file.required", messageService.getMessage("error.fronteira.file.required"));
         }
         EfiscoExtractParser.Extract read;
         try {
             read = parser.parse(pdf);
         } catch (EfiscoExtractParser.InvalidExtractException e) {
-            throw new BadRequestException(messageService.getMessage("error.fronteira.extract.invalid", e.getMessage()));
+            throw new BadRequestException("error.fronteira.extract.invalid", messageService.getMessage("error.fronteira.extract.invalid", e.getMessage()));
         }
         checkStateRegistration(company, read.inscricaoEstadual());
 
@@ -198,7 +198,7 @@ public class FronteiraService {
                 .map(registration -> registration.getNumber() == null ? "" : registration.getNumber().replaceAll("\\D", ""))
                 .anyMatch(number -> !number.isEmpty() && stripZeros(number).equals(stripZeros(read)));
         if (!matches) {
-            throw new BadRequestException(messageService.getMessage("error.fronteira.extract.other.ie", inscricaoEstadual));
+            throw new BadRequestException("error.fronteira.extract.other.ie", messageService.getMessage("error.fronteira.extract.other.ie", inscricaoEstadual));
         }
     }
 
@@ -236,10 +236,10 @@ public class FronteiraService {
         Company company = company(companyId);
         FronteiraDTOs.Report report = report(companyId, periodo);
         if (report.extract() == null) {
-            throw new ConflictException(messageService.getMessage("error.fronteira.revision.no.extract"));
+            throw new ConflictException("error.fronteira.revision.no.extract", messageService.getMessage("error.fronteira.revision.no.extract"));
         }
         if (!FronteiraRevisionRequestPdf.hasItems(report)) {
-            throw new ConflictException(messageService.getMessage("error.fronteira.revision.none"));
+            throw new ConflictException("error.fronteira.revision.none", messageService.getMessage("error.fronteira.revision.none"));
         }
         FronteiraRevisionRequestPdf.Taxpayer taxpayer = new FronteiraRevisionRequestPdf.Taxpayer(company.getName(),
                 documentOf(company), company.getStateRegistration(), company.getAddressCity());
@@ -674,7 +674,7 @@ public class FronteiraService {
     public Company companyOfPernambuco(String companyId) {
         Company company = company(companyId);
         if (company.getUf() != null && !UF.equalsIgnoreCase(company.getUf().strip())) {
-            throw new BadRequestException(messageService.getMessage("error.fronteira.company.not.pe"));
+            throw new BadRequestException("error.fronteira.company.not.pe", messageService.getMessage("error.fronteira.company.not.pe"));
         }
         return company;
     }
@@ -688,7 +688,7 @@ public class FronteiraService {
         try {
             return companyValidation.checkExist(UUID.fromString(companyId.strip()));
         } catch (IllegalArgumentException | NullPointerException e) {
-            throw new BadRequestException(messageService.getMessage("error.generic.bad.request"));
+            throw new BadRequestException("error.generic.bad.request", messageService.getMessage("error.generic.bad.request"));
         }
     }
 
@@ -696,7 +696,7 @@ public class FronteiraService {
         try {
             return YearMonth.parse(periodo.strip());
         } catch (DateTimeParseException e) {
-            throw new BadRequestException(messageService.getMessage("error.generic.bad.request"));
+            throw new BadRequestException("error.generic.bad.request", messageService.getMessage("error.generic.bad.request"));
         }
     }
 

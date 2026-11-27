@@ -18,11 +18,12 @@ import java.util.Arrays;
 import java.util.EnumSet;
 import java.util.Optional;
 import java.util.Set;
+import java.util.function.Predicate;
 import java.util.function.Supplier;
 import java.util.stream.Collectors;
 
 /**
- * Decides {@link RequiresPermission} / {@link AdminOnly} for one controller call. The rule for
+ * Decides {@link RequiresPermission} / {@link AdminOnly} / {@link PlatformAdminOnly} for one controller call. The rule for
  * an endpoint ({@link #requirementFor}) is resolved from the annotations alone, so it can also
  * be inspected without a request - the test that makes sure no endpoint was left unguarded
  * uses exactly that.
@@ -32,11 +33,22 @@ public class PermissionAuthorizationManager implements AuthorizationManager<Meth
     private static final String ADMIN = UserProfileEnum.ADMIN.name();
     private static final Set<RequestMethod> READ_METHODS = EnumSet.of(RequestMethod.GET, RequestMethod.HEAD, RequestMethod.OPTIONS);
 
-    /** What an endpoint demands: ADMIN only, or ADMIN / any of {@code permissions}. */
-    public record Requirement(boolean adminOnly, Set<Permission> permissions) {
+    /**
+     * What an endpoint demands: ADMIN only, ADMIN / any of {@code permissions}, or the platform admin (the CS Hub,
+     * decided by {@link #platformAdminCheck} - a firm's ADMIN alone never passes it).
+     */
+    public record Requirement(boolean adminOnly, Set<Permission> permissions, boolean platformAdmin) {
+
+        public Requirement(boolean adminOnly, Set<Permission> permissions) {
+            this(adminOnly, permissions, false);
+        }
 
         static Requirement admin() {
             return new Requirement(true, Set.of());
+        }
+
+        static Requirement platform() {
+            return new Requirement(true, Set.of(), true);
         }
 
         static Requirement anyOf(Permission... permissions) {
@@ -44,11 +56,26 @@ public class PermissionAuthorizationManager implements AuthorizationManager<Meth
         }
 
         boolean isSatisfiedBy(Set<String> authorities) {
+            if (platformAdmin) {
+                return false;
+            }
             if (authorities.contains(ADMIN)) {
                 return true;
             }
             return !adminOnly && permissions.stream().anyMatch(permission -> authorities.contains(permission.name()));
         }
+    }
+
+    private final Predicate<Authentication> platformAdminCheck;
+
+    /** Without a platform admin check: {@link PlatformAdminOnly} endpoints are always denied. */
+    public PermissionAuthorizationManager() {
+        this(authentication -> false);
+    }
+
+    /** @param platformAdminCheck is the caller the platform admin (PlatformAdminService, read from the database) */
+    public PermissionAuthorizationManager(Predicate<Authentication> platformAdminCheck) {
+        this.platformAdminCheck = platformAdminCheck;
     }
 
     @Override
@@ -59,6 +86,10 @@ public class PermissionAuthorizationManager implements AuthorizationManager<Meth
             return new AuthorizationDecision(true);
         }
         Authentication current = authentication.get();
+        if (requirement.get().platformAdmin()) {
+            boolean allowed = current != null && current.isAuthenticated() && platformAdminCheck.test(current);
+            return new AuthorizationDecision(allowed);
+        }
         Set<String> authorities = current == null || !current.isAuthenticated()
                 ? Set.of()
                 : current.getAuthorities().stream().map(GrantedAuthority::getAuthority).collect(Collectors.toSet());
@@ -72,6 +103,10 @@ public class PermissionAuthorizationManager implements AuthorizationManager<Meth
     public static Optional<Requirement> requirementFor(Method method, Class<?> controller) {
         Method specific = AopUtils.getMostSpecificMethod(method, controller);
 
+        if (AnnotatedElementUtils.hasAnnotation(specific, PlatformAdminOnly.class)
+                || AnnotatedElementUtils.hasAnnotation(controller, PlatformAdminOnly.class)) {
+            return Optional.of(Requirement.platform());
+        }
         if (AnnotatedElementUtils.hasAnnotation(specific, AdminOnly.class)) {
             return Optional.of(Requirement.admin());
         }
@@ -94,7 +129,7 @@ public class PermissionAuthorizationManager implements AuthorizationManager<Meth
     }
 
     /** POST/PUT/PATCH/DELETE - or a mapping with no method at all, treated as write to stay on the safe side. */
-    static boolean isWrite(Method method) {
+    public static boolean isWrite(Method method) {
         RequestMapping mapping = AnnotatedElementUtils.findMergedAnnotation(method, RequestMapping.class);
         if (mapping == null || mapping.method().length == 0) {
             return true;

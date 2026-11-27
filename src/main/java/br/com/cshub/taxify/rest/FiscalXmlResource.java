@@ -1,5 +1,6 @@
 package br.com.cshub.taxify.rest;
 
+import br.com.cshub.taxify.security.ReadOnlyOperation;
 import org.springframework.web.bind.annotation.PutMapping;
 import br.com.cshub.taxify.service.FiscalXmlReviewService;
 import br.com.cshub.taxify.dto.fiscalxml.ReviewRequestDTO;
@@ -80,12 +81,14 @@ public class FiscalXmlResource {
     }
 
     /** List rows only (DB columns, no XML file read) - see FiscalXmlQueryService#search. */
+    @ReadOnlyOperation
     @PostMapping
     public ResponseEntity<Page<FiscalXmlSummaryDTO>> buscarXmls(@Valid @RequestBody XmlSearchFilterDTO filter) {
         return ResponseEntity.ok(queryService.search(filter));
     }
 
     /** Entries and exits of the period, with the main taxes - the cards above the list. */
+    @ReadOnlyOperation
     @PostMapping("/totais")
     public ResponseEntity<FiscalXmlTotalsDTO> totais(@Valid @RequestBody XmlSearchFilterDTO filter) {
         return ResponseEntity.ok(queryService.totals(filter));
@@ -199,6 +202,7 @@ public class FiscalXmlResource {
      * {@link #buscarXmls}, but serves each note's rectified version instead of the
      * original whenever one exists (see FiscalXmlIntegrationService#exportXmls).
      */
+    @ReadOnlyOperation
     @PostMapping("/exportar")
     public ResponseEntity<List<FiscalXmlItemDTO>> exportarXmls(@Valid @RequestBody XmlDownloadFilterDTO filter) {
         return ResponseEntity.ok(service.exportXmls(filter));
@@ -209,6 +213,7 @@ public class FiscalXmlResource {
      * downloads the raw .xml files themselves bundled into a single .zip instead of JSON
      * - see FiscalXmlIntegrationService#exportXmlsZip.
      */
+    @ReadOnlyOperation
     @PostMapping(value = "/exportar/zip", produces = "application/zip")
     public ResponseEntity<byte[]> exportarXmlsZip(@Valid @RequestBody XmlDownloadFilterDTO filter) {
         byte[] zipBytes = service.exportXmlsZip(filter);

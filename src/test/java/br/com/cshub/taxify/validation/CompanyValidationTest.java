@@ -40,13 +40,61 @@ class CompanyValidationTest {
     private TenantAccessService tenantAccessService;
     @Mock
     private CurrentUserService currentUserService;
+    @Mock
+    private br.com.cshub.taxify.service.firmaccess.PlanLimitService planLimitService;
 
     private CompanyValidation validation;
 
     @BeforeEach
     void setUp() {
         lenient().when(currentUserService.getCurrentUser()).thenReturn(Optional.empty());
-        validation = new CompanyValidation(mapper, repository, messageService, documentValidation, tenantAccessService, currentUserService);
+        validation = new CompanyValidation(mapper, repository, messageService, documentValidation, tenantAccessService, currentUserService,
+                planLimitService);
+    }
+
+    /** F1-RN-10a / CT1-27: reactivating (active false → true) takes a slot; editing an active company never does. */
+    @Test
+    void reactivatingACompanyChecksTheTrialLimit() {
+        UUID id = UUID.randomUUID();
+        br.com.cshub.taxify.domain.accountingfirm.AccountingFirm firm =
+                new br.com.cshub.taxify.domain.accountingfirm.AccountingFirm(UUID.randomUUID());
+        Company persisted = new Company(id);
+        persisted.setAccountingFirm(firm);
+        persisted.setActive(false);
+        when(repository.findFirstByIdAndDeletedIsFalse(id)).thenReturn(Optional.of(persisted));
+        Company toUpdate = new Company(id);
+        toUpdate.setActive(true);
+        org.mockito.Mockito.doAnswer(invocation -> {
+            persisted.setActive(true);
+            return null;
+        }).when(mapper).merge(toUpdate, persisted);
+
+        validation.checkUpdateConsistence(id, toUpdate);
+        org.mockito.Mockito.verify(planLimitService).assertCompanySlot(firm.getId());
+
+        // already active: no limit check
+        org.mockito.Mockito.clearInvocations(planLimitService);
+        validation.checkUpdateConsistence(id, toUpdate);
+        org.mockito.Mockito.verifyNoInteractions(planLimitService);
+    }
+
+    /** F1-RN-10a / CT1-25: a new active company is checked before anything is written; a new inactive one is not. */
+    @Test
+    void creatingAnActiveCompanyChecksTheTrialLimit() {
+        br.com.cshub.taxify.domain.accountingfirm.AccountingFirm firm =
+                new br.com.cshub.taxify.domain.accountingfirm.AccountingFirm(UUID.randomUUID());
+        br.com.cshub.taxify.domain.user.User admin = new br.com.cshub.taxify.domain.user.User(UUID.randomUUID());
+        admin.setAccountingFirm(firm);
+        when(currentUserService.getCurrentUser()).thenReturn(Optional.of(admin));
+
+        validation.checkOwnerFieldsToCreate(new Company());
+        org.mockito.Mockito.verify(planLimitService).assertCompanySlot(firm.getId());
+
+        org.mockito.Mockito.clearInvocations(planLimitService);
+        Company inactive = new Company();
+        inactive.setActive(false);
+        validation.checkOwnerFieldsToCreate(inactive);
+        org.mockito.Mockito.verifyNoInteractions(planLimitService);
     }
 
     @Test

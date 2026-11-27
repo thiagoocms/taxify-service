@@ -52,6 +52,7 @@ class AcessoriasImportServiceTest {
     @Mock private MessageService messageService;
     @Mock private FirmIntegrationService firmIntegrationService;
     @Mock private IntegrationJobRunner jobRunner;
+    @Mock private br.com.cshub.taxify.service.firmaccess.PlanLimitService planLimitService;
 
     private AcessoriasImportService service;
     private AccountingFirm firm;
@@ -60,7 +61,7 @@ class AcessoriasImportServiceTest {
     void setUp() {
         service = new AcessoriasImportService(acessoriasClient, companyRepository, documentRepository, userRepository,
                 userCompanyRepository, currentFirmService, firmIntegrationService, jobRunner, messageService,
-                org.mockito.Mockito.mock(br.com.cshub.taxify.service.CompanyTaxRegimeService.class));
+                org.mockito.Mockito.mock(br.com.cshub.taxify.service.CompanyTaxRegimeService.class), planLimitService);
         firm = new AccountingFirm(UUID.randomUUID());
         lenient().when(firmIntegrationService.getApiKey(firm.getId(), IntegrationType.ACESSORIAS)).thenReturn("token");
         lenient().when(messageService.getMessage(anyString())).thenAnswer(invocation -> invocation.getArgument(0));
@@ -178,6 +179,57 @@ class AcessoriasImportServiceTest {
         ArgumentCaptor<LocalDateTime> syncedAt = ArgumentCaptor.forClass(LocalDateTime.class);
         verify(firmIntegrationService).markSynced(eq(firm.getId()), eq(IntegrationType.ACESSORIAS), syncedAt.capture());
         assertThat(syncedAt.getValue()).isAfter(lastSync);
+    }
+
+    /**
+     * CA1-16 / CT1-29 (F1-RN-10a): trial with room for 2 more - E1 and E2 are created, E3 and E4 skipped by the limit,
+     * E5 (existing) is updated, and the job ends normally.
+     */
+    @Test
+    void theTrialLimitSkipsTheCompaniesWithoutARoom() {
+        when(planLimitService.isLimited(firm.getId())).thenReturn(true);
+        java.util.concurrent.atomic.AtomicInteger rooms = new java.util.concurrent.atomic.AtomicInteger(2);
+        when(planLimitService.withCompanySlot(eq(firm.getId()), any())).thenAnswer(invocation -> {
+            if (rooms.getAndDecrement() <= 0) {
+                return java.util.Optional.empty();
+            }
+            java.util.function.Supplier<?> write = invocation.getArgument(1);
+            return java.util.Optional.ofNullable(write.get());
+        });
+        Company e5 = company("11222333000181", "Nome antigo");
+        when(companyRepository.findByAccountingFirm_Id(firm.getId())).thenReturn(List.of(e5));
+        when(acessoriasClient.listCompanies("token", null)).thenReturn(List.of(
+                company("11222333000262", "Ativa", List.of()), company("11222333000343", "Ativa", List.of()),
+                company("11222333000424", "Ativa", List.of()), company("11222333000505", "Ativa", List.of()),
+                company("11222333000181", "Ativa", List.of())));
+
+        AcessoriasImportResultDTO result = service.importFirm(firm, false, SyncProgress.NONE);
+
+        assertThat(result.created()).isEqualTo(2);
+        assertThat(result.skippedByLimit()).isEqualTo(2);
+        assertThat(result.skipped()).hasSize(2).allSatisfy(reason -> assertThat(reason).endsWith("acessorias.import.skipped.limit"));
+        assertThat(result.updated()).isEqualTo(1);
+        assertThat(e5.getName()).isEqualTo("ACME LTDA");
+        assertThat(result.errors()).isEmpty();
+        verify(firmIntegrationService).markSynced(eq(firm.getId()), eq(IntegrationType.ACESSORIAS), any(LocalDateTime.class));
+    }
+
+    /** F1-RN-10a: an inactive company back to "Ativa" without a room - data updated, stays inactive, counted. */
+    @Test
+    void anInactiveCompanyBackToActiveWithoutARoomStaysInactive() {
+        when(planLimitService.isLimited(firm.getId())).thenReturn(true);
+        when(planLimitService.withCompanySlot(eq(firm.getId()), any())).thenReturn(java.util.Optional.empty());
+        Company inactive = company("11222333000181", "Nome antigo");
+        inactive.setActive(false);
+        when(companyRepository.findByAccountingFirm_Id(firm.getId())).thenReturn(List.of(inactive));
+        when(acessoriasClient.listCompanies("token", null)).thenReturn(List.of(company("11222333000181", "Ativa", List.of())));
+
+        AcessoriasImportResultDTO result = service.importFirm(firm, false, SyncProgress.NONE);
+
+        assertThat(inactive.getActive()).isFalse();
+        assertThat(inactive.getName()).isEqualTo("ACME LTDA");
+        assertThat(result.skippedByLimit()).isEqualTo(1);
+        assertThat(result.updated()).isEqualTo(1);
     }
 
     private static AcessoriasCompanyDTO company(String identificador, String status, List<AcessoriasCompanyDTO.Department> departments) {

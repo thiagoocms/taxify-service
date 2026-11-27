@@ -114,7 +114,7 @@ public class FirmIntegrationService {
     @Transactional
     public FirmIntegrationStatusDTO saveApiKeyForCurrentFirm(IntegrationType type, String apiKey) {
         if (!API_KEY_TYPES.contains(type)) {
-            throw new BadRequestException(messageService.getMessage("error.integration.api.key.not.supported"));
+            throw new BadRequestException("error.integration.api.key.not.supported", messageService.getMessage("error.integration.api.key.not.supported"));
         }
         FirmIntegration integration = getOrCreate(currentFirmService.requireId(), type);
         integration.setApiKey(StringUtils.hasText(apiKey) ? apiKey.strip() : null);

@@ -49,11 +49,11 @@ public class ProductFiscalRuleValidation extends AbstractCrudValidation<ProductF
     @Override
     protected ProductFiscalRule checkUpdateConsistence(UUID id, ProductFiscalRule toUpdateEntity) {
         if (Objects.isNull(id) || Objects.isNull(toUpdateEntity.getId())) {
-            throw new BadRequestException(messageService.getMessage("error.generic.bad.request"));
+            throw new BadRequestException("error.generic.bad.request", messageService.getMessage("error.generic.bad.request"));
         }
 
         if (id.compareTo(toUpdateEntity.getId()) != 0) {
-            throw new BadRequestException(messageService.getMessage("error.generic.bad.request"));
+            throw new BadRequestException("error.generic.bad.request", messageService.getMessage("error.generic.bad.request"));
         }
 
         var persistedEntity = checkExist(id);
@@ -85,13 +85,13 @@ public class ProductFiscalRuleValidation extends AbstractCrudValidation<ProductF
                 entity.getDocumentoFornecedor(), entity.getId());
 
         if (duplicate) {
-            throw new ConflictException(messageService.getMessage("error.productFiscalRule.duplicate"));
+            throw new ConflictException("error.productFiscalRule.duplicate", messageService.getMessage("error.productFiscalRule.duplicate"));
         }
 
         var tax = entity.getTaxRule();
         if (tax != null && tax.cstIbsCbs() != null && tax.classificacaoTributaria() != null
                 && !tax.classificacaoTributaria().startsWith(tax.cstIbsCbs())) {
-            throw new BadRequestException(messageService.getMessage("error.productFiscalRule.classTrib.cst"));
+            throw new BadRequestException("error.productFiscalRule.classTrib.cst", messageService.getMessage("error.productFiscalRule.classTrib.cst"));
         }
     }
 }

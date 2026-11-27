@@ -199,11 +199,11 @@ public class RetentionService {
             try {
                 return List.of(companyValidation.checkExist(UUID.fromString(companyId.strip())));
             } catch (IllegalArgumentException e) {
-                throw new BadRequestException(messageService.getMessage("error.generic.bad.request"));
+                throw new BadRequestException("error.generic.bad.request", messageService.getMessage("error.generic.bad.request"));
             }
         }
         UUID firmId = tenantAccessService.getCurrentAccountingFirmId()
-                .orElseThrow(() -> new BadRequestException(messageService.getMessage("error.pendency.firm.required")));
+                .orElseThrow(() -> new BadRequestException("error.pendency.firm.required", messageService.getMessage("error.pendency.firm.required")));
         return tenantAccessService.filterAccessible(
                 companyRepository.findByAccountingFirm_IdAndDeletedIsFalseOrderByNameAsc(firmId).stream()
                         .filter(company -> !Boolean.FALSE.equals(company.getActive()))

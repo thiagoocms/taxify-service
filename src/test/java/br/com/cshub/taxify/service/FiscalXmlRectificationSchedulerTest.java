@@ -54,7 +54,7 @@ class FiscalXmlRectificationSchedulerTest {
     void setUp() {
         properties = new FiscalXmlRectificationProperties();
         scheduler = new FiscalXmlRectificationScheduler(documentRepository, ruleRepository,
-                subscriptionRepository, rectificationService, properties);
+                subscriptionRepository, rectificationService, properties, br.com.cshub.taxify.service.firmaccess.FirmAccessTestSupport.allowAll());
         when(ruleRepository.findMaxLastModifiedDateByCompanyId(any())).thenReturn(Optional.empty());
         when(documentRepository.findByCompany_IdAndIssueDateBetweenOrderByIssueDateDesc(any(), any(), any())).thenReturn(List.of());
     }

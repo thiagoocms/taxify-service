@@ -24,7 +24,7 @@ class CertidaoSchedulerTest {
         when(service.dueCompanies()).thenReturn(List.of(first, second, third));
         when(service.issue(first)).thenReturn(new CertidaoService.Attempt(false, true, "captcha"));
 
-        new CertidaoScheduler(service, true).runAll();
+        new CertidaoScheduler(service, true, br.com.cshub.taxify.service.firmaccess.FirmAccessTestSupport.allowAll()).runAll();
 
         verify(service, times(1)).issue(any());
         verify(service).recordSkipped(second, "captcha");
@@ -35,7 +35,7 @@ class CertidaoSchedulerTest {
     void offDoesNothing() {
         CertidaoService service = mock(CertidaoService.class);
 
-        new CertidaoScheduler(service, false).tick();
+        new CertidaoScheduler(service, false, br.com.cshub.taxify.service.firmaccess.FirmAccessTestSupport.allowAll()).tick();
 
         verify(service, never()).dueCompanies();
     }

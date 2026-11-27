@@ -47,7 +47,29 @@ class PermissionAuthorizationManagerTest {
             "UserResource#getAll", "UserResource#getById", "UserResource#create",
             "UserCompanyResource#getAll", "UserCompanyResource#getById",
             "AccountingFirmResource#getAll", "AccountingFirmResource#getById",
-            "FirmIntegrationResource#list");
+            "FirmIntegrationResource#list",
+            // the accountant's e-CPF status - open to the firm's users on purpose (see its Javadoc)
+            "FirmCertificateResource#status",
+            // the logged-in user's own firm access situation (F1-RN-07) - every user sees the banners
+            "FirmAccessResource#current",
+            // public signup: anonymous on purpose, see SecurityConfig (F1-RN-01, F1-RN-03, F1-RN-11)
+            "SignupResource#config", "SignupResource#signup", "SignupResource#verify", "SignupResource#resend");
+
+    /**
+     * F1-RN-08 / CA1-10: every POST/PUT/PATCH/DELETE is a write - blocked for a read-only firm - unless it is one of
+     * these, reviewed one by one: POSTs that only read (@ReadOnlyOperation) and the routes always allowed
+     * (@AllowedWhenBlocked, F1-RN-09). A new one fails the guard until it is reviewed and added here.
+     */
+    private static final Set<String> WRITES_ALLOWED_WHEN_BLOCKED = Set.of(
+            // @ReadOnlyOperation
+            "FiscalXmlResource#buscarXmls", "FiscalXmlResource#totais",
+            "FiscalXmlResource#exportarXmls", "FiscalXmlResource#exportarXmlsZip",
+            "FronteiraResource#fetchEfiscoMemory", "FronteiraResource#check",
+            "ServiceInvoiceResource#search", "ServiceInvoiceResource#totals",
+            // @AllowedWhenBlocked
+            "AuthResource#auth",
+            "SignupResource#signup", "SignupResource#verify", "SignupResource#resend",
+            "PlatformFirmResource#apply", "PlatformFirmResource#updateContact");
 
     @AfterEach
     void clearContext() {
@@ -100,6 +122,52 @@ class PermissionAuthorizationManagerTest {
             }
         }
         assertThat(unguarded).as("endpoints without @RequiresPermission / @AdminOnly").isEmpty();
+    }
+
+    /** Guard: the list of writes that still go through for a read-only firm is exactly the reviewed one. */
+    @Test
+    void everyWriteIsBlockedForAReadOnlyFirmUnlessReviewed() throws ClassNotFoundException {
+        ClassPathScanningCandidateComponentProvider scanner = new ClassPathScanningCandidateComponentProvider(false);
+        scanner.addIncludeFilter(new AnnotationTypeFilter(RestController.class));
+        List<String> allowed = new ArrayList<>();
+        for (BeanDefinition candidate : scanner.findCandidateComponents("br.com.cshub.taxify.rest")) {
+            Class<?> controller = Class.forName(candidate.getBeanClassName());
+            for (Method method : controller.getMethods()) {
+                boolean endpoint = AnnotatedElementUtils.hasAnnotation(method, RequestMapping.class)
+                        && !Modifier.isStatic(method.getModifiers()) && !method.isBridge();
+                if (!endpoint || !PermissionAuthorizationManager.isWrite(method)) {
+                    continue;
+                }
+                if (FirmAccessInterceptor.isAlwaysAllowed("POST", method, controller)) {
+                    allowed.add(controller.getSimpleName() + "#" + method.getName());
+                }
+            }
+        }
+        assertThat(allowed).as("writes allowed for a read-only firm").containsExactlyInAnyOrderElementsOf(WRITES_ALLOWED_WHEN_BLOCKED);
+    }
+
+    /** F1-RN-15: the console is the platform admin's only - a firm's ADMIN gets 403. */
+    @Test
+    void theConsoleIsForThePlatformAdminOnly() {
+        assertThat(rule(br.com.cshub.taxify.rest.PlatformFirmResource.class, "list")).hasValueSatisfying(r -> assertThat(r.platformAdmin()).isTrue());
+        assertThat(rule(br.com.cshub.taxify.rest.PlatformFirmResource.class, "apply")).hasValueSatisfying(r -> assertThat(r.platformAdmin()).isTrue());
+        assertThat(rule(br.com.cshub.taxify.rest.PlatformFirmResource.class, "events")).hasValueSatisfying(r -> assertThat(r.platformAdmin()).isTrue());
+        assertThat(rule(br.com.cshub.taxify.rest.PlatformFirmResource.class, "updateContact")).hasValueSatisfying(r -> assertThat(r.platformAdmin()).isTrue());
+
+        PlatformController denied = proxied(new PlatformController(), new PermissionAuthorizationManager(auth -> false));
+        authenticateAs("ADMIN");
+        assertThatThrownBy(denied::console).isInstanceOf(AccessDeniedException.class);
+
+        PlatformController allowedProxy = proxied(new PlatformController(), new PermissionAuthorizationManager(auth -> true));
+        assertThat(allowedProxy.console()).isEqualTo("console");
+    }
+
+    @PlatformAdminOnly
+    static class PlatformController {
+        @GetMapping
+        public String console() {
+            return "console";
+        }
     }
 
     // ------------------------------------------------------------------ decision + interceptor wiring
@@ -161,7 +229,11 @@ class PermissionAuthorizationManagerTest {
     }
 
     private static <T> T proxied(T target) {
-        MethodInterceptor interceptor = AuthorizationManagerBeforeMethodInterceptor.preAuthorize(new PermissionAuthorizationManager());
+        return proxied(target, new PermissionAuthorizationManager());
+    }
+
+    private static <T> T proxied(T target, PermissionAuthorizationManager manager) {
+        MethodInterceptor interceptor = AuthorizationManagerBeforeMethodInterceptor.preAuthorize(manager);
         ProxyFactory factory = new ProxyFactory(target);
         factory.setProxyTargetClass(true);
         factory.addAdvice(interceptor);

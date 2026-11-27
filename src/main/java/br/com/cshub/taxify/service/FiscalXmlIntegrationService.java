@@ -267,7 +267,7 @@ public class FiscalXmlIntegrationService {
     public XmlDownloadResultDTO importManual(String companyId, byte[] uploadedBytes) {
         if (uploadedBytes == null || uploadedBytes.length == 0) {
             findCompanyWithCnpj(companyId);
-            throw new BadRequestException(messageService.getMessage("error.fiscalXml.import.empty.file"));
+            throw new BadRequestException("error.fiscalXml.import.empty.file", messageService.getMessage("error.fiscalXml.import.empty.file"));
         }
         return importManual(companyId, new java.io.ByteArrayInputStream(uploadedBytes));
     }
@@ -294,10 +294,10 @@ public class FiscalXmlIntegrationService {
                 }
             });
         } catch (java.io.IOException e) {
-            throw new BadRequestException(messageService.getMessage("error.fiscalXml.import.no.xml.found"));
+            throw new BadRequestException("error.fiscalXml.import.no.xml.found", messageService.getMessage("error.fiscalXml.import.no.xml.found"));
         }
         if (found == 0) {
-            throw new BadRequestException(messageService.getMessage("error.fiscalXml.import.no.xml.found"));
+            throw new BadRequestException("error.fiscalXml.import.no.xml.found", messageService.getMessage("error.fiscalXml.import.no.xml.found"));
         }
         if (!batch.isEmpty()) {
             total[0] = plus(total[0], persistAll(companyForBatch(id), batch, FiscalXmlSource.UPLOAD, false));
@@ -493,6 +493,31 @@ public class FiscalXmlIntegrationService {
     }
 
     /**
+     * Recovery of a blocked period (QA-02): one page ({@code page} × PAGE_SIZE) of the side's notes issued in
+     * [from, to], with their events, stored like any SIEG note - known keys are skipped, so asking again never duplicates.
+     * Never touches the sync bookkeeping: the current month's counts stay comparable.
+     *
+     * @return the page's result; fewer than PAGE_SIZE notes counted = last page
+     */
+    @Transactional
+    public XmlDownloadResultDTO syncPeriodPageFromSieg(UUID companyId, FiscalXmlSide side, LocalDate from, LocalDate to, int page) {
+        Company company = findCompanyWithCnpj(companyId.toString());
+        String cnpj = DocumentNumbers.onlyDigits(company.getDocument().getNumber());
+        String apiKey = firmIntegrationService.getApiKey(company.getAccountingFirm().getId(), IntegrationType.SIEG);
+        SiegBaixarXmlsRequest request = new SiegBaixarXmlsRequest(TIPO_XML_NFE, PAGE_SIZE, page * PAGE_SIZE,
+                startOfDayUtc(from), endOfDayUtc(to),
+                side == FiscalXmlSide.ISSUED ? cnpj : null,
+                side == FiscalXmlSide.RECEIVED ? cnpj : null,
+                true);
+        // counts and keys only - the recovery never answers with the XMLs themselves
+        return persistAll(company, siegClient.baixarXmls(request, apiKey), FiscalXmlSource.SIEG, false);
+    }
+
+    public static int pageSize() {
+        return PAGE_SIZE;
+    }
+
+    /**
      * Same company/period lookup as {@link FiscalXmlQueryService#search}, but serves each note's
      * rectified version ({@link FiscalXmlDocument#getRectifiedFilePath()}) instead of the
      * original whenever one exists - so an exported nota reflects the corrected CFOP/NCM
@@ -557,7 +582,7 @@ public class FiscalXmlIntegrationService {
                 zip.closeEntry();
             }
         } catch (IOException e) {
-            throw new SiegIntegrationException(messageService.getMessage("error.sieg.xml.storage.failed"), e);
+            throw new SiegIntegrationException("error.sieg.xml.storage.failed", messageService.getMessage("error.sieg.xml.storage.failed"), e);
         }
         return buffer.toByteArray();
     }
@@ -755,7 +780,7 @@ public class FiscalXmlIntegrationService {
         try {
             id = UUID.fromString(companyId);
         } catch (IllegalArgumentException e) {
-            throw new BadRequestException(messageService.getMessage("error.generic.bad.request"));
+            throw new BadRequestException("error.generic.bad.request", messageService.getMessage("error.generic.bad.request"));
         }
 
         return companyValidation.checkExist(id);

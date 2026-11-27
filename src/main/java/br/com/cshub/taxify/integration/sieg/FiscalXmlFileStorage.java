@@ -132,7 +132,7 @@ public class FiscalXmlFileStorage {
         try {
             return writer.write(companyId + "/" + fileName, xmlBytes);
         } catch (IOException e) {
-            throw new SiegIntegrationException(messageService.getMessage("error.sieg.xml.storage.failed"), e);
+            throw new SiegIntegrationException("error.sieg.xml.storage.failed", messageService.getMessage("error.sieg.xml.storage.failed"), e);
         }
     }
 

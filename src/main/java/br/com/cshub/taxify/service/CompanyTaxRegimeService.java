@@ -63,7 +63,7 @@ public class CompanyTaxRegimeService {
     public List<CompanyTaxRegimeDTO> save(UUID companyId, CompanyTaxRegimeDTO dto) {
         Company company = companyValidation.checkExist(companyId);
         if (dto.taxRegime() == null) {
-            throw new BadRequestException(messageService.getMessage("error.taxRegime.required"));
+            throw new BadRequestException("error.taxRegime.required", messageService.getMessage("error.taxRegime.required"));
         }
         LocalDate validFrom = parseMonth(dto.validFrom());
         upsert(company, repository.history(companyId), validFrom, dto.taxRegime(), dto.businessActivity(), serviceAnnex(dto.taxRegime(), dto.simplesServiceAnnex()));
@@ -76,7 +76,7 @@ public class CompanyTaxRegimeService {
         Company company = companyValidation.checkExist(companyId);
         CompanyTaxRegime regime = repository.findFirstByIdAndDeletedIsFalse(regimeId)
                 .filter(r -> r.getCompany().getId().equals(companyId))
-                .orElseThrow(() -> new ResourceNotFoundException(messageService.getMessage("error.taxRegime.not.found")));
+                .orElseThrow(() -> new ResourceNotFoundException("error.taxRegime.not.found", messageService.getMessage("error.taxRegime.not.found")));
         regime.setDeleted(true);
         repository.save(regime);
         mirrorCurrent(company);
@@ -192,7 +192,7 @@ public class CompanyTaxRegimeService {
         try {
             return YearMonth.parse(month.strip()).atDay(1);
         } catch (DateTimeParseException e) {
-            throw new BadRequestException(messageService.getMessage("error.assessment.month.invalid"));
+            throw new BadRequestException("error.assessment.month.invalid", messageService.getMessage("error.assessment.month.invalid"));
         }
     }
 

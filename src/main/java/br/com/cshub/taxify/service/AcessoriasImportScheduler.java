@@ -4,6 +4,8 @@ import br.com.cshub.taxify.domain.accountingfirm.AccountingFirm;
 import br.com.cshub.taxify.integration.acessorias.AcessoriasProperties;
 import br.com.cshub.taxify.domain.billing.FirmIntegration;
 import br.com.cshub.taxify.enumerated.IntegrationType;
+import br.com.cshub.taxify.service.firmaccess.FirmAccessService;
+import br.com.cshub.taxify.service.firmaccess.RoutineGate;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 import org.springframework.scheduling.annotation.Scheduled;
@@ -23,9 +25,11 @@ public class AcessoriasImportScheduler {
     private final FirmIntegrationService firmIntegrationService;
     private final AcessoriasImportService importService;
     private final AcessoriasProperties properties;
+    private final FirmAccessService firmAccessService;
 
     public AcessoriasImportScheduler(FirmIntegrationService firmIntegrationService, AcessoriasImportService importService,
-                                     AcessoriasProperties properties) {
+                                     AcessoriasProperties properties, FirmAccessService firmAccessService) {
+        this.firmAccessService = firmAccessService;
         this.firmIntegrationService = firmIntegrationService;
         this.importService = importService;
         this.properties = properties;
@@ -37,13 +41,19 @@ public class AcessoriasImportScheduler {
             return;
         }
 
+        // F1-RN-10: no import for a blocked firm; the next incremental run covers the gap from DtLastDH
+        RoutineGate gate = firmAccessService.routineGate("acessorias");
         for (FirmIntegration integration : firmIntegrationService.findConfigured(IntegrationType.ACESSORIAS)) {
             AccountingFirm firm = integration.getAccountingFirm();
+            if (!gate.allowsFirm(firm.getId())) {
+                continue;
+            }
             try {
                 importService.start(firm, true);
             } catch (Exception e) {
                 log.warn("Scheduled Acessórias import not started for firm {}: {}", firm.getId(), e.getMessage());
             }
         }
+        gate.logSkipped();
     }
 }

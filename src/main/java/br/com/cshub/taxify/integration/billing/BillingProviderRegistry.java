@@ -31,11 +31,11 @@ public class BillingProviderRegistry {
     /** The firm's chosen provider, ready for calls - fails clearly for MANUAL or a provider not connected yet. */
     public BillingProvider requireConnected(AccountingFirm firm) {
         if (firm.getBillingProvider() == BillingProviderType.MANUAL) {
-            throw new BadRequestException(messageService.getMessage("error.billing.provider.manual"));
+            throw new BadRequestException("error.billing.provider.manual", messageService.getMessage("error.billing.provider.manual"));
         }
         return find(firm.getBillingProvider())
                 .filter(provider -> provider.isConnected(firm))
-                .orElseThrow(() -> new BadRequestException(messageService.getMessage("error.billing.provider.not.connected")));
+                .orElseThrow(() -> new BadRequestException("error.billing.provider.not.connected", messageService.getMessage("error.billing.provider.not.connected")));
     }
 
     public boolean isConnected(AccountingFirm firm) {

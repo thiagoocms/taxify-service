@@ -36,11 +36,11 @@ public class DocumentValidation extends AbstractCrudValidation<Document, UUID> {
     @Override
     protected Document checkUpdateConsistence(UUID id, Document toUpdateEntity) {
         if (Objects.isNull(id) || Objects.isNull(toUpdateEntity.getId())) {
-            throw new BadRequestException(messageService.getMessage("error.generic.bad.request"));
+            throw new BadRequestException("error.generic.bad.request", messageService.getMessage("error.generic.bad.request"));
         }
 
         if (id.compareTo(toUpdateEntity.getId()) != 0) {
-            throw new BadRequestException(messageService.getMessage("error.generic.bad.request"));
+            throw new BadRequestException("error.generic.bad.request", messageService.getMessage("error.generic.bad.request"));
         }
 
         var persistedEntity = checkExist(id);
@@ -52,7 +52,7 @@ public class DocumentValidation extends AbstractCrudValidation<Document, UUID> {
 
     public void checkExistByNumberAndType(Document entity) {
             if (repository.existsByNumberAndTypeNative(entity.getNumber(), entity.getType())) {
-                 throw new ConflictException(messageService.getMessage("error.document.exist"));
+                 throw new ConflictException("error.document.exist", messageService.getMessage("error.document.exist"));
             }
     }
 

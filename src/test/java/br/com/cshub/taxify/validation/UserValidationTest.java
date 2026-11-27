@@ -52,13 +52,21 @@ class UserValidationTest {
     private AccountingFirmRepository accountingFirmRepository;
     @Mock
     private TenantAccessService tenantAccessService;
+    @Mock
+    private br.com.cshub.taxify.service.firmaccess.PlanLimitService planLimitService;
 
     private UserValidation validation;
+    private AccountingFirm adminFirm;
 
     @BeforeEach
     void setUp() {
-        lenient().when(currentUserService.getCurrentUser()).thenReturn(Optional.empty());
-        validation = new UserValidation(mapper, repository, messageService, documentValidation, passwordEncoder, currentUserService, accountingFirmRepository, tenantAccessService);
+        adminFirm = new AccountingFirm(UUID.randomUUID());
+        User admin = new User(UUID.randomUUID());
+        admin.setAccountingFirm(adminFirm);
+        admin.setProfile(UserProfileEnum.ADMIN);
+        lenient().when(currentUserService.getCurrentUser()).thenReturn(Optional.of(admin));
+        validation = new UserValidation(mapper, repository, messageService, documentValidation, passwordEncoder, currentUserService,
+                accountingFirmRepository, tenantAccessService, planLimitService);
     }
 
     @Test
@@ -75,19 +83,31 @@ class UserValidationTest {
         assertThat(entity.getPassword()).isEqualTo("encoded");
     }
 
+    /** CT1-07 (F1-RN-01): POST /users is no longer the public signup - without a logged-in ADMIN nothing is created. */
     @Test
-    void publicSignupAlwaysCreatesTheFirmOwnerAsAdminWithoutProfiles() {
+    void withoutALoggedInAdminNoFirmNorUserIsCreated() {
+        when(currentUserService.getCurrentUser()).thenReturn(Optional.empty());
         User entity = new User();
         entity.setPassword("plain");
-        entity.setProfile(UserProfileEnum.EMPLOYEE);
-        entity.setAccessProfiles(EnumSet.of(AccessProfile.FISCAL));
         when(passwordEncoder.encode("plain")).thenReturn("encoded");
 
-        validation.checkOwnerFieldsToCreate(entity);
+        assertThatThrownBy(() -> validation.checkOwnerFieldsToCreate(entity))
+                .isInstanceOf(org.springframework.security.access.AccessDeniedException.class);
+        verify(accountingFirmRepository, never()).save(any());
+    }
 
-        assertThat(entity.getProfile()).isEqualTo(UserProfileEnum.ADMIN);
-        assertThat(entity.getAccessProfiles()).isEmpty();
-        assertThat(entity.getAccountingFirm()).isNotNull();
+    /** CT1-28 (F1-RN-10a): the trial's user limit is checked for the admin's firm before the user is written. */
+    @Test
+    void theTrialUserLimitIsCheckedForTheAdminsFirm() {
+        when(passwordEncoder.encode("plain")).thenReturn("encoded");
+        org.mockito.Mockito.doThrow(new ConflictException(
+                "error.plan.limit.users", "limit")).when(planLimitService).assertUserSlot(adminFirm.getId());
+        User entity = new User();
+        entity.setPassword("plain");
+
+        assertThatThrownBy(() -> validation.checkOwnerFieldsToCreate(entity))
+                .isInstanceOf(ConflictException.class)
+                .hasMessage("limit");
     }
 
     @Test
@@ -253,12 +273,78 @@ class UserValidationTest {
     void checkValidationsExtrasThrowsWhenLoginAlreadyUsedByAnotherUser() {
         User entity = new User(UUID.randomUUID());
         entity.setLogin("jane");
-        when(repository.existsByLoginAndDeletedIsFalseAndIdNot("jane", entity.getId())).thenReturn(true);
+        when(repository.existsByLoginAndIdNot("jane", entity.getId())).thenReturn(true);
         when(messageService.getMessage("error.user.login.already.exists")).thenReturn("login already exists");
 
         assertThatThrownBy(() -> validation.checkValidationsExtras(entity))
-                .isInstanceOf(ConflictException.class)
+                .isInstanceOfSatisfying(ConflictException.class,
+                        e -> assertThat(e.getCode()).isEqualTo("error.user.login.already.exists"))
                 .hasMessage("login already exists");
+    }
+
+    /** PUT /users: renaming to the login of a deleted user is a 409 with the code, not a 500 on uk_users_login. */
+    @Test
+    void renamingToTheLoginOfADeletedUserIsAConflict() {
+        User entity = new User(UUID.randomUUID());
+        entity.setLogin("excluido");
+        when(repository.existsByLoginAndIdNot("excluido", entity.getId())).thenReturn(true);
+        when(messageService.getMessage("error.user.login.already.exists")).thenReturn("login already exists");
+
+        assertThatThrownBy(() -> validation.checkValidationsExtras(entity))
+                .isInstanceOfSatisfying(ConflictException.class,
+                        e -> assertThat(e.getCode()).isEqualTo("error.user.login.already.exists"));
+        verify(repository, never()).existsByLoginAndDeletedIsFalseAndIdNot(any(), any());
+    }
+
+    /** POST /users: a login of a deleted user is also taken (uk_users_login) - 409 with the code, not a database error. */
+    @Test
+    void aNewUserCannotTakeTheLoginOfADeletedOne() {
+        User entity = new User();
+        entity.setLogin("jane");
+        when(repository.existsByLogin("jane")).thenReturn(true);
+        when(messageService.getMessage("error.user.login.already.exists")).thenReturn("login already exists");
+
+        assertThatThrownBy(() -> validation.checkValidationsExtras(entity))
+                .isInstanceOfSatisfying(ConflictException.class,
+                        e -> assertThat(e.getCode()).isEqualTo("error.user.login.already.exists"));
+    }
+
+    /** POST /users: the CPF of another user - 409 error.user.document.already.exists, with the current message. */
+    @Test
+    void aTakenCpfIsAConflictWithCode() {
+        when(messageService.getMessage("error.document.exist")).thenReturn("documento repetido");
+        Document requested = new Document("12345678909", DocumentTypeEnum.CPF);
+        org.mockito.Mockito.doThrow(new ConflictException("x")).when(documentValidation).checkExistByNumberAndType(requested);
+        User entity = new User();
+        entity.setDocument(requested);
+
+        assertThatThrownBy(() -> validation.checkDocument(entity))
+                .isInstanceOfSatisfying(ConflictException.class, e -> {
+                    assertThat(e.getCode()).isEqualTo("error.user.document.already.exists");
+                    assertThat(e.getMessage()).isEqualTo("documento repetido");
+                });
+    }
+
+    /** Review item 4: a password over BCrypt's 72 bytes is a 400 with a code - never a 500 - on create and on update. */
+    @Test
+    void aPasswordOver72BytesIsRefused() {
+        when(messageService.getMessage("error.user.password.invalid")).thenReturn("senha longa");
+        User entity = new User();
+        entity.setPassword("s".repeat(73));
+
+        assertThatThrownBy(() -> validation.checkOwnerFieldsToCreate(entity))
+                .isInstanceOfSatisfying(BadRequestException.class,
+                        e -> assertThat(e.getCode()).isEqualTo("error.user.password.invalid"));
+        verify(passwordEncoder, never()).encode(any());
+
+        UUID id = UUID.randomUUID();
+        User persisted = new User(id);
+        persisted.setAccountingFirm(new AccountingFirm(UUID.randomUUID()));
+        when(repository.findFirstByIdAndDeletedIsFalse(id)).thenReturn(Optional.of(persisted));
+        User toUpdate = new User(id);
+        toUpdate.setPassword("ç".repeat(37)); // 74 bytes in UTF-8
+        assertThatThrownBy(() -> validation.checkUpdateConsistence(id, toUpdate))
+                .isInstanceOf(BadRequestException.class);
     }
 
     @Test

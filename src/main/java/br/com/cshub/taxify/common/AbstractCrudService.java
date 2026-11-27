@@ -120,7 +120,7 @@ public abstract class AbstractCrudService<E extends AbstractAuditingEntity, ID e
     @Transactional(readOnly = true)
     protected E findCheckById(ID id) {
         var entityOpt = repository.findFirstByIdAndDeletedIsFalse(id);
-        var entity = entityOpt.orElseThrow(() -> new ResourceNotFoundException(messageService.getMessage(messageNotFound)));
+        var entity = entityOpt.orElseThrow(() -> new ResourceNotFoundException(messageNotFound, messageService.getMessage(messageNotFound)));
         checkAccess(entity);
         return entity;
     }

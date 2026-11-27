@@ -321,7 +321,7 @@ public class FiscalXmlQueryService {
 
     private FiscalXmlDocument findDocument(UUID documentId) {
         FiscalXmlDocument document = documentRepository.findFirstByIdAndDeletedIsFalse(documentId)
-                .orElseThrow(() -> new ResourceNotFoundException(messageService.getMessage("error.entity.not.found")));
+                .orElseThrow(() -> new ResourceNotFoundException("error.entity.not.found", messageService.getMessage("error.entity.not.found")));
         tenantAccessService.assertCompanyAccess(document.getCompany());
         return document;
     }
@@ -331,7 +331,7 @@ public class FiscalXmlQueryService {
             return fileStorage.read(path);
         } catch (IOException e) {
             log.warn("Could not read stored XML file '{}' for document {}", path, document.getId(), e);
-            throw new ResourceNotFoundException(messageService.getMessage("error.fiscalXml.file.not.found"));
+            throw new ResourceNotFoundException("error.fiscalXml.file.not.found", messageService.getMessage("error.fiscalXml.file.not.found"));
         }
     }
 

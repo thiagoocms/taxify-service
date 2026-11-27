@@ -8,6 +8,8 @@ import br.com.cshub.taxify.integration.sefaz.SefazProperties;
 import br.com.cshub.taxify.repository.CompanyCertificateRepository;
 import br.com.cshub.taxify.repository.CompanyRepository;
 import br.com.cshub.taxify.repository.SubscriptionRepository;
+import br.com.cshub.taxify.service.firmaccess.FirmAccessService;
+import br.com.cshub.taxify.service.firmaccess.RoutineGate;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 import org.springframework.scheduling.annotation.Scheduled;
@@ -41,10 +43,12 @@ public class SefazDistScheduler {
     private final SefazDistService service;
     private final SefazProperties properties;
     private final AtomicBoolean running = new AtomicBoolean(false);
+    private final FirmAccessService firmAccessService;
 
     public SefazDistScheduler(CompanyCertificateRepository certificateRepository, CompanyRepository companyRepository,
                               SubscriptionRepository subscriptionRepository, SefazDistService service,
-                              SefazProperties properties) {
+                              SefazProperties properties, FirmAccessService firmAccessService) {
+        this.firmAccessService = firmAccessService;
         this.certificateRepository = certificateRepository;
         this.companyRepository = companyRepository;
         this.subscriptionRepository = subscriptionRepository;
@@ -95,7 +99,10 @@ public class SefazDistScheduler {
                 .collect(Collectors.groupingBy(company -> company.getAccountingFirm().getId(),
                         Collectors.mapping(company -> CompanyCertificateService.cnpjOf(company).substring(0, 8), Collectors.toSet())));
         LocalDate today = LocalDate.now();
-        return rootsByFirm.entrySet().stream()
+        // F1-RN-10: the capture (and the manifestation that goes with it) stops for a blocked firm; the NSU stays as it was
+        RoutineGate gate = firmAccessService.routineGate("sefaz");
+        List<Company> result = rootsByFirm.entrySet().stream()
+                .filter(entry -> gate.allowsFirm(entry.getKey()))
                 .flatMap(entry -> companyRepository.findByAccountingFirm_IdAndDeletedIsFalseOrderByNameAsc(entry.getKey()).stream()
                         .filter(company -> {
                             String cnpj = CompanyCertificateService.cnpjOf(company);
@@ -104,6 +111,8 @@ public class SefazDistScheduler {
                 .filter(company -> properties.coversUf(company.getUf()))
                 .filter(company -> entitled(company, today))
                 .toList();
+        gate.logSkipped();
+        return result;
     }
 
     private boolean entitled(Company company, LocalDate today) {

@@ -46,11 +46,11 @@ public class FiscalPeriodClosingService {
         Company company = companyValidation.checkExist(companyId);
         YearMonth period = assessmentService.parseMonth(month);
         if (period.isAfter(YearMonth.now())) {
-            throw new BadRequestException(messageService.getMessage("error.closing.future"));
+            throw new BadRequestException("error.closing.future", messageService.getMessage("error.closing.future"));
         }
         FiscalPeriodClosing closing = findOrCreate(company, period);
         if (closing.isClosed()) {
-            throw new BadRequestException(messageService.getMessage("error.closing.already.closed"));
+            throw new BadRequestException("error.closing.already.closed", messageService.getMessage("error.closing.already.closed"));
         }
         TaxAssessmentDTO assessment = assessmentService.calculate(company, period);
         closing.close(currentLogin(), LocalDateTime.now(), assessmentService.toJson(assessment), assessment.taxRegime(),

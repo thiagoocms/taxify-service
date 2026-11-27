@@ -73,7 +73,7 @@ public class SefazNotesService {
     public SefazNotesDTO retryCiencia(Company company, String accessKey) {
         SefazNoteSummary summary = summaryRepository.findByCompany_IdAndAccessKey(company.getId(), accessKey == null ? null : accessKey.strip())
                 .filter(found -> !found.isCompleted())
-                .orElseThrow(() -> new BadRequestException(messageService.getMessage("error.generic.bad.request")));
+                .orElseThrow(() -> new BadRequestException("error.generic.bad.request", messageService.getMessage("error.generic.bad.request")));
         summary.setCienciaStatus(CienciaStatus.PENDENTE);
         summary.setCienciaAttempts(0);
         summary.setCienciaDetail(null);

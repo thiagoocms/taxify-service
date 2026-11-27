@@ -63,7 +63,7 @@ public class TenantAccessService {
      */
     public void assertSameFirm(UUID accountingFirmId) {
         if (!isSameFirm(accountingFirmId)) {
-            throw new ResourceNotFoundException(messageService.getMessage("error.Company.not.found"));
+            throw new ResourceNotFoundException("error.Company.not.found", messageService.getMessage("error.Company.not.found"));
         }
     }
 
@@ -113,7 +113,7 @@ public class TenantAccessService {
     public void assertCompanyAccess(Company company) {
         assertSameFirm(company.getAccountingFirm().getId());
         if (!canAccessCompany(company.getId())) {
-            throw new ResourceNotFoundException(messageService.getMessage("error.Company.not.found"));
+            throw new ResourceNotFoundException("error.Company.not.found", messageService.getMessage("error.Company.not.found"));
         }
     }
 

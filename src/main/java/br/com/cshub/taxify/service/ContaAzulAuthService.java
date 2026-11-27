@@ -98,7 +98,7 @@ public class ContaAzulAuthService {
         integration.setOauthStateCreatedAt(null);
         if (!stateOk || code == null || code.isBlank()) {
             firmIntegrationService.save(integration);
-            throw new BadRequestException(messageService.getMessage("error.contaAzul.state.invalid"));
+            throw new BadRequestException("error.contaAzul.state.invalid", messageService.getMessage("error.contaAzul.state.invalid"));
         }
 
         applyTokens(integration, oauthClient.exchangeCode(code));
@@ -143,7 +143,7 @@ public class ContaAzulAuthService {
         synchronized (refreshLocks.computeIfAbsent(accountingFirmId, id -> new Object())) {
             FirmIntegration integration = firmIntegrationService.find(accountingFirmId, IntegrationType.CONTA_AZUL)
                     .filter(FirmIntegration::isConfigured)
-                    .orElseThrow(() -> new ContaAzulIntegrationException(messageService.getMessage("error.contaAzul.not.connected")));
+                    .orElseThrow(() -> new ContaAzulIntegrationException("error.contaAzul.not.connected", messageService.getMessage("error.contaAzul.not.connected")));
             LocalDateTime expiresAt = integration.getTokenExpiresAt();
             boolean stillValid = integration.getAccessToken() != null && expiresAt != null
                     && expiresAt.isAfter(LocalDateTime.now().plusSeconds(EXPIRY_MARGIN_SECONDS));
@@ -151,7 +151,7 @@ public class ContaAzulAuthService {
                 return integration.getAccessToken();
             }
             if (integration.getRefreshToken() == null) {
-                throw new ContaAzulIntegrationException(messageService.getMessage("error.contaAzul.not.connected"));
+                throw new ContaAzulIntegrationException("error.contaAzul.not.connected", messageService.getMessage("error.contaAzul.not.connected"));
             }
             applyTokens(integration, oauthClient.refresh(integration.getRefreshToken()));
             firmIntegrationService.save(integration);
@@ -179,7 +179,7 @@ public class ContaAzulAuthService {
 
     private void assertConfigured() {
         if (!properties.isConfigured()) {
-            throw new ContaAzulIntegrationException(messageService.getMessage("error.contaAzul.not.configured"));
+            throw new ContaAzulIntegrationException("error.contaAzul.not.configured", messageService.getMessage("error.contaAzul.not.configured"));
         }
     }
 

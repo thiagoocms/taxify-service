@@ -9,6 +9,8 @@ import br.com.cshub.taxify.dto.fiscalrule.FiscalXmlRectificationResultDTO;
 import br.com.cshub.taxify.integration.fiscalxml.FiscalXmlRectificationProperties;
 import br.com.cshub.taxify.repository.FiscalXmlDocumentRepository;
 import br.com.cshub.taxify.repository.ProductFiscalRuleRepository;
+import br.com.cshub.taxify.service.firmaccess.FirmAccessService;
+import br.com.cshub.taxify.service.firmaccess.RoutineGate;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 import org.springframework.scheduling.annotation.Scheduled;
@@ -29,10 +31,13 @@ public class FiscalXmlRectificationScheduler {
     private final SubscriptionRepository subscriptionRepository;
     private final FiscalXmlRectificationService rectificationService;
     private final FiscalXmlRectificationProperties properties;
+    private final FirmAccessService firmAccessService;
 
     public FiscalXmlRectificationScheduler(FiscalXmlDocumentRepository documentRepository,
                                             ProductFiscalRuleRepository ruleRepository, SubscriptionRepository subscriptionRepository,
-                                            FiscalXmlRectificationService rectificationService, FiscalXmlRectificationProperties properties) {
+                                            FiscalXmlRectificationService rectificationService, FiscalXmlRectificationProperties properties,
+                                            FirmAccessService firmAccessService) {
+        this.firmAccessService = firmAccessService;
         this.subscriptionRepository = subscriptionRepository;
         this.documentRepository = documentRepository;
         this.ruleRepository = ruleRepository;
@@ -65,9 +70,14 @@ public class FiscalXmlRectificationScheduler {
      */
     List<Company> candidates() {
         LocalDate today = LocalDate.now();
-        return ruleRepository.findCompaniesWithRules().stream()
+        // F1-RN-10 (decision 15): no automatic rectification for a blocked firm
+        RoutineGate gate = firmAccessService.routineGate("rectification");
+        List<Company> result = ruleRepository.findCompaniesWithRules().stream()
+                .filter(gate::allows)
                 .filter(company -> entitled(company, today))
                 .toList();
+        gate.logSkipped();
+        return result;
     }
 
     private boolean entitled(Company company, LocalDate today) {

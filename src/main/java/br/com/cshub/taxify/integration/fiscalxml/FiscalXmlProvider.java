@@ -33,4 +33,16 @@ public interface FiscalXmlProvider {
     default int syncServiceInvoices(UUID companyId, LocalDate from, LocalDate to) {
         return 0;
     }
+
+    /** One page of a past period's notes, outside the regular bookkeeping. {@code lastPage}: nothing more to ask. */
+    record RecoveryPage(int notes, int persistedNew, boolean lastPage) {
+    }
+
+    /**
+     * Recovery of a blocked period (QA-02): page {@code page} of the side's notes issued in [from, to]. Empty = this
+     * provider has no recovery (the recovery skips it).
+     */
+    default java.util.Optional<RecoveryPage> recoverPage(UUID companyId, FiscalXmlSide side, LocalDate from, LocalDate to, int page) {
+        return java.util.Optional.empty();
+    }
 }

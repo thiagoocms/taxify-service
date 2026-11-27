@@ -111,7 +111,7 @@ public class AuditService {
     private AuditRule rule(String code) {
         AuditRule rule = catalog().get(code == null ? "" : code.strip().toUpperCase());
         if (rule == null) {
-            throw new BadRequestException(messageService.getMessage("error.generic.bad.request"));
+            throw new BadRequestException("error.generic.bad.request", messageService.getMessage("error.generic.bad.request"));
         }
         return rule;
     }
@@ -310,7 +310,7 @@ public class AuditService {
         try {
             return companyValidation.checkExist(UUID.fromString(companyId.strip()));
         } catch (IllegalArgumentException | NullPointerException e) {
-            throw new BadRequestException(messageService.getMessage("error.generic.bad.request"));
+            throw new BadRequestException("error.generic.bad.request", messageService.getMessage("error.generic.bad.request"));
         }
     }
 

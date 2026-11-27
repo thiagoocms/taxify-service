@@ -11,6 +11,7 @@ import br.com.cshub.taxify.exception.ResourceNotFoundException;
 import br.com.cshub.taxify.mapper.UserMapper;
 import br.com.cshub.taxify.repository.UserRepository;
 import br.com.cshub.taxify.search.UserSpecification;
+import br.com.cshub.taxify.service.firmaccess.FirmAccessService;
 import br.com.cshub.taxify.validation.UserValidation;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.security.core.userdetails.UserDetailsService;
@@ -25,15 +26,18 @@ public class UserService extends FirmScopedCrudService<User, UUID, UserDTO, User
 
     private final UserRepository repository;
     private final UserValidation userValidation;
+    private final FirmAccessService firmAccessService;
 
 
     @Autowired
-    protected UserService(UserRepository repository, UserMapper mapper, UserValidation validation, MessageService messageService, UserSpecification userSpecification, TenantAccessService tenantAccessService) {
+    protected UserService(UserRepository repository, UserMapper mapper, UserValidation validation, MessageService messageService, UserSpecification userSpecification, TenantAccessService tenantAccessService,
+                          FirmAccessService firmAccessService) {
         super(repository, mapper, validation, messageService, userSpecification, tenantAccessService,
                 user -> user.getAccountingFirm().getId(), root -> root.get("accountingFirm").get("id"));
         setMessageNotFound("error.user.not.found");
         this.repository = repository;
         this.userValidation = validation;
+        this.firmAccessService = firmAccessService;
     }
 
     /** Soft delete - but never the firm's last ADMIN (see UserValidation#assertNotLastAdmin). */
@@ -48,10 +52,13 @@ public class UserService extends FirmScopedCrudService<User, UUID, UserDTO, User
 
         var user = repository.findByLoginAndDeletedIsFalse(username);
         if (user == null) {
-            throw new ResourceNotFoundException(messageService.getMessage("error.user.not.found"));
+            throw new ResourceNotFoundException("error.user.not.found", messageService.getMessage("error.user.not.found"));
         }
 
-        return new Auth(user);
+        // F1-RN-03: a firm whose e-mail is not verified has no login (see Auth#isCredentialsNonExpired)
+        boolean pending = user.getAccountingFirm() != null
+                && firmAccessService.accessOf(user.getAccountingFirm().getId()).pendingVerification();
+        return new Auth(user, pending);
     }
 
     /**

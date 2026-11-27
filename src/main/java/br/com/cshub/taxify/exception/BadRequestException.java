@@ -1,25 +1,27 @@
 package br.com.cshub.taxify.exception;
 
-public class BadRequestException extends RuntimeException {
+/** 400. Prefer the constructor with the i18n key: it becomes the {@code code} of the error body. */
+public class BadRequestException extends BusinessException {
+
+    public static final String DEFAULT_CODE = "error.generic.bad.request";
 
     public BadRequestException() {
         this("Bad Request!");
     }
 
     public BadRequestException(String message) {
-        super(message);
+        this(DEFAULT_CODE, message);
+    }
+
+    public BadRequestException(String code, String message) {
+        super(code, message, null, null);
     }
 
     public BadRequestException(String message, Throwable cause) {
-        super(message, cause);
+        super(DEFAULT_CODE, message, cause, null);
     }
 
     public BadRequestException(Throwable cause) {
-        super(cause);
+        super(DEFAULT_CODE, cause == null ? null : cause.toString(), cause, null);
     }
-
-    public BadRequestException(String message, Throwable cause, boolean enableSuppression, boolean writableStackTrace) {
-        super(message, cause, enableSuppression, writableStackTrace);
-    }
-
 }

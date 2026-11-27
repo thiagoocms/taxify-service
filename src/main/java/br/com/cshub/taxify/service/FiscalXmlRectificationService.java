@@ -101,18 +101,18 @@ public class FiscalXmlRectificationService {
     @Transactional
     public FiscalXmlRectificationResultDTO rectify(UUID documentId) {
         FiscalXmlDocument document = documentRepository.findFirstByIdAndDeletedIsFalse(documentId)
-                .orElseThrow(() -> new ResourceNotFoundException(messageService.getMessage("error.entity.not.found")));
+                .orElseThrow(() -> new ResourceNotFoundException("error.entity.not.found", messageService.getMessage("error.entity.not.found")));
         tenantAccessService.assertCompanyAccess(document.getCompany());
         if (document.isCanceled()) {
-            throw new BadRequestException(messageService.getMessage("error.fiscalXml.rectification.canceled"));
+            throw new BadRequestException("error.fiscalXml.rectification.canceled", messageService.getMessage("error.fiscalXml.rectification.canceled"));
         }
         if (document.isOwnIssue()) {
             // An authorized note the company issued can't be rewritten - that's a carta de correção.
-            throw new BadRequestException(messageService.getMessage("error.fiscalXml.rectification.own.issue"));
+            throw new BadRequestException("error.fiscalXml.rectification.own.issue", messageService.getMessage("error.fiscalXml.rectification.own.issue"));
         }
 
         if (document.getDocumentType() != null && !"NFE".equals(document.getDocumentType())) {
-            throw new BadRequestException(messageService.getMessage("error.fiscalXml.rectification.not.nfe"));
+            throw new BadRequestException("error.fiscalXml.rectification.not.nfe", messageService.getMessage("error.fiscalXml.rectification.not.nfe"));
         }
 
         // Only reads the XML (from S3) when the stored items show something a rule would change.
@@ -122,7 +122,7 @@ public class FiscalXmlRectificationService {
             dom = parse(readOriginal(document.getXmlFilePath()));
             Element infNFe = first(dom, "infNFe");
             if (infNFe == null) {
-                throw new BadRequestException(messageService.getMessage("error.fiscalXml.rectification.not.nfe"));
+                throw new BadRequestException("error.fiscalXml.rectification.not.nfe", messageService.getMessage("error.fiscalXml.rectification.not.nfe"));
             }
             corrections = applyRules(infNFe, document);
         }
@@ -254,7 +254,7 @@ public class FiscalXmlRectificationService {
         try {
             return fileStorage.read(xmlFilePath);
         } catch (IOException e) {
-            throw new SiegIntegrationException(messageService.getMessage("error.fiscalXml.rectification.failed"), e);
+            throw new SiegIntegrationException("error.fiscalXml.rectification.failed", messageService.getMessage("error.fiscalXml.rectification.failed"), e);
         }
     }
 
@@ -262,7 +262,7 @@ public class FiscalXmlRectificationService {
         try {
             return FiscalXmlDomParser.parse(xmlBytes);
         } catch (Exception e) {
-            throw new SiegIntegrationException(messageService.getMessage("error.fiscalXml.rectification.failed"), e);
+            throw new SiegIntegrationException("error.fiscalXml.rectification.failed", messageService.getMessage("error.fiscalXml.rectification.failed"), e);
         }
     }
 
@@ -276,7 +276,7 @@ public class FiscalXmlRectificationService {
             transformer.transform(new DOMSource(document), new StreamResult(out));
             return out.toByteArray();
         } catch (Exception e) {
-            throw new SiegIntegrationException(messageService.getMessage("error.fiscalXml.rectification.failed"), e);
+            throw new SiegIntegrationException("error.fiscalXml.rectification.failed", messageService.getMessage("error.fiscalXml.rectification.failed"), e);
         }
     }
 }
