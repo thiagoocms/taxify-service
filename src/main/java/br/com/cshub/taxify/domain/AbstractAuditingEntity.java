@@ -58,4 +58,17 @@ public abstract class AbstractAuditingEntity {
     public void setDeleted(boolean deleted) {
         this.deleted = deleted;
     }
+
+    /**
+     * Copies the auditing columns of another row, unchanged - for an entity that is a copy of a stored one (the legacy
+     * fiscal documents copied to the new model keep who and when created them). Not for regular writes, whose auditing
+     * is filled by the {@link AuditingEntityListener}.
+     */
+    protected final void restoreAuditingFrom(AbstractAuditingEntity source) {
+        this.createdBy = source.createdBy;
+        this.createdDate = source.createdDate;
+        this.lastModifiedBy = source.lastModifiedBy;
+        this.lastModifiedDate = source.lastModifiedDate;
+        this.deleted = source.deleted;
+    }
 }
