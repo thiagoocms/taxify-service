@@ -1,7 +1,6 @@
 package br.com.cshub.taxify.domain.fiscaldocument;
 
 import br.com.cshub.taxify.domain.AbstractAuditingEntity;
-import br.com.cshub.taxify.domain.fiscaldocument.LegacyFiscalDocumentTranslator.LegacyNfseDirection;
 import br.com.cshub.taxify.domain.xml.FiscalIbsCbsTotals;
 import br.com.cshub.taxify.domain.xml.FiscalItemIbsCbs;
 import br.com.cshub.taxify.domain.xml.FiscalItemTaxDetail;
@@ -20,6 +19,9 @@ import br.com.cshub.taxify.enumerated.InvariantScope;
 import br.com.cshub.taxify.enumerated.NfseLayout;
 import br.com.cshub.taxify.enumerated.ReviewStatus;
 import br.com.cshub.taxify.enumerated.TaxpayerDocumentType;
+import br.com.cshub.taxify.enumerated.RetrievalMode;
+import br.com.cshub.taxify.mapper.fiscaldocument.LegacyNfseDirection;
+import br.com.cshub.taxify.mapper.fiscaldocument.LegacySourceNames;
 import org.junit.jupiter.api.Nested;
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.params.ParameterizedTest;
@@ -145,6 +147,38 @@ class LegacyFiscalDocumentTranslatorTest {
             assertThat(document.isOwnIssue()).isEqualTo(Boolean.TRUE.equals(ownIssue));
         }
 
+        /** FD-RN-56: a null direction is derived - received = INBOUND; own issue by ide_tipo_operacao (only ' ' trimmed). */
+        @ParameterizedTest
+        @CsvSource({"false, , INBOUND", ", 1, INBOUND", "true, 0, INBOUND", "true, 1, OUTBOUND", "true, ' 1 ', OUTBOUND"})
+        void nullDirectionIsDerived(Boolean ownIssue, String operationType, FiscalDirection expected) {
+            FiscalXmlDocument legacy = LegacyFiscalDocumentTranslatorTest.goodsRow("NFE", "55");
+            legacy.setDirection(null);
+            legacy.setOwnIssue(ownIssue);
+            legacy.setTipoOperacao(operationType);
+            assertThat(LegacyFiscalDocumentTranslator.fromGoodsRow(legacy).getDirection()).isEqualTo(expected);
+        }
+
+        @ParameterizedTest
+        @CsvSource({"''", "2", "'\t1'"})
+        void anOwnIssueWithoutUsableOperationTypeStopsTheCopy(String operationType) {
+            FiscalXmlDocument legacy = LegacyFiscalDocumentTranslatorTest.goodsRow("NFE", "55");
+            legacy.setDirection(null);
+            legacy.setOwnIssue(true);
+            legacy.setTipoOperacao(operationType);
+            assertThatThrownBy(() -> LegacyFiscalDocumentTranslator.fromGoodsRow(legacy)).isInstanceOf(IllegalStateException.class);
+            legacy.setTipoOperacao(null);
+            assertThatThrownBy(() -> LegacyFiscalDocumentTranslator.fromGoodsRow(legacy)).isInstanceOf(IllegalStateException.class);
+        }
+
+        @Test
+        void aStoredDirectionIsKeptAsIs() {
+            FiscalXmlDocument legacy = LegacyFiscalDocumentTranslatorTest.goodsRow("NFE", "55");
+            legacy.setDirection(FiscalDirection.OUTBOUND);
+            legacy.setOwnIssue(false);
+            legacy.setTipoOperacao("0");
+            assertThat(LegacyFiscalDocumentTranslator.directionOfGoodsRow(legacy)).isEqualTo(FiscalDirection.OUTBOUND);
+        }
+
         /** FD-RN-08: PRESTADA, TOMADA and TERCEIRO. */
         @ParameterizedTest
         @CsvSource({"PRESTADA, OUTBOUND, ISSUER", "TOMADA, INBOUND, TAKER", "TERCEIRO, , THIRD_PARTY"})
@@ -254,7 +288,9 @@ class LegacyFiscalDocumentTranslatorTest {
             FiscalDocument copy = LegacyFiscalDocumentTranslator.fromGoodsRow(k1);
             assertThat(copy.getSources()).extracting(FiscalDocumentSource::getSource)
                     .containsExactly(DocumentSourceKey.SIEG, DocumentSourceKey.SEFAZ_DFE);
-            FiscalDocumentSource sefaz = copy.sourceOf(DocumentSourceKey.SEFAZ_DFE).orElseThrow();
+            assertThat(copy.getSources()).extracting(FiscalDocumentSource::getRetrievalMode)
+                    .containsExactly(RetrievalMode.PERIOD, RetrievalMode.CURSOR);
+            FiscalDocumentSource sefaz = copy.sourceOf(DocumentSourceKey.SEFAZ_DFE, RetrievalMode.CURSOR).orElseThrow();
             assertThat(sefaz.getFirstSeenAt()).isEqualTo(LocalDateTime.of(2026, 11, 5, 9, 15));
             assertThat(sefaz.getLastSeenAt()).isEqualTo(sefaz.getFirstSeenAt());
         }
@@ -266,6 +302,7 @@ class LegacyFiscalDocumentTranslatorTest {
             FiscalDocument copy = LegacyFiscalDocumentTranslator.fromGoodsRow(k3);
             assertThat(copy.getSources()).singleElement().satisfies(source -> {
                 assertThat(source.getSource()).isEqualTo(DocumentSourceKey.UPLOAD);
+                assertThat(source.getRetrievalMode()).isEqualTo(RetrievalMode.NONE);
                 assertThat(source.getFirstSeenAt()).isEqualTo(CREATED);
             });
         }
@@ -280,7 +317,8 @@ class LegacyFiscalDocumentTranslatorTest {
             ServiceInvoice s1 = serviceRow("TOMADA", "NACIONAL");
             s1.setFoundInAdnAt(LocalDateTime.of(2026, 11, 6, 7, 0));
             Nfse copy = LegacyFiscalDocumentTranslator.fromServiceInvoice(s1);
-            assertThat(copy.getSources()).extracting(FiscalDocumentSource::getSource).containsExactly(DocumentSourceKey.NFSE_ADN);
+            assertThat(copy.getSources()).extracting(FiscalDocumentSource::getSource, FiscalDocumentSource::getRetrievalMode)
+                    .containsExactly(tuple(DocumentSourceKey.NFSE_ADN, RetrievalMode.CURSOR));
         }
 
         /** CT-FD-31: SEFAZ_DIST and ADN are renamed in the database and shown with the old names by the API. */
@@ -288,7 +326,17 @@ class LegacyFiscalDocumentTranslatorTest {
         @CsvSource({"SEFAZ_DIST, SEFAZ_DFE", "ADN, NFSE_ADN", "SIEG, SIEG", "UPLOAD, UPLOAD"})
         void sourceSystemTranslation(String legacy, String current) {
             assertThat(LegacyFiscalDocumentTranslator.sourceFromLegacy(legacy)).isEqualTo(DocumentSourceKey.of(current));
-            assertThat(LegacyFiscalDocumentTranslator.sourceToLegacy(DocumentSourceKey.of(current))).isEqualTo(legacy);
+            assertThat(LegacySourceNames.toLegacyName(DocumentSourceKey.of(current))).isEqualTo(legacy);
+        }
+
+        @Test
+        void retrievalModeOfEachLegacySource() {
+            assertThat(LegacyFiscalDocumentTranslator.retrievalModeOf(DocumentSourceKey.SIEG)).isEqualTo(RetrievalMode.PERIOD);
+            assertThat(LegacyFiscalDocumentTranslator.retrievalModeOf(DocumentSourceKey.SEFAZ_DFE)).isEqualTo(RetrievalMode.CURSOR);
+            assertThat(LegacyFiscalDocumentTranslator.retrievalModeOf(DocumentSourceKey.NFSE_ADN)).isEqualTo(RetrievalMode.CURSOR);
+            assertThat(LegacyFiscalDocumentTranslator.retrievalModeOf(DocumentSourceKey.UPLOAD)).isEqualTo(RetrievalMode.NONE);
+            assertThatThrownBy(() -> LegacyFiscalDocumentTranslator.retrievalModeOf(DocumentSourceKey.of("FAKE")))
+                    .isInstanceOf(IllegalArgumentException.class);
         }
 
         @Test
@@ -379,6 +427,15 @@ class LegacyFiscalDocumentTranslatorTest {
 
     @Nested
     class CteRow {
+        /** A Cte has no items: an old CT-e row with items stops the copy (V87 pre-checks it). */
+        @Test
+        void aCteRowWithItemsStopsTheCopy() {
+            FiscalXmlDocument legacy = goodsRow("CTE", "57");
+            legacy.setItens(List.of(new FiscalXmlDocumentItem()));
+            assertThatThrownBy(() -> LegacyFiscalDocumentTranslator.fromGoodsRow(legacy))
+                    .isInstanceOf(IllegalStateException.class);
+        }
+
         /** FD-RN-15: CTE without model gets 57, metadata_version 0, the shared ICMS and no participation. */
         @Test
         void cteKeepsCommonColumnsAndSharedIcms() {
@@ -574,6 +631,7 @@ class LegacyFiscalDocumentTranslatorTest {
         @Test
         void currentAndPreviousMonths() {
             FiscalXmlSyncControl control = new FiscalXmlSyncControl();
+            audited(control);
             control.setCompany(e1());
             control.setDataEmissaoInicio(LocalDate.of(2026, 11, 1));
             control.setDataEmissaoFim(LocalDate.of(2026, 11, 27));
@@ -591,8 +649,8 @@ class LegacyFiscalDocumentTranslatorTest {
                             CapturePeriodCount::getProviderTotal, CapturePeriodCount::getImportedTotal, CapturePeriodCount::isClosed)
                     .containsExactly(
                             tuple(CaptureSide.RECEIVED, YearMonth.of(2026, 11), 40, 37, false),
-                            tuple(CaptureSide.ISSUED, YearMonth.of(2026, 11), 12, 12, false),
-                            tuple(CaptureSide.RECEIVED, YearMonth.of(2026, 10), 55, 55, true));
+                            tuple(CaptureSide.RECEIVED, YearMonth.of(2026, 10), 55, 55, true),
+                            tuple(CaptureSide.ISSUED, YearMonth.of(2026, 11), 12, 12, false));
             assertThat(counts).allSatisfy(count -> {
                 assertThat(count.getChannel()).isEqualTo(ProviderKey.SIEG);
                 assertThat(count.getDocumentType()).isEqualTo(FiscalDocumentType.NFE);
@@ -602,8 +660,9 @@ class LegacyFiscalDocumentTranslatorTest {
             assertThat(received.getProviderCountedAt()).isEqualTo(LocalDateTime.of(2026, 11, 27, 10, 0));
             assertThat(received.getImportedCountedAt()).isEqualTo(received.getProviderCountedAt());
             assertThat(received.missing()).isEqualTo(3);
-            assertThat(counts.get(1).getProviderCountedAt()).isEqualTo(LocalDateTime.of(2026, 11, 27, 10, 5));
-            assertThat(counts.get(2).getClosedAt()).isEqualTo(COPIED_AT);
+            assertThat(counts.get(2).getProviderCountedAt()).isEqualTo(LocalDateTime.of(2026, 11, 27, 10, 5));
+            assertThat(counts.get(1).getClosedAt()).isEqualTo(COPIED_AT);
+            assertThat(counts).allSatisfy(count -> assertThat(count.getCreatedDate()).isEqualTo(CREATED));
         }
 
         @Test
@@ -615,6 +674,98 @@ class LegacyFiscalDocumentTranslatorTest {
             control.closeIssuedMonth("2026-11", 3, 3);
             assertThat(LegacyFiscalDocumentTranslator.fromSyncControl(control, COPIED_AT))
                     .extracting(CapturePeriodCount::getSide).containsExactly(CaptureSide.RECEIVED);
+        }
+
+        private FiscalXmlSyncControl novemberControl() {
+            FiscalXmlSyncControl control = new FiscalXmlSyncControl();
+            audited(control);
+            control.setCompany(e1());
+            control.setDataEmissaoInicio(LocalDate.of(2026, 11, 1));
+            control.setDataEmissaoFim(LocalDate.of(2026, 11, 27));
+            control.setTotalSieg(44);
+            control.setTotalImportado(40);
+            control.setUltimaVerificacaoEm(LocalDateTime.of(2026, 11, 27, 10, 0));
+            control.setIssuedTotalSieg(12);
+            control.setIssuedTotalImported(12);
+            control.setIssuedCheckedAt(LocalDateTime.of(2026, 11, 27, 10, 5));
+            control.closeReceivedMonth("2026-10", 55, 53);
+            return control;
+        }
+
+        /** CT-FD-36 / D-09: stored_any_source on the current month; each gap slot on its month's row. */
+        @Test
+        void v85StoredCountAndGapSlotsGoToTheirMonths() {
+            FiscalXmlSyncControl control = novemberControl();
+            control.setStoredAnySource(false, 42);
+            control.setStoredAnySource(true, 12);
+            control.recordKnownGap(false, "2026-11", 1);
+            control.recordKnownGap(false, "2026-10", 2);
+
+            List<CapturePeriodCount> counts = LegacyFiscalDocumentTranslator.fromSyncControl(control, COPIED_AT);
+
+            assertThat(counts).extracting(CapturePeriodCount::getSide, CapturePeriodCount::getPeriodMonth,
+                            CapturePeriodCount::getStoredAnySourceTotal, CapturePeriodCount::getKnownGap, CapturePeriodCount::isClosed)
+                    .containsExactly(
+                            tuple(CaptureSide.RECEIVED, YearMonth.of(2026, 11), 42, 1, false),
+                            tuple(CaptureSide.RECEIVED, YearMonth.of(2026, 10), null, 2, true),
+                            tuple(CaptureSide.ISSUED, YearMonth.of(2026, 11), 12, null, false));
+            assertThat(counts.getFirst().missing()).isEqualTo(3);
+        }
+
+        /** D-09: a gap slot of a month without row creates the row, closed unless it is the current month. */
+        @Test
+        void aGapSlotWithoutRowCreatesAClosedRow() {
+            FiscalXmlSyncControl control = novemberControl();
+            control.recordKnownGap(true, "2026-09", 4);
+
+            List<CapturePeriodCount> issued = LegacyFiscalDocumentTranslator.fromSyncControl(control, COPIED_AT).stream()
+                    .filter(count -> count.getSide() == CaptureSide.ISSUED).toList();
+
+            assertThat(issued).extracting(CapturePeriodCount::getPeriodMonth, CapturePeriodCount::getProviderTotal,
+                            CapturePeriodCount::getImportedTotal, CapturePeriodCount::getKnownGap, CapturePeriodCount::getClosedAt)
+                    .containsExactly(
+                            tuple(YearMonth.of(2026, 11), 12, 12, null, null),
+                            tuple(YearMonth.of(2026, 9), null, 0, 4, COPIED_AT));
+        }
+
+        @Test
+        void aGapSlotOfTheCurrentMonthWithoutCurrentRowStaysOpen() {
+            FiscalXmlSyncControl control = new FiscalXmlSyncControl();
+            control.setCompany(e1());
+            control.setDataEmissaoInicio(LocalDate.of(2026, 11, 1));
+            control.setUltimaVerificacaoEm(COPIED_AT);
+            ReflectionTestUtils.setField(control, "issuedKnownGapMonth", "2026-11");
+            ReflectionTestUtils.setField(control, "issuedKnownGap", 2);
+
+            List<CapturePeriodCount> issued = LegacyFiscalDocumentTranslator.fromSyncControl(control, COPIED_AT).stream()
+                    .filter(count -> count.getSide() == CaptureSide.ISSUED).toList();
+
+            assertThat(issued).singleElement().satisfies(count -> {
+                assertThat(count.getKnownGap()).isEqualTo(2);
+                assertThat(count.isClosed()).isFalse();
+                assertThat(count.getProviderTotal()).isNull();
+            });
+        }
+
+        /** D-09: both slots on the same month - the first slot wins; a slot without month or value is not copied. */
+        @Test
+        void firstSlotWinsAndIncompleteSlotsAreIgnored() {
+            FiscalXmlSyncControl control = novemberControl();
+            ReflectionTestUtils.setField(control, "receivedKnownGapMonth", "2026-08");
+            ReflectionTestUtils.setField(control, "receivedKnownGap", 5);
+            ReflectionTestUtils.setField(control, "receivedEarlierGapMonth", "2026-08");
+            ReflectionTestUtils.setField(control, "receivedEarlierGap", 9);
+            ReflectionTestUtils.setField(control, "issuedKnownGap", 7);
+            ReflectionTestUtils.setField(control, "issuedEarlierGapMonth", "2026-07");
+
+            List<CapturePeriodCount> counts = LegacyFiscalDocumentTranslator.fromSyncControl(control, COPIED_AT);
+
+            assertThat(counts).extracting(CapturePeriodCount::getSide, CapturePeriodCount::getPeriodMonth, CapturePeriodCount::getKnownGap)
+                    .containsExactly(
+                            tuple(CaptureSide.RECEIVED, YearMonth.of(2026, 11), null),
+                            tuple(CaptureSide.RECEIVED, YearMonth.of(2026, 10), null),
+                            tuple(CaptureSide.RECEIVED, YearMonth.of(2026, 8), 5),
+                            tuple(CaptureSide.ISSUED, YearMonth.of(2026, 11), null));
         }
     }
 }

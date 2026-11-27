@@ -14,32 +14,45 @@ import br.com.cshub.taxify.enumerated.CompanyDocumentRole;
 import br.com.cshub.taxify.enumerated.FiscalDirection;
 import br.com.cshub.taxify.enumerated.FiscalDocumentType;
 import br.com.cshub.taxify.enumerated.NfseLayout;
+import br.com.cshub.taxify.enumerated.RetrievalMode;
 import br.com.cshub.taxify.enumerated.ReviewStatus;
 import br.com.cshub.taxify.enumerated.TaxpayerDocumentType;
+import br.com.cshub.taxify.mapper.fiscaldocument.LegacyNfseDirection;
+import br.com.cshub.taxify.mapper.fiscaldocument.LegacySourceNames;
+import org.springframework.test.util.ReflectionTestUtils;
 
 import java.time.LocalDateTime;
 import java.time.YearMonth;
 import java.util.ArrayList;
 import java.util.Arrays;
+import java.util.LinkedHashMap;
 import java.util.List;
+import java.util.Map;
 import java.util.Objects;
 import java.util.UUID;
 
 /**
  * Pure translation of the old model ({@code fiscal_xml_documents}, {@code fiscal_xml_document_items},
  * {@code service_invoices}, {@code fiscal_xml_events}, the counters of {@code fiscal_xml_sync_control}) into the new
- * one, applying the normalization of spec 3.9. It is the reference of the copy of V87 and of the parity test: every
- * column mapping of spec 3.4 to 3.11 is here, in Java, with a test per conversion. No I/O, no clock (the copy time is
- * a parameter).
+ * one, applying the normalization of spec 3.9. No I/O, no clock (the copy time is a parameter).
  *
- * <p>Decisions where the spec is silent (all covered by tests, all to be reproduced by the SQL of V87):
+ * <p>It lives in {@code src/test} on purpose: it imports the old entities, which leave {@code src/main} with the
+ * integration (B-FD-05). It is the oracle of the migration and parity tests; the SQL of V87 follows the same rules
+ * (spec 3.11, 3.12, FD-RN-55, FD-RN-56). The API translations it uses ({@link LegacyNfseDirection},
+ * {@link LegacySourceNames}) are in the mapper package of {@code src/main} (FD-RN-23).
+ *
+ * <p>Rules shared with V87:
  * <ul>
- *   <li>a blank text counts as absent when choosing the party document ({@code NULLIF(TRIM(x), '')} in SQL);</li>
- *   <li>an AUTHORIZED row keeps no {@code canceled_at} (I-02, {@code CASE WHEN status = 'CANCELED'} in SQL);</li>
- *   <li>a CT-e row keeps, of the goods columns, only the ICMS base and value (shared columns) - the rest of block G
- *       does not exist in a {@code Cte};</li>
+ *   <li>"trimmed" and "has text" are the SQL ones - only the ordinary space ({@link FiscalText}: {@code TRIM},
+ *       {@code NULLIF(TRIM(x), '')});</li>
+ *   <li>a null direction of an old row is derived (FD-RN-56): received = INBOUND; own issue with
+ *       {@code ide_tipo_operacao} 0 = INBOUND, 1 = OUTBOUND; anything else stops the copy;</li>
+ *   <li>an AUTHORIZED row keeps no {@code canceled_at} (I-02);</li>
+ *   <li>a CT-e row keeps, of the goods columns, only the ICMS base and value (shared columns); items under a CT-e row
+ *       stop the copy;</li>
+ *   <li>origins with their retrieval mode: SIEG = PERIOD, SEFAZ_DFE and NFSE_ADN = CURSOR, UPLOAD = NONE;</li>
  *   <li>the NFS-e document type comes from the size (14 = CNPJ, 11 = CPF, otherwise null);</li>
- *   <li>the counts of the issued side use the same window as the received side (the old row has a single window).</li>
+ *   <li>counts: see {@link #fromSyncControl(FiscalXmlSyncControl, LocalDateTime)}.</li>
  * </ul>
  */
 public final class LegacyFiscalDocumentTranslator {
@@ -47,12 +60,12 @@ public final class LegacyFiscalDocumentTranslator {
     /** {@code fiscal_xml_documents.document_type} values. */
     public static final String LEGACY_NFE = "NFE";
     public static final String LEGACY_CTE = "CTE";
-    /** Old source names that change (spec 3.10); the API keeps showing the old ones (FD-RN-23). */
-    public static final String LEGACY_SEFAZ_DIST = "SEFAZ_DIST";
-    public static final String LEGACY_ADN = "ADN";
     /** {@code service_invoices.layout} values. */
     public static final String LEGACY_NATIONAL_LAYOUT = "NACIONAL";
     public static final String LEGACY_ABRASF_LAYOUT = "ABRASF";
+    /** {@code ide_tipo_operacao} (tpNF): 0 = entry, 1 = exit. */
+    public static final String TP_NF_ENTRY = "0";
+    public static final String TP_NF_EXIT = "1";
 
     private LegacyFiscalDocumentTranslator() {
     }
@@ -65,36 +78,55 @@ public final class LegacyFiscalDocumentTranslator {
             return FiscalDocumentType.CTE;
         }
         if (LEGACY_NFE.equals(legacyDocumentType)) {
-            return Nfce.MODEL.equals(trimmed(legacyModel)) ? FiscalDocumentType.NFCE : FiscalDocumentType.NFE;
+            return Nfce.MODEL.equals(FiscalText.trimSpaces(legacyModel)) ? FiscalDocumentType.NFCE : FiscalDocumentType.NFE;
         }
         throw new IllegalArgumentException("unknown legacy document type");
     }
 
     /** Spec 3.10: {@code SEFAZ_DIST} becomes {@code SEFAZ_DFE}, {@code ADN} becomes {@code NFSE_ADN}, the rest stays. */
     public static DocumentSourceKey sourceFromLegacy(String legacySource) {
-        if (LEGACY_SEFAZ_DIST.equals(legacySource)) {
-            return DocumentSourceKey.SEFAZ_DFE;
-        }
-        if (LEGACY_ADN.equals(legacySource)) {
-            return DocumentSourceKey.NFSE_ADN;
-        }
-        return DocumentSourceKey.of(legacySource);
+        return LegacySourceNames.toSource(legacySource);
     }
 
-    /** The other way, for the API that keeps the old values (FD-RN-23, CT-FD-31). */
-    public static String sourceToLegacy(DocumentSourceKey source) {
-        if (DocumentSourceKey.SEFAZ_DFE.equals(source)) {
-            return LEGACY_SEFAZ_DIST;
+    /** Spec 3.10: how each copied origin was retrieved. */
+    public static RetrievalMode retrievalModeOf(DocumentSourceKey source) {
+        if (DocumentSourceKey.SIEG.equals(source)) {
+            return RetrievalMode.PERIOD;
         }
-        if (DocumentSourceKey.NFSE_ADN.equals(source)) {
-            return LEGACY_ADN;
+        if (DocumentSourceKey.SEFAZ_DFE.equals(source) || DocumentSourceKey.NFSE_ADN.equals(source)) {
+            return RetrievalMode.CURSOR;
         }
-        return source.value();
+        if (DocumentSourceKey.UPLOAD.equals(source)) {
+            return RetrievalMode.NONE;
+        }
+        throw new IllegalArgumentException("no retrieval mode for the legacy source");
     }
 
     /** FD-RN-08 for NF-e/NFC-e/CT-e rows: {@code own_issue = true} = ISSUER, anything else (false or null) = RECIPIENT. */
     public static CompanyDocumentRole roleOfGoodsRow(Boolean ownIssue) {
         return Boolean.TRUE.equals(ownIssue) ? CompanyDocumentRole.ISSUER : CompanyDocumentRole.RECIPIENT;
+    }
+
+    /**
+     * FD-RN-56: the stored direction or, for an old row the backfill did not reach, the rule of
+     * {@code FiscalDirectionBackfill}: received = INBOUND; own issue with {@code ide_tipo_operacao} 0 = INBOUND and
+     * 1 = OUTBOUND. An own issue without a usable {@code ide_tipo_operacao} cannot be solved and stops the copy.
+     */
+    public static FiscalDirection directionOfGoodsRow(FiscalXmlDocument legacy) {
+        if (legacy.getDirection() != null) {
+            return legacy.getDirection();
+        }
+        if (!Boolean.TRUE.equals(legacy.getOwnIssue())) {
+            return FiscalDirection.INBOUND;
+        }
+        String operationType = FiscalText.trimSpaces(legacy.getTipoOperacao());
+        if (TP_NF_ENTRY.equals(operationType)) {
+            return FiscalDirection.INBOUND;
+        }
+        if (TP_NF_EXIT.equals(operationType)) {
+            return FiscalDirection.OUTBOUND;
+        }
+        throw new IllegalStateException("legacy direction cannot be derived");
     }
 
     /** NF-e issuer: CNPJ before CPF (FD-RN-09). */
@@ -131,10 +163,13 @@ public final class LegacyFiscalDocumentTranslator {
         if (document instanceof GoodsInvoice goods) {
             copyGoodsBlock(legacy, goods);
         } else if (document instanceof Cte cte) {
+            if (legacy.getItens() != null && !legacy.getItens().isEmpty()) {
+                throw new IllegalStateException("legacy CT-e row with items");
+            }
             copyCteBlock(legacy, cte);
         }
-        copySources(document, legacy.getFoundInSiegAt(), DocumentSourceKey.SIEG);
-        copySources(document, legacy.getFoundInSefazAt(), DocumentSourceKey.SEFAZ_DFE);
+        copySource(document, legacy.getFoundInSiegAt(), DocumentSourceKey.SIEG);
+        copySource(document, legacy.getFoundInSefazAt(), DocumentSourceKey.SEFAZ_DFE);
         copyUploadSource(document, legacy.getCreatedDate());
         return document;
     }
@@ -142,12 +177,12 @@ public final class LegacyFiscalDocumentTranslator {
     private static void copyCommon(FiscalXmlDocument legacy, FiscalDocument document) {
         document.setId(legacy.getId());
         document.setAccessKey(legacy.getAccessKey());
-        document.setModel(trimmed(legacy.getModelo()));
+        document.setModel(FiscalText.trimSpaces(legacy.getModelo()));
         document.setSeries(legacy.getSerie());
         document.setNumber(legacy.getNumero());
         document.setIssueDate(legacy.getIssueDate());
         document.setOperationNature(legacy.getNaturezaOperacao());
-        document.assignRole(roleOfGoodsRow(legacy.getOwnIssue()), legacy.getDirection());
+        document.assignRole(roleOfGoodsRow(legacy.getOwnIssue()), directionOfGoodsRow(legacy));
         if (legacy.isCanceled()) {
             document.cancel(legacy.getCanceledAt());
         }
@@ -315,7 +350,7 @@ public final class LegacyFiscalDocumentTranslator {
         nfse.setAccessKey(legacy.getAccessKey());
         nfse.setNumber(legacy.getNumero());
         nfse.setIssueDate(legacy.getIssueDate());
-        nfse.assignRole(direction.role, direction.direction);
+        nfse.assignRole(direction.role(), direction.direction());
         if (legacy.isCanceled()) {
             nfse.cancelByLayout();
         }
@@ -341,8 +376,8 @@ public final class LegacyFiscalDocumentTranslator {
         nfse.setXmlFilePath(legacy.getXmlFilePath());
         nfse.setMetadataVersion(0);
         nfse.copyAuditingFrom(legacy);
-        copySources(nfse, legacy.getFoundInSiegAt(), DocumentSourceKey.SIEG);
-        copySources(nfse, legacy.getFoundInAdnAt(), DocumentSourceKey.NFSE_ADN);
+        copySource(nfse, legacy.getFoundInSiegAt(), DocumentSourceKey.SIEG);
+        copySource(nfse, legacy.getFoundInAdnAt(), DocumentSourceKey.NFSE_ADN);
         copyUploadSource(nfse, legacy.getCreatedDate());
         return nfse;
     }
@@ -356,44 +391,6 @@ public final class LegacyFiscalDocumentTranslator {
             return NfseLayout.ABRASF;
         }
         throw new IllegalArgumentException("unknown legacy NFS-e layout");
-    }
-
-    /** FD-RN-08 for the NFS-e: the old direction as (direction, role) - and back, for the API (FD-RN-23). */
-    public enum LegacyNfseDirection {
-        PRESTADA(FiscalDirection.OUTBOUND, CompanyDocumentRole.ISSUER),
-        TOMADA(FiscalDirection.INBOUND, CompanyDocumentRole.TAKER),
-        TERCEIRO(null, CompanyDocumentRole.THIRD_PARTY);
-
-        private final FiscalDirection direction;
-        private final CompanyDocumentRole role;
-
-        LegacyNfseDirection(FiscalDirection direction, CompanyDocumentRole role) {
-            this.direction = direction;
-            this.role = role;
-        }
-
-        public FiscalDirection direction() {
-            return direction;
-        }
-
-        public CompanyDocumentRole role() {
-            return role;
-        }
-
-        public static LegacyNfseDirection of(String legacyDirection) {
-            return Arrays.stream(values())
-                    .filter(value -> value.name().equals(legacyDirection))
-                    .findFirst()
-                    .orElseThrow(() -> new IllegalArgumentException("unknown legacy NFS-e direction"));
-        }
-
-        /** The old direction an NFS-e role shows in the API ({@code direction = "TOMADA"}...). */
-        public static LegacyNfseDirection ofRole(CompanyDocumentRole role) {
-            return Arrays.stream(values())
-                    .filter(value -> value.role == role)
-                    .findFirst()
-                    .orElseThrow(() -> new IllegalArgumentException("role without legacy NFS-e direction"));
-        }
     }
 
     // ---------------------------------------------------------------- events
@@ -421,56 +418,77 @@ public final class LegacyFiscalDocumentTranslator {
 
     /**
      * The counters of a {@code fiscal_xml_sync_control} row as {@code capture_period_counts} rows (channel SIEG, type
-     * NFE): received and issued of the month of {@code data_emissao_inicio}, and the previous months of V79, closed at
-     * {@code copiedAt}. A previous month equal to the current one is not copied twice (the current row wins). The six
-     * columns of V85 ({@code fix/sieg-call-savings}) are not in this branch yet: they will be mapped here when it is
-     * merged ({@code stored_any_source_total}, {@code known_gap}).
+     * NFE), side by side, in the order of V87:
+     * <ol>
+     *   <li>the month of {@code data_emissao_inicio} - the issued side only when it was ever checked, with the
+     *       received side's window - with {@code *_stored_any_source};</li>
+     *   <li>the previous month of V79, closed at {@code copiedAt}; not copied when it is the current month;</li>
+     *   <li>the two V85 gap slots ({@code known_gap}, then {@code earlier_gap}): each becomes the {@code known_gap} of
+     *       its month's row - the first slot wins on the same month - or a row of its own, closed unless it is the
+     *       current month. A slot without month or without value is not copied.</li>
+     * </ol>
+     * Every row keeps the auditing columns of the control row.
      */
     public static List<CapturePeriodCount> fromSyncControl(FiscalXmlSyncControl control, LocalDateTime copiedAt) {
         Objects.requireNonNull(copiedAt, "copiedAt");
-        List<CapturePeriodCount> counts = new ArrayList<>();
         YearMonth current = control.getDataEmissaoInicio() == null ? null : YearMonth.from(control.getDataEmissaoInicio());
-        if (current != null) {
-            CapturePeriodCount received = count(control, CaptureSide.RECEIVED, current);
-            received.askedWindow(control.getDataEmissaoInicio(), control.getDataEmissaoFim());
-            received.recordProviderCount(control.getTotalSieg(), control.getUltimaVerificacaoEm());
-            received.recordImported(control.getTotalImportado(), control.getUltimaVerificacaoEm());
-            counts.add(received);
-            if (control.getIssuedTotalSieg() != null || control.getIssuedTotalImported() != null
-                    || control.getIssuedCheckedAt() != null) {
-                CapturePeriodCount issued = count(control, CaptureSide.ISSUED, current);
-                issued.askedWindow(control.getDataEmissaoInicio(), control.getDataEmissaoFim());
-                issued.recordProviderCount(control.getIssuedTotalSieg(), control.getIssuedCheckedAt());
-                issued.recordImported(orZero(control.getIssuedTotalImported()), control.getIssuedCheckedAt());
-                counts.add(issued);
-            }
-        }
-        addClosedMonth(counts, control, CaptureSide.RECEIVED, control.getReceivedPrevMonth(),
-                control.getReceivedPrevTotalSieg(), control.getReceivedPrevImported(), current, copiedAt);
-        addClosedMonth(counts, control, CaptureSide.ISSUED, control.getIssuedPrevMonth(),
-                control.getIssuedPrevTotalSieg(), control.getIssuedPrevImported(), current, copiedAt);
+        List<CapturePeriodCount> counts = new ArrayList<>(side(control, CaptureSide.RECEIVED, current, copiedAt));
+        counts.addAll(side(control, CaptureSide.ISSUED, current, copiedAt));
         return counts;
     }
 
-    private static void addClosedMonth(List<CapturePeriodCount> counts, FiscalXmlSyncControl control, CaptureSide side,
-                                       String month, Integer providerTotal, Integer imported, YearMonth current,
-                                       LocalDateTime copiedAt) {
-        if (!hasText(month)) {
-            return;
+    private static List<CapturePeriodCount> side(FiscalXmlSyncControl control, CaptureSide side, YearMonth current,
+                                                 LocalDateTime copiedAt) {
+        boolean issued = side == CaptureSide.ISSUED;
+        Map<YearMonth, CapturePeriodCount> rows = new LinkedHashMap<>();
+        boolean everChecked = !issued || control.getIssuedTotalSieg() != null || control.getIssuedTotalImported() != null
+                || control.getIssuedCheckedAt() != null;
+        if (current != null && everChecked) {
+            CapturePeriodCount row = count(control, side, current);
+            row.askedWindow(control.getDataEmissaoInicio(), control.getDataEmissaoFim());
+            LocalDateTime checkedAt = issued ? control.getIssuedCheckedAt() : control.getUltimaVerificacaoEm();
+            row.recordProviderCount(issued ? control.getIssuedTotalSieg() : Integer.valueOf(control.getTotalSieg()), checkedAt);
+            row.recordImported(issued ? orZero(control.getIssuedTotalImported()) : control.getTotalImportado(), checkedAt);
+            row.recordStoredAnySource(issued ? control.getIssuedStoredAnySource() : control.getReceivedStoredAnySource());
+            rows.put(current, row);
         }
-        YearMonth period = YearMonth.parse(month.strip());
-        if (period.equals(current)) {
-            return;
+        String previous = FiscalText.trimSpaces(issued ? control.getIssuedPrevMonth() : control.getReceivedPrevMonth());
+        if (hasText(previous) && !YearMonth.parse(previous).equals(current)) {
+            CapturePeriodCount row = count(control, side, YearMonth.parse(previous));
+            row.recordProviderCount(issued ? control.getIssuedPrevTotalSieg() : control.getReceivedPrevTotalSieg(), null);
+            row.recordImported(orZero(issued ? control.getIssuedPrevImported() : control.getReceivedPrevImported()), null);
+            row.close(copiedAt);
+            rows.put(row.getPeriodMonth(), row);
         }
-        CapturePeriodCount closed = count(control, side, period);
-        closed.recordProviderCount(providerTotal, null);
-        closed.recordImported(orZero(imported), null);
-        closed.close(copiedAt);
-        counts.add(closed);
+        String prefix = issued ? "issued" : "received";
+        for (String slot : List.of("KnownGap", "EarlierGap")) {
+            // the old entity has no getter per slot (only knownGap(side, month)); the oracle reads the fields directly
+            String month = FiscalText.trimSpaces((String) ReflectionTestUtils.getField(control, prefix + slot + "Month"));
+            Integer gap = (Integer) ReflectionTestUtils.getField(control, prefix + slot);
+            if (!hasText(month) || gap == null) {
+                continue;
+            }
+            YearMonth period = YearMonth.parse(month);
+            CapturePeriodCount row = rows.get(period);
+            if (row == null) {
+                row = count(control, side, period);
+                if (!period.equals(current)) {
+                    row.close(copiedAt);
+                }
+                rows.put(period, row);
+            }
+            if (row.getKnownGap() == null) {
+                row.recordKnownGap(gap);
+            }
+        }
+        return new ArrayList<>(rows.values());
     }
 
     private static CapturePeriodCount count(FiscalXmlSyncControl control, CaptureSide side, YearMonth month) {
-        return new CapturePeriodCount(control.getCompany(), ProviderKey.SIEG, FiscalDocumentType.NFE, side, month);
+        CapturePeriodCount count = new CapturePeriodCount(control.getCompany(), ProviderKey.SIEG, FiscalDocumentType.NFE,
+                side, month);
+        count.copyAuditingFrom(control);
+        return count;
     }
 
     // ---------------------------------------------------------------- helpers
@@ -498,16 +516,16 @@ public final class LegacyFiscalDocumentTranslator {
         return allNull(number, name, cityCode) ? null : Party.brazilian(number, name, null, cityCode);
     }
 
-    private static void copySources(FiscalDocument document, LocalDateTime seenAt, DocumentSourceKey source) {
+    private static void copySource(FiscalDocument document, LocalDateTime seenAt, DocumentSourceKey source) {
         if (seenAt != null) {
-            document.markSeenIn(source, seenAt);
+            document.markSeenIn(source, retrievalModeOf(source), seenAt);
         }
     }
 
-    /** Spec 3.10: an uploaded document gets the origin UPLOAD at its {@code created_date}. */
+    /** Spec 3.10: an uploaded document gets the origin UPLOAD (mode NONE) at its {@code created_date}. */
     private static void copyUploadSource(FiscalDocument document, LocalDateTime createdDate) {
         if (document.getSourceSystem().isUpload() && createdDate != null) {
-            document.markSeenIn(DocumentSourceKey.UPLOAD, createdDate);
+            document.markSeenIn(DocumentSourceKey.UPLOAD, RetrievalMode.NONE, createdDate);
         }
     }
 
@@ -530,11 +548,7 @@ public final class LegacyFiscalDocumentTranslator {
     }
 
     private static boolean hasText(String value) {
-        return value != null && !value.isBlank();
-    }
-
-    private static String trimmed(String value) {
-        return value == null ? null : value.strip();
+        return FiscalText.hasText(value);
     }
 
     private static int orZero(Integer value) {

@@ -187,7 +187,7 @@ class FiscalDocumentMappingTest {
                 "event_text", "registered", "created_by", "created_date", "last_modified_by", "last_modified_date",
                 "deleted");
         assertThat(columns("fiscal_document_sources").keySet()).containsExactlyInAnyOrder("id", "document_id",
-                "company_id", "source", "first_seen_at", "last_seen_at");
+                "company_id", "source", "retrieval_mode", "first_seen_at", "last_seen_at");
         assertThat(columns("capture_period_counts").keySet()).containsExactlyInAnyOrder("id", "company_id", "channel",
                 "document_type", "side", "period_month", "window_start", "window_end", "provider_total",
                 "provider_counted_at", "imported_total", "stored_any_source_total", "known_gap", "imported_counted_at",
@@ -208,7 +208,7 @@ class FiscalDocumentMappingTest {
         assertThat(uniqueKeys("fiscal_document_events")).containsEntry("uk_fiscal_document_events",
                 List.of("company_id", "access_key", "event_type", "sequence_number"));
         assertThat(indexes("fiscal_document_events")).containsOnly(Map.entry("idx_fde_document", List.of("document_id")));
-        assertThat(uniqueKeys("fiscal_document_sources")).containsEntry("uk_fiscal_document_sources", List.of("document_id", "source"));
+        assertThat(uniqueKeys("fiscal_document_sources")).containsEntry("uk_fiscal_document_sources", List.of("document_id", "source", "retrieval_mode"));
         assertThat(indexes("fiscal_document_sources"))
                 .containsOnly(Map.entry("idx_fds_company_source_seen", List.of("company_id", "source", "first_seen_at")));
         assertThat(uniqueKeys("capture_period_counts")).containsEntry("uk_capture_period_counts",

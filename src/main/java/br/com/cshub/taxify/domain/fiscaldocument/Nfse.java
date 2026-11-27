@@ -119,7 +119,9 @@ public class Nfse extends FiscalDocument {
     @Override
     protected void checkInvariants(InvariantScope scope) {
         super.checkInvariants(scope);
-        require(FiscalDocumentInvariant.I13_NFSE_LAYOUT_AND_KEY, scope, hasKeyOfItsLayout());
+        // the layout is always required; a copied row (metadataVersion = 0) may keep an off-size key on UPDATE
+        require(FiscalDocumentInvariant.I13_NFSE_LAYOUT_AND_KEY, scope,
+                layout != null && (hasKeyOfItsLayout() || toleratesUnparsedCopy(scope)));
         require(FiscalDocumentInvariant.I14_NFSE_WITHHELD_FLAGS, scope,
                 iss != null && iss.withheld() != null && pisCofinsWithheld != null);
     }

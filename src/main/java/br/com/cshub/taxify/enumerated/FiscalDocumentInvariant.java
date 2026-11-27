@@ -12,8 +12,13 @@ public enum FiscalDocumentInvariant {
     I02_AUTHORIZED_WITHOUT_CANCELED_AT(true),
     /** CANCELED implies canceledAt, except NFS-e. CREATE. */
     I03_CANCELED_WITH_CANCELED_AT(false),
-    /** direction null iff the role books nothing. Always. */
+    /** NF-e, NFC-e, NFS-e: direction null iff the role books nothing. Always. */
     I04_DIRECTION_MATCHES_ROLE(true),
+    /**
+     * CT-e: direction derived from the role (ISSUER = OUTBOUND, TAKER = INBOUND, others null). Always; on UPDATE a CT-e
+     * copied from the old model ({@code metadataVersion = 0}) with role RECIPIENT may keep INBOUND.
+     */
+    I04T_CTE_DIRECTION_FROM_ROLE(true),
     /** role ISSUER iff the issuer document is the company CNPJ, when both exist. CREATE. */
     I05_ISSUER_ROLE_MATCHES_COMPANY(false),
     /** document type of each party coherent with its size. Always. */
@@ -34,7 +39,7 @@ public enum FiscalDocumentInvariant {
     I13_NFSE_LAYOUT_AND_KEY(true),
     /** NFS-e: ISS withheld and PIS/COFINS withheld flags not null. Always. */
     I14_NFSE_WITHHELD_FLAGS(true),
-    /** CT-e: at least one participation flag true. CREATE. */
+    /** CT-e: at least one participation flag true, except with role THIRD_PARTY. CREATE. */
     I15_CTE_PARTICIPATION(false),
     /** Money with scale 2 and rates with scale 4, never rounded. Always (checked when the value is built). */
     I17_DECIMAL_SCALE(true);

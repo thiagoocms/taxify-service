@@ -156,17 +156,40 @@ class FiscalDocumentInvariantsTest {
             assertValid(nfse, InvariantScope.UPDATE);
         }
 
-        @Test
-        void aCteRecipientMayHaveOrNotADirection() {
+        /** I-04-T: the CT-e direction is derived from the role, in both scopes. */
+        @ParameterizedTest
+        @EnumSource(InvariantScope.class)
+        void cteDirectionIsDerivedFromTheRole(InvariantScope scope) {
             Cte cte = takenCte();
+            cte.assignRole(CompanyDocumentRole.ISSUER, FiscalDirection.OUTBOUND);
+            cte.setIssuer(party(E1_CNPJ, "Empresa E1"));
+            assertValid(cte, scope);
+            cte.assignRole(CompanyDocumentRole.ISSUER, FiscalDirection.INBOUND);
+            assertViolates(cte, scope, FiscalDocumentInvariant.I04T_CTE_DIRECTION_FROM_ROLE);
+            cte.setIssuer(party(SUPPLIER_CNPJ, "Transportadora"));
+            cte.assignRole(CompanyDocumentRole.TAKER, null);
+            assertViolates(cte, scope, FiscalDocumentInvariant.I04T_CTE_DIRECTION_FROM_ROLE);
             cte.assignRole(CompanyDocumentRole.RECIPIENT, null);
-            assertValid(cte, InvariantScope.UPDATE);
+            assertValid(cte, scope);
+            cte.assignRole(CompanyDocumentRole.RECIPIENT, FiscalDirection.INBOUND);
+            assertViolates(cte, scope, FiscalDocumentInvariant.I04T_CTE_DIRECTION_FROM_ROLE);
+            cte.assignRole(CompanyDocumentRole.SENDER, FiscalDirection.OUTBOUND);
+            assertViolates(cte, scope, FiscalDocumentInvariant.I04T_CTE_DIRECTION_FROM_ROLE);
+        }
+
+        /** I-04-T: the only tolerance - a copied CT-e (metadataVersion 0) RECIPIENT keeps INBOUND on UPDATE. */
+        @Test
+        void aCopiedCteRecipientMayKeepInboundOnUpdateOnly() {
+            Cte cte = takenCte();
+            cte.setMetadataVersion(Cte.NOT_PARSED_VERSION);
             cte.assignRole(CompanyDocumentRole.RECIPIENT, FiscalDirection.INBOUND);
             assertValid(cte, InvariantScope.UPDATE);
-            cte.assignRole(CompanyDocumentRole.TAKER, null);
-            assertViolates(cte, InvariantScope.UPDATE, FiscalDocumentInvariant.I04_DIRECTION_MATCHES_ROLE);
-            cte.assignRole(CompanyDocumentRole.SENDER, FiscalDirection.OUTBOUND);
-            assertViolates(cte, InvariantScope.UPDATE, FiscalDocumentInvariant.I04_DIRECTION_MATCHES_ROLE);
+            assertViolates(cte, InvariantScope.CREATE, FiscalDocumentInvariant.I04T_CTE_DIRECTION_FROM_ROLE);
+            cte.assignRole(CompanyDocumentRole.RECIPIENT, FiscalDirection.OUTBOUND);
+            assertViolates(cte, InvariantScope.UPDATE, FiscalDocumentInvariant.I04T_CTE_DIRECTION_FROM_ROLE);
+            Cte parsed = takenCte();
+            parsed.assignRole(CompanyDocumentRole.RECIPIENT, FiscalDirection.INBOUND);
+            assertViolates(parsed, InvariantScope.UPDATE, FiscalDocumentInvariant.I04T_CTE_DIRECTION_FROM_ROLE);
         }
     }
 
@@ -223,6 +246,18 @@ class FiscalDocumentInvariantsTest {
             Nfe nfe = receivedNfe();
             nfe.setRecipient(new Party("123", null, "X", null, null));
             assertViolates(nfe, InvariantScope.UPDATE, FiscalDocumentInvariant.I06_PARTY_DOCUMENT_TYPE);
+        }
+
+        /** Coordinator decision: a copied NFS-e with a document of no recognizable type is tolerated on UPDATE only. */
+        @Test
+        void aCopiedRowWithADocumentWithoutTypeIsToleratedOnUpdate() {
+            Nfse nfse = takenNfse();
+            nfse.setMetadataVersion(0);
+            nfse.setRecipient(Party.brazilian("123456789", "Tomador", null, null));
+            assertValid(nfse, InvariantScope.UPDATE);
+            assertViolates(nfse, InvariantScope.CREATE, FiscalDocumentInvariant.I06_PARTY_DOCUMENT_TYPE);
+            nfse.setMetadataVersion(1);
+            assertViolates(nfse, InvariantScope.UPDATE, FiscalDocumentInvariant.I06_PARTY_DOCUMENT_TYPE);
         }
 
         @Test
@@ -348,6 +383,7 @@ class FiscalDocumentInvariantsTest {
         void abrasfNeedsTheSyntheticKey() {
             Nfse nfse = new Nfse(e1(), DocumentSourceKey.SIEG, NfseLayout.ABRASF);
             nfse.assignRole(CompanyDocumentRole.TAKER, FiscalDirection.INBOUND);
+            nfse.setMetadataVersion(1);
             nfse.setAccessKey(FiscalDocumentFixtures.nationalNfseKey(2));
             assertViolates(nfse, InvariantScope.UPDATE, FiscalDocumentInvariant.I13_NFSE_LAYOUT_AND_KEY);
             nfse.setAccessKey("ABRASF-2611606-" + SUPPLIER_CNPJ + "-15");
@@ -360,6 +396,18 @@ class FiscalDocumentInvariantsTest {
             nfse.assignRole(CompanyDocumentRole.TAKER, FiscalDirection.INBOUND);
             nfse.setAccessKey(FiscalDocumentFixtures.nationalNfseKey(3));
             assertViolates(nfse, InvariantScope.UPDATE, FiscalDocumentInvariant.I13_NFSE_LAYOUT_AND_KEY);
+            nfse.setMetadataVersion(0);
+            assertViolates(nfse, InvariantScope.UPDATE, FiscalDocumentInvariant.I13_NFSE_LAYOUT_AND_KEY);
+        }
+
+        /** Coordinator decision: a copied row (metadataVersion 0) keeps an off-size national key on UPDATE only. */
+        @Test
+        void aCopiedRowWithAnOffSizeNationalKeyIsToleratedOnUpdate() {
+            Nfse nfse = takenNfse();
+            nfse.setMetadataVersion(0);
+            nfse.setAccessKey("123");
+            assertValid(nfse, InvariantScope.UPDATE);
+            assertViolates(nfse, InvariantScope.CREATE, FiscalDocumentInvariant.I13_NFSE_LAYOUT_AND_KEY);
         }
     }
 
@@ -383,11 +431,23 @@ class FiscalDocumentInvariantsTest {
 
     @Nested
     class I15CteParticipation {
+        /** R-b: a CT-e in which the company is in no group is THIRD_PARTY and is accepted (upload). */
         @Test
-        void aNewCteNeedsAtLeastOneRole() {
+        void aThirdPartyCteNeedsNoRole() {
             Cte cte = takenCte();
             cte.assignParticipation(new CteParticipation(false, false, false, false, false, false));
-            cte.assignRole(CompanyDocumentRole.THIRD_PARTY, null);
+            assertThat(cte.getCompanyRole()).isEqualTo(CompanyDocumentRole.THIRD_PARTY);
+            assertValid(cte, InvariantScope.CREATE);
+            Cte withoutParticipation = takenCte();
+            withoutParticipation.assignParticipation(null);
+            assertValid(withoutParticipation, InvariantScope.CREATE);
+        }
+
+        @Test
+        void aRoleOtherThanThirdPartyNeedsAParticipationFlag() {
+            Cte cte = takenCte();
+            cte.assignParticipation(new CteParticipation(false, false, false, false, false, false));
+            cte.assignRole(CompanyDocumentRole.TAKER, FiscalDirection.INBOUND);
             assertViolates(cte, InvariantScope.CREATE, FiscalDocumentInvariant.I15_CTE_PARTICIPATION);
             assertValid(cte, InvariantScope.UPDATE);
         }
@@ -412,6 +472,17 @@ class FiscalDocumentInvariantsTest {
             IssTax iss = new IssTax(max, new BigDecimal("5"), max, false, null);
             assertThat(iss.base()).isEqualTo(max);
             assertThat(iss.rate()).hasToString("5.0000");
+        }
+
+        /** D-07: quantity and unit price are not under I-17; they are rounded to 4 places HALF_UP. */
+        @Test
+        void quantitiesWith10PlacesAreRoundedTo4() {
+            TradeUnit unit = new TradeUnit("UN", new BigDecimal("3.1234567890"), new BigDecimal("12.3456500001"));
+            assertThat(unit.quantity()).hasToString("3.1235");
+            assertThat(unit.unitPrice()).hasToString("12.3457");
+            assertThat(new TradeUnit("UN", new BigDecimal("2.00005"), null).quantity()).hasToString("2.0001");
+            assertThat(new TradeUnit("UN", new BigDecimal("2"), null).quantity()).hasToString("2.0000");
+            assertThat(new TradeUnit("UN", null, null).quantity()).isNull();
         }
 
         @Test

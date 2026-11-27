@@ -3,6 +3,8 @@ package br.com.cshub.taxify.domain.fiscaldocument;
 import jakarta.persistence.Column;
 import jakarta.persistence.Convert;
 import jakarta.persistence.Entity;
+import jakarta.persistence.EnumType;
+import jakarta.persistence.Enumerated;
 import jakarta.persistence.FetchType;
 import jakarta.persistence.ForeignKey;
 import jakarta.persistence.GeneratedValue;
@@ -13,6 +15,7 @@ import jakarta.persistence.JoinColumn;
 import jakarta.persistence.ManyToOne;
 import jakarta.persistence.Table;
 import jakarta.persistence.UniqueConstraint;
+import br.com.cshub.taxify.enumerated.RetrievalMode;
 import org.hibernate.annotations.JdbcTypeCode;
 import org.hibernate.type.SqlTypes;
 
@@ -21,13 +24,14 @@ import java.util.Objects;
 import java.util.UUID;
 
 /**
- * One source in which a fiscal document was seen (FD-RN-31, T4) - one row per document and source, replacing the
+ * One source in which a fiscal document was seen (FD-RN-31, T4) - one row per document, source and retrieval mode,
+ * replacing the
  * {@code found_in_*_at} columns. Part of the document aggregate (no auditing columns, like the item); created only by
- * {@link FiscalDocument#markSeenIn(DocumentSourceKey, LocalDateTime)}.
+ * {@link FiscalDocument#markSeenIn(DocumentSourceKey, RetrievalMode, LocalDateTime)}.
  */
 @Entity
 @Table(name = "fiscal_document_sources",
-        uniqueConstraints = @UniqueConstraint(name = "uk_fiscal_document_sources", columnNames = {"document_id", "source"}),
+        uniqueConstraints = @UniqueConstraint(name = "uk_fiscal_document_sources", columnNames = {"document_id", "source", "retrieval_mode"}),
         indexes = @Index(name = "idx_fds_company_source_seen", columnList = "company_id, source, first_seen_at"))
 public class FiscalDocumentSource {
 
@@ -50,6 +54,12 @@ public class FiscalDocumentSource {
     @Column(name = "source", length = DocumentSourceKey.MAX_LENGTH, nullable = false, updatable = false)
     private DocumentSourceKey source;
 
+    /** How the source delivered the document (spec 3.10). */
+    @Enumerated(EnumType.STRING)
+    @JdbcTypeCode(SqlTypes.VARCHAR)
+    @Column(name = "retrieval_mode", length = 10, nullable = false, updatable = false)
+    private RetrievalMode retrievalMode;
+
     @Column(name = "first_seen_at", nullable = false)
     private LocalDateTime firstSeenAt;
 
@@ -59,10 +69,12 @@ public class FiscalDocumentSource {
     protected FiscalDocumentSource() {
     }
 
-    FiscalDocumentSource(FiscalDocument document, DocumentSourceKey source, LocalDateTime firstSeenAt, LocalDateTime lastSeenAt) {
+    FiscalDocumentSource(FiscalDocument document, DocumentSourceKey source, RetrievalMode retrievalMode,
+                         LocalDateTime firstSeenAt, LocalDateTime lastSeenAt) {
         this.document = Objects.requireNonNull(document, "document");
         this.companyId = document.getCompany() == null ? null : document.getCompany().getId();
         this.source = Objects.requireNonNull(source, "source");
+        this.retrievalMode = Objects.requireNonNull(retrievalMode, "retrievalMode");
         this.firstSeenAt = Objects.requireNonNull(firstSeenAt, "firstSeenAt");
         this.lastSeenAt = Objects.requireNonNull(lastSeenAt, "lastSeenAt");
     }
@@ -88,6 +100,15 @@ public class FiscalDocumentSource {
 
     public DocumentSourceKey getSource() {
         return source;
+    }
+
+    public RetrievalMode getRetrievalMode() {
+        return retrievalMode;
+    }
+
+    /** Whether this row is the origin ({@code source}, {@code mode}). */
+    boolean is(DocumentSourceKey otherSource, RetrievalMode mode) {
+        return source.equals(otherSource) && retrievalMode == mode;
     }
 
     public LocalDateTime getFirstSeenAt() {

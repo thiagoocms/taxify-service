@@ -170,6 +170,11 @@ public class CapturePeriodCount extends AbstractAuditingEntity {
         return Math.max(0, providerTotal - gap - importedTotal);
     }
 
+    /** Copies the auditing columns of the row these counts come from ({@code fiscal_xml_sync_control}), unchanged. */
+    public void copyAuditingFrom(AbstractAuditingEntity source) {
+        restoreAuditingFrom(source);
+    }
+
     private static int nonNegative(int value) {
         if (value < 0) {
             throw new IllegalArgumentException("count must not be negative");

@@ -8,6 +8,7 @@ import br.com.cshub.taxify.enumerated.FiscalDocumentInvariant;
 import br.com.cshub.taxify.enumerated.FiscalDocumentStatus;
 import br.com.cshub.taxify.enumerated.FiscalDocumentType;
 import br.com.cshub.taxify.enumerated.InvariantScope;
+import br.com.cshub.taxify.enumerated.RetrievalMode;
 import br.com.cshub.taxify.enumerated.ReviewStatus;
 import br.com.cshub.taxify.exception.FiscalDocumentInvariantException;
 import jakarta.persistence.AttributeOverride;
@@ -42,6 +43,7 @@ import org.hibernate.type.SqlTypes;
 import java.math.BigDecimal;
 import java.time.LocalDateTime;
 import java.util.Collections;
+import java.util.Comparator;
 import java.util.LinkedHashSet;
 import java.util.Objects;
 import java.util.Optional;
@@ -259,29 +261,36 @@ public abstract class FiscalDocument extends AbstractAuditingEntity {
     }
 
     /**
-     * FD-RN-31: {@code source} delivered the document at {@code at} - creates the origin with
-     * {@code first_seen_at = last_seen_at = at}, or moves {@code last_seen_at} forward (never back).
+     * FD-RN-31: {@code source} delivered the document at {@code at}, in {@code mode} - creates the origin with
+     * {@code first_seen_at = last_seen_at = at}, or moves {@code last_seen_at} forward (never back). One origin per
+     * source and retrieval mode (spec 3.10).
      */
-    public FiscalDocumentSource markSeenIn(DocumentSourceKey source, LocalDateTime at) {
+    public FiscalDocumentSource markSeenIn(DocumentSourceKey source, RetrievalMode mode, LocalDateTime at) {
         Objects.requireNonNull(source, "source");
+        Objects.requireNonNull(mode, "mode");
         Objects.requireNonNull(at, "at");
-        Optional<FiscalDocumentSource> existing = sourceOf(source);
+        Optional<FiscalDocumentSource> existing = sourceOf(source, mode);
         if (existing.isPresent()) {
             existing.get().seenAgain(at);
             return existing.get();
         }
-        FiscalDocumentSource created = new FiscalDocumentSource(this, source, at, at);
+        FiscalDocumentSource created = new FiscalDocumentSource(this, source, mode, at, at);
         sources.add(created);
         return created;
     }
 
-    public Optional<FiscalDocumentSource> sourceOf(DocumentSourceKey source) {
-        return sources.stream().filter(s -> s.getSource().equals(source)).findFirst();
+    public Optional<FiscalDocumentSource> sourceOf(DocumentSourceKey source, RetrievalMode mode) {
+        return sources.stream().filter(s -> s.is(source, mode)).findFirst();
     }
 
-    /** When {@code source} first delivered the document - what the API shows as {@code foundIn*At}. */
+    /**
+     * When {@code source} first delivered the document, in any mode - what the API shows as {@code foundIn*At}.
+     */
     public Optional<LocalDateTime> firstSeenIn(DocumentSourceKey source) {
-        return sourceOf(source).map(FiscalDocumentSource::getFirstSeenAt);
+        return sources.stream()
+                .filter(s -> s.getSource().equals(source))
+                .map(FiscalDocumentSource::getFirstSeenAt)
+                .min(Comparator.naturalOrder());
     }
 
     /** The access key; a document without one (manual upload of an odd file) is identified by its id. */
@@ -318,10 +327,11 @@ public abstract class FiscalDocument extends AbstractAuditingEntity {
                 status != FiscalDocumentStatus.AUTHORIZED || canceledAt == null);
         require(FiscalDocumentInvariant.I03_CANCELED_WITH_CANCELED_AT, scope,
                 !isCanceled() || canceledAt != null || !cancellationRequiresDate());
-        require(FiscalDocumentInvariant.I04_DIRECTION_MATCHES_ROLE, scope, directionMatchesRole());
+        checkDirection(scope);
         require(FiscalDocumentInvariant.I05_ISSUER_ROLE_MATCHES_COMPANY, scope, issuerRoleMatchesCompany());
         require(FiscalDocumentInvariant.I06_PARTY_DOCUMENT_TYPE, scope,
-                parties().filter(Objects::nonNull).allMatch(PartyIdentity::hasCoherentDocument));
+                parties().filter(Objects::nonNull).allMatch(PartyIdentity::hasCoherentDocument)
+                        || toleratesUnparsedCopy(scope));
         require(FiscalDocumentInvariant.I07_ACCESS_KEY, scope, hasText(accessKey) || !requiresAccessKey());
         require(FiscalDocumentInvariant.I08_ISSUE_DATE, scope, issueDate != null);
         require(FiscalDocumentInvariant.I09_XML_FILE_PATH, scope,
@@ -339,9 +349,24 @@ public abstract class FiscalDocument extends AbstractAuditingEntity {
         return true;
     }
 
-    /** I-04: direction null exactly when the role books nothing. */
-    protected boolean directionMatchesRole() {
-        return (direction == null) == companyRole.isWithoutBooking();
+    /** I-04 (NF-e, NFC-e, NFS-e): direction null exactly when the role books nothing. The CT-e has I-04-T. */
+    protected void checkDirection(InvariantScope scope) {
+        require(FiscalDocumentInvariant.I04_DIRECTION_MATCHES_ROLE, scope,
+                (direction == null) == companyRole.isWithoutBooking());
+    }
+
+    /**
+     * Decision of the coordinator (2026-11-27): a stored row copied from the old model and never re-read by a versioned
+     * parser ({@code metadataVersion = 0}) is tolerated on UPDATE by I-06 and I-13 (an NFS-e document without type, a
+     * national key out of 50 digits); the cutover pre-measure counts those rows. CREATE stays strict.
+     */
+    protected final boolean toleratesUnparsedCopy(InvariantScope scope) {
+        return !scope.isCreate() && isUnparsedCopy();
+    }
+
+    /** Copied from the old model and never re-read by a versioned parser. */
+    public boolean isUnparsedCopy() {
+        return metadataVersion != null && metadataVersion == 0;
     }
 
     /** I-07: whether the document needs an access key. */
@@ -383,7 +408,7 @@ public abstract class FiscalDocument extends AbstractAuditingEntity {
     }
 
     protected static boolean hasText(String value) {
-        return value != null && !value.isBlank();
+        return FiscalText.hasText(value);
     }
 
     protected static boolean isDigitsOfLength(String value, int length) {

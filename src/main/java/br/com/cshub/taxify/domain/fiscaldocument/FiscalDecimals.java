@@ -26,7 +26,7 @@ public final class FiscalDecimals {
 
     /**
      * Rate or percentage with scale 4, or null. Quantities and unit prices of an item are not rates: I-17 does not
-     * cover them (vUnCom may have up to 10 decimal places), so they are kept as they come.
+     * cover them (vUnCom may have up to 10 decimal places); {@link TradeUnit} rounds them to 4 places (D-07).
      */
     public static BigDecimal rate(BigDecimal value) {
         return exact(value, RATE_SCALE);

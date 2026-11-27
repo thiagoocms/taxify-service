@@ -5,6 +5,7 @@ import br.com.cshub.taxify.enumerated.CaptureSide;
 import br.com.cshub.taxify.enumerated.CompanyDocumentRole;
 import br.com.cshub.taxify.enumerated.FiscalDirection;
 import br.com.cshub.taxify.enumerated.FiscalDocumentType;
+import br.com.cshub.taxify.enumerated.RetrievalMode;
 import br.com.cshub.taxify.enumerated.ReviewStatus;
 import br.com.cshub.taxify.enumerated.TaxpayerDocumentType;
 import org.junit.jupiter.api.Nested;
@@ -211,13 +212,13 @@ class FiscalDocumentRulesTest {
         @Test
         void theSameSourceTwiceIsOneOriginWithTheGreaterLastSeen() {
             Nfe nfe = receivedNfe();
-            nfe.markSeenIn(DocumentSourceKey.SIEG, AT.plusMinutes(5));
-            nfe.markSeenIn(DocumentSourceKey.SIEG, AT);
+            nfe.markSeenIn(DocumentSourceKey.SIEG, RetrievalMode.PERIOD, AT.plusMinutes(5));
+            nfe.markSeenIn(DocumentSourceKey.SIEG, RetrievalMode.PERIOD, AT);
             assertThat(nfe.getSources()).hasSize(1);
-            FiscalDocumentSource source = nfe.sourceOf(DocumentSourceKey.SIEG).orElseThrow();
+            FiscalDocumentSource source = nfe.sourceOf(DocumentSourceKey.SIEG, RetrievalMode.PERIOD).orElseThrow();
             assertThat(source.getFirstSeenAt()).isEqualTo(AT.plusMinutes(5));
             assertThat(source.getLastSeenAt()).isEqualTo(AT.plusMinutes(5));
-            nfe.markSeenIn(DocumentSourceKey.SIEG, AT.plusHours(2));
+            nfe.markSeenIn(DocumentSourceKey.SIEG, RetrievalMode.PERIOD, AT.plusHours(2));
             assertThat(source.getLastSeenAt()).isEqualTo(AT.plusHours(2));
             assertThat(source.getCompanyId()).isEqualTo(nfe.getCompany().getId());
         }
@@ -226,12 +227,40 @@ class FiscalDocumentRulesTest {
         @Test
         void twoSourcesAreTwoOrigins() {
             Nfe nfe = receivedNfe();
-            nfe.markSeenIn(DocumentSourceKey.SIEG, AT);
-            nfe.markSeenIn(DocumentSourceKey.SEFAZ_DFE, AT.plusMinutes(75));
+            nfe.markSeenIn(DocumentSourceKey.SIEG, RetrievalMode.PERIOD, AT);
+            nfe.markSeenIn(DocumentSourceKey.SEFAZ_DFE, RetrievalMode.CURSOR, AT.plusMinutes(75));
             assertThat(nfe.getSources()).extracting(FiscalDocumentSource::getSource)
                     .containsExactly(DocumentSourceKey.SIEG, DocumentSourceKey.SEFAZ_DFE);
             assertThat(nfe.firstSeenIn(DocumentSourceKey.SEFAZ_DFE)).contains(AT.plusMinutes(75));
             assertThat(nfe.firstSeenIn(DocumentSourceKey.NFSE_ADN)).isEmpty();
+        }
+
+        /** Spec 3.10: one origin per source and retrieval mode; foundIn*At is the first of the source in any mode. */
+        @Test
+        void theSameSourceInTwoModesIsTwoOrigins() {
+            Nfe nfe = receivedNfe();
+            nfe.markSeenIn(DocumentSourceKey.SIEG, RetrievalMode.NSU, AT.plusDays(1));
+            nfe.markSeenIn(DocumentSourceKey.SIEG, RetrievalMode.PERIOD, AT);
+            assertThat(nfe.getSources()).extracting(FiscalDocumentSource::getRetrievalMode)
+                    .containsExactly(RetrievalMode.NSU, RetrievalMode.PERIOD);
+            assertThat(nfe.firstSeenIn(DocumentSourceKey.SIEG)).contains(AT);
+            assertThat(nfe.sourceOf(DocumentSourceKey.SIEG, RetrievalMode.CURSOR)).isEmpty();
+        }
+    }
+
+    @Nested
+    class SqlTrim {
+        /** Spec 3.12 / reviewer: trimmed and "has text" are the SQL TRIM - only the ordinary space. */
+        @Test
+        void onlyTheOrdinarySpaceIsTrimmed() {
+            assertThat(FiscalText.trimSpaces("  1102  ")).isEqualTo("1102");
+            assertThat(FiscalText.trimSpaces("	1102")).isEqualTo("	1102");
+            assertThat(FiscalText.trimSpaces("1102 ")).isEqualTo("1102 ");
+            assertThat(FiscalText.trimSpaces(null)).isNull();
+            assertThat(FiscalText.hasText("   ")).isFalse();
+            assertThat(FiscalText.hasText("	")).isTrue();
+            assertThat(FiscalText.hasText(null)).isFalse();
+            assertThat(new Product(null, null, null, null, null, null, " 5102	").cfop()).isEqualTo("5102	");
         }
     }
 

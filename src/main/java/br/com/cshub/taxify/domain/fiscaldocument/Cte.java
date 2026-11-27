@@ -144,17 +144,17 @@ public class Cte extends FiscalDocument {
     }
 
     /**
-     * I-04 for the CT-e: the issuer and the taker always have a direction and the roles without booking never have
-     * one; a RECIPIENT may have it or not - FD-RN-08 gives it no direction, while the rows copied from the old model
-     * keep the direction they had (decision of the dev, the spec is silent on this case).
+     * I-04-T: the direction of a CT-e is derived from its role (FD-RN-08) - ISSUER = OUTBOUND, TAKER = INBOUND, every
+     * other role (RECIPIENT included) none. The only tolerance: on UPDATE, a CT-e copied from the old model
+     * ({@code metadataVersion = 0}) with role RECIPIENT keeps the INBOUND it had there (parity, spec 3.12 D-03).
      */
     @Override
-    protected boolean directionMatchesRole() {
+    protected void checkDirection(InvariantScope scope) {
         CompanyDocumentRole role = getCompanyRole();
-        if (role == CompanyDocumentRole.RECIPIENT) {
-            return true;
-        }
-        return super.directionMatchesRole();
+        boolean derived = getDirection() == directionOf(role);
+        boolean copiedRecipient = !scope.isCreate() && isUnparsedCopy()
+                && role == CompanyDocumentRole.RECIPIENT && getDirection() == FiscalDirection.INBOUND;
+        require(FiscalDocumentInvariant.I04T_CTE_DIRECTION_FROM_ROLE, scope, derived || copiedRecipient);
     }
 
     /** I-09: a CT-e copied from the old model without the CT-e parser may have no file. */
@@ -173,7 +173,9 @@ public class Cte extends FiscalDocument {
         super.checkInvariants(scope);
         require(FiscalDocumentInvariant.I12_CTE_MODEL_AND_KEY, scope,
                 MODEL.equals(getModel()) && isDigitsOfLength(getAccessKey(), ACCESS_KEY_44));
-        require(FiscalDocumentInvariant.I15_CTE_PARTICIPATION, scope, participation != null && participation.hasAnyRole());
+        // I-15: a CT-e in which the company is in no group (upload) is THIRD_PARTY and needs no participation flag
+        require(FiscalDocumentInvariant.I15_CTE_PARTICIPATION, scope,
+                getCompanyRole() == CompanyDocumentRole.THIRD_PARTY || (participation != null && participation.hasAnyRole()));
     }
 
     public String getCteType() {
@@ -205,7 +207,7 @@ public class Cte extends FiscalDocument {
     }
 
     public void setCfop(String cfop) {
-        this.cfop = cfop == null ? null : cfop.strip();
+        this.cfop = FiscalText.trimSpaces(cfop);
     }
 
     public CteParty getSender() {

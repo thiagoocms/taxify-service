@@ -93,6 +93,7 @@ final class FiscalDocumentFixtures {
         nfse.setIss(new IssTax(new BigDecimal("1200.00"), new BigDecimal("2.0000"), new BigDecimal("24.00"), true,
                 new BigDecimal("24.00")));
         nfse.setXmlFilePath("xml/e1/s1.xml");
+        nfse.setMetadataVersion(1);
         return nfse;
     }
 
