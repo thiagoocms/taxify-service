@@ -47,10 +47,11 @@ class UnverifiedSignupPurgeTest {
     private final DocumentRepository documents = mock(DocumentRepository.class);
     private final AccountingFirmRepository firms = mock(AccountingFirmRepository.class);
     private final FirmEventService events = mock(FirmEventService.class);
+    private final UserOwnedRowsPurge userOwnedRows = mock(UserOwnedRowsPurge.class);
 
     private UnverifiedSignupPurge purge(Clock clock) {
         return new UnverifiedSignupPurge(subscriptions, terms, verifications, notifications, eventRows, users, userCompanies,
-                documents, firms, events, new SaasProperties(), clock, mock(PlatformTransactionManager.class));
+                documents, firms, events, new SaasProperties(), clock, mock(PlatformTransactionManager.class), userOwnedRows);
     }
 
     /** Review item 2: verified between the candidate list and the purge's transaction - locked, re-read, nothing deleted. */
@@ -102,8 +103,10 @@ class UnverifiedSignupPurgeTest {
         assertThat(purge.purgeExpired()).isEqualTo(1);
         // children first, in foreign key order: the users' links, profiles and portfolio, the firm's rows, the users,
         // their CPFs and, last, the firm itself
-        InOrder order = inOrder(verifications, users, userCompanies, terms, notifications, subscriptions, documents, firms);
+        InOrder order = inOrder(verifications, userOwnedRows, users, userCompanies, terms, notifications, subscriptions, documents, firms);
         order.verify(verifications).deleteByUserIds(List.of(userId));
+        // spec 2026-11-27: reset links, notice settings, digest items and digests - before the user
+        order.verify(userOwnedRows).deleteOf(List.of(userId));
         order.verify(users).deleteAccessProfilesOf(List.of(userId.toString()));
         order.verify(userCompanies).deleteByUserIds(List.of(userId));
         order.verify(terms).deleteByFirm(firmId);

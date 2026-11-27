@@ -13,6 +13,7 @@ import org.springframework.stereotype.Repository;
 
 import java.util.Collection;
 import java.util.List;
+import java.util.Optional;
 import java.util.UUID;
 
 @Repository
@@ -20,6 +21,42 @@ public interface UserRepository extends AbstractJpaRepository<User, UUID> {
     User findByLoginAndDeletedIsFalse(String login);
 
     List<User> findByAccountingFirm_IdAndDeletedIsFalse(UUID accountingFirmId);
+
+    /**
+     * SN-RN-11: the session version of a user not deleted, read on every authenticated request (SessionVersionFilter) -
+     * only the number, so the filter doesn't load the entity outside the request's persistence context. Empty = the
+     * login doesn't exist or is deleted.
+     */
+    @Query("select u.sessionVersion from User u where u.login = :login and u.deleted = false")
+    Optional<Integer> findSessionVersionByLogin(@Param("login") String login);
+
+    /** "Esqueci a senha" (SN-RN-01): the accounts not deleted with this e-mail, without case, the newest first. */
+    @Query("select u from User u where lower(u.email) = lower(:email) and u.deleted = false order by u.createdDate desc")
+    List<User> findByEmailForPasswordReset(@Param("email") String email);
+
+    /**
+     * Row lock on the user until the end of the transaction (SELECT ... FOR UPDATE): password reset/change of the same
+     * account one at a time (limits and failure counter). Native: Hibernate writes "FOR UPDATE OF alias", which MySQL
+     * 5.7 does not accept; the id goes as text.
+     */
+    @QueryHints(@QueryHint(name = HibernateHints.HINT_FLUSH_MODE, value = "COMMIT"))
+    @Query(value = "SELECT id FROM users WHERE id = :id FOR UPDATE", nativeQuery = true)
+    List<String> lockById(@Param("id") String id);
+
+    /**
+     * Locks the row, then loads the user. When the entity is already in the persistence context (read earlier in the
+     * request), the caller refreshes it to see what another transaction committed before the lock.
+     */
+    default Optional<User> findForUpdate(UUID id) {
+        if (lockById(id.toString()).isEmpty()) {
+            return Optional.empty();
+        }
+        return findById(id);
+    }
+
+    /** Pendency digest (AV-RN-02): the users in use of these firms. */
+    @Query("select u from User u where u.deleted = false and u.accountingFirm.id in :firmIds")
+    List<User> findInUseByFirms(@Param("firmIds") Collection<UUID> firmIds);
 
     long countByAccountingFirm_IdAndProfileAndDeletedIsFalse(UUID accountingFirmId, UserProfileEnum profile);
 

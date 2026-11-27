@@ -39,3 +39,5 @@ Cada feature nova entra aqui com a data em que a spec foi escrita.
 | Data | Feature | Status |
 |---|---|---|
 | 2026-11-26 | [Taxify SaaS: teste grátis, assinatura e limites](2026-11-26-taxify-saas-assinatura-do-escritorio.md) | Fase 1 pronta para implementação; fases 2 e 3 em especificação |
+| 2026-11-27 | [Esqueci a senha, troca de senha e aviso de pendência alta por e-mail](2026-11-27-senha-e-avisos-de-pendencia.md) | Pronta para implementação (decisões do Tony em 2026-11-27); go-live dos e-mails depende do SES fora do sandbox |
+| 2026-11-27 | [Painel de controle da captura de XML](2026-11-27-painel-captura-xml.md) | Em especificação; a visão da plataforma depende da P-CP-01, o resto pode seguir com as recomendações |

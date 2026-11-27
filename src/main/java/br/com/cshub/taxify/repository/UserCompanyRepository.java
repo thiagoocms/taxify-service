@@ -21,6 +21,10 @@ public interface UserCompanyRepository extends AbstractJpaRepository<UserCompany
     @Query("select uc.company.id from UserCompany uc where uc.user.id = :userId and uc.deleted = false")
     Set<UUID> findCompanyIdsByUser(@Param("userId") UUID userId);
 
+    /** The portfolios of several users in one query - [user id, company id] (pendency digest, AV-RN-02). */
+    @Query("select uc.user.id, uc.company.id from UserCompany uc where uc.deleted = false and uc.user.id in :userIds")
+    java.util.List<Object[]> findPortfolios(@Param("userIds") Collection<UUID> userIds);
+
     /** Purge of an unverified signup (F1-RN-03): the portfolio links of its users. Physical delete (LGPD). */
     @Modifying
     @Query("delete from UserCompany uc where uc.id.userId in :userIds")

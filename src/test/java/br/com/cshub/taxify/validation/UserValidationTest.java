@@ -54,6 +54,10 @@ class UserValidationTest {
     private TenantAccessService tenantAccessService;
     @Mock
     private br.com.cshub.taxify.service.firmaccess.PlanLimitService planLimitService;
+    @Mock
+    private org.springframework.context.ApplicationEventPublisher eventPublisher;
+    @Mock
+    private br.com.cshub.taxify.repository.PasswordResetTokenRepository resetTokens;
 
     private UserValidation validation;
     private AccountingFirm adminFirm;
@@ -66,15 +70,18 @@ class UserValidationTest {
         admin.setProfile(UserProfileEnum.ADMIN);
         lenient().when(currentUserService.getCurrentUser()).thenReturn(Optional.of(admin));
         validation = new UserValidation(mapper, repository, messageService, documentValidation, passwordEncoder, currentUserService,
-                accountingFirmRepository, tenantAccessService, planLimitService);
+                accountingFirmRepository, tenantAccessService, planLimitService,
+                new PasswordPolicy(new br.com.cshub.taxify.config.PasswordProperties(), passwordEncoder, messageService),
+                eventPublisher, new br.com.cshub.taxify.service.firmaccess.MutableClock(java.time.LocalDateTime.of(2026, 11, 27, 10, 0)),
+                resetTokens);
     }
 
     @Test
     void checkOwnerFieldsToCreateResetsIdAndDeletedAndEncodesPassword() {
         User entity = new User(UUID.randomUUID());
         entity.setDeleted(true);
-        entity.setPassword("plain");
-        when(passwordEncoder.encode("plain")).thenReturn("encoded");
+        entity.setPassword("plain-pass");
+        when(passwordEncoder.encode("plain-pass")).thenReturn("encoded");
 
         validation.checkOwnerFieldsToCreate(entity);
 
@@ -88,8 +95,8 @@ class UserValidationTest {
     void withoutALoggedInAdminNoFirmNorUserIsCreated() {
         when(currentUserService.getCurrentUser()).thenReturn(Optional.empty());
         User entity = new User();
-        entity.setPassword("plain");
-        when(passwordEncoder.encode("plain")).thenReturn("encoded");
+        entity.setPassword("plain-pass");
+        when(passwordEncoder.encode("plain-pass")).thenReturn("encoded");
 
         assertThatThrownBy(() -> validation.checkOwnerFieldsToCreate(entity))
                 .isInstanceOf(org.springframework.security.access.AccessDeniedException.class);
@@ -99,11 +106,11 @@ class UserValidationTest {
     /** CT1-28 (F1-RN-10a): the trial's user limit is checked for the admin's firm before the user is written. */
     @Test
     void theTrialUserLimitIsCheckedForTheAdminsFirm() {
-        when(passwordEncoder.encode("plain")).thenReturn("encoded");
+        when(passwordEncoder.encode("plain-pass")).thenReturn("encoded");
         org.mockito.Mockito.doThrow(new ConflictException(
                 "error.plan.limit.users", "limit")).when(planLimitService).assertUserSlot(adminFirm.getId());
         User entity = new User();
-        entity.setPassword("plain");
+        entity.setPassword("plain-pass");
 
         assertThatThrownBy(() -> validation.checkOwnerFieldsToCreate(entity))
                 .isInstanceOf(ConflictException.class)
@@ -116,9 +123,9 @@ class UserValidationTest {
         User admin = new User(UUID.randomUUID());
         admin.setAccountingFirm(firm);
         when(currentUserService.getCurrentUser()).thenReturn(Optional.of(admin));
-        when(passwordEncoder.encode("plain")).thenReturn("encoded");
+        when(passwordEncoder.encode("plain-pass")).thenReturn("encoded");
         User entity = new User();
-        entity.setPassword("plain");
+        entity.setPassword("plain-pass");
         entity.setProfile(UserProfileEnum.EMPLOYEE);
         entity.setAccessProfiles(EnumSet.of(AccessProfile.FISCAL, AccessProfile.FINANCIAL));
 
@@ -354,5 +361,132 @@ class UserValidationTest {
         
 
         validation.checkValidationsExtras(entity);
+    }
+
+    // ------------------------------------------------------------------ spec 2026-11-27, SN-RN-08 and SN-RN-10
+
+    private User persistedTeammate(UUID id) {
+        User persisted = new User(id);
+        persisted.setPassword("old-hash");
+        persisted.setLogin("bruno.ficticio");
+        persisted.setSessionVersion(2);
+        persisted.setAccountingFirm(adminFirm);
+        when(repository.findFirstByIdAndDeletedIsFalse(id)).thenReturn(Optional.of(persisted));
+        return persisted;
+    }
+
+    /** CT-SN-24: the ADMIN sets the teammate's password - sessions fall (version + 1) and the notice goes after the commit. */
+    @Test
+    void anAdminSettingATeammatesPasswordRevokesHisSessionsAndNotifiesHim() {
+        UUID id = UUID.randomUUID();
+        User persisted = persistedTeammate(id);
+        User toUpdate = new User(id);
+        toUpdate.setLogin("bruno.ficticio");
+        toUpdate.setPassword("Senha2026x");
+        when(passwordEncoder.encode("Senha2026x")).thenReturn("new-hash");
+
+        User result = validation.checkUpdateConsistence(id, toUpdate);
+
+        assertThat(result.getPassword()).isEqualTo("new-hash");
+        assertThat(result.getSessionVersion()).isEqualTo(3);
+        assertThat(result.getPasswordChangedAt()).isEqualTo(java.time.LocalDateTime.of(2026, 11, 27, 10, 0));
+        org.mockito.ArgumentCaptor<br.com.cshub.taxify.service.password.PasswordChangedEvent> event =
+                org.mockito.ArgumentCaptor.forClass(br.com.cshub.taxify.service.password.PasswordChangedEvent.class);
+        verify(eventPublisher).publishEvent(event.capture());
+        assertThat(event.getValue().userId()).isEqualTo(id);
+        assertThat(event.getValue().channel()).isEqualTo(br.com.cshub.taxify.enumerated.PasswordChangeChannel.ADMIN);
+        // review item 6: his open reset links stop working too
+        verify(resetTokens).invalidateOpen(id, java.time.LocalDateTime.of(2026, 11, 27, 10, 0));
+    }
+
+    /** CT-SN-25: the password rule applies to the ADMIN too - "abc" is too short; nothing changes. */
+    @Test
+    void anAdminSettingATooShortPasswordGets400() {
+        UUID id = UUID.randomUUID();
+        User persisted = persistedTeammate(id);
+        User toUpdate = new User(id);
+        toUpdate.setLogin("bruno.ficticio");
+        toUpdate.setPassword("abc");
+
+        assertThatThrownBy(() -> validation.checkUpdateConsistence(id, toUpdate))
+                .isInstanceOfSatisfying(BadRequestException.class,
+                        e -> assertThat(e.getCode()).isEqualTo("error.user.password.too.short"));
+        assertThat(persisted.getSessionVersion()).isEqualTo(2);
+        verify(passwordEncoder, never()).encode(any());
+        verify(eventPublisher, never()).publishEvent(any());
+    }
+
+    /** CT-SN-26: the ADMIN's own password only through PUT /users/me/password; the rest of his record stays editable. */
+    @Test
+    void anAdminCannotSetHisOwnPasswordThroughTheUsersScreen() {
+        UUID ownId = currentUserService.getCurrentUser().orElseThrow().getId();
+        persistedTeammate(ownId);
+        User withPassword = new User(ownId);
+        withPassword.setLogin("bruno.ficticio");
+        withPassword.setPassword("OutraSenha2026");
+
+        assertThatThrownBy(() -> validation.checkUpdateConsistence(ownId, withPassword))
+                .isInstanceOfSatisfying(BadRequestException.class,
+                        e -> assertThat(e.getCode()).isEqualTo("error.user.password.use.self.change"));
+
+        User nameOnly = new User(ownId);
+        nameOnly.setLogin("bruno.ficticio");
+        nameOnly.setName("Nome Novo");
+        assertThat(validation.checkUpdateConsistence(ownId, nameOnly).getPassword()).isEqualTo("old-hash");
+    }
+
+    /** SN-RN-08 (P-SN-10): a new login cannot have ":" - on create and when an edit changes the login. */
+    @Test
+    void aNewLoginWithAColonIsRefused() {
+        User entity = new User();
+        entity.setLogin("teste:ponto");
+        entity.setPassword("plain-pass");
+        assertThatThrownBy(() -> validation.checkOwnerFieldsToCreate(entity))
+                .isInstanceOfSatisfying(BadRequestException.class,
+                        e -> assertThat(e.getCode()).isEqualTo("error.user.login.invalid.char"));
+
+        UUID id = UUID.randomUUID();
+        persistedTeammate(id);
+        User toUpdate = new User(id);
+        toUpdate.setLogin("bruno:ficticio");
+        assertThatThrownBy(() -> validation.checkUpdateConsistence(id, toUpdate))
+                .isInstanceOfSatisfying(BadRequestException.class,
+                        e -> assertThat(e.getCode()).isEqualTo("error.user.login.invalid.char"));
+    }
+
+    /** CT-SN-12 / CA-SN-07 for a new user: 7 characters is too short, 8 passes. */
+    @Test
+    void theMinimumLengthIsEightCharacters() {
+        User shortOne = new User();
+        shortOne.setLogin("ana.ficticia");
+        shortOne.setPassword("Abc1234");
+        assertThatThrownBy(() -> validation.checkOwnerFieldsToCreate(shortOne))
+                .isInstanceOfSatisfying(BadRequestException.class,
+                        e -> assertThat(e.getCode()).isEqualTo("error.user.password.too.short"));
+
+        User okOne = new User();
+        okOne.setLogin("ana.ficticia");
+        okOne.setPassword("Abc12345");
+        when(passwordEncoder.encode("Abc12345")).thenReturn("hash");
+        validation.checkOwnerFieldsToCreate(okOne);
+        assertThat(okOne.getPassword()).isEqualTo("hash");
+    }
+
+    /** Review item 7: the ADMIN cannot change his own login here (his token carries it); another ADMIN can. */
+    @Test
+    void anAdminCannotChangeHisOwnLogin() {
+        UUID ownId = currentUserService.getCurrentUser().orElseThrow().getId();
+        persistedTeammate(ownId);
+        User renamed = new User(ownId);
+        renamed.setLogin("carla.nova");
+        assertThatThrownBy(() -> validation.checkUpdateConsistence(ownId, renamed))
+                .isInstanceOfSatisfying(BadRequestException.class,
+                        e -> assertThat(e.getCode()).isEqualTo("error.user.login.self.change"));
+
+        UUID other = UUID.randomUUID();
+        persistedTeammate(other);
+        User teammate = new User(other);
+        teammate.setLogin("bruno.novo");
+        assertThat(validation.checkUpdateConsistence(other, teammate)).isNotNull();
     }
 }

@@ -36,7 +36,7 @@ public class AuthService {
     }
 
     public AuthenticatedDTO auth(AuthLoginDTO dto) {
-        String[] decrypt = new String(Base64.getDecoder().decode(dto.getAuth())).split(":");
+        String[] decrypt = splitCredentials(dto.getAuth());
         if (decrypt.length < 2) {
             throw new BadRequestException();
         }
@@ -45,7 +45,7 @@ public class AuthService {
         if ((login == null || login.isEmpty()) || (password == null || password.isEmpty())) {
             throw new BadRequestException("error.user.login.required", messageService.getMessage("error.user.login.required"));
         }
-        var auth = new UsernamePasswordAuthenticationToken(decrypt[0], decrypt[1]);
+        var auth = new UsernamePasswordAuthenticationToken(login, password);
         Authentication authentication;
         try {
             authentication = manager.authenticate(auth);
@@ -63,6 +63,24 @@ public class AuthService {
         return new AuthenticatedDTO(token, principal.getId().toString(), principal.getUsername());
     }
 
+
+    /**
+     * {@code base64(login:senha)} split on the <b>first</b> {@code :} only (SN-RN-08, P-SN-10): the password may contain
+     * {@code :} (a new login may not - error.user.login.invalid.char). Not base64 = 400.
+     */
+    static String[] splitCredentials(String encoded) {
+        String decoded;
+        try {
+            decoded = new String(Base64.getDecoder().decode(encoded == null ? "" : encoded), java.nio.charset.StandardCharsets.UTF_8);
+        } catch (IllegalArgumentException e) {
+            throw new BadRequestException();
+        }
+        int colon = decoded.indexOf(':');
+        if (colon < 0) {
+            return new String[]{decoded};
+        }
+        return new String[]{decoded.substring(0, colon), decoded.substring(colon + 1)};
+    }
 
     private ForbiddenException notVerified() {
         return new ForbiddenException("error.signup.email.not.verified",

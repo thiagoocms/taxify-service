@@ -1,6 +1,12 @@
 package br.com.cshub.taxify.config;
 
 import br.com.cshub.taxify.security.SecurityErrorHandler;
+import br.com.cshub.taxify.security.SessionVersionFilter;
+import br.com.cshub.taxify.repository.UserRepository;
+import org.springframework.security.oauth2.server.resource.web.authentication.BearerTokenAuthenticationFilter;
+import org.springframework.security.web.servlet.util.matcher.PathPatternRequestMatcher;
+import org.springframework.security.web.util.matcher.OrRequestMatcher;
+import org.springframework.security.web.util.matcher.RequestMatcher;
 import br.com.cshub.taxify.constants.AppConstants;
 import br.com.cshub.taxify.enumerated.UserProfileEnum;
 import com.nimbusds.jose.jwk.JWK;
@@ -46,8 +52,15 @@ public class SecurityConfig {
     private static final String ADMIN = UserProfileEnum.ADMIN.name();
 
     @Bean
-    SecurityFilterChain filterChain(HttpSecurity http, SecurityErrorHandler securityErrors) throws Exception {
+    SecurityFilterChain filterChain(HttpSecurity http, SecurityErrorHandler securityErrors, UserRepository userRepository)
+            throws Exception {
         String base = AppConstants.API + AppConstants.V1;
+        PathPatternRequestMatcher.Builder paths = PathPatternRequestMatcher.withDefaults();
+        // anonymous on purpose - an old token sent to them is ignored by the session check (SessionVersionFilter)
+        RequestMatcher publicRoutes = new OrRequestMatcher(
+                paths.matcher(HttpMethod.POST, base + "/auth"),
+                paths.matcher(base + "/signup/**"),
+                paths.matcher(base + "/auth/password/**"));
         http.csrf(AbstractHttpConfigurer::disable)
                 .sessionManagement(session -> session.sessionCreationPolicy(SessionCreationPolicy.STATELESS))
                 .authorizeHttpRequests(
@@ -58,6 +71,11 @@ public class SecurityConfig {
                                 .requestMatchers(HttpMethod.POST, base + "/signup", base + "/signup/verify",
                                         base + "/signup/resend").permitAll()
                                 .requestMatchers(HttpMethod.GET, base + "/signup/config").permitAll()
+                                // "Esqueci a senha" (SN-RN-01 a SN-RN-06, SN-RN-14): anonymous; the user is looked up
+                                // directly in the repository (never through TenantAccessService: anonymous = "system")
+                                .requestMatchers(HttpMethod.GET, base + "/auth/password/config").permitAll()
+                                .requestMatchers(HttpMethod.POST, base + "/auth/password/forgot",
+                                        base + "/auth/password/reset/check", base + "/auth/password/reset").permitAll()
                                 // Only a logged-in ADMIN adds a teammate - the public signup is POST /signup now
                                 // (F1-RN-01): POST /users is no longer anonymous.
                                 .requestMatchers(HttpMethod.POST, base + "/users")
@@ -80,7 +98,10 @@ public class SecurityConfig {
                 .oauth2ResourceServer(
                         conf -> conf.authenticationEntryPoint(securityErrors).accessDeniedHandler(securityErrors).jwt(
                                 jwt -> jwt.decoder(jwtDecoder())
-                                        .jwtAuthenticationConverter(jwtAuthenticationConverter())));
+                                        .jwtAuthenticationConverter(jwtAuthenticationConverter())))
+                // SN-RN-11: the token's session version against users.session_version (401 error.auth.session.expired)
+                .addFilterAfter(new SessionVersionFilter(userRepository, securityErrors, publicRoutes),
+                        BearerTokenAuthenticationFilter.class);
         return http.build();
     }
 

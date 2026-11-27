@@ -12,4 +12,12 @@ public interface MailSender {
 
     /** Remetente configurado. */
     String from();
+
+    /**
+     * Se um e-mail a este endereço sairia de fato ({@code TAXIFY_MAIL_RECIPIENT_ALLOWLIST}, AV-RN-13). Rotinas de lote
+     * consultam antes de reservar o envio, para não marcar como enviado o que seria descartado.
+     */
+    default boolean accepts(String address) {
+        return true;
+    }
 }

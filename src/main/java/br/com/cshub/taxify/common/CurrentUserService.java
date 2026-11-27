@@ -1,6 +1,7 @@
 package br.com.cshub.taxify.common;
 
 import br.com.cshub.taxify.domain.user.User;
+import br.com.cshub.taxify.exception.UnauthorizedException;
 import br.com.cshub.taxify.repository.UserRepository;
 import org.springframework.security.core.Authentication;
 import org.springframework.security.core.context.SecurityContextHolder;
@@ -19,12 +20,15 @@ import java.util.Optional;
 public class CurrentUserService {
 
     private final UserRepository userRepository;
+    private final MessageService messageService;
 
-    public CurrentUserService(UserRepository userRepository) {
+    public CurrentUserService(UserRepository userRepository, MessageService messageService) {
         this.userRepository = userRepository;
+        this.messageService = messageService;
     }
 
     private static final String REQUEST_KEY = CurrentUserService.class.getName() + ".user";
+    private static final String SESSION_EXPIRED = "error.auth.session.expired";
 
     /**
      * The user is read once per HTTP request (the lists check access company by company - each call
@@ -62,6 +66,11 @@ public class CurrentUserService {
             }
             return Optional.ofNullable(userRepository.findByLoginAndDeletedIsFalse(authentication.getName()));
         } catch (Exception e) {
+            // SN-RN-11 (R-02): in an authenticated HTTP request a failed read is never "no user" - that would be the
+            // unrestricted "system" context of TenantAccessService. Background work keeps the old behavior.
+            if (RequestContextHolder.getRequestAttributes() != null) {
+                throw new UnauthorizedException(SESSION_EXPIRED, messageService.getMessage(SESSION_EXPIRED));
+            }
             return Optional.empty();
         }
     }

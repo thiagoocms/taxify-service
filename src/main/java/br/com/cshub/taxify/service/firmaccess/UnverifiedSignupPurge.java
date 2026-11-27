@@ -55,6 +55,7 @@ public class UnverifiedSignupPurge {
     private final SaasProperties properties;
     private final Clock clock;
     private final TransactionTemplate transaction;
+    private final UserOwnedRowsPurge userOwnedRows;
 
     public UnverifiedSignupPurge(FirmSubscriptionRepository subscriptionRepository, TermsAcceptanceRepository termsRepository,
                                  EmailVerificationRepository verificationRepository,
@@ -62,7 +63,9 @@ public class UnverifiedSignupPurge {
                                  FirmSubscriptionEventRepository eventRepository, UserRepository userRepository,
                                  UserCompanyRepository userCompanyRepository, DocumentRepository documentRepository,
                                  AccountingFirmRepository firmRepository, FirmEventService eventService,
-                                 SaasProperties properties, Clock clock, PlatformTransactionManager transactionManager) {
+                                 SaasProperties properties, Clock clock, PlatformTransactionManager transactionManager,
+                                 UserOwnedRowsPurge userOwnedRows) {
+        this.userOwnedRows = userOwnedRows;
         this.subscriptionRepository = subscriptionRepository;
         this.termsRepository = termsRepository;
         this.verificationRepository = verificationRepository;
@@ -139,6 +142,8 @@ public class UnverifiedSignupPurge {
         List<UUID> documentIds = users.stream().map(row -> (UUID) row[1]).filter(Objects::nonNull).toList();
         if (!userIds.isEmpty()) {
             verificationRepository.deleteByUserIds(userIds);
+            // the rows of the password and notice features that point to the users (spec 2026-11-27)
+            userOwnedRows.deleteOf(userIds);
             userRepository.deleteAccessProfilesOf(userIds.stream().map(UUID::toString).toList());
             userCompanyRepository.deleteByUserIds(userIds);
         }

@@ -35,6 +35,7 @@ public class SecurityErrorHandler implements AuthenticationEntryPoint, AccessDen
 
     static final String UNAUTHORIZED_CODE = "error.generic.unauthorized";
     static final String FORBIDDEN_CODE = "error.access.denied";
+    static final String SESSION_EXPIRED_CODE = "error.auth.session.expired";
     private static final String LANGUAGE_PARAM = "language";
 
     private final AuthenticationEntryPoint bearerEntryPoint = new BearerTokenAuthenticationEntryPoint();
@@ -70,6 +71,15 @@ public class SecurityErrorHandler implements AuthenticationEntryPoint, AccessDen
             throw new IOException(e);
         }
         write(request, response, HttpStatus.FORBIDDEN, FORBIDDEN_CODE);
+    }
+
+    /**
+     * SN-RN-11: the token is valid but its session was revoked (password changed, user deleted) - 401 with
+     * {@code error.auth.session.expired}, which the front answers by logging out with "Sua sessão expirou".
+     */
+    public void sessionExpired(HttpServletRequest request, HttpServletResponse response) throws IOException {
+        response.setHeader("WWW-Authenticate", "Bearer error=\"invalid_token\", error_description=\"session expired\"");
+        write(request, response, HttpStatus.UNAUTHORIZED, SESSION_EXPIRED_CODE);
     }
 
     private void write(HttpServletRequest request, HttpServletResponse response, HttpStatus status, String code)

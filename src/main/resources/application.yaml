@@ -189,6 +189,39 @@ taxify:
     ses-region: ${TAXIFY_MAIL_SES_REGION:us-east-2}
     # Só desenvolvimento: o LOG mostra o corpo (com o link de verificação). Em produção fica false.
     log-body: ${TAXIFY_MAIL_LOG_BODY:false}
+    # Só envia aos domínios ou endereços da lista (vírgula; vazia = sem filtro) - testes com o SES no sandbox (AV-RN-13).
+    recipient-allowlist: ${TAXIFY_MAIL_RECIPIENT_ALLOWLIST:}
+    # Intervalo mínimo entre dois envios, em ms (taxa do SES; 1000 = o ritmo do sandbox). 0 = sem espera.
+    send-interval-ms: ${TAXIFY_MAIL_SEND_INTERVAL_MS:1000}
+  # Senha e sessões (spec 2026-11-27, seção 5). O "Esqueci a senha" nasce desligado: na EC2 só depois da saída do SES do
+  # sandbox e com aprovação do Tony. A troca logada (PUT /users/me/password) não depende desta chave.
+  password:
+    reset-enabled: ${TAXIFY_PASSWORD_RESET_ENABLED:false}
+    reset-minutes: ${TAXIFY_PASSWORD_RESET_MINUTES:60}
+    reset-per-hour: ${TAXIFY_PASSWORD_RESET_PER_HOUR:3}
+    reset-per-day: ${TAXIFY_PASSWORD_RESET_PER_DAY:5}
+    reset-per-ip-per-day: ${TAXIFY_PASSWORD_RESET_PER_IP_PER_DAY:10}
+    min-length: ${TAXIFY_PASSWORD_MIN_LENGTH:8}
+    change-max-failures: ${TAXIFY_PASSWORD_CHANGE_MAX_FAILURES:5}
+    changed-notice-enabled: ${TAXIFY_PASSWORD_CHANGED_NOTICE_ENABLED:true}
+    # Limpeza diária dos links com mais de 48 h (horário de Recife).
+    reset-purge-cron: ${TAXIFY_PASSWORD_RESET_PURGE_CRON:0 30 3 * * *}
+    reset-purge-enabled: ${TAXIFY_PASSWORD_RESET_PURGE_ENABLED:true}
+    # Trabalho depois da resposta ("Esqueci a senha" e aviso de senha alterada): simultâneos e fila. Lotou = descartado
+    # com log só de contagem (a resposta continua 202).
+    async-max-concurrent: ${TAXIFY_PASSWORD_ASYNC_MAX_CONCURRENT:8}
+    async-queue-size: ${TAXIFY_PASSWORD_ASYNC_QUEUE_SIZE:100}
+  # Resumo diário das pendências ALTA por e-mail (spec 2026-11-27, seção 6). Nasce desligado: na EC2 só depois da saída
+  # do SES do sandbox e com aprovação do Tony.
+  pendency-alerts:
+    enabled: ${TAXIFY_PENDENCY_ALERTS_ENABLED:false}
+    # Horário de Recife; de segunda a sexta (a segunda leva o fim de semana).
+    cron: ${TAXIFY_PENDENCY_ALERT_CRON:0 50 7 * * MON-FRI}
+    # Tipos que entram (vírgula, nomes de PendencyType); vazio = todos os de severidade ALTA.
+    types: ${TAXIFY_PENDENCY_ALERT_TYPES:}
+    default-on: ${TAXIFY_PENDENCY_ALERT_DEFAULT_ON:true}
+    max-per-day: ${TAXIFY_PENDENCY_ALERT_MAX_PER_DAY:200}
+    max-companies-listed: ${TAXIFY_PENDENCY_ALERT_MAX_COMPANIES_LISTED:30}
 
 # Timeouts of the Feign clients. OpenFeign 4+ reads only "spring.cloud.openfeign.client.config" - under the old
 # "feign.client.config" prefix these were ignored and every client ran on the defaults (10s connect, 60s read),

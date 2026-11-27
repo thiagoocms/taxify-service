@@ -68,7 +68,8 @@ class SignupServiceTest {
     void setUp() {
         properties.setSignupEnabled(true);
         properties.setTermsVersion(TERMS);
-        SignupValidation validation = new SignupValidation(messages, properties, platformAdmin, users, documents, firms);
+        SignupValidation validation = new SignupValidation(messages, properties, platformAdmin, users, documents, firms,
+                new br.com.cshub.taxify.validation.PasswordPolicy(new br.com.cshub.taxify.config.PasswordProperties(), encoder, messages));
         service = new SignupService(properties, validation, firms, users, documents, terms, subscriptions, events, verification,
                 encoder, messages, clock, mock(PlatformTransactionManager.class));
         lenient().when(messages.getMessage(anyString())).thenAnswer(invocation -> invocation.getArgument(0));
@@ -256,5 +257,18 @@ class SignupServiceTest {
         assertThat(config.termsUrl()).isEqualTo("https://exemplo.test/termos");
         assertThat(config.trialDays()).isEqualTo(14);
         assertThat(List.of(config.privacyUrl() == null, config.dpaUrl() == null)).containsOnly(true);
+    }
+
+    /** Spec 2026-11-27, SN-RN-08: a new login with ":" and a password under 8 characters are refused at signup. */
+    @Test
+    void theSignupAppliesTheNewPasswordAndLoginRules() {
+        assertThatThrownBy(() -> service.signup(request("11.222.333/0001-81", "(81) 9 9999-0000", "dona:ficticia", TERMS), IP))
+                .satisfies(e -> assertThat(code(e)).isEqualTo("error.user.login.invalid.char"));
+
+        SignupRequestDTO shortPassword = new SignupRequestDTO(
+                new SignupFirmDTO("Escritório Fictício", "11222333000181", "fin@ficticio.test", "81999990000"),
+                new SignupOwnerDTO("Dona", "12345678909", "dona.ficticia", "dona@ficticio.test", "Abc1234"), TERMS);
+        assertThatThrownBy(() -> service.signup(shortPassword, IP))
+                .satisfies(e -> assertThat(code(e)).isEqualTo("error.user.password.too.short"));
     }
 }

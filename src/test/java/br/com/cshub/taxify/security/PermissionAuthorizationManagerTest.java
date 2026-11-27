@@ -53,7 +53,13 @@ class PermissionAuthorizationManagerTest {
             // the logged-in user's own firm access situation (F1-RN-07) - every user sees the banners
             "FirmAccessResource#current",
             // public signup: anonymous on purpose, see SecurityConfig (F1-RN-01, F1-RN-03, F1-RN-11)
-            "SignupResource#config", "SignupResource#signup", "SignupResource#verify", "SignupResource#resend");
+            "SignupResource#config", "SignupResource#signup", "SignupResource#verify", "SignupResource#resend",
+            // "Esqueci a senha": anonymous on purpose, see SecurityConfig (SN-RN-01 a SN-RN-06, SN-RN-14)
+            "PasswordResetResource#config", "PasswordResetResource#forgot", "PasswordResetResource#check",
+            "PasswordResetResource#reset",
+            // the logged-in user's own account: password change and e-mail notices (SN-RN-09, AV-RN-08) - any profile
+            "MyAccountResource#changePassword", "MyAccountResource#notificationSettings",
+            "MyAccountResource#updateNotificationSettings");
 
     /**
      * F1-RN-08 / CA1-10: every POST/PUT/PATCH/DELETE is a write - blocked for a read-only firm - unless it is one of
@@ -69,7 +75,10 @@ class PermissionAuthorizationManagerTest {
             // @AllowedWhenBlocked
             "AuthResource#auth",
             "SignupResource#signup", "SignupResource#verify", "SignupResource#resend",
-            "PlatformFirmResource#apply", "PlatformFirmResource#updateContact");
+            "PlatformFirmResource#apply", "PlatformFirmResource#updateContact",
+            // @AllowedWhenBlocked - password is a credential, the notice a personal preference (P-SN-05, AV-RN-08)
+            "PasswordResetResource#forgot", "PasswordResetResource#check", "PasswordResetResource#reset",
+            "MyAccountResource#changePassword", "MyAccountResource#updateNotificationSettings");
 
     @AfterEach
     void clearContext() {

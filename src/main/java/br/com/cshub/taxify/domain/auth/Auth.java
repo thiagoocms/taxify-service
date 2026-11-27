@@ -34,6 +34,8 @@ public class Auth extends User implements UserDetails {
         this.setDeleted(user.isDeleted());
         this.setAccountingFirm(user.getAccountingFirm());
         this.setUserCompanies(user.getUserCompanies());
+        // the claim "sv" of the token (SN-RN-11)
+        this.setSessionVersion(user.getSessionVersion());
     }
 
     @Override

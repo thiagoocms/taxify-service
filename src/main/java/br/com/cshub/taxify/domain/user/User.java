@@ -12,6 +12,7 @@ import jakarta.persistence.*;
 import org.hibernate.annotations.JdbcTypeCode;
 import org.hibernate.type.SqlTypes;
 
+import java.time.LocalDateTime;
 import java.util.EnumSet;
 import java.util.List;
 import java.util.Set;
@@ -72,6 +73,25 @@ public class User extends AbstractAuditingEntity {
 
     @OneToMany(mappedBy = "user" )
     private List<UserCompany> userCompanies;
+
+    /**
+     * Versão da sessão (SN-RN-11): vai no claim {@code sv} do JWT e sobe a cada troca ou redefinição de senha - um token
+     * com outra versão responde 401 {@code error.auth.session.expired}.
+     */
+    @Column(name = "session_version", nullable = false)
+    private int sessionVersion;
+
+    /** Última troca ou redefinição de senha (horário de Recife); nula para quem nunca trocou. */
+    @Column(name = "password_changed_at")
+    private LocalDateTime passwordChangedAt;
+
+    /** Erros de senha atual na troca pelo próprio usuário dentro da janela (SN-RN-09). */
+    @Column(name = "password_fail_count", nullable = false)
+    private int passwordFailCount;
+
+    /** Início da janela de 60 minutos do contador de erros (horário de Recife). */
+    @Column(name = "password_fail_window_start")
+    private LocalDateTime passwordFailWindowStart;
 
     public User() {
     }
@@ -160,6 +180,38 @@ public class User extends AbstractAuditingEntity {
         this.accessProfiles = accessProfiles == null || accessProfiles.isEmpty()
                 ? EnumSet.noneOf(AccessProfile.class)
                 : EnumSet.copyOf(accessProfiles);
+    }
+
+    public int getSessionVersion() {
+        return sessionVersion;
+    }
+
+    public void setSessionVersion(int sessionVersion) {
+        this.sessionVersion = sessionVersion;
+    }
+
+    public LocalDateTime getPasswordChangedAt() {
+        return passwordChangedAt;
+    }
+
+    public void setPasswordChangedAt(LocalDateTime passwordChangedAt) {
+        this.passwordChangedAt = passwordChangedAt;
+    }
+
+    public int getPasswordFailCount() {
+        return passwordFailCount;
+    }
+
+    public void setPasswordFailCount(int passwordFailCount) {
+        this.passwordFailCount = passwordFailCount;
+    }
+
+    public LocalDateTime getPasswordFailWindowStart() {
+        return passwordFailWindowStart;
+    }
+
+    public void setPasswordFailWindowStart(LocalDateTime passwordFailWindowStart) {
+        this.passwordFailWindowStart = passwordFailWindowStart;
     }
 
     /** What this user can do - every permission for ADMIN, the union of their profiles otherwise. */

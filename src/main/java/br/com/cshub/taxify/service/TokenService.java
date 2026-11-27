@@ -16,6 +16,9 @@ import java.util.Objects;
 @Service
 public class TokenService {
 
+    /** Claim with the user's session version (SN-RN-11). A token without it (issued before the deploy) counts as 0. */
+    public static final String SESSION_VERSION_CLAIM = "sv";
+
     private final JwtEncoder encoder;
     private final JwtDecoder decoder;
     private final PlatformAdminService platformAdminService;
@@ -47,7 +50,9 @@ public class TokenService {
                 .claim("permissions", auth.getPermissions().stream().map(Enum::name).sorted().toList())
                 .claim("tenantId", auth.getAccountingFirm().getId())
                 // CS Hub: regras gerais e console da plataforma (ver PlatformAdminService) - o backend confere de novo a cada chamada
-                .claim("platformAdmin", platformAdminService.isPlatformAdmin(auth));
+                .claim("platformAdmin", platformAdminService.isPlatformAdmin(auth))
+                // session version (SN-RN-11): checked against users.session_version on every request (SessionVersionFilter)
+                .claim(SESSION_VERSION_CLAIM, auth.getSessionVersion());
 
 
         return encoder.encode(

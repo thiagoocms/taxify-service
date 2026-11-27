@@ -26,6 +26,10 @@ public interface AccountingFirmRepository extends AbstractJpaRepository<Accounti
     /** CNPJ já usado por um escritório - contando os excluídos e os não verificados (F1-RN-02). */
     boolean existsByDocumentNumber(String documentNumber);
 
+    /** The firms in use (pendency digest, AV-RN-02). */
+    @Query("select f.id from AccountingFirm f where f.deleted = false")
+    List<UUID> findIdsInUse();
+
     /** O mesmo, sem contar o próprio escritório (o admin da plataforma corrigindo o CNPJ dele). */
     boolean existsByDocumentNumberAndIdNot(String documentNumber, UUID id);
 

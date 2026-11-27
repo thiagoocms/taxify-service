@@ -41,10 +41,12 @@ public class SignupValidation {
     private final UserRepository userRepository;
     private final DocumentRepository documentRepository;
     private final AccountingFirmRepository firmRepository;
+    private final PasswordPolicy passwordPolicy;
 
     public SignupValidation(MessageService messageService, SaasProperties properties, PlatformAdminService platformAdminService,
                             UserRepository userRepository, DocumentRepository documentRepository,
-                            AccountingFirmRepository firmRepository) {
+                            AccountingFirmRepository firmRepository, PasswordPolicy passwordPolicy) {
+        this.passwordPolicy = passwordPolicy;
         this.messageService = messageService;
         this.properties = properties;
         this.platformAdminService = platformAdminService;
@@ -104,6 +106,8 @@ public class SignupValidation {
         if (login.length() > LOGIN_MAX) {
             throw badRequest("error.signup.login.invalid");
         }
+        // SN-RN-08 (P-SN-10): the login splits login:password on the first ":" - a new login cannot have one
+        passwordPolicy.assertLoginAllowed(login);
         String email = required(owner.email(), "user.email");
         if (!SignupRules.isValidEmail(email)) {
             throw badRequest("error.signup.email.invalid");
@@ -114,6 +118,8 @@ public class SignupValidation {
         if (owner.password().getBytes(StandardCharsets.UTF_8).length > PASSWORD_MAX_BYTES) {
             throw badRequest("error.signup.password.invalid");
         }
+        // SN-RN-08: the minimum length (the 72 bytes keep the signup code above, the one the signup screen knows)
+        passwordPolicy.assertAcceptable(owner.password());
         return new SignupData(firmName, DocumentNumbers.onlyDigits(firm.documentNumber()),
                 billingEmail.toLowerCase(Locale.ROOT), phone, userName, cpf, login, email, owner.password());
     }

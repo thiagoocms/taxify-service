@@ -32,9 +32,18 @@ public class MailConfig {
                             .build())
                     .build();
             log.info("Mail: Amazon SES ({}), from {}", region, from);
-            return new SesMailSender(client, from);
+            return guarded(new SesMailSender(client, from), properties);
         }
         log.info("Mail: LOG only - no e-mail is sent (TAXIFY_MAIL_PROVIDER=SES to send), from {}", from);
-        return new LogMailSender(from, logBody);
+        return guarded(new LogMailSender(from, logBody), properties);
+    }
+
+    /** Allowlist and pace in front of the provider, for every e-mail (AV-RN-09, AV-RN-13). */
+    static MailSender guarded(MailSender provider, MailProperties properties) {
+        boolean filtered = properties.getRecipientAllowlist().stream().anyMatch(entry -> entry != null && !entry.isBlank());
+        if (filtered) {
+            log.info("Mail: recipient allowlist on - {} entries; other recipients are dropped", properties.getRecipientAllowlist().size());
+        }
+        return new GuardedMailSender(provider, properties.getRecipientAllowlist(), properties.getSendIntervalMs());
     }
 }

@@ -39,7 +39,8 @@ class FirmAccessSchedulersSwitchTest {
         return new UnverifiedSignupPurge(subscriptions, mock(TermsAcceptanceRepository.class), mock(EmailVerificationRepository.class),
                 mock(FirmNotificationRepository.class), mock(FirmSubscriptionEventRepository.class), mock(UserRepository.class),
                 mock(UserCompanyRepository.class), mock(DocumentRepository.class), mock(AccountingFirmRepository.class),
-                mock(FirmEventService.class), properties, clock, mock(PlatformTransactionManager.class));
+                mock(FirmEventService.class), properties, clock, mock(PlatformTransactionManager.class),
+                mock(UserOwnedRowsPurge.class));
     }
 
     private TrialNoticeScheduler notices(SaasProperties properties) {

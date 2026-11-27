@@ -32,6 +32,11 @@ public interface CompanyRepository extends AbstractJpaRepository<Company, UUID> 
     @EntityGraph(attributePaths = "document")
     List<Company> findByAccountingFirm_IdAndDeletedIsFalseOrderByNameAsc(UUID accountingFirmId);
 
+    /** Pendency digest (AV-RN-01): the companies of a firm that count, as in the panel - not deleted, not inactive. */
+    @Query("select c.id from Company c where c.accountingFirm.id = :firmId and c.deleted = false"
+            + " and (c.active is null or c.active = true)")
+    List<UUID> findActiveIdsByFirm(@Param("firmId") UUID accountingFirmId);
+
 
     /**
      * Empresas em uso do escritório - não excluídas e {@code active} nulo ou true (F1-RN-10a); cada CNPJ completo conta

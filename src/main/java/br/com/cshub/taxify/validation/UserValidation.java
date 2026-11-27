@@ -8,16 +8,21 @@ import br.com.cshub.taxify.common.TenantAccessService;
 import br.com.cshub.taxify.domain.user.User;
 import br.com.cshub.taxify.exception.BadRequestException;
 import br.com.cshub.taxify.exception.ConflictException;
-import java.nio.charset.StandardCharsets;
+import br.com.cshub.taxify.enumerated.PasswordChangeChannel;
+import br.com.cshub.taxify.service.password.PasswordChangedEvent;
+import org.springframework.context.ApplicationEventPublisher;
 import br.com.cshub.taxify.mapper.UserMapper;
 import br.com.cshub.taxify.repository.AccountingFirmRepository;
 import br.com.cshub.taxify.repository.UserRepository;
+import br.com.cshub.taxify.repository.PasswordResetTokenRepository;
 import br.com.cshub.taxify.service.firmaccess.PlanLimitService;
 import org.springframework.security.access.AccessDeniedException;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.security.crypto.password.PasswordEncoder;
 import org.springframework.stereotype.Component;
 
+import java.time.Clock;
+import java.time.LocalDateTime;
 import java.util.Objects;
 import java.util.UUID;
 
@@ -32,13 +37,22 @@ public class UserValidation extends AbstractCrudValidation<User, UUID> {
     private final AccountingFirmRepository accountingFirmRepository;
     private final TenantAccessService tenantAccessService;
     private final PlanLimitService planLimitService;
-    static final int PASSWORD_MAX_BYTES = 72;
+    private final PasswordPolicy passwordPolicy;
+    private final ApplicationEventPublisher eventPublisher;
+    private final Clock clock;
+    private final PasswordResetTokenRepository resetTokenRepository;
 
     @Autowired
     public UserValidation(UserMapper mapper, UserRepository repository, MessageService messageService, DocumentValidation documentValidation, PasswordEncoder passwordEncoder,
                            CurrentUserService currentUserService, AccountingFirmRepository accountingFirmRepository, TenantAccessService tenantAccessService,
-                           PlanLimitService planLimitService) {
+                           PlanLimitService planLimitService, PasswordPolicy passwordPolicy,
+                           ApplicationEventPublisher eventPublisher, Clock clock,
+                           PasswordResetTokenRepository resetTokenRepository) {
+        this.resetTokenRepository = resetTokenRepository;
         super(repository, messageService);
+        this.passwordPolicy = passwordPolicy;
+        this.eventPublisher = eventPublisher;
+        this.clock = clock;
         this.planLimitService = planLimitService;
         this.documentValidation = documentValidation;
         this.passwordEncoder = passwordEncoder;
@@ -60,10 +74,9 @@ public class UserValidation extends AbstractCrudValidation<User, UUID> {
     protected void checkOwnerFieldsToCreate(User entity) {
         entity.setId(null);
         entity.setDeleted(false);
-        if (Objects.isNull(entity.getPassword()) || entity.getPassword().isBlank()) {
-            throw new BadRequestException("error.user.password.required", messageService.getMessage("error.user.password.required"));
-        }
-        assertPasswordFits(entity.getPassword());
+        // SN-RN-08: the single password rule (required, 72 bytes, minimum length) and no ":" in a new login
+        passwordPolicy.assertAcceptable(entity.getPassword());
+        passwordPolicy.assertLoginAllowed(entity.getLogin());
         entity.setPassword(passwordEncoder.encode(entity.getPassword()));
 
         var currentUser = currentUserService.getCurrentUser()
@@ -119,6 +132,26 @@ public class UserValidation extends AbstractCrudValidation<User, UUID> {
         }
 
         var persistedEntity = checkExist(id);
+        String newPassword = toUpdateEntity.getPassword();
+        boolean passwordChange = Objects.nonNull(newPassword) && !newPassword.isBlank();
+        // SN-RN-10 (P-SN-09): the own password only through PUT /users/me/password, which asks for the current one
+        if (passwordChange && isCurrentUser(persistedEntity)) {
+            throw new BadRequestException("error.user.password.use.self.change",
+                    messageService.getMessage("error.user.password.use.self.change"));
+        }
+        boolean loginChange = toUpdateEntity.getLogin() != null && !toUpdateEntity.getLogin().equals(persistedEntity.getLogin());
+        // the session token carries the login (sub): changing his own login here would log the ADMIN out on the next call
+        // (SN-RN-11) - refused with a clear message; another ADMIN of the firm can change it
+        if (loginChange && isCurrentUser(persistedEntity)) {
+            throw new BadRequestException("error.user.login.self.change", messageService.getMessage("error.user.login.self.change"));
+        }
+        // SN-RN-08: a login changed here is a new login - no ":"
+        if (loginChange) {
+            passwordPolicy.assertLoginAllowed(toUpdateEntity.getLogin());
+        }
+        if (passwordChange) {
+            passwordPolicy.assertAcceptable(newPassword);
+        }
         if (toUpdateEntity.getProfile() != UserProfileEnum.ADMIN || Boolean.TRUE.equals(toUpdateEntity.isDeleted())) {
             assertNotLastAdmin(persistedEntity);
         }
@@ -128,10 +161,17 @@ public class UserValidation extends AbstractCrudValidation<User, UUID> {
 
         // The API never returns the password, so a blank one on update means "keep the
         // current one"; a new one is hashed here, same as on create.
-        String newPassword = toUpdateEntity.getPassword();
-        if (Objects.nonNull(newPassword) && !newPassword.isBlank()) {
-            assertPasswordFits(newPassword);
+        if (passwordChange) {
+            // SN-RN-10: the teammate's sessions fall (SN-RN-11) and he gets the notice after the commit
+            LocalDateTime now = LocalDateTime.now(clock);
             persistedEntity.setPassword(passwordEncoder.encode(newPassword));
+            persistedEntity.setPasswordChangedAt(now);
+            persistedEntity.setSessionVersion(persistedEntity.getSessionVersion() + 1);
+            persistedEntity.setPasswordFailCount(0);
+            persistedEntity.setPasswordFailWindowStart(null);
+            // the reset links he still had open stop working too
+            resetTokenRepository.invalidateOpen(persistedEntity.getId(), now);
+            eventPublisher.publishEvent(new PasswordChangedEvent(persistedEntity.getId(), PasswordChangeChannel.ADMIN, now));
         }
 
         try {
@@ -185,10 +225,7 @@ public class UserValidation extends AbstractCrudValidation<User, UUID> {
         }
     }
 
-    /** BCrypt only takes 72 bytes (Spring refuses longer ones with an exception - it was a 500). */
-    private void assertPasswordFits(String password) {
-        if (password.getBytes(StandardCharsets.UTF_8).length > PASSWORD_MAX_BYTES) {
-            throw new BadRequestException("error.user.password.invalid", messageService.getMessage("error.user.password.invalid"));
-        }
+    private boolean isCurrentUser(User user) {
+        return currentUserService.getCurrentUser().map(current -> current.getId().equals(user.getId())).orElse(false);
     }
 }

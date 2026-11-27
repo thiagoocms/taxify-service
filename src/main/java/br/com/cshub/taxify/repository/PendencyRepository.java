@@ -43,6 +43,29 @@ public interface PendencyRepository extends AbstractJpaRepository<Pendency, UUID
                           @Param("severity") PendencySeverity severity, @Param("type") PendencyType type,
                           @Param("competence") String competence, Pageable pageable);
 
+    /**
+     * Pendency digest (AV-RN-01, AV-RN-04): the open ALTA pendencies of these companies (not deleted and not inactive)
+     * of these types that were not notified to the user in their current episode (first_seen_at). Only ids, the
+     * company name and the type - never title or detail.
+     */
+    @Query("select new br.com.cshub.taxify.service.pendency.alert.PendencyAlertCandidate(p.id, c.id, c.name, p.type, p.firstSeenAt)"
+            + " from Pendency p join p.company c where c.id in :companyIds and c.deleted = false"
+            + " and (c.active is null or c.active = true) and p.deleted = false"
+            + " and p.status = br.com.cshub.taxify.enumerated.PendencyStatus.ABERTA"
+            + " and p.severity = br.com.cshub.taxify.enumerated.PendencySeverity.ALTA and p.type in :types"
+            + " and not exists (select 1 from PendencyAlertItem i where i.pendencyId = p.id and i.userId = :userId"
+            + "   and i.episodeStartedAt = p.firstSeenAt)")
+    List<br.com.cshub.taxify.service.pendency.alert.PendencyAlertCandidate> findAlertCandidates(
+            @Param("companyIds") Collection<UUID> companyIds, @Param("types") Collection<PendencyType> types,
+            @Param("userId") UUID userId);
+
+    /** Pendency digest (AV-RN-06): every open ALTA pendency of these companies and types - new and old. */
+    @Query("select count(p) from Pendency p join p.company c where c.id in :companyIds and c.deleted = false"
+            + " and (c.active is null or c.active = true) and p.deleted = false"
+            + " and p.status = br.com.cshub.taxify.enumerated.PendencyStatus.ABERTA"
+            + " and p.severity = br.com.cshub.taxify.enumerated.PendencySeverity.ALTA and p.type in :types")
+    long countOpenHigh(@Param("companyIds") Collection<UUID> companyIds, @Param("types") Collection<PendencyType> types);
+
     /** Open pendencies per type and severity - the counters. Row: type, severity, count. */
     @Query("select p.type, p.severity, count(p) from Pendency p where p.company.id in :companyIds and p.deleted = false"
             + " and p.status = br.com.cshub.taxify.enumerated.PendencyStatus.ABERTA group by p.type, p.severity")
