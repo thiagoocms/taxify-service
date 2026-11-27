@@ -1,4 +1,4 @@
-package br.com.cshub.taxify.service.certidao;
+package br.com.cshub.taxify.service.taxclearance;
 
 import br.com.cshub.taxify.domain.company.Company;
 import br.com.cshub.taxify.service.firmaccess.FirmAccessService;
@@ -13,33 +13,37 @@ import java.util.List;
 import java.util.concurrent.atomic.AtomicBoolean;
 
 /**
- * The certidão SEFAZ-PE on its own: once a week ({@code efisco.certidao.cron}, Monday 6h by default) every PE company
- * without a certidão, or whose certidão expires in {@value CertidaoRenewalRule#RENEW_DAYS} days or less, gets an issue
+ * The certidão SEFAZ-PE on its own: once a week ({@code efisco.tax-clearance.cron}, formerly {@code efisco.certidao.cron}; Monday 6h by default) every PE company
+ * without a certidão, or whose certidão expires in {@value TaxClearanceRenewalRule#RENEW_DAYS} days or less, gets an issue
  * attempt on e-Fisco. When e-Fisco refuses the access itself (captcha, Cloudflare) the run stops asking - the other
  * companies get the attempt recorded with the same reason, so the integrations' health shows it, and the pendencies
- * ("vencendo", "vencida") ask a person to issue it. Off with {@code efisco.certidao.enabled=false}.
+ * ("vencendo", "vencida") ask a person to issue it. Off with {@code efisco.tax-clearance.enabled=false} (or the old {@code efisco.certidao.enabled=false}).
  * Runs on a virtual thread; a run still going when the next fires is not doubled.
  */
 @Component
-public class CertidaoScheduler {
+public class TaxClearanceScheduler {
 
-    private static final Logger log = LoggerFactory.getLogger(CertidaoScheduler.class);
+    private static final Logger log = LoggerFactory.getLogger(TaxClearanceScheduler.class);
     /** Between two companies - e-Fisco is a public service, asked one company at a time. */
     static final long PAUSE_MS = 3000;
+    /** On/off switch; the old key {@code efisco.certidao.enabled} still works as a fallback. */
+    public static final String ENABLED_PROPERTY = "${efisco.tax-clearance.enabled:${efisco.certidao.enabled:true}}";
+    /** Schedule; the old key {@code efisco.certidao.cron} still works as a fallback. */
+    public static final String CRON_PROPERTY = "${efisco.tax-clearance.cron:${efisco.certidao.cron:0 0 6 * * MON}}";
 
-    private final CertidaoService service;
+    private final TaxClearanceService service;
     private final boolean enabled;
     private final AtomicBoolean running = new AtomicBoolean(false);
     private final FirmAccessService firmAccessService;
 
-    public CertidaoScheduler(CertidaoService service, @Value("${efisco.certidao.enabled:true}") boolean enabled,
+    public TaxClearanceScheduler(TaxClearanceService service, @Value(ENABLED_PROPERTY) boolean enabled,
                              FirmAccessService firmAccessService) {
         this.firmAccessService = firmAccessService;
         this.service = service;
         this.enabled = enabled;
     }
 
-    @Scheduled(cron = "${efisco.certidao.cron:0 0 6 * * MON}")
+    @Scheduled(cron = CRON_PROPERTY)
     public void tick() {
         if (!enabled) {
             return;
@@ -48,7 +52,7 @@ public class CertidaoScheduler {
             log.info("Certidão SEFAZ-PE run still going from the previous tick - skipped");
             return;
         }
-        Thread.ofVirtual().name("certidao-pe").start(() -> {
+        Thread.ofVirtual().name("tax-clearance-pe").start(() -> {
             try {
                 runAll();
             } catch (RuntimeException e) {
@@ -71,7 +75,7 @@ public class CertidaoScheduler {
                 service.recordSkipped(company, stoppedBy);
                 continue;
             }
-            CertidaoService.Attempt attempt = service.issue(company);
+            TaxClearanceService.Attempt attempt = service.issue(company);
             if (attempt.issued()) {
                 issued++;
             } else if (attempt.stopsRun()) {

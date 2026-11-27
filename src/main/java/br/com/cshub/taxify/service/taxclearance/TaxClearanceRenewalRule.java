@@ -1,6 +1,6 @@
-package br.com.cshub.taxify.service.certidao;
+package br.com.cshub.taxify.service.taxclearance;
 
-import br.com.cshub.taxify.domain.certidao.CertidaoEstadual;
+import br.com.cshub.taxify.domain.taxclearance.StateTaxClearance;
 
 import java.time.LocalDate;
 import java.time.temporal.ChronoUnit;
@@ -9,7 +9,7 @@ import java.time.temporal.ChronoUnit;
  * When a company's state certidão has to be issued again: there is none, it has no validity, or it expires in
  * {@value #RENEW_DAYS} days or less. The same rule drives the weekly job, the "a vencer" pendency and the carteira's seal.
  */
-public final class CertidaoRenewalRule {
+public final class TaxClearanceRenewalRule {
 
     /** Issue again when this many days (or fewer) are left. */
     public static final int RENEW_DAYS = 15;
@@ -24,16 +24,16 @@ public final class CertidaoRenewalRule {
         VENCIDA
     }
 
-    private CertidaoRenewalRule() {
+    private TaxClearanceRenewalRule() {
     }
 
-    public static boolean due(CertidaoEstadual latest, LocalDate today) {
+    public static boolean due(StateTaxClearance latest, LocalDate today) {
         Status status = status(latest, today);
         return status != Status.VALIDA;
     }
 
-    public static Status status(CertidaoEstadual latest, LocalDate today) {
-        if (latest == null || latest.getValidaAte() == null) {
+    public static Status status(StateTaxClearance latest, LocalDate today) {
+        if (latest == null || latest.getValidUntil() == null) {
             return Status.SEM_CERTIDAO;
         }
         long left = daysLeft(latest, today);
@@ -44,7 +44,7 @@ public final class CertidaoRenewalRule {
     }
 
     /** Days until the certidão expires (0 = expires today, negative = expired). */
-    public static long daysLeft(CertidaoEstadual certidao, LocalDate today) {
-        return ChronoUnit.DAYS.between(today, certidao.getValidaAte());
+    public static long daysLeft(StateTaxClearance clearance, LocalDate today) {
+        return ChronoUnit.DAYS.between(today, clearance.getValidUntil());
     }
 }

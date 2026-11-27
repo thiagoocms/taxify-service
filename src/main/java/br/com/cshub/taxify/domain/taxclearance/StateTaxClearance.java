@@ -1,9 +1,9 @@
-package br.com.cshub.taxify.domain.certidao;
+package br.com.cshub.taxify.domain.taxclearance;
 
 import br.com.cshub.taxify.domain.AbstractAuditingEntity;
 import br.com.cshub.taxify.domain.company.Company;
-import br.com.cshub.taxify.enumerated.CertidaoSituacao;
-import br.com.cshub.taxify.enumerated.CertidaoTipo;
+import br.com.cshub.taxify.enumerated.TaxClearanceStatus;
+import br.com.cshub.taxify.enumerated.TaxClearanceType;
 import jakarta.persistence.*;
 import org.hibernate.annotations.JdbcTypeCode;
 import org.hibernate.type.SqlTypes;
@@ -19,12 +19,12 @@ import java.util.UUID;
 @Entity
 @Table(name = "certidoes_estaduais",
         indexes = @Index(name = "idx_certidoes_estaduais_company_validade", columnList = "company_id, valida_ate"))
-public class CertidaoEstadual extends AbstractAuditingEntity {
+public class StateTaxClearance extends AbstractAuditingEntity {
 
     /** The PDF sent by a user (issued by them on e-Fisco). */
-    public static final String ORIGEM_UPLOAD = "UPLOAD";
+    public static final String ORIGIN_UPLOAD = "UPLOAD";
     /** Issued by Taxify on e-Fisco's public page. */
-    public static final String ORIGEM_EFISCO = "EFISCO";
+    public static final String ORIGIN_EFISCO = "EFISCO";
 
     @Id
     @GeneratedValue(strategy = GenerationType.UUID)
@@ -42,25 +42,25 @@ public class CertidaoEstadual extends AbstractAuditingEntity {
     @Enumerated(EnumType.STRING)
     @JdbcTypeCode(SqlTypes.VARCHAR)
     @Column(name = "tipo", length = 10, nullable = false)
-    private CertidaoTipo tipo;
+    private TaxClearanceType type;
 
     @Column(name = "numero", length = 60)
-    private String numero;
+    private String number;
 
     @Enumerated(EnumType.STRING)
     @JdbcTypeCode(SqlTypes.VARCHAR)
     @Column(name = "situacao", length = 30, nullable = false)
-    private CertidaoSituacao situacao;
+    private TaxClearanceStatus status;
 
     @Column(name = "emitida_em")
-    private LocalDate emitidaEm;
+    private LocalDate issuedOn;
 
     @Column(name = "valida_ate")
-    private LocalDate validaAte;
+    private LocalDate validUntil;
 
     /** The CNPJ (digits) the certidão was issued for. */
     @Column(name = "documento", length = 20)
-    private String documento;
+    private String document;
 
     @Column(name = "pdf_path", length = 500)
     private String pdfPath;
@@ -69,7 +69,7 @@ public class CertidaoEstadual extends AbstractAuditingEntity {
     private String fileName;
 
     @Column(name = "origem", length = 20, nullable = false)
-    private String origem;
+    private String origin;
 
     @Column(name = "imported_at", nullable = false)
     private LocalDateTime importedAt;
@@ -83,24 +83,24 @@ public class CertidaoEstadual extends AbstractAuditingEntity {
     public void setCompany(Company company) { this.company = company; }
     public String getUf() { return uf; }
     public void setUf(String uf) { this.uf = uf; }
-    public CertidaoTipo getTipo() { return tipo; }
-    public void setTipo(CertidaoTipo tipo) { this.tipo = tipo; }
-    public String getNumero() { return numero; }
-    public void setNumero(String numero) { this.numero = numero; }
-    public CertidaoSituacao getSituacao() { return situacao; }
-    public void setSituacao(CertidaoSituacao situacao) { this.situacao = situacao; }
-    public LocalDate getEmitidaEm() { return emitidaEm; }
-    public void setEmitidaEm(LocalDate emitidaEm) { this.emitidaEm = emitidaEm; }
-    public LocalDate getValidaAte() { return validaAte; }
-    public void setValidaAte(LocalDate validaAte) { this.validaAte = validaAte; }
-    public String getDocumento() { return documento; }
-    public void setDocumento(String documento) { this.documento = documento; }
+    public TaxClearanceType getType() { return type; }
+    public void setType(TaxClearanceType type) { this.type = type; }
+    public String getNumber() { return number; }
+    public void setNumber(String number) { this.number = number; }
+    public TaxClearanceStatus getStatus() { return status; }
+    public void setStatus(TaxClearanceStatus status) { this.status = status; }
+    public LocalDate getIssuedOn() { return issuedOn; }
+    public void setIssuedOn(LocalDate issuedOn) { this.issuedOn = issuedOn; }
+    public LocalDate getValidUntil() { return validUntil; }
+    public void setValidUntil(LocalDate validUntil) { this.validUntil = validUntil; }
+    public String getDocument() { return document; }
+    public void setDocument(String document) { this.document = document; }
     public String getPdfPath() { return pdfPath; }
     public void setPdfPath(String pdfPath) { this.pdfPath = pdfPath; }
     public String getFileName() { return fileName; }
     public void setFileName(String fileName) { this.fileName = fileName; }
-    public String getOrigem() { return origem; }
-    public void setOrigem(String origem) { this.origem = origem; }
+    public String getOrigin() { return origin; }
+    public void setOrigin(String origin) { this.origin = origin; }
     public LocalDateTime getImportedAt() { return importedAt; }
     public void setImportedAt(LocalDateTime importedAt) { this.importedAt = importedAt; }
     public String getImportedBy() { return importedBy; }

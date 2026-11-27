@@ -1,4 +1,4 @@
-package br.com.cshub.taxify.service.certidao;
+package br.com.cshub.taxify.service.taxclearance;
 
 import br.com.cshub.taxify.domain.accountingfirm.AccountingFirm;
 import br.com.cshub.taxify.domain.company.Company;
@@ -21,10 +21,10 @@ import static org.mockito.Mockito.verify;
 import static org.mockito.Mockito.when;
 
 /** CA1-12 / CT1-20 / CT1-41 (F1-RN-10, decisão 15): certidões não são emitidas para o escritório bloqueado; voltam ao estender o teste. */
-class CertidaoSchedulerBlockedTest {
+class TaxClearanceSchedulerBlockedTest {
 
     @Test
-    void noCertidaoIsRequestedForABlockedFirmAndItComesBackWhenReactivated() {
+    void noTaxClearanceIsRequestedForABlockedFirmAndItComesBackWhenReactivated() {
         AccountingFirm firm = new AccountingFirm(UUID.randomUUID());
         Company company = new Company(UUID.randomUUID());
         company.setAccountingFirm(firm);
@@ -32,10 +32,10 @@ class CertidaoSchedulerBlockedTest {
         subscription.setAccountingFirmId(firm.getId());
         subscription.setStatus(FirmSubscriptionStatus.TRIAL);
         subscription.setTrialEndsOn(LocalDate.of(2026, 12, 9));
-        CertidaoService service = mock(CertidaoService.class);
+        TaxClearanceService service = mock(TaxClearanceService.class);
         when(service.dueCompanies()).thenReturn(List.of(company));
-        when(service.issue(company)).thenReturn(new CertidaoService.Attempt(true, false, "ok"));
-        CertidaoScheduler scheduler = new CertidaoScheduler(service, true,
+        when(service.issue(company)).thenReturn(new TaxClearanceService.Attempt(true, false, "ok"));
+        TaxClearanceScheduler scheduler = new TaxClearanceScheduler(service, true,
                 FirmAccessTestSupport.real(new MutableClock(LocalDateTime.of(2026, 12, 10, 10, 0)), subscription));
 
         scheduler.runAll();

@@ -1,4 +1,4 @@
-package br.com.cshub.taxify.dto.certidao;
+package br.com.cshub.taxify.dto.taxclearance;
 
 import java.time.LocalDate;
 import java.time.LocalDateTime;
@@ -6,13 +6,13 @@ import java.util.List;
 import java.util.UUID;
 
 /** Certidão SEFAZ-PE (M5): what the carteira and the company's page show. */
-public final class CertidaoDTOs {
+public final class TaxClearanceDTOs {
 
-    private CertidaoDTOs() {
+    private TaxClearanceDTOs() {
     }
 
     /** One certidão, as read from its PDF. {@code status}: VALIDA, A_VENCER or VENCIDA. */
-    public record Certidao(UUID id, String uf, String tipo, String tipoLabel, String numero, String situacao,
+    public record TaxClearance(UUID id, String uf, String tipo, String tipoLabel, String numero, String situacao,
                            String situacaoLabel, LocalDate emitidaEm, LocalDate validaAte, String status, long diasRestantes,
                            String origem, String fileName, LocalDateTime importedAt, String importedBy, boolean hasPdf) {
     }
@@ -30,11 +30,11 @@ public final class CertidaoDTOs {
      * The company's section: whether the certidão applies ({@code motivo} when it doesn't), the newest one, the older
      * ones and the last attempt - with the e-Fisco page where a person issues it.
      */
-    public record CompanyCertidao(boolean aplicavel, String motivo, Certidao atual, List<Certidao> historico,
+    public record CompanyTaxClearance(boolean aplicavel, String motivo, TaxClearance atual, List<TaxClearance> historico,
                                   LastRun ultimaTentativa, String paginaEmissao) {
     }
 
     /** "Emitir agora": {@code status} OK (issued and kept) or ERRO, with why (captcha...). */
-    public record IssueResult(String status, String detail, String paginaEmissao, CompanyCertidao certidao) {
+    public record IssueResult(String status, String detail, String paginaEmissao, CompanyTaxClearance certidao) {
     }
 }

@@ -1,18 +1,18 @@
-package br.com.cshub.taxify.service.certidao;
+package br.com.cshub.taxify.service.taxclearance;
 
 import br.com.cshub.taxify.common.MessageService;
 import br.com.cshub.taxify.common.TenantAccessService;
-import br.com.cshub.taxify.domain.certidao.CertidaoEstadual;
+import br.com.cshub.taxify.domain.taxclearance.StateTaxClearance;
 import br.com.cshub.taxify.domain.company.Company;
 import br.com.cshub.taxify.domain.pendency.CaptureRun;
-import br.com.cshub.taxify.dto.certidao.CertidaoDTOs;
+import br.com.cshub.taxify.dto.taxclearance.TaxClearanceDTOs;
 import br.com.cshub.taxify.exception.BadRequestException;
 import br.com.cshub.taxify.exception.ResourceNotFoundException;
-import br.com.cshub.taxify.integration.efisco.EfiscoCertidaoClient;
+import br.com.cshub.taxify.integration.efisco.EfiscoTaxClearanceClient;
 import br.com.cshub.taxify.integration.efisco.EfiscoException;
 import br.com.cshub.taxify.integration.sieg.FiscalXmlFileStorage;
 import br.com.cshub.taxify.repository.CaptureRunRepository;
-import br.com.cshub.taxify.repository.CertidaoEstadualRepository;
+import br.com.cshub.taxify.repository.StateTaxClearanceRepository;
 import br.com.cshub.taxify.repository.CompanyRepository;
 import br.com.cshub.taxify.service.pendency.PendencyService;
 import br.com.cshub.taxify.validation.CompanyValidation;
@@ -35,34 +35,34 @@ import java.util.UUID;
 /**
  * Certidão SEFAZ-PE (roadmap M5): the state certidão of every PE company, renewed before it expires. A certidão comes
  * in as PDF - issued on e-Fisco by Taxify when the public page allows it, or by a person and sent on the company's
- * page - and is read ({@link CertidaoPdfParser}), kept (PDF in the XMLs' storage, as the Fronteira extract) and
- * turned into pendencies ({@link CertidaoPendencies}). Every issue attempt is a {@link CaptureRun} for the
+ * page - and is read ({@link TaxClearancePdfParser}), kept (PDF in the XMLs' storage, as the Fronteira extract) and
+ * turned into pendencies ({@link TaxClearancePendencies}). Every issue attempt is a {@link CaptureRun} for the
  * integrations' health. Only companies of PE with a CNPJ.
  */
 @Service
-public class CertidaoService {
+public class TaxClearanceService {
 
     public static final String UF = "PE";
     static final String SYSTEM = "sistema";
 
-    private static final Logger log = LoggerFactory.getLogger(CertidaoService.class);
+    private static final Logger log = LoggerFactory.getLogger(TaxClearanceService.class);
 
-    private final CertidaoEstadualRepository repository;
+    private final StateTaxClearanceRepository repository;
     private final CompanyRepository companyRepository;
     private final CompanyValidation companyValidation;
     private final TenantAccessService tenantAccessService;
     private final CaptureRunRepository captureRunRepository;
     private final FiscalXmlFileStorage storage;
-    private final CertidaoPdfParser parser;
-    private final CertidaoIssuer issuer;
+    private final TaxClearancePdfParser parser;
+    private final TaxClearanceIssuer issuer;
     private final PendencyService pendencyService;
     private final MessageService messageService;
     private final AuditorAware<String> auditorAware;
 
-    public CertidaoService(CertidaoEstadualRepository repository, CompanyRepository companyRepository,
+    public TaxClearanceService(StateTaxClearanceRepository repository, CompanyRepository companyRepository,
                            CompanyValidation companyValidation, TenantAccessService tenantAccessService,
-                           CaptureRunRepository captureRunRepository, FiscalXmlFileStorage storage, CertidaoPdfParser parser,
-                           CertidaoIssuer issuer, PendencyService pendencyService, MessageService messageService,
+                           CaptureRunRepository captureRunRepository, FiscalXmlFileStorage storage, TaxClearancePdfParser parser,
+                           TaxClearanceIssuer issuer, PendencyService pendencyService, MessageService messageService,
                            AuditorAware<String> auditorAware) {
         this.repository = repository;
         this.companyRepository = companyRepository;
@@ -103,9 +103,9 @@ public class CertidaoService {
 
     // ---------------------------------------------------------------- reading
 
-    /** The carteira's column: the newest certidão of each PE company of the user's firm they can see. */
+    /** The portfolio's column: the newest certidão of each PE company of the user's firm they can see. */
     @Transactional(readOnly = true)
-    public List<CertidaoDTOs.Summary> carteira() {
+    public List<TaxClearanceDTOs.Summary> portfolio() {
         UUID firmId = tenantAccessService.getCurrentAccountingFirmId()
                 .orElseThrow(() -> new BadRequestException("error.pendency.firm.required", messageService.getMessage("error.pendency.firm.required")));
         List<UUID> companyIds = tenantAccessService.accessibleCompanyIds(
@@ -116,39 +116,39 @@ public class CertidaoService {
         if (companyIds.isEmpty()) {
             return List.of();
         }
-        Map<UUID, CertidaoEstadual> latest = new LinkedHashMap<>();
-        for (CertidaoEstadual certidao : repository.findAllOf(companyIds, UF)) {
-            latest.putIfAbsent(certidao.getCompany().getId(), certidao);
+        Map<UUID, StateTaxClearance> latest = new LinkedHashMap<>();
+        for (StateTaxClearance clearance : repository.findAllOf(companyIds, UF)) {
+            latest.putIfAbsent(clearance.getCompany().getId(), clearance);
         }
         LocalDate today = LocalDate.now();
-        List<CertidaoDTOs.Summary> summaries = new ArrayList<>();
+        List<TaxClearanceDTOs.Summary> summaries = new ArrayList<>();
         for (UUID companyId : companyIds) {
-            CertidaoEstadual certidao = latest.get(companyId);
-            summaries.add(new CertidaoDTOs.Summary(companyId, CertidaoRenewalRule.status(certidao, today).name(),
-                    certidao == null ? null : certidao.getSituacao().name(),
-                    certidao == null ? null : certidao.getSituacao().label,
-                    certidao == null ? null : certidao.getValidaAte(),
-                    certidao == null ? null : certidao.getId(),
-                    certidao != null && certidao.getPdfPath() != null));
+            StateTaxClearance clearance = latest.get(companyId);
+            summaries.add(new TaxClearanceDTOs.Summary(companyId, TaxClearanceRenewalRule.status(clearance, today).name(),
+                    clearance == null ? null : clearance.getStatus().name(),
+                    clearance == null ? null : clearance.getStatus().label,
+                    clearance == null ? null : clearance.getValidUntil(),
+                    clearance == null ? null : clearance.getId(),
+                    clearance != null && clearance.getPdfPath() != null));
         }
         return summaries;
     }
 
     /** The company's section (access checked). */
     @Transactional(readOnly = true)
-    public CertidaoDTOs.CompanyCertidao ofCompany(String companyId) {
+    public TaxClearanceDTOs.CompanyTaxClearance ofCompany(String companyId) {
         return toDto(company(companyId));
     }
 
     /** The kept PDF of a certidão - the user's access to its company checked. */
     @Transactional(readOnly = true)
-    public byte[] pdf(String certidaoId) {
-        CertidaoEstadual certidao = owned(certidaoId);
-        if (certidao.getPdfPath() == null) {
+    public byte[] pdf(String clearanceId) {
+        StateTaxClearance clearance = owned(clearanceId);
+        if (clearance.getPdfPath() == null) {
             throw new ResourceNotFoundException("error.entity.not.found", messageService.getMessage("error.entity.not.found"));
         }
         try {
-            return storage.read(certidao.getPdfPath());
+            return storage.read(clearance.getPdfPath());
         } catch (IOException e) {
             throw new ResourceNotFoundException("error.entity.not.found", messageService.getMessage("error.entity.not.found"));
         }
@@ -158,18 +158,18 @@ public class CertidaoService {
 
     /** A certidão PDF issued on e-Fisco by a person: read, checked against the company's CNPJ and kept. */
     @Transactional
-    public CertidaoDTOs.CompanyCertidao upload(String companyId, String fileName, byte[] pdf) {
+    public TaxClearanceDTOs.CompanyTaxClearance upload(String companyId, String fileName, byte[] pdf) {
         Company company = applicable(company(companyId));
         if (pdf == null || pdf.length == 0) {
             throw new BadRequestException("error.certidao.file.required", messageService.getMessage("error.certidao.file.required"));
         }
-        CertidaoPdfParser.Certidao read;
+        TaxClearancePdfParser.TaxClearance read;
         try {
             read = parser.parse(pdf);
-        } catch (CertidaoPdfParser.InvalidCertidaoException e) {
+        } catch (TaxClearancePdfParser.InvalidTaxClearanceException e) {
             throw new BadRequestException("error.certidao.invalid", messageService.getMessage("error.certidao.invalid", e.getMessage()));
         }
-        keep(company, read, pdf, fileName, CertidaoEstadual.ORIGEM_UPLOAD);
+        keep(company, read, pdf, fileName, StateTaxClearance.ORIGIN_UPLOAD);
         refreshPendencies(company);
         return toDto(company);
     }
@@ -178,10 +178,10 @@ public class CertidaoService {
      * "Emitir agora": tries to issue the certidão on e-Fisco now. While e-Fisco's public page asks for a captcha it
      * doesn't issue (and says so, with the page to issue it by hand) - the attempt is recorded either way.
      */
-    public CertidaoDTOs.IssueResult issueNow(String companyId) {
+    public TaxClearanceDTOs.IssueResult issueNow(String companyId) {
         Company company = applicable(company(companyId));
         Attempt attempt = issue(company);
-        return new CertidaoDTOs.IssueResult(attempt.issued() ? "OK" : "ERRO", attempt.detail(), EfiscoCertidaoClient.PUBLIC_PAGE,
+        return new TaxClearanceDTOs.IssueResult(attempt.issued() ? "OK" : "ERRO", attempt.detail(), EfiscoTaxClearanceClient.PUBLIC_PAGE,
                 toDto(company));
     }
 
@@ -198,14 +198,14 @@ public class CertidaoService {
         Attempt attempt;
         try {
             byte[] pdf = issuer.issue(cnpjOf(company));
-            keep(company, parser.parse(pdf), pdf, null, CertidaoEstadual.ORIGEM_EFISCO);
+            keep(company, parser.parse(pdf), pdf, null, StateTaxClearance.ORIGIN_EFISCO);
             refreshPendencies(company);
             attempt = new Attempt(true, false, null);
         } catch (EfiscoException e) {
             boolean stops = e.reason() == EfiscoException.Reason.CAPTCHA || e.reason() == EfiscoException.Reason.BLOQUEADO
                     || e.reason() == EfiscoException.Reason.PAGINA_INESPERADA;
             attempt = new Attempt(false, stops, e.getMessage());
-        } catch (CertidaoPdfParser.InvalidCertidaoException e) {
+        } catch (TaxClearancePdfParser.InvalidTaxClearanceException e) {
             attempt = new Attempt(false, false, "O e-Fisco devolveu um PDF que não pôde ser lido: " + e.getMessage());
         } catch (BadRequestException e) {
             attempt = new Attempt(false, false, e.getMessage());
@@ -233,45 +233,45 @@ public class CertidaoService {
             if (Boolean.FALSE.equals(company.getActive()) || notApplicable(company) != null) {
                 continue;
             }
-            CertidaoEstadual latest = repository
-                    .findFirstByCompany_IdAndUfAndDeletedIsFalseOrderByValidaAteDescImportedAtDesc(company.getId(), UF).orElse(null);
-            if (CertidaoRenewalRule.due(latest, today)) {
+            StateTaxClearance latest = repository
+                    .findFirstByCompany_IdAndUfAndDeletedIsFalseOrderByValidUntilDescImportedAtDesc(company.getId(), UF).orElse(null);
+            if (TaxClearanceRenewalRule.due(latest, today)) {
                 due.add(company);
             }
         }
         return due;
     }
 
-    private void keep(Company company, CertidaoPdfParser.Certidao read, byte[] pdf, String fileName, String origem) {
+    private void keep(Company company, TaxClearancePdfParser.TaxClearance read, byte[] pdf, String fileName, String origin) {
         String cnpj = cnpjOf(company);
         if (read.cnpj() != null && !read.cnpj().equals(cnpj)) {
             throw new BadRequestException("error.certidao.other.cnpj", messageService.getMessage("error.certidao.other.cnpj", formatCnpj(read.cnpj())));
         }
         // the same certidão sent again replaces the one kept (its PDF too)
-        CertidaoEstadual certidao = read.numero() == null ? null : repository
-                .findByCompany_IdAndUfAndDeletedIsFalseOrderByValidaAteDescImportedAtDesc(company.getId(), UF).stream()
-                .filter(existing -> read.numero().equals(existing.getNumero()))
+        StateTaxClearance clearance = read.number() == null ? null : repository
+                .findByCompany_IdAndUfAndDeletedIsFalseOrderByValidUntilDescImportedAtDesc(company.getId(), UF).stream()
+                .filter(existing -> read.number().equals(existing.getNumber()))
                 .findFirst()
                 .orElse(null);
-        if (certidao == null) {
-            certidao = new CertidaoEstadual();
-            certidao.setCompany(company);
-            certidao.setUf(UF);
-            certidao.setDeleted(false);
+        if (clearance == null) {
+            clearance = new StateTaxClearance();
+            clearance.setCompany(company);
+            clearance.setUf(UF);
+            clearance.setDeleted(false);
         }
-        certidao.setTipo(read.tipo());
-        certidao.setNumero(read.numero());
-        certidao.setSituacao(read.situacao());
-        certidao.setEmitidaEm(read.emitidaEm());
-        certidao.setValidaAte(read.validaAte());
-        certidao.setDocumento(cnpj);
-        certidao.setFileName(fileName);
-        certidao.setOrigem(origem);
-        certidao.setImportedAt(LocalDateTime.now());
-        certidao.setImportedBy(auditorAware.getCurrentAuditor().orElse(SYSTEM));
-        String previous = certidao.getPdfPath();
+        clearance.setType(read.type());
+        clearance.setNumber(read.number());
+        clearance.setStatus(read.status());
+        clearance.setIssuedOn(read.issuedOn());
+        clearance.setValidUntil(read.validUntil());
+        clearance.setDocument(cnpj);
+        clearance.setFileName(fileName);
+        clearance.setOrigin(origin);
+        clearance.setImportedAt(LocalDateTime.now());
+        clearance.setImportedBy(auditorAware.getCurrentAuditor().orElse(SYSTEM));
+        String previous = clearance.getPdfPath();
         try {
-            certidao.setPdfPath(storage.storeCertidaoPdf(company.getId(), UF, pdf));
+            clearance.setPdfPath(storage.storeTaxClearancePdf(company.getId(), UF, pdf));
             if (previous != null) {
                 storage.delete(previous);
             }
@@ -279,7 +279,7 @@ public class CertidaoService {
             // the certidão counts without its PDF; the screen just doesn't offer "Ver PDF"
             log.warn("Could not keep the certidão PDF of company {}", company.getId(), e);
         }
-        repository.save(certidao);
+        repository.save(clearance);
     }
 
     private void refreshPendencies(Company company) {
@@ -295,7 +295,7 @@ public class CertidaoService {
         try {
             CaptureRun run = new CaptureRun();
             run.setCompany(company);
-            run.setService(CaptureRun.CERTIDAO_PE);
+            run.setService(CaptureRun.TAX_CLEARANCE_PE);
             run.setStartedAt(startedAt);
             run.setFinishedAt(LocalDateTime.now());
             run.setStatus(detail == null ? "OK" : "ERRO");
@@ -308,36 +308,36 @@ public class CertidaoService {
         }
     }
 
-    private CertidaoDTOs.CompanyCertidao toDto(Company company) {
-        String motivo = notApplicable(company);
-        if (motivo != null) {
-            return new CertidaoDTOs.CompanyCertidao(false, motivo, null, List.of(), null, EfiscoCertidaoClient.PUBLIC_PAGE);
+    private TaxClearanceDTOs.CompanyTaxClearance toDto(Company company) {
+        String reason = notApplicable(company);
+        if (reason != null) {
+            return new TaxClearanceDTOs.CompanyTaxClearance(false, reason, null, List.of(), null, EfiscoTaxClearanceClient.PUBLIC_PAGE);
         }
         LocalDate today = LocalDate.now();
-        List<CertidaoDTOs.Certidao> all = repository
-                .findByCompany_IdAndUfAndDeletedIsFalseOrderByValidaAteDescImportedAtDesc(company.getId(), UF).stream()
-                .map(certidao -> toDto(certidao, today))
+        List<TaxClearanceDTOs.TaxClearance> all = repository
+                .findByCompany_IdAndUfAndDeletedIsFalseOrderByValidUntilDescImportedAtDesc(company.getId(), UF).stream()
+                .map(clearance -> toDto(clearance, today))
                 .toList();
-        CertidaoDTOs.LastRun lastRun = captureRunRepository.findLatestOf(List.of(company.getId()), CaptureRun.CERTIDAO_PE).stream()
+        TaxClearanceDTOs.LastRun lastRun = captureRunRepository.findLatestOf(List.of(company.getId()), CaptureRun.TAX_CLEARANCE_PE).stream()
                 .max(Comparator.comparing(CaptureRun::getStartedAt))
-                .map(run -> new CertidaoDTOs.LastRun(run.getStartedAt(), run.getStatus(), run.getDetail()))
+                .map(run -> new TaxClearanceDTOs.LastRun(run.getStartedAt(), run.getStatus(), run.getDetail()))
                 .orElse(null);
-        return new CertidaoDTOs.CompanyCertidao(true, null, all.isEmpty() ? null : all.getFirst(),
-                all.size() > 1 ? all.subList(1, all.size()) : List.of(), lastRun, EfiscoCertidaoClient.PUBLIC_PAGE);
+        return new TaxClearanceDTOs.CompanyTaxClearance(true, null, all.isEmpty() ? null : all.getFirst(),
+                all.size() > 1 ? all.subList(1, all.size()) : List.of(), lastRun, EfiscoTaxClearanceClient.PUBLIC_PAGE);
     }
 
-    static CertidaoDTOs.Certidao toDto(CertidaoEstadual certidao, LocalDate today) {
-        return new CertidaoDTOs.Certidao(certidao.getId(), certidao.getUf(), certidao.getTipo().name(), certidao.getTipo().label,
-                certidao.getNumero(), certidao.getSituacao().name(), certidao.getSituacao().label, certidao.getEmitidaEm(),
-                certidao.getValidaAte(), CertidaoRenewalRule.status(certidao, today).name(),
-                certidao.getValidaAte() == null ? 0 : CertidaoRenewalRule.daysLeft(certidao, today), certidao.getOrigem(),
-                certidao.getFileName(), certidao.getImportedAt(), certidao.getImportedBy(), certidao.getPdfPath() != null);
+    static TaxClearanceDTOs.TaxClearance toDto(StateTaxClearance clearance, LocalDate today) {
+        return new TaxClearanceDTOs.TaxClearance(clearance.getId(), clearance.getUf(), clearance.getType().name(), clearance.getType().label,
+                clearance.getNumber(), clearance.getStatus().name(), clearance.getStatus().label, clearance.getIssuedOn(),
+                clearance.getValidUntil(), TaxClearanceRenewalRule.status(clearance, today).name(),
+                clearance.getValidUntil() == null ? 0 : TaxClearanceRenewalRule.daysLeft(clearance, today), clearance.getOrigin(),
+                clearance.getFileName(), clearance.getImportedAt(), clearance.getImportedBy(), clearance.getPdfPath() != null);
     }
 
     private Company applicable(Company company) {
-        String motivo = notApplicable(company);
-        if (motivo != null) {
-            throw new BadRequestException("error.certidao.not.applicable", messageService.getMessage("error.certidao.not.applicable", motivo));
+        String reason = notApplicable(company);
+        if (reason != null) {
+            throw new BadRequestException("error.certidao.not.applicable", messageService.getMessage("error.certidao.not.applicable", reason));
         }
         return company;
     }
@@ -350,16 +350,16 @@ public class CertidaoService {
         }
     }
 
-    private CertidaoEstadual owned(String certidaoId) {
-        CertidaoEstadual certidao;
+    private StateTaxClearance owned(String clearanceId) {
+        StateTaxClearance clearance;
         try {
-            certidao = repository.findFirstByIdAndDeletedIsFalse(UUID.fromString(certidaoId.strip()))
+            clearance = repository.findFirstByIdAndDeletedIsFalse(UUID.fromString(clearanceId.strip()))
                     .orElseThrow(() -> new ResourceNotFoundException("error.entity.not.found", messageService.getMessage("error.entity.not.found")));
         } catch (IllegalArgumentException | NullPointerException e) {
             throw new BadRequestException("error.generic.bad.request", messageService.getMessage("error.generic.bad.request"));
         }
-        tenantAccessService.assertCompanyAccess(certidao.getCompany());
-        return certidao;
+        tenantAccessService.assertCompanyAccess(clearance.getCompany());
+        return clearance;
     }
 
     private static String formatCnpj(String cnpj) {

@@ -1,7 +1,7 @@
 package br.com.cshub.taxify.enumerated;
 
 /** What a state tax certidão says about the company's debts. */
-public enum CertidaoSituacao {
+public enum TaxClearanceStatus {
     /** No debts. */
     NEGATIVA("Negativa"),
     /** Debts that block the company (licitação, financiamento...) - an ALTA pendency. */
@@ -11,7 +11,7 @@ public enum CertidaoSituacao {
 
     public final String label;
 
-    CertidaoSituacao(String label) {
+    TaxClearanceStatus(String label) {
         this.label = label;
     }
 }

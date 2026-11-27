@@ -1,10 +1,10 @@
 package br.com.cshub.taxify.rest;
 
 import br.com.cshub.taxify.constants.AppConstants;
-import br.com.cshub.taxify.dto.certidao.CertidaoDTOs;
+import br.com.cshub.taxify.dto.taxclearance.TaxClearanceDTOs;
 import br.com.cshub.taxify.enumerated.Permission;
 import br.com.cshub.taxify.security.RequiresPermission;
-import br.com.cshub.taxify.service.certidao.CertidaoService;
+import br.com.cshub.taxify.service.taxclearance.TaxClearanceService;
 import org.springframework.http.MediaType;
 import org.springframework.http.ResponseEntity;
 import org.springframework.web.bind.annotation.*;
@@ -14,28 +14,28 @@ import java.io.IOException;
 import java.util.List;
 
 /**
- * Certidão SEFAZ-PE (M5): the carteira's column, the company's section, the kept PDF - and, with the permission to
+ * Certidão SEFAZ-PE (M5): the portfolio's column, the company's section, the kept PDF - and, with the permission to
  * sync notes, "Emitir agora" and the PDF issued by hand on e-Fisco.
  */
 @RequiresPermission(Permission.COMPANIES_VIEW)
 @RestController
 @RequestMapping(AppConstants.API + AppConstants.V1 + "/certidoes")
-public class CertidaoResource {
+public class TaxClearanceResource {
 
-    private final CertidaoService service;
+    private final TaxClearanceService service;
 
-    public CertidaoResource(CertidaoService service) {
+    public TaxClearanceResource(TaxClearanceService service) {
         this.service = service;
     }
 
     /** The newest certidão of each PE company of the firm the user can see. */
     @GetMapping("/carteira")
-    public ResponseEntity<List<CertidaoDTOs.Summary>> carteira() {
-        return ResponseEntity.ok(service.carteira());
+    public ResponseEntity<List<TaxClearanceDTOs.Summary>> portfolio() {
+        return ResponseEntity.ok(service.portfolio());
     }
 
     @GetMapping("/empresa/{companyId}")
-    public ResponseEntity<CertidaoDTOs.CompanyCertidao> ofCompany(@PathVariable String companyId) {
+    public ResponseEntity<TaxClearanceDTOs.CompanyTaxClearance> ofCompany(@PathVariable String companyId) {
         return ResponseEntity.ok(service.ofCompany(companyId));
     }
 
@@ -51,14 +51,14 @@ public class CertidaoResource {
     /** Tries to issue the certidão on e-Fisco now; while e-Fisco asks for a captcha, says so (status ERRO). */
     @RequiresPermission(Permission.INVOICES_SYNC)
     @PostMapping("/empresa/{companyId}/emitir")
-    public ResponseEntity<CertidaoDTOs.IssueResult> issue(@PathVariable String companyId) {
+    public ResponseEntity<TaxClearanceDTOs.IssueResult> issue(@PathVariable String companyId) {
         return ResponseEntity.ok(service.issueNow(companyId));
     }
 
     /** The certidão PDF issued on e-Fisco by a person: read (number, issue, validity, situation) and kept. */
     @RequiresPermission(Permission.INVOICES_SYNC)
     @PostMapping(value = "/empresa/{companyId}/pdf", consumes = MediaType.MULTIPART_FORM_DATA_VALUE)
-    public ResponseEntity<CertidaoDTOs.CompanyCertidao> upload(@PathVariable String companyId,
+    public ResponseEntity<TaxClearanceDTOs.CompanyTaxClearance> upload(@PathVariable String companyId,
                                                                @RequestParam(value = "file", required = false) MultipartFile file)
             throws IOException {
         boolean empty = file == null || file.isEmpty();

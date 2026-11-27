@@ -1,4 +1,4 @@
-package br.com.cshub.taxify.service.certidao;
+package br.com.cshub.taxify.service.taxclearance;
 
 import br.com.cshub.taxify.domain.company.Company;
 import org.junit.jupiter.api.Test;
@@ -13,18 +13,18 @@ import static org.mockito.Mockito.times;
 import static org.mockito.Mockito.verify;
 import static org.mockito.Mockito.when;
 
-class CertidaoSchedulerTest {
+class TaxClearanceSchedulerTest {
 
     @Test
     void aCaptchaStopsAskingEFiscoForTheOtherCompanies() {
-        CertidaoService service = mock(CertidaoService.class);
+        TaxClearanceService service = mock(TaxClearanceService.class);
         Company first = new Company(UUID.randomUUID());
         Company second = new Company(UUID.randomUUID());
         Company third = new Company(UUID.randomUUID());
         when(service.dueCompanies()).thenReturn(List.of(first, second, third));
-        when(service.issue(first)).thenReturn(new CertidaoService.Attempt(false, true, "captcha"));
+        when(service.issue(first)).thenReturn(new TaxClearanceService.Attempt(false, true, "captcha"));
 
-        new CertidaoScheduler(service, true, br.com.cshub.taxify.service.firmaccess.FirmAccessTestSupport.allowAll()).runAll();
+        new TaxClearanceScheduler(service, true, br.com.cshub.taxify.service.firmaccess.FirmAccessTestSupport.allowAll()).runAll();
 
         verify(service, times(1)).issue(any());
         verify(service).recordSkipped(second, "captcha");
@@ -33,9 +33,9 @@ class CertidaoSchedulerTest {
 
     @Test
     void offDoesNothing() {
-        CertidaoService service = mock(CertidaoService.class);
+        TaxClearanceService service = mock(TaxClearanceService.class);
 
-        new CertidaoScheduler(service, false, br.com.cshub.taxify.service.firmaccess.FirmAccessTestSupport.allowAll()).tick();
+        new TaxClearanceScheduler(service, false, br.com.cshub.taxify.service.firmaccess.FirmAccessTestSupport.allowAll()).tick();
 
         verify(service, never()).dueCompanies();
     }

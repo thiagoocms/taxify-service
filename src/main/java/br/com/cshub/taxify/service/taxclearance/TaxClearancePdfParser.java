@@ -1,7 +1,7 @@
-package br.com.cshub.taxify.service.certidao;
+package br.com.cshub.taxify.service.taxclearance;
 
-import br.com.cshub.taxify.enumerated.CertidaoSituacao;
-import br.com.cshub.taxify.enumerated.CertidaoTipo;
+import br.com.cshub.taxify.enumerated.TaxClearanceStatus;
+import br.com.cshub.taxify.enumerated.TaxClearanceType;
 import com.lowagie.text.pdf.PdfReader;
 import com.lowagie.text.pdf.parser.PdfTextExtractor;
 import org.springframework.stereotype.Component;
@@ -22,7 +22,7 @@ import java.util.regex.Pattern;
  * (e-Fisco's validity for the certidão).
  */
 @Component
-public class CertidaoPdfParser {
+public class TaxClearancePdfParser {
 
     /** e-Fisco's validity for a state certidão. */
     public static final int VALIDITY_DAYS = 90;
@@ -42,24 +42,24 @@ public class CertidaoPdfParser {
     private static final Pattern CNPJ = Pattern.compile(CNPJ_VALUE);
 
     /** What the PDF says. */
-    public record Certidao(CertidaoTipo tipo, String numero, CertidaoSituacao situacao, LocalDate emitidaEm,
-                           LocalDate validaAte, String cnpj) {
+    public record TaxClearance(TaxClearanceType type, String number, TaxClearanceStatus status, LocalDate issuedOn,
+                           LocalDate validUntil, String cnpj) {
     }
 
-    public static class InvalidCertidaoException extends RuntimeException {
-        public InvalidCertidaoException(String message) {
+    public static class InvalidTaxClearanceException extends RuntimeException {
+        public InvalidTaxClearanceException(String message) {
             super(message);
         }
     }
 
-    public Certidao parse(byte[] pdf) {
+    public TaxClearance parse(byte[] pdf) {
         return parseText(text(pdf));
     }
 
     /** The PDF's text, page after page. */
     static String text(byte[] pdf) {
         if (pdf == null || pdf.length < 5 || pdf[0] != '%' || pdf[1] != 'P') {
-            throw new InvalidCertidaoException("o arquivo não é um PDF.");
+            throw new InvalidTaxClearanceException("o arquivo não é um PDF.");
         }
         try {
             PdfReader reader = new PdfReader(pdf);
@@ -74,19 +74,19 @@ public class CertidaoPdfParser {
                 reader.close();
             }
         } catch (IOException | RuntimeException e) {
-            throw new InvalidCertidaoException("o PDF não pôde ser lido (" + e.getMessage() + ").");
+            throw new InvalidTaxClearanceException("o PDF não pôde ser lido (" + e.getMessage() + ").");
         }
     }
 
     /** The certidão from the PDF's text. */
-    public Certidao parseText(String raw) {
+    public TaxClearance parseText(String raw) {
         String text = normalize(raw);
         if (!text.contains("certidao")) {
-            throw new InvalidCertidaoException("o PDF não parece uma certidão da SEFAZ.");
+            throw new InvalidTaxClearanceException("o PDF não parece uma certidão da SEFAZ.");
         }
-        CertidaoSituacao situacao = situacao(text);
-        if (situacao == null) {
-            throw new InvalidCertidaoException("a situação (negativa, positiva ou positiva com efeito de negativa) não foi encontrada.");
+        TaxClearanceStatus status = status(text);
+        if (status == null) {
+            throw new InvalidTaxClearanceException("a situação (negativa, positiva ou positiva com efeito de negativa) não foi encontrada.");
         }
         LocalDate issued = date(ISSUED, text);
         LocalDate validUntil = date(VALID_UNTIL, text);
@@ -95,10 +95,10 @@ public class CertidaoPdfParser {
             validUntil = issued.plusDays(days.find() ? Integer.parseInt(days.group(1)) : VALIDITY_DAYS);
         }
         if (validUntil == null) {
-            throw new InvalidCertidaoException("a data de validade não foi encontrada.");
+            throw new InvalidTaxClearanceException("a data de validade não foi encontrada.");
         }
         Matcher number = NUMBER.matcher(text);
-        return new Certidao(tipo(text), number.find() ? number.group(1) : null, situacao, issued, validUntil, cnpj(text));
+        return new TaxClearance(type(text), number.find() ? number.group(1) : null, status, issued, validUntil, cnpj(text));
     }
 
     /** The CNPJ (digits) after the "CNPJ" label, or the first one written as a CNPJ. */
@@ -112,32 +112,32 @@ public class CertidaoPdfParser {
     }
 
     /** "Certidão Negativa de Débitos" in the title = CND; "Regularidade Fiscal" (or anything else) = CRF. */
-    static CertidaoTipo tipo(String text) {
+    static TaxClearanceType type(String text) {
         if (text.contains("regularidade fiscal")) {
-            return CertidaoTipo.CRF;
+            return TaxClearanceType.CRF;
         }
-        return text.contains("negativa de debito") ? CertidaoTipo.CND : CertidaoTipo.CRF;
+        return text.contains("negativa de debito") ? TaxClearanceType.CND : TaxClearanceType.CRF;
     }
 
     /**
      * The situation as e-Fisco writes it - "positiva com efeito(s) de negativa" first (it also contains both words),
      * then "certidão positiva" / "certidão negativa", then the statement ("não constam" / "constam" débitos).
      */
-    static CertidaoSituacao situacao(String text) {
+    static TaxClearanceStatus status(String text) {
         if (Pattern.compile("positiva,? com efeitos? de negativa").matcher(text).find()) {
-            return CertidaoSituacao.POSITIVA_EFEITO_NEGATIVA;
+            return TaxClearanceStatus.POSITIVA_EFEITO_NEGATIVA;
         }
         if (Pattern.compile("certidao (?:de regularidade fiscal )?positiva|situacao\\s*:?\\s*positiva").matcher(text).find()) {
-            return CertidaoSituacao.POSITIVA;
+            return TaxClearanceStatus.POSITIVA;
         }
         if (Pattern.compile("certidao (?:de regularidade fiscal )?negativa|situacao\\s*:?\\s*negativa").matcher(text).find()) {
-            return CertidaoSituacao.NEGATIVA;
+            return TaxClearanceStatus.NEGATIVA;
         }
         if (Pattern.compile("nao (?:constam|existem|ha|consta)\\s+(?:\\S+\\s+){0,4}debitos?").matcher(text).find()) {
-            return CertidaoSituacao.NEGATIVA;
+            return TaxClearanceStatus.NEGATIVA;
         }
         if (Pattern.compile("(?:constam|existem|consta)\\s+(?:\\S+\\s+){0,4}debitos?").matcher(text).find()) {
-            return CertidaoSituacao.POSITIVA;
+            return TaxClearanceStatus.POSITIVA;
         }
         return null;
     }

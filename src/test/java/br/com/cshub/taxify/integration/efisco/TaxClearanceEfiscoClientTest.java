@@ -4,7 +4,7 @@ import org.junit.jupiter.api.Test;
 
 import static org.assertj.core.api.Assertions.assertThat;
 
-class CertidaoEfiscoClientTest {
+class TaxClearanceEfiscoClientTest {
 
     /** The public page's form as e-Fisco served it in 11/2026 (trimmed): the Turnstile the emission needs. */
     private static final String PAGE = """
@@ -18,11 +18,11 @@ class CertidaoEfiscoClientTest {
 
     @Test
     void theTurnstileIsAHumanCheck() {
-        assertThat(EfiscoCertidaoClient.requiresHumanCheck(PAGE)).isTrue();
+        assertThat(EfiscoTaxClearanceClient.requiresHumanCheck(PAGE)).isTrue();
     }
 
     @Test
     void aFormWithoutCaptchaIsNot() {
-        assertThat(EfiscoCertidaoClient.requiresHumanCheck(PAGE.replaceAll("(?s)<div class=\"cf-turnstile\".*?</script>", ""))).isFalse();
+        assertThat(EfiscoTaxClearanceClient.requiresHumanCheck(PAGE.replaceAll("(?s)<div class=\"cf-turnstile\".*?</script>", ""))).isFalse();
     }
 }

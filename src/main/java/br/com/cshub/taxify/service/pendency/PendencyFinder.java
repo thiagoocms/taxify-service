@@ -22,6 +22,7 @@ import br.com.cshub.taxify.repository.SubscriptionRepository;
 import br.com.cshub.taxify.service.CompanyCertificateService;
 import br.com.cshub.taxify.service.FiscalXmlQueryService;
 import br.com.cshub.taxify.service.SefazManifestationScreenService;
+import br.com.cshub.taxify.service.taxclearance.TaxClearancePendencies;
 import org.springframework.data.domain.PageRequest;
 import org.springframework.data.domain.Pageable;
 import org.springframework.stereotype.Component;
@@ -69,7 +70,7 @@ public class PendencyFinder {
     private final SefazProperties sefazProperties;
     private final br.com.cshub.taxify.service.retention.RetentionCalculator retentionCalculator;
     private final br.com.cshub.taxify.repository.NfseAdnControlRepository adnControlRepository;
-    private final br.com.cshub.taxify.service.certidao.CertidaoPendencies certidaoPendencies;
+    private final TaxClearancePendencies taxClearancePendencies;
 
     public PendencyFinder(CompanyCertificateService certificateService, SefazDistControlRepository controlRepository,
                           SefazNoteSummaryRepository summaryRepository, FiscalXmlDocumentRepository documentRepository,
@@ -77,9 +78,9 @@ public class PendencyFinder {
                           SefazManifestationScreenService manifestationService, SefazProperties sefazProperties,
                           br.com.cshub.taxify.service.retention.RetentionCalculator retentionCalculator,
                           br.com.cshub.taxify.repository.NfseAdnControlRepository adnControlRepository,
-                          br.com.cshub.taxify.service.certidao.CertidaoPendencies certidaoPendencies) {
+                          TaxClearancePendencies taxClearancePendencies) {
         this.adnControlRepository = adnControlRepository;
-        this.certidaoPendencies = certidaoPendencies;
+        this.taxClearancePendencies = taxClearancePendencies;
         this.retentionCalculator = retentionCalculator;
         this.certificateService = certificateService;
         this.controlRepository = controlRepository;
@@ -122,7 +123,7 @@ public class PendencyFinder {
         divergent(company, now, findings);
         regime(company, findings);
         retentions(company, findings);
-        findings.addAll(certidaoPendencies.find(company));
+        findings.addAll(taxClearancePendencies.find(company));
         return findings;
     }
 

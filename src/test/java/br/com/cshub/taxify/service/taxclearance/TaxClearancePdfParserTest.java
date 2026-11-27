@@ -1,7 +1,7 @@
-package br.com.cshub.taxify.service.certidao;
+package br.com.cshub.taxify.service.taxclearance;
 
-import br.com.cshub.taxify.enumerated.CertidaoSituacao;
-import br.com.cshub.taxify.enumerated.CertidaoTipo;
+import br.com.cshub.taxify.enumerated.TaxClearanceStatus;
+import br.com.cshub.taxify.enumerated.TaxClearanceType;
 import com.lowagie.text.Document;
 import com.lowagie.text.Paragraph;
 import com.lowagie.text.pdf.PdfWriter;
@@ -17,9 +17,9 @@ import static org.assertj.core.api.Assertions.assertThatThrownBy;
  * The e-Fisco certidão could not be issued for real (the public page asks for a captcha), so these texts follow the
  * layout of the SEFAZ-PE certidão: header, number, company (CNPJ/IE), the statement, situation, issue and validity.
  */
-class CertidaoPdfParserTest {
+class TaxClearancePdfParserTest {
 
-    private final CertidaoPdfParser parser = new CertidaoPdfParser();
+    private final TaxClearancePdfParser parser = new TaxClearancePdfParser();
 
     private static final String NEGATIVA = """
             GOVERNO DO ESTADO DE PERNAMBUCO
@@ -36,14 +36,14 @@ class CertidaoPdfParserTest {
 
     @Test
     void readsANegativeCrf() {
-        CertidaoPdfParser.Certidao certidao = parser.parseText(NEGATIVA);
+        TaxClearancePdfParser.TaxClearance clearance = parser.parseText(NEGATIVA);
 
-        assertThat(certidao.tipo()).isEqualTo(CertidaoTipo.CRF);
-        assertThat(certidao.situacao()).isEqualTo(CertidaoSituacao.NEGATIVA);
-        assertThat(certidao.numero()).isEqualTo("2026.000123456789-01");
-        assertThat(certidao.emitidaEm()).isEqualTo(LocalDate.of(2026, 11, 24));
-        assertThat(certidao.validaAte()).isEqualTo(LocalDate.of(2027, 2, 22));
-        assertThat(certidao.cnpj()).isEqualTo("11222333000181");
+        assertThat(clearance.type()).isEqualTo(TaxClearanceType.CRF);
+        assertThat(clearance.status()).isEqualTo(TaxClearanceStatus.NEGATIVA);
+        assertThat(clearance.number()).isEqualTo("2026.000123456789-01");
+        assertThat(clearance.issuedOn()).isEqualTo(LocalDate.of(2026, 11, 24));
+        assertThat(clearance.validUntil()).isEqualTo(LocalDate.of(2027, 2, 22));
+        assertThat(clearance.cnpj()).isEqualTo("11222333000181");
     }
 
     @Test
@@ -51,7 +51,7 @@ class CertidaoPdfParserTest {
         String text = NEGATIVA.replace("NÃO CONSTAM débitos", "CONSTAM débitos com a exigibilidade suspensa")
                 .replace("Situação: NEGATIVA", "CERTIDÃO POSITIVA COM EFEITOS DE NEGATIVA");
 
-        assertThat(parser.parseText(text).situacao()).isEqualTo(CertidaoSituacao.POSITIVA_EFEITO_NEGATIVA);
+        assertThat(parser.parseText(text).status()).isEqualTo(TaxClearanceStatus.POSITIVA_EFEITO_NEGATIVA);
     }
 
     @Test
@@ -59,14 +59,14 @@ class CertidaoPdfParserTest {
         String text = NEGATIVA.replace("NÃO CONSTAM débitos", "CONSTAM os débitos abaixo")
                 .replace("Situação: NEGATIVA", "Situação: POSITIVA");
 
-        assertThat(parser.parseText(text).situacao()).isEqualTo(CertidaoSituacao.POSITIVA);
+        assertThat(parser.parseText(text).status()).isEqualTo(TaxClearanceStatus.POSITIVA);
     }
 
     @Test
     void situationFromTheStatementWhenTheWordIsMissing() {
         String text = NEGATIVA.replace("Situação: NEGATIVA", "");
 
-        assertThat(parser.parseText(text).situacao()).isEqualTo(CertidaoSituacao.NEGATIVA);
+        assertThat(parser.parseText(text).status()).isEqualTo(TaxClearanceStatus.NEGATIVA);
     }
 
     @Test
@@ -74,18 +74,18 @@ class CertidaoPdfParserTest {
         String text = NEGATIVA.replace("CERTIDÃO DE REGULARIDADE FISCAL", "CERTIDÃO NEGATIVA DE DÉBITOS FISCAIS")
                 .replace("Situação: NEGATIVA", "");
 
-        CertidaoPdfParser.Certidao certidao = parser.parseText(text);
-        assertThat(certidao.tipo()).isEqualTo(CertidaoTipo.CND);
-        assertThat(certidao.situacao()).isEqualTo(CertidaoSituacao.NEGATIVA);
+        TaxClearancePdfParser.TaxClearance clearance = parser.parseText(text);
+        assertThat(clearance.type()).isEqualTo(TaxClearanceType.CND);
+        assertThat(clearance.status()).isEqualTo(TaxClearanceStatus.NEGATIVA);
     }
 
     @Test
     void withoutValidityDateIsIssuePlus90Days() {
         String text = NEGATIVA.replace("Válida até: 22/02/2027", "Validade: 90 (noventa) dias");
 
-        assertThat(parser.parseText(text).validaAte()).isEqualTo(LocalDate.of(2026, 11, 24).plusDays(90));
-        assertThat(parser.parseText(NEGATIVA.replace("Válida até: 22/02/2027", "")).validaAte())
-                .isEqualTo(LocalDate.of(2026, 11, 24).plusDays(CertidaoPdfParser.VALIDITY_DAYS));
+        assertThat(parser.parseText(text).validUntil()).isEqualTo(LocalDate.of(2026, 11, 24).plusDays(90));
+        assertThat(parser.parseText(NEGATIVA.replace("Válida até: 22/02/2027", "")).validUntil())
+                .isEqualTo(LocalDate.of(2026, 11, 24).plusDays(TaxClearancePdfParser.VALIDITY_DAYS));
     }
 
     @Test
@@ -93,20 +93,20 @@ class CertidaoPdfParserTest {
         String text = NEGATIVA.replace("Certidão Nº: 2026.000123456789-01\n", "")
                 .replace("CNPJ: 11.222.333/0001-81", "inscrita no CNPJ sob o nº 11.222.333/0001-81");
 
-        CertidaoPdfParser.Certidao certidao = parser.parseText(text);
-        assertThat(certidao.numero()).isNull();
-        assertThat(certidao.cnpj()).isEqualTo("11222333000181");
+        TaxClearancePdfParser.TaxClearance clearance = parser.parseText(text);
+        assertThat(clearance.number()).isNull();
+        assertThat(clearance.cnpj()).isEqualTo("11222333000181");
     }
 
     @Test
-    void refusesWhatIsNotACertidao() {
+    void refusesWhatIsNotATaxClearance() {
         assertThatThrownBy(() -> parser.parseText("Extrato do contribuinte - ICMS antecipado"))
-                .isInstanceOf(CertidaoPdfParser.InvalidCertidaoException.class);
+                .isInstanceOf(TaxClearancePdfParser.InvalidTaxClearanceException.class);
         assertThatThrownBy(() -> parser.parseText("CERTIDÃO DE REGULARIDADE FISCAL Situação: NEGATIVA"))
-                .isInstanceOf(CertidaoPdfParser.InvalidCertidaoException.class)
+                .isInstanceOf(TaxClearancePdfParser.InvalidTaxClearanceException.class)
                 .hasMessageContaining("validade");
         assertThatThrownBy(() -> parser.parse("not a pdf".getBytes()))
-                .isInstanceOf(CertidaoPdfParser.InvalidCertidaoException.class);
+                .isInstanceOf(TaxClearancePdfParser.InvalidTaxClearanceException.class);
     }
 
     @Test
@@ -120,10 +120,10 @@ class CertidaoPdfParserTest {
         }
         document.close();
 
-        CertidaoPdfParser.Certidao certidao = parser.parse(out.toByteArray());
+        TaxClearancePdfParser.TaxClearance clearance = parser.parse(out.toByteArray());
 
-        assertThat(certidao.situacao()).isEqualTo(CertidaoSituacao.NEGATIVA);
-        assertThat(certidao.validaAte()).isEqualTo(LocalDate.of(2027, 2, 22));
-        assertThat(certidao.numero()).isEqualTo("2026.000123456789-01");
+        assertThat(clearance.status()).isEqualTo(TaxClearanceStatus.NEGATIVA);
+        assertThat(clearance.validUntil()).isEqualTo(LocalDate.of(2027, 2, 22));
+        assertThat(clearance.number()).isEqualTo("2026.000123456789-01");
     }
 }

@@ -221,8 +221,8 @@ public class PendencyService {
                     control.getLastDetail(), control.getNextQueryAt(), counts[0], counts[1]));
         }
         // Certidão SEFAZ-PE: no control table - its newest attempt per company
-        for (CaptureRun run : captureRunRepository.findLatestOf(scope, CaptureRun.CERTIDAO_PE)) {
-            long[] counts = runs.getOrDefault(run.getCompany().getId() + "|" + CaptureRun.CERTIDAO_PE, new long[2]);
+        for (CaptureRun run : captureRunRepository.findLatestOf(scope, CaptureRun.TAX_CLEARANCE_PE)) {
+            long[] counts = runs.getOrDefault(run.getCompany().getId() + "|" + CaptureRun.TAX_CLEARANCE_PE, new long[2]);
             health.add(new PendencyDTOs.IntegrationHealth(run.getCompany().getId(), run.getCompany().getName(),
                     "Certidão SEFAZ-PE", run.getStartedAt(), run.getStatus(), run.getDetail(), null, counts[0], counts[1]));
         }

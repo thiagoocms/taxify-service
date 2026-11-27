@@ -17,7 +17,7 @@ import java.util.regex.Pattern;
  * and the certidão is issued by a person on that page (then sent to Taxify as PDF). The old address
  * ({@code sfi_trb_gcc/PREmitirCertidaoRegularidadeFiscal}) now sends to the gov.br login.
  */
-public final class EfiscoCertidaoClient {
+public final class EfiscoTaxClearanceClient {
 
     /** The public page where a person issues the certidão - the screen links to it. */
     public static final String PUBLIC_PAGE = "https://efisco.sefaz.pe.gov.br/sfi_fin_gpc/PREmitirCertidaoRegularidadeWeb";
@@ -27,7 +27,7 @@ public final class EfiscoCertidaoClient {
 
     private final HttpClient http;
 
-    public EfiscoCertidaoClient() {
+    public EfiscoTaxClearanceClient() {
         this.http = HttpClient.newBuilder()
                 .followRedirects(HttpClient.Redirect.NORMAL)
                 .connectTimeout(Duration.ofSeconds(30))
