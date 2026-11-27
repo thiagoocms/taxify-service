@@ -312,20 +312,21 @@ Duas intensidades (`InvariantScope`):
 | I-01 | `company`, `documentType`, `sourceSystem`, `status`, `companyRole` e `metadataVersion` preenchidos | todos | sempre |
 | I-02 | `status = AUTHORIZED` ⇒ `canceledAt` nulo | todos | sempre |
 | I-03 | `status = CANCELED` ⇒ `canceledAt` preenchido, **exceto** `Nfse` (o leiaute atual não traz a data) | todos | CREATE |
-| I-04 | `direction` nulo ⇔ `companyRole` ∈ {`THIRD_PARTY`, `SENDER`, `SHIPPER`, `RECEIVER`} | todos | sempre |
+| I-04 | `direction` nulo ⇔ `companyRole` ∈ {`THIRD_PARTY`, `SENDER`, `SHIPPER`, `RECEIVER`} | `Nfe`, `Nfce`, `Nfse` | sempre |
+| I-04-T | No `Cte`, a direção é **derivada** do papel (FD-RN-08): `ISSUER` → `OUTBOUND`, `TAKER` → `INBOUND`, os demais (inclusive `RECIPIENT`) → nulo. Na atualização de CT-e copiado (`metadataVersion = 0`), `RECIPIENT` aceita também a direção que veio da linha antiga (`INBOUND`), por paridade | `Cte` | CREATE estrito; UPDATE com a exceção |
 | I-05 | `companyRole = ISSUER` ⇔ documento do emitente igual ao CNPJ da empresa (14 dígitos), quando os dois existem | todos | CREATE |
-| I-06 | `documentType` do participante coerente com o tamanho: `CNPJ` = 14 dígitos, `CPF` = 11 dígitos, `FOREIGN` = até 20 caracteres | todos | sempre |
+| I-06 | `documentType` do participante coerente com o tamanho: `CNPJ` = 14 dígitos, `CPF` = 11 dígitos, `FOREIGN` = até 20 caracteres. Documento sem tipo e tipo sem documento são incoerentes | todos | sempre |
 | I-07 | `accessKey` preenchida | todos, exceto `GoodsInvoice` com `sourceSystem = UPLOAD` (o "arquivo estranho" de hoje, `accessKeyOrId()`) | CREATE |
 | I-08 | `issueDate` preenchida | todos | CREATE |
 | I-09 | `xmlFilePath` preenchido enquanto `xmlPurgedAt` é nulo, exceto `Cte` copiado sem arquivo (`metadataVersion = 0`) | todos | CREATE |
-| I-10 | `model = "55"` e chave com 44 dígitos | `Nfe` | CREATE |
-| I-11 | `model = "65"` e chave com 44 dígitos | `Nfce` | CREATE |
+| I-10 | `model = "55"`; chave, **quando presente**, com 44 dígitos (sem chave só no upload, I-07) | `Nfe` | CREATE |
+| I-11 | `model = "65"`; chave, quando presente, com 44 dígitos | `Nfce` | CREATE |
 | I-12 | `model = "57"` e chave com 44 dígitos | `Cte` | CREATE |
 | I-13 | `layout` preenchido; `NATIONAL` ⇒ chave com 50 dígitos; `ABRASF` ⇒ chave começa com `ABRASF-` (sintética) | `Nfse` | sempre |
 | I-14 | `iss.withheld` e `pisCofinsWithheld` não nulos (falso por padrão) | `Nfse` | sempre |
-| I-15 | Pelo menos um booleano de `participation` verdadeiro | `Cte` | CREATE |
+| I-15 | `participation` coerente com `companyRole`: pelo menos um booleano verdadeiro, **exceto** com `companyRole = THIRD_PARTY` (CT-e de upload em que o CNPJ da empresa não aparece em nenhum grupo; hoje o upload aceita, e a recusa é da captura fase 3, CX-RN-31) | `Cte` | CREATE |
 | I-16 | Item só existe em `GoodsInvoice`. `items` não existe em `Nfse` e `Cte` | `GoodsInvoice` | sempre (pelo tipo) |
-| I-17 | Valores monetários com escala 2 e alíquotas com escala 4, gravados como vieram, **sem arredondar**. Valor com mais casas no XML é recusado pelo parser, como hoje | todos | sempre |
+| I-17 | **Dinheiro** com escala 2 e **alíquota/percentual** com escala 4, gravados como vieram, sem arredondar; valor com mais casas é recusado, como hoje. **Não vale** para quantidade e preço unitário (`commercial_*`/`taxable_*`, `decimal(19,4)`): o leiaute permite até 10 casas em `vUnCom`/`qCom`, hoje o upload aceita e o MySQL arredonda na gravação. O domínio faz esse arredondamento explícito (`setScale(4, HALF_UP)`, o mesmo resultado do MySQL para valores positivos), para não depender do banco | todos | sempre |
 
 `legacyKeyLabel()` devolve `"NFE"` para `Nfe` e `Nfce`, `"NFSE"` para `Nfse` e `"CTE"` para `Cte`. É o texto que
 entra nas chaves naturais (FD-RN-21). **Não** é o discriminador: a NFC-e já é `"NFE"` nas chaves gravadas hoje.
@@ -369,7 +370,7 @@ antiga copiada (`fxd` = `fiscal_xml_documents`, `si` = `service_invoices`).
 | `total_amount` | decimal(19,2) | sim | `total_valor_total_nota` | `valor_servico` |
 | `ibs_cbs_base`, `ibs_state_amount`, `ibs_city_amount`, `ibs_amount`, `cbs_amount` | decimal(19,2) | sim | `total_ibscbs_base_calculo`, `total_valor_ibs_uf`, `total_valor_ibs_mun`, `total_valor_ibs`, `total_valor_cbs` | nulo |
 | `withheld_pis_amount`, `withheld_cofins_amount`, `withheld_csll_amount`, `withheld_irrf_amount`, `withheld_inss_amount` | decimal(19,2) | sim | `ret_pis`, `ret_cofins`, `ret_csll`, `ret_irrf`, `ret_inss` | pis e cofins: nulo (ver `pis_amount`); `valor_csll`, `valor_irrf`, `valor_inss` |
-| `source_system` | varchar(20) | não | `source_system` (primeira origem; o painel usa) | `source_system` |
+| `source_system` | varchar(30) | não | `source_system` (primeira origem; o painel usa), com a tradução do FD-RN-40 | `source_system`, idem |
 | `xml_file_path` | varchar(1000) | sim (I-09) | `xml_file_path` | `xml_file_path` |
 | `xml_purged_at` | datetime(6) | sim | nulo (o expurgo preenche daqui em diante) | nulo |
 | `metadata_version` | int | não | `metadata_version`, nulo → 0 | 0 |
@@ -615,17 +616,20 @@ quantas notas o SIEG trouxe de fato, e é isso que o `Skip` precisa (B1, na spec
 | `document_id` | varchar(36) FK `fiscal_documents` | não | |
 | `company_id` | varchar(36) | não | redundante de propósito (é a empresa do documento), para os índices por empresa e fonte |
 | `source` | varchar(30) | não | **valor aberto**, não enum fechado (FD-RN-40): a chave do provedor (`SIEG`, `SEFAZ_DFE`, `NFSE_ADN` e futuros) ou uma origem interna (`UPLOAD`) |
+| `retrieval_mode` | varchar(10) | não | como a fonte entregou: `PERIOD` (contagem + paginação), `NSU`, `CURSOR` (SEFAZ DF-e, ADN), `NONE` (upload). Exigido pela [captura SIEG por NSU](2026-11-27-captura-sieg-nsu.md): o `Skip` do modo atual conta só `SIEG` + `PERIOD`, porque uma nota trazida pelo NSU não ocupa posição na lista do `baixar-xmls` (contá-la repetiria o B1) |
 | `first_seen_at` | datetime(6) | não | primeira vez que a fonte entregou o documento (Recife, como as datas de hoje) |
 | `last_seen_at` | datetime(6) | não | última vez (a fonte trouxe de novo) |
 
 Sem colunas de auditoria (a linha é parte do agregado do documento, como o item). Índices:
-- `uk_fiscal_document_sources (document_id, source)`: uma linha por documento e fonte; idempotência da marca (a
+- `uk_fiscal_document_sources (document_id, source, retrieval_mode)`: uma linha por documento, fonte e modo (o
+  confronto entre fontes conta documentos distintos por `source`); idempotência da marca (a
   gravação concorrente da mesma fonte trata a chave única como "já existia" e só atualiza `last_seen_at`);
 - `idx_fds_company_source_seen (company_id, source, first_seen_at)`: confronto entre fontes ("vistas pelo SIEG antes
   de X") e a contagem por fonte da spec irmã.
 
 Copiado na migration: `found_in_sieg_at` → linha `SIEG`; `found_in_sefaz_at` → `SEFAZ_DFE`; `found_in_adn_at` →
-`NFSE_ADN`, com `first_seen_at = last_seen_at =` a data antiga. A mesma tradução vale para `fiscal_documents.source_system`
+`NFSE_ADN`, com `first_seen_at = last_seen_at =` a data antiga e `retrieval_mode` = `PERIOD` (SIEG), `CURSOR`
+(SEFAZ DF-e e ADN) ou `NONE` (upload). A mesma tradução vale para `fiscal_documents.source_system`
 (`SEFAZ_DIST` → `SEFAZ_DFE`, `ADN` → `NFSE_ADN`). A API continua aceitando e devolvendo `SEFAZ_DIST` e `ADN` onde hoje
 aparecem (por exemplo, o filtro `origem` de `XmlSearchFilterDTO`), pela tradução no mapper. Documento com `source_system = 'UPLOAD'` ganha a linha
 `UPLOAD` com `created_date`. Documento sem nenhuma data de origem e sem upload (nota anterior ao V33/V42) fica sem
@@ -665,22 +669,58 @@ Copiado na migration, de cada linha de `fiscal_xml_sync_control` (canal `SIEG`, 
 - lado `ISSUED`, mesmo mês: `issued_total_sieg`, `issued_total_imported`, `issued_checked_at`;
 - mês anterior (V79): `received_prev_month`/`received_prev_total_sieg`/`received_prev_imported` e o equivalente
   `issued_prev_*`, com `closed_at` = data da cópia;
-- V85 (`fix/sieg-call-savings`): `received_stored_any_source`/`issued_stored_any_source` → `stored_any_source_total`
-  da linha do mês corrente do lado; `received_known_gap` com `received_known_gap_month` (e o par `issued_*`) →
-  `known_gap` da linha do lado no **mês indicado** pela coluna `*_known_gap_month` (se esse mês não for o corrente nem
-  o anterior, cria a linha do mês com `closed_at` preenchido). Gap com mês nulo não é copiado.
+- V85 (`fix/sieg-call-savings`, já no master, **10 colunas**, conferidas no arquivo da migration):
+  - `received_stored_any_source`/`issued_stored_any_source` → `stored_any_source_total` da linha do mês corrente do lado;
+  - **duas vagas de diferença conhecida por lado**: `*_known_gap_month`/`*_known_gap` (vaga 1) e
+    `*_earlier_gap_month`/`*_earlier_gap` (vaga 2, o mês anterior conferido nos primeiros dias). Cada vaga vira o
+    `known_gap` da linha (`SIEG`, `NFE`, lado, **mês da vaga**). Mês da vaga que não tem linha (nem o corrente nem o
+    anterior) cria a linha com `closed_at` preenchido. Vaga com mês nulo não é copiada. As duas vagas com o mesmo mês
+    (não deveria acontecer): vale a vaga 1, e o caso é contado no log da cópia;
+  - no modelo novo não há limite de duas vagas: cada mês tem a própria linha. A regra da fix ("a reconciliação só roda
+    de novo quando a diferença do mesmo mês aumenta") continua, lendo `known_gap` da linha do mês.
+- Mês anterior igual ao corrente (`*_prev_month` = mês de `data_emissao_inicio`, dado inconsistente): não é copiado,
+  para não colidir na chave única; contado no log.
+- Lado emitido: usa a **mesma janela** (`data_emissao_inicio`/`data_emissao_fim`) do recebido, porque a tabela antiga
+  só tem uma janela por empresa.
 
 **O que fica e o que sai de `fiscal_xml_sync_control` nesta release** (a V89 remove, FD-RN-53):
 
 | Fica (a fila e as datas de rotina dependem delas) | Sai (migrada para `capture_period_counts`) |
 |---|---|
-| `id`, `company_id`, `last_attempt_at` (ordem e reserva da fila, `FiscalXmlSyncScheduler.reserve`), `issued_events_checked_on`, `received_events_checked_on` (eventos uma vez por dia), `service_invoices_checked_on` (NFS-e), auditoria e `deleted` | `total_sieg`, `total_importado`, `ultima_verificacao_em`, `issued_total_sieg`, `issued_total_imported`, `issued_checked_at`, `data_emissao_inicio`, `data_emissao_fim`, `received_prev_month`, `received_prev_total_sieg`, `received_prev_imported`, `issued_prev_month`, `issued_prev_total_sieg`, `issued_prev_imported`; e as 6 da V85 da `fix/sieg-call-savings`: `received_known_gap_month`, `received_known_gap`, `issued_known_gap_month`, `issued_known_gap`, `received_stored_any_source`, `issued_stored_any_source` |
+| `id`, `company_id`, `last_attempt_at` (ordem e reserva da fila, `FiscalXmlSyncScheduler.reserve`), `issued_events_checked_on`, `received_events_checked_on` (eventos uma vez por dia), `service_invoices_checked_on` (NFS-e), auditoria e `deleted` | `total_sieg`, `total_importado`, `ultima_verificacao_em`, `issued_total_sieg`, `issued_total_imported`, `issued_checked_at`, `data_emissao_inicio`, `data_emissao_fim`, `received_prev_month`, `received_prev_total_sieg`, `received_prev_imported`, `issued_prev_month`, `issued_prev_total_sieg`, `issued_prev_imported`; e as 10 da V85 da `fix/sieg-call-savings`: `received_known_gap_month`, `received_known_gap`, `issued_known_gap_month`, `issued_known_gap`, `received_earlier_gap_month`, `received_earlier_gap`, `issued_earlier_gap_month`, `issued_earlier_gap`, `received_stored_any_source`, `issued_stored_any_source` |
 
 A data da última verificação, que hoje a fila usa para saber se o lado está "em dia hoje" (`SideState.checkedAt`), passa
-a ser `provider_counted_at`/`imported_counted_at` da linha do mês em `capture_period_counts`. As 6 colunas
+a ser `provider_counted_at`/`imported_counted_at` da linha do mês em `capture_period_counts`. As 10 colunas
 da V85 (`fix/sieg-call-savings`) seguem a mesma regra: migram e saem na V89. Qualquer outra coluna de contador que
 entrar nessa tabela antes da remodelagem também. O
 resto da tabela é substituído pela `capture_stream` (T1) na fase P.
+
+### 3.12 Decisões de implementação (revisão do PO em 2026-11-27, a partir da branch `feature/fiscal-documents-domain`)
+
+O dev do domínio encontrou pontos omissos ou contraditórios e decidiu. O PO avaliou cada um. O que está aqui **vale como
+regra** para o dev das migrations (V86 a V89) e para a integração.
+
+| # | Ponto | Decisão do dev | Avaliação do PO | Regra |
+|---|---|---|---|---|
+| D-01 | Entidades novas sem tabela até a V86 (o `ddl-auto: validate` falharia) | `StagedEntitiesConfig` (`ManagedClassNameFilter`) tira as entidades novas do contexto JPA; o filtro sai no commit da V86 | **Concordo.** Permite entregar o domínio sozinho (B-FD-01) com o master verde | O filtro **não pode** chegar à release: o reviewer barra o PR da V86 que não o remova, e um teste confere que todas as entidades de `domain/fiscaldocument` estão no metamodelo depois da V86 |
+| D-02 | Tamanho de `source_system` | `varchar(30)` | **Concordo.** A 3.4 estava errada (20); vale o FD-RN-40 | Corrigido na 3.4 |
+| D-03 | CT-e com papel `RECIPIENT`: o FD-RN-08 diz sem direção, e o I-04 exigia direção | `RECIPIENT` aceita com ou sem direção; `ISSUER` e `TAKER` exigem; os outros proíbem | **Corrijo em parte.** "Com ou sem" deixa duas verdades para o mesmo caso. No CT-e, a direção é **derivada** do papel (`RECIPIENT` → nula) em todo CT-e novo; a única tolerância é para CT-e copiado (`metadataVersion = 0`), que mantém a direção antiga por paridade | I-04 passa a valer para NF-e, NFC-e e NFS-e; I-04-T para o CT-e (3.3) |
+| D-04 | Expedidor e recebedor do CT-e (a 3.4 não tem cidade nem UF para eles) | `CteParty` (documento, tipo, nome) para expedidor e recebedor; `sender_uf` e `taker_uf` como campos do `Cte` | **Concordo.** Bate com as colunas da 3.4; `Party` (com UF e cidade) fica para emitente e destinatário | `Cte.shipper` e `Cte.receiver` são `CteParty`; `Cte.sender` e `Cte.taker` são `CteParty` + `senderUf`/`takerUf` |
+| D-05 | I-10/I-11 no upload sem chave | Só o modelo é exigido; a chave, se presente, tem 44 dígitos | **Concordo.** É coerente com a exceção do I-07 | Corrigido na 3.3 |
+| D-06 | I-06 com documento sem tipo | Documento sem tipo e tipo sem documento são incoerentes | **Concordo** | Corrigido na 3.3 |
+| D-07 | I-17 e o `vUnCom` com 10 casas | I-17 só para dinheiro e alíquota | **Concordo**, com arredondamento explícito de quantidade e preço unitário para 4 casas | Corrigido na 3.3 |
+| D-08 | O SQL da V87 precisa repetir regras do tradutor Java | `NULLIF(TRIM(x), '')` na escolha do documento; `AUTHORIZED` sem `canceled_at`; CT-e antigo leva do bloco G só a base e o valor do ICMS; lado emitido com a mesma janela do recebido; mês anterior igual ao corrente não é copiado | **Concordo com as cinco.** Sobre o `canceled_at` com status autorizado: a data é descartada (I-02), e a V87 conta esses casos no log. Os outros totais de mercadoria de um CT-e antigo não existem no CT-e (o parser atual não os preenche). A medição mostra zero CT-e | FD-RN-55 |
+| D-09 | Colunas da V85 no tradutor e na cópia | As 10 colunas entram | **Concordo.** O mapeamento, inclusive da segunda vaga (`earlier_gap`), está na 3.11 | 3.11 |
+| D-10 | Origem nova da SEFAZ no CT-FD-27 | `SEFAZ_DFE` | **Concordo.** O CT-FD-27 estava desatualizado | Corrigido |
+| D-11 | Nomes de FK | `fk_<tabela>_<alvo>` | **Concordo**, com o alvo no singular, como o padrão atual (`fk_fiscal_xml_documents_company`) | `fk_fiscal_documents_company`, `fk_fiscal_document_items_document`, `fk_fiscal_document_events_company`, `fk_fiscal_document_events_document`, `fk_fiscal_document_sources_document`, `fk_capture_period_counts_company` |
+
+**Riscos apontados pelo dev, transformados em regra:**
+- **R-a. Nota antiga sem direção.** Uma linha antiga com `direction` nula e papel `RECIPIENT` falharia em qualquer
+  `UPDATE` pelo I-04 até o `FiscalDirectionBackfill` rodar. Regra **FD-RN-56**.
+- **R-b. Upload de CT-e e o I-15.** O parser atual não extrai os participantes do CT-e, e o upload passaria a falhar.
+  Regra: a B-FD-04 extrai o documento (CNPJ ou CPF) dos seis grupos (`emit`, `rem`, `exped`, `receb`, `dest`,
+  `toma3`/`toma4`) para calcular `participation` e o papel (FD-RN-08). Se nenhum grupo casar com a empresa, o CT-e é
+  gravado como `THIRD_PARTY` (I-15 revisto), como o upload aceita hoje.
 
 ---
 
@@ -722,6 +762,8 @@ resto da tabela é substituído pela `capture_stream` (T1) na fase P.
 | **FD-RN-31 Origens do documento (T4)** | Toda gravação ou nova entrega de um documento por uma fonte faz o upsert de (`document_id`, `source`): cria com `first_seen_at = last_seen_at = agora` ou só atualiza `last_seen_at`. É o que hoje faz o `markFoundIn` (`FiscalXmlIntegrationService:452, 464`), estendido a todas as fontes, inclusive `UPLOAD`. A primeira origem continua também em `source_system` |
 | **FD-RN-32 Contagens por período (T2)** | O SIEG grava o que conta e o que tem em `capture_period_counts` (canal `SIEG`, tipo `NFE`, lado, mês), com o **mesmo cálculo do master na data da troca** (já com a `fix/sieg-call-savings`: `updateSyncControl`, `closePreviousMonth`, `SiegReconciliationService`): mesma janela, mesmo `imported_total` (entregues pelo SIEG), mesmo `stored_any_source_total`, mesmo `known_gap`, mesma reconciliação e mesmo encerramento do mês anterior. **Painel:** o campo `storedAnySource` do contrato atual (o "qualquer origem" ao lado do "vindas do SIEG") continua com o mesmo nome e valor, lido de `stored_any_source_total`. Leitores: o agendador do SIEG (`SideState`), o painel da captura (`CaptureSituationRules`) e a tela de situação. Upsert pela chave única, seguro com duas instâncias. Mudança de comportamento (mês anterior aberto por alguns dias, contagem por fonte) é da spec irmã |
 | **FD-RN-40 Modelo de dados neutro quanto ao provedor** | Nenhuma tabela ou coluna nova desta spec leva nome de provedor: nada de `found_in_sieg_at`, `total_sieg` ou `*_sieg`. Origem (`fiscal_document_sources.source`, `fiscal_documents.source_system`) e canal (`capture_period_counts.channel`) são **valores abertos** `varchar(30)`, validados no Java contra os provedores registrados mais as origens internas (`UPLOAD`). No Java, são objetos de valor (`DocumentSourceKey`, `ProviderKey`) e não enums: um provedor novo não exige migration nem mudar enum. Os valores gravados hoje que entram em chave natural (`PendencyType.SOURCE_ONLY_SIEG`, FD-RN-21) **não mudam** |
+| **FD-RN-55 O SQL da cópia repete o tradutor** | A V87 aplica, em SQL, exatamente as regras do tradutor Java usado nos testes (um teste compara as duas saídas na mesma massa): (1) a escolha do documento do participante ignora texto vazio (`COALESCE(NULLIF(TRIM(issuer_cnpj), ''), NULLIF(TRIM(emit_cpf), ''))`, e o mesmo para destinatário e id estrangeiro); (2) `status` `AUTHORIZED` (ou nulo) grava `canceled_at` nulo (I-02), contando no log os casos descartados; (3) CT-e antigo leva do bloco G só `icms_base` e `icms_amount`; (4) lado emitido com a mesma janela do recebido (3.11); (5) mês anterior igual ao corrente não é copiado (3.11) |
+| **FD-RN-56 Direção nula das linhas antigas** | A remedição da véspera (seção 8) conta as linhas de `fiscal_xml_documents` com `direction` nula. **Se houver alguma**, o `FiscalDirectionBackfill` (que já roda na subida da versão atual) precisa terminar antes da janela: reiniciar a imagem atual e conferir a contagem zerada. Como rede, a V87 preenche a direção que ainda faltar pela mesma regra do backfill (`FiscalDirection`: recebida → `INBOUND`; própria com `ide_tipo_operacao` 0 → `INBOUND`, 1 → `OUTBOUND`) e loga a contagem; nesse caso a paridade (FD-RN-25) compara o lado antigo com a direção derivada. Linha que nem a regra resolve (sem `ide_tipo_operacao`) faz a V87 falhar com a contagem, para o Tony decidir. Com isso, o `FiscalDirectionBackfill` é removido nesta release (FD-RN-28) |
 | **FD-RN-30 Limite do big-bang** | O plano principal vale enquanto a remedição da véspera mostrar até **1 milhão de itens** e até **200 mil documentos** e a cópia local com esse volume levar até **5 minutos**. Passando disso, vale o plano alternativo da seção 7 |
 
 ---
@@ -926,6 +968,25 @@ bytes**. O núcleo faz o resto (parse, invariantes, gravação, origens, contado
 | Eventos | `events = BY_PERIOD` | varre só o que a regra do A2 manda; `INLINE` não gasta chamada extra |
 | NFS-e | `NFSE ∈ documentTypes` | com `countByDocumentType`, baixa só quando a contagem de NFS-e difere do entregue (A1) |
 
+**SIEG por NSU.** Detalhado na spec [Captura SIEG por NSU](2026-11-27-captura-sieg-nsu.md) (decisão do Tony de
+2026-11-27), que substitui as fases 2 e 3 da captura ampliada. O que segue é o encaixe no modelo. O material que o
+coordenador repassou cita os endpoints `baixar-xml/nsu` e `consultar-nsu`, 3.000 req/min, NF-e, NFC-e, CT-e, NFS-e,
+CF-e e eventos, com 90 dias de alcance. No modelo da fase P, isso é **o mesmo provedor `SIEG` em outro modo**, não um
+provedor nem uma origem nova:
+- o descriptor do SIEG passa a ter dois modos, `PERIOD` (o de hoje: `PERIOD_COUNT_AND_OFFSET`) e `NSU` (`CURSOR`,
+  eventos `INLINE`), escolhidos por `TAXIFY_PROVIDER_SIEG_MODE` (padrão `PERIOD`) e, depois, por escritório em
+  `firm_capture_providers`;
+- a origem gravada continua `SIEG` (`fiscal_document_sources.source`), e o confronto entre fontes e o `Skip` não mudam
+  de significado;
+- o cursor fica em `capture_stream.cursor_value` (linha `SIEG` × tipo × lado), e o modo em uso fica numa coluna
+  `retrieval_mode` do próprio `capture_stream` (que nasce na fase P, então não é mudança de modelo). Trocar de modo
+  posiciona o cursor pelo `consultar-nsu`;
+- limite e orçamento seguem o FD-RN-45, com o `rateLimit` declarado pelo modo;
+- CF-e não tem subtipo no modelo: documento CF-e entregue pelo NSU é ignorado e contado em
+  `provider.requests`/log até existir uma spec do CF-e;
+- **nenhuma tabela nem coluna desta spec muda** por causa do NSU. A regra de 90 dias (o que fazer com empresa parada
+  há mais tempo) é decisão do detalhamento, que deve passar pelo Tony.
+
 SEFAZ DF-e e ADN são **descritos** no mesmo modelo (`retrieval = CURSOR`, `credentialScope = COMPANY_CERTIFICATE`,
 `rateLimit` próprio). Mover os dois serviços para `CaptureProvider` faz parte desta fase (B-FP-06), com paridade de
 comportamento (mesmo NSU, mesmos códigos de falha).
@@ -1066,6 +1127,9 @@ de documento." Campos extras: `documentType`, `side`.
    - `fiscal_xml_documents`: nulos de `access_key`, `issue_date`, `direction`, `own_issue`, `status` e
      `metadata_version`; distribuição de `document_type` × `ide_modelo`; tamanho máximo de `xml_file_path` e
      `rectified_file_path`;
+   - `direction` nula (FD-RN-56: se maior que zero, deixar o `FiscalDirectionBackfill` terminar antes da janela);
+   - `canceled_at` preenchido com `status` nulo ou `AUTHORIZED` (FD-RN-55);
+   - documentos com CNPJ ou CPF em branco (`''`) em vez de nulo;
    - `own_issue` nulo com `direction` preenchida (se houver, os casos vão para o Tony: a cópia vira `RECIPIENT`, e
      `countOnlySieg`, que hoje exige `own_issue = false`, passaria a contá-las; ver CT-FD-11);
    - `service_invoices`: distribuição de `direction` e `layout`; tamanho de `prestador_documento` e `tomador_documento`
@@ -1187,11 +1251,15 @@ escritório **F2**. Chaves fictícias K1 a K9 (44 dígitos, modelo 55, salvo ind
 | CT-FD-24 | Imagem anterior iniciada depois da V87 (ou da V89) | Falha no `validate` (tabela ausente) | 12 |
 | CT-FD-25 | Painel: E1 com última NF-e SIEG em 20/11 10:00 e última NFS-e ADN em 21/11 08:00 | Mesmos valores antes e depois | 17 |
 | CT-FD-26 | Crédito de estoque de E1 em 2026 com entradas em CFOP 1102 de 4.000,00 | Mesmo `purchases_total`, itens e notas antes e depois | 17 |
-| CT-FD-27 | K1 com `found_in_sieg_at` = 05/11/2026 08:00 e `found_in_sefaz_at` = 05/11/2026 09:15; K2 só com SIEG; S1 só com ADN; K3 de upload sem datas | Origens: K1 → `SIEG` e `SEFAZ_DIST`; K2 → `SIEG`; S1 → `ADN`; K3 → `UPLOAD` (`created_date`). "Só no SIEG" de E1 lista K2 e não K1 | 19 |
+| CT-FD-27 | K1 com `found_in_sieg_at` = 05/11/2026 08:00 e `found_in_sefaz_at` = 05/11/2026 09:15; K2 só com SIEG; S1 só com ADN; K3 de upload sem datas | Origens: K1 → `SIEG` e `SEFAZ_DFE`; K2 → `SIEG`; S1 → `NFSE_ADN`; K3 → `UPLOAD` (`created_date`). "Só no SIEG" de E1 lista K2 e não K1 | 19 |
 | CT-FD-28 | Duas instâncias marcam a origem `SIEG` de K2 ao mesmo tempo | Uma linha; `last_seen_at` = a maior das duas | 20 |
 | CT-FD-29 | `fiscal_xml_sync_control` de E1: `data_emissao_inicio` 01/11/2026, `total_sieg` 40, `total_importado` 37, `issued_total_sieg` 12, `issued_total_imported` 12, `received_prev_month` 2026-10 com 55/55 | 3 linhas: (SIEG, NFE, RECEIVED, 2026-11, 40, 37), (SIEG, NFE, ISSUED, 2026-11, 12, 12), (SIEG, NFE, RECEIVED, 2026-10, 55, 55, `closed_at` preenchido). Próximo tick: lado RECEIVED com `Skip` 37 e pendência conhecida (37 < 40); ISSUED sem chamada se verificado hoje | 21 |
 | CT-FD-31 | NF-e com `source_system = 'SEFAZ_DIST'` e NFS-e com `'ADN'`; filtro `origem=SEFAZ_DIST` na lista | Novo: `SEFAZ_DFE` e `NFSE_ADN` no banco; a lista filtrada e o JSON devolvem `SEFAZ_DIST` como antes | 19 |
-| CT-FD-36 | `fiscal_xml_sync_control` de E1 com `received_known_gap_month` = 2026-10, `received_known_gap` = 2, `received_stored_any_source` = 42, `issued_stored_any_source` = 12 (mês corrente 2026-11) | Linha (SIEG, NFE, RECEIVED, 2026-10) com `known_gap` 2; linha (…, RECEIVED, 2026-11) com `stored_any_source_total` 42; (…, ISSUED, 2026-11) com 12. Painel: `storedAnySource` = 42 e 12, como antes. Depois da V89, as 6 colunas não existem | 21 |
+| CT-FD-36 | `fiscal_xml_sync_control` de E1 com `received_known_gap_month` = 2026-10, `received_known_gap` = 2, `received_earlier_gap_month` = 2026-09, `received_earlier_gap` = 1, `received_stored_any_source` = 42, `issued_stored_any_source` = 12 (mês corrente 2026-11) | Linhas (SIEG, NFE, RECEIVED, 2026-10) com `known_gap` 2 e (…, RECEIVED, 2026-09) com `known_gap` 1 e `closed_at` preenchido; (…, RECEIVED, 2026-11) com `stored_any_source_total` 42; (…, ISSUED, 2026-11) com 12. Painel: `storedAnySource` = 42 e 12, como antes. Depois da V89, as 10 colunas não existem | 21 |
+| CT-FD-37 | Upload de CT-e em E1 em que E1 é o destinatário e não é o tomador; outro em que E1 não aparece em nenhum grupo | 1º: `RECIPIENT`, `cte_is_recipient = 1`, direção nula; 2º: gravado como `THIRD_PARTY`, todos os `cte_is_*` falsos, sem erro | 10 |
+| CT-FD-38 | Linha antiga de E1 recebida com `direction` nula; V87 roda | Direção `INBOUND` (regra do `FiscalDirectionBackfill`), log com a contagem 1, paridade comparando com a direção derivada; depois, revisar a nota funciona (I-04) | 02, 11 |
+| CT-FD-39 | Linha antiga com `issuer_cnpj = ''` e `emit_cpf = '12345678909'` (CPF fictício) | `issuer_document = '12345678909'`, tipo `CPF` | 02 |
+| CT-FD-40 | Item com `vUnCom` = 1,2345678901 no XML | Grava 1,2346 (`HALF_UP`); o upload não é recusado | 02 |
 | CT-FD-30 | Virada para dez/2026 depois da troca | O mês 2026-11 recebe `closed_at`, e nasce a linha 2026-12, como o V79 faz hoje com as colunas `prev_*` | 21 |
 
 ---
@@ -1207,7 +1275,7 @@ todas as tarefas.
 | B-FD-01 | backend | Domínio: `FiscalDocument`, `GoodsInvoice`, `Nfe`, `Nfce`, `Nfse`, `Cte`, `FiscalDocumentItem`, `FiscalDocumentEvent`, objetos de valor e enums da seção 3.2; invariantes da 3.3 com testes de unidade por subtipo | — |
 | B-FD-02 | backend | V86 (tabelas, índices, `CHECK`, `ROW_FORMAT=DYNAMIC`) e teste de migration com `innodb_strict_mode=ON` | B-FD-01 |
 | B-FD-03 | backend | V87 (colisão, rename, cópia idempotente), V88 (paridade) e V89 (remoção do legado e das colunas migradas, FD-RN-53), mais `scripts/sql/fiscal-documents-premeasure.sql`, `scripts/sql/fiscal-documents-rollback.sql` (restaura o backup, apaga as tabelas novas, limpa V86 a V89) e o roteiro do backup com a conferência (FD-RN-52); testes de retomada, colisão, ambiente novo e paridade falhando | B-FD-02 |
-| B-FD-04 | backend | Repositórios novos com as consultas reescritas (seção 6.4); parser, captura SIEG/SEFAZ/ADN, upload e eventos gravando no modelo novo; NFC-e como `Nfce` e CT-e como `Cte` | B-FD-01 |
+| B-FD-04 | backend | Repositórios novos com as consultas reescritas (seção 6.4); parser, captura SIEG/SEFAZ/ADN, upload e eventos gravando no modelo novo; NFC-e como `Nfce` e CT-e como `Cte`; no CT-e, o parser extrai o documento dos seis grupos de participante para `participation`, papel e direção derivada (3.12, R-b; I-04-T, I-15) | B-FD-01 |
 | B-FD-05 | backend | Migrar os consumidores: motor `fiscalcheck/*`, apuração, Fronteira, auditoria, pendências (chaves com `legacyKeyLabel()`), relatórios, retenções, manifestação, retificação, expurgo com `xml_purged_at`, DANFE e backfills de inicialização (FD-RN-28). Remover as entidades e os repositórios antigos | B-FD-04 |
 | B-FD-06 | backend | SQL nativo: `CapturePanelRepository` (uma consulta) e o **crédito de estoque**: `StockSurveySourceRepository` (`PURCHASE_BASE`, `monthlyPurchases`, `groups` com `TRIM(i.cst_pis)`/`TRIM(i.ncm)` → `i.pis_cst`/`i.ncm`, `inboundMonths`; colunas novas, filtro `document_type IN ('NFE','NFCE')`, `cfop` sem `TRIM`, `i.valor_total` → `i.total_amount`). `StockSurveyCalculator`, `StockSurveyScheduler` e `StockSurveyService` (`service/reform/`) não citam tabela, mas os testes deles rodam de novo com a mesma massa e os mesmos números (CT-FD-26). Atualizar o javadoc que cita `idx_fxd_company_direction_issue` para `idx_fd_company_type_direction_issue`. Testes do painel e do crédito de estoque iguais aos de antes | B-FD-04 |
 | B-FD-07 | backend | Mappers dos DTOs mantendo o JSON (FD-RN-23); teste de arquitetura do FD-RN-27; reescrever os ~34 arquivos de teste | B-FD-05, B-FD-06 |

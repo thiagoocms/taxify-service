@@ -19,6 +19,12 @@
 > - [Gestão de documentos fiscais](2026-11-26-gestao-de-documentos-fiscais.md): upload, lista e expurgo;
 > - [Taxify SaaS, fase 1](2026-11-26-taxify-saas-assinatura-do-escritorio.md): bloqueio, rotinas paradas, teste grátis.
 
+> **SUBSTITUÍDA EM PARTE (2026-11-27, decisão do Tony).** As **fases 2 (NFC-e) e 3 (CT-e) foram substituídas** pela
+> [Captura SIEG por NSU](2026-11-27-captura-sieg-nsu.md). Deixam de existir: a faixa noturna, os orçamentos, a
+> habilitação por empresa, os tetos, `company_capture_settings`, `document_capture_status`, `sieg_request_budgets` e as
+> variáveis `TAXIFY_SIEG_NFCE_*`/`TAXIFY_SIEG_CTE_*`. **Continuam valendo:** a fase 1 (contagens, em
+> `capture_period_counts`), o modelo do CT-e (CX-RN-31 a 34) e as perguntas P-CX-02 e P-CX-10 a P-CX-13.
+
 ## Ajuste de 2026-11-27: remodelagem dos documentos e tabelas de controle
 
 > Este quadro **prevalece** sobre o texto das seções abaixo onde houver conflito. Ele vem da
