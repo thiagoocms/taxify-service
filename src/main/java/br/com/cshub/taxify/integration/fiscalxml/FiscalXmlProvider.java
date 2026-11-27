@@ -34,6 +34,39 @@ public interface FiscalXmlProvider {
         return 0;
     }
 
+    /**
+     * The company's service invoices (NFS-e) issued in one window [from, to] of at most a month, downloaded only when the
+     * provider's count is above what it already delivered (A1). {@code issuerCount}/{@code recipientCount}: the provider's
+     * NFS-e counts with the company as issuer / as recipient, when already known from this attempt's NF-e counts of the
+     * same window; null = unknown, the provider counts by itself. Providers without a count download the window.
+     *
+     * @return new notes stored
+     */
+    default int syncServiceInvoicesIfMissing(UUID companyId, LocalDate from, LocalDate to, Integer issuerCount,
+                                             Integer recipientCount) {
+        return syncServiceInvoices(companyId, from, to);
+    }
+
+    /**
+     * The count gate in shadow (A1): the service invoices of [from, to] are downloaded as without the gate, and the
+     * current month's counts already known from this attempt are compared with what the provider had delivered - only
+     * logged. Providers without a count just download.
+     *
+     * @return new notes stored
+     */
+    default int syncServiceInvoicesShadow(UUID companyId, LocalDate from, LocalDate to, Integer issuerCount,
+                                          Integer recipientCount) {
+        return syncServiceInvoices(companyId, from, to);
+    }
+
+    /**
+     * The side's notes of the previous month [from, to], checked again in the first days of the month: only what the
+     * provider counts beyond what it already delivered is downloaded. Providers without it do nothing (null).
+     */
+    default FiscalXmlSyncResult checkPreviousMonth(UUID companyId, FiscalXmlSide side, LocalDate from, LocalDate to) {
+        return null;
+    }
+
     /** One page of a past period's notes, outside the regular bookkeeping. {@code lastPage}: nothing more to ask. */
     record RecoveryPage(int notes, int persistedNew, boolean lastPage) {
     }

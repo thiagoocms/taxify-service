@@ -16,6 +16,8 @@ import br.com.cshub.taxify.integration.fiscalxml.FiscalXmlProvider;
 import br.com.cshub.taxify.integration.fiscalxml.FiscalXmlSyncProperties;
 import br.com.cshub.taxify.integration.fiscalxml.FiscalXmlSyncRequest;
 import br.com.cshub.taxify.integration.fiscalxml.FiscalXmlSyncResult;
+import br.com.cshub.taxify.integration.fiscalxml.ProviderCallContext;
+import br.com.cshub.taxify.integration.fiscalxml.ProviderCallPurpose;
 import br.com.cshub.taxify.repository.CompanyRepository;
 import br.com.cshub.taxify.repository.FiscalXmlSyncControlRepository;
 import br.com.cshub.taxify.repository.SubscriptionRepository;
@@ -37,6 +39,7 @@ import java.time.LocalDateTime;
 import java.time.YearMonth;
 import java.util.ArrayList;
 import java.util.Comparator;
+import java.util.EnumMap;
 import java.util.HashMap;
 import java.util.HashSet;
 import java.util.List;
@@ -164,7 +167,7 @@ public class FiscalXmlSyncScheduler {
         RoutineGate gate = firmAccessService.routineGate("sieg");
         ensureControlRowsExist(gate);
 
-        LocalDate today = properties.getReferenceDate() != null ? properties.getReferenceDate() : LocalDate.now();
+        LocalDate today = properties.getReferenceDate() != null ? properties.getReferenceDate() : LocalDate.now(clock);
 
         // F1-RN-10: no capture for a blocked, suspended, canceled or unverified firm
         List<FiscalXmlSyncControl> controls = syncControlRepository.findAllWithCompany().stream()
@@ -388,15 +391,61 @@ public class FiscalXmlSyncScheduler {
      * Received notes first (what most fiscal work starts from), then the company's own; NFS-e once a day. A side that
      * fails still aborts the rest of the company for this attempt (unchanged): the stages that did not run record nothing.
      *
+     * <p>Each stage's provider calls carry its purpose (the provider's request counter, A5); a "Sincronizar agora" counts
+     * all of them as priority.
+     *
      * @param forced a "Sincronizar agora": both sides are counted on the provider again, even the ones up to date today
      */
     private void syncCompany(FiscalXmlProvider provider, FiscalXmlSyncControl control, LocalDate today, boolean forced) {
-        for (FiscalXmlSide side : FiscalXmlSide.values()) {
-            syncSide(provider, control, side, today, forced);
-            refreshEventsOncePerDay(provider, control, side, today);
+        ProviderCallContext.priority(forced, () -> {
+            Map<FiscalXmlSide, Integer> serviceInvoiceCounts = new EnumMap<>(FiscalXmlSide.class);
+            for (FiscalXmlSide side : FiscalXmlSide.values()) {
+                boolean firstToday = !today.equals(checkedDay(control, side));
+                Integer count = ProviderCallContext.call(ProviderCallPurpose.PAGE,
+                        () -> syncSide(provider, control, side, today, forced));
+                if (count != null) {
+                    serviceInvoiceCounts.put(side, count);
+                }
+                if (firstToday) {
+                    ProviderCallContext.run(ProviderCallPurpose.PREVIOUS, () -> checkPreviousMonth(provider, control, side, today));
+                }
+                ProviderCallContext.run(ProviderCallPurpose.EVENTS, () -> refreshEventsOncePerDay(provider, control, side, today));
+            }
+            // the issued side's NF-e count filters by CnpjEmit, the received side's by CnpjDest
+            ProviderCallContext.run(ProviderCallPurpose.NFSE, () -> syncServiceInvoicesOncePerDay(provider, control, today,
+                    serviceInvoiceCounts.get(FiscalXmlSide.ISSUED), serviceInvoiceCounts.get(FiscalXmlSide.RECEIVED)));
+            ProviderCallContext.run(ProviderCallPurpose.RECOVERY, () -> recoverBlockedMonths(provider, control));
+        });
+    }
+
+    /** The day the side was last checked (null = never) - read before this attempt changes it. */
+    private static LocalDate checkedDay(FiscalXmlSyncControl control, FiscalXmlSide side) {
+        LocalDateTime checkedAt = side == FiscalXmlSide.ISSUED ? control.getIssuedCheckedAt() : control.getUltimaVerificacaoEm();
+        return checkedAt == null ? null : checkedAt.toLocalDate();
+    }
+
+    /**
+     * Up to day {@link FiscalXmlSyncProperties#getPreviousMonthDays()} of the month, the first attempt of the day of each
+     * side also checks the previous month on the provider (an NF-e that reaches SIEG only after its month ended - the
+     * regular window is day 1 to today). One count; pages only for what is missing. A failure is logged and never stops
+     * the company: the next day checks again.
+     */
+    private void checkPreviousMonth(FiscalXmlProvider provider, FiscalXmlSyncControl control, FiscalXmlSide side, LocalDate today) {
+        if (today.getDayOfMonth() > properties.getPreviousMonthDays()) {
+            return;
         }
-        syncServiceInvoicesOncePerDay(provider, control, today);
-        recoverBlockedMonths(provider, control);
+        LocalDate from = today.minusMonths(1).withDayOfMonth(1);
+        LocalDate to = from.withDayOfMonth(from.lengthOfMonth());
+        UUID companyId = control.getCompany().getId();
+        try {
+            FiscalXmlSyncResult result = provider.checkPreviousMonth(companyId, side, from, to);
+            if (result != null && result.persistedNew() > 0) {
+                log.info("Previous month check of company {} ({}): {} new", companyId, side, result.persistedNew());
+            }
+        } catch (RuntimeException e) {
+            log.warn("Previous month check of company {} ({}) failed - checked again tomorrow: {}", companyId, side,
+                    e.getClass().getSimpleName());
+        }
     }
 
     /**
@@ -441,21 +490,32 @@ public class FiscalXmlSyncScheduler {
                 : CaptureFailureClassifier.sieg(error));
     }
 
-    /**
-     * Service invoices (NFS-e), provided and taken: once a day per company, the last
-     * {@link #SERVICE_INVOICE_LOOKBACK_DAYS} days; the first time, the last
-     * {@link #SERVICE_INVOICE_FIRST_MONTHS} months. Known notes are skipped, so the overlap only costs requests.
-     */
     void syncServiceInvoicesOncePerDay(FiscalXmlProvider provider, FiscalXmlSyncControl control, LocalDate today) {
+        syncServiceInvoicesOncePerDay(provider, control, today, null, null);
+    }
+
+    /**
+     * Service invoices (NFS-e), provided and taken: once a day per company. The first time, the last
+     * {@link #SERVICE_INVOICE_FIRST_MONTHS} months are downloaded; afterwards the last {@link #SERVICE_INVOICE_LOOKBACK_DAYS}
+     * days (NFS-e from city halls arrive late). How (A1, {@link FiscalXmlSyncProperties#getServiceInvoiceCountGate()}):
+     * <ul>
+     *   <li>OFF: the whole lookback is downloaded every day;</li>
+     *   <li>SHADOW (default): same download, and the current month's provider count this attempt's NF-e sides already got
+     *   ({@code issuerCount}/{@code recipientCount}, free) is compared with what the provider had delivered - logged as
+     *   what the gate would have done, nothing skipped. Only the current month is evaluated: the earlier months ON checks
+     *   do not show up in the shadow log;</li>
+     *   <li>ON: the lookback in windows of one calendar month; each is downloaded only when the provider counts more than it
+     *   already delivered - the current month with this attempt's counts, the older windows with a count of their own.</li>
+     * </ul>
+     */
+    void syncServiceInvoicesOncePerDay(FiscalXmlProvider provider, FiscalXmlSyncControl control, LocalDate today,
+                                       Integer issuerCount, Integer recipientCount) {
         if (today.equals(control.getServiceInvoicesCheckedOn())) {
             return;
         }
         UUID companyId = control.getCompany().getId();
-        LocalDate from = control.getServiceInvoicesCheckedOn() == null
-                ? today.minusMonths(SERVICE_INVOICE_FIRST_MONTHS).withDayOfMonth(1)
-                : today.minusDays(SERVICE_INVOICE_LOOKBACK_DAYS);
         try {
-            int created = provider.syncServiceInvoices(companyId, from, today);
+            int created = syncServiceInvoices(provider, control, today, issuerCount, recipientCount);
             syncControlRepository.markServiceInvoicesChecked(control.getId(), today);
             if (created > 0) {
                 log.info("Service invoices for company {}: {} new", companyId, created);
@@ -466,6 +526,40 @@ public class FiscalXmlSyncScheduler {
             log.warn("Service invoice sync failed for company {}", companyId, e);
             recordSiegFailure(control, CaptureStage.SIEG_NFSE, e);
         }
+    }
+
+    private int syncServiceInvoices(FiscalXmlProvider provider, FiscalXmlSyncControl control, LocalDate today,
+                                    Integer issuerCount, Integer recipientCount) {
+        UUID companyId = control.getCompany().getId();
+        if (control.getServiceInvoicesCheckedOn() == null) {
+            return provider.syncServiceInvoices(companyId, today.minusMonths(SERVICE_INVOICE_FIRST_MONTHS).withDayOfMonth(1), today);
+        }
+        LocalDate from = today.minusDays(SERVICE_INVOICE_LOOKBACK_DAYS);
+        return switch (properties.getServiceInvoiceCountGate()) {
+            case OFF -> provider.syncServiceInvoices(companyId, from, today);
+            case SHADOW -> provider.syncServiceInvoicesShadow(companyId, from, today, issuerCount, recipientCount);
+            case ON -> {
+                int created = 0;
+                for (LocalDate[] window : monthWindows(from, today)) {
+                    boolean current = !window[0].isBefore(today.withDayOfMonth(1));
+                    created += provider.syncServiceInvoicesIfMissing(companyId, window[0], window[1],
+                            current ? issuerCount : null, current ? recipientCount : null);
+                }
+                yield created;
+            }
+        };
+    }
+
+    /** [from, to] in windows that never cross a calendar month: the first starts at {@code from}, the last ends at {@code to}. */
+    static List<LocalDate[]> monthWindows(LocalDate from, LocalDate to) {
+        List<LocalDate[]> windows = new ArrayList<>();
+        for (LocalDate start = from; !start.isAfter(to); ) {
+            LocalDate monthEnd = start.withDayOfMonth(start.lengthOfMonth());
+            LocalDate end = monthEnd.isAfter(to) ? to : monthEnd;
+            windows.add(new LocalDate[]{start, end});
+            start = end.plusDays(1);
+        }
+        return windows;
     }
 
     /**
@@ -497,17 +591,18 @@ public class FiscalXmlSyncScheduler {
         }
     }
 
-    private void syncSide(FiscalXmlProvider provider, FiscalXmlSyncControl control, FiscalXmlSide side, LocalDate today,
-                          boolean forced) {
+    /** @return the provider's NFS-e count for the side's window when this sync counted; null otherwise */
+    private Integer syncSide(FiscalXmlProvider provider, FiscalXmlSyncControl control, FiscalXmlSide side, LocalDate today,
+                             boolean forced) {
         Company company = control.getCompany();
-        SideState state = SideState.of(control, side);
+        SideState state = SideState.of(control, side, YearMonth.from(today).toString());
         CaptureStage stage = CaptureStage.siegSide(side == FiscalXmlSide.ISSUED);
 
-        if (state.isUpToDate(today) && !forced) {
+        if (state.isUpToDate(today, LocalDateTime.now(clock), properties.getZeroTotalRecountHours()) && !forced) {
             // skipped without a call: nothing recorded (CP-RN-10)
             log.info("Company {} {} side already fully synced for {} ({} of {} imported) - skipping, no request spent",
                     company.getId(), side, today, state.imported(), state.totalSieg());
-            return;
+            return null;
         }
 
         // The totals refer to whichever window was last checked - once the calendar month rolls
@@ -517,7 +612,10 @@ public class FiscalXmlSyncScheduler {
                 && YearMonth.from(state.checkedAt()).equals(YearMonth.from(today));
         int alreadyImportedCount = sameMonthAsLastCheck ? state.imported() : 0;
         // a forced attempt counts again: the user knows a note arrived after the last check (CP-RN-15)
-        boolean knownPending = !forced && sameMonthAsLastCheck && state.totalSieg() > 0 && state.imported() < state.totalSieg();
+        // B1: the difference a complete pass of this month already left (notes SIEG counts and never delivers) is not
+        // "pending" - only what goes beyond it
+        boolean knownPending = !forced && sameMonthAsLastCheck && state.totalSieg() > 0
+                && state.imported() + state.knownGap() < state.totalSieg();
 
         FiscalXmlSyncResult result;
         try {
@@ -536,22 +634,41 @@ public class FiscalXmlSyncScheduler {
         } else {
             stageRecorder.success(company.getId(), stage);
         }
+        return result.serviceInvoiceCount();
     }
 
-    /** One side's bookkeeping, read from its own columns on the control row (null = never checked). */
-    record SideState(int totalSieg, int imported, LocalDateTime checkedAt) {
+    /**
+     * One side's bookkeeping, read from its own columns on the control row (null = never checked). {@code verified}: the
+     * side was really checked once - the received side's time is filled on the row's creation, so it only counts once the
+     * window was written ({@code data_emissao_inicio}). {@code knownGap}: the difference the month's last complete pass
+     * left (B1) - the side is up to date when imported + knownGap reaches SIEG's total.
+     */
+    record SideState(int totalSieg, int imported, LocalDateTime checkedAt, boolean verified, int knownGap) {
 
-        static SideState of(FiscalXmlSyncControl control, FiscalXmlSide side) {
-            if (side == FiscalXmlSide.ISSUED) {
+        static SideState of(FiscalXmlSyncControl control, FiscalXmlSide side, String month) {
+            boolean issued = side == FiscalXmlSide.ISSUED;
+            int gap = control.knownGap(issued, month);
+            if (issued) {
                 return new SideState(valueOf(control.getIssuedTotalSieg()), valueOf(control.getIssuedTotalImported()),
-                        control.getIssuedCheckedAt());
+                        control.getIssuedCheckedAt(), control.getIssuedCheckedAt() != null, gap);
             }
-            return new SideState(control.getTotalSieg(), control.getTotalImportado(), control.getUltimaVerificacaoEm());
+            return new SideState(control.getTotalSieg(), control.getTotalImportado(), control.getUltimaVerificacaoEm(),
+                    control.getUltimaVerificacaoEm() != null && control.getDataEmissaoInicio() != null, gap);
         }
 
-        /** Everything the provider reported is already imported, checked today - no request needed. */
-        boolean isUpToDate(LocalDate today) {
-            return totalSieg > 0 && imported >= totalSieg && checkedAt != null && checkedAt.toLocalDate().isEqual(today);
+        /**
+         * Everything the provider reported is already imported, checked today - no request needed. A3: a side really
+         * checked today whose total is 0 is up to date too, but only for {@code zeroRecountHours} after that check
+         * (0 = never); then it is counted again.
+         */
+        boolean isUpToDate(LocalDate today, LocalDateTime now, int zeroRecountHours) {
+            if (checkedAt == null || !checkedAt.toLocalDate().isEqual(today) || imported + knownGap < totalSieg) {
+                return false;
+            }
+            if (totalSieg > 0) {
+                return true;
+            }
+            return verified && zeroRecountHours > 0 && !checkedAt.isBefore(now.minusHours(zeroRecountHours));
         }
 
         private static int valueOf(Integer value) {

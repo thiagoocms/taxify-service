@@ -58,27 +58,35 @@ Como medir hoje:
 **RN-04: Dois lados, contados à parte.** Primeiro RECEIVED, as notas em que a empresa é destinatária (`CNPJdest`). Depois ISSUED, as notas que ela emitiu (`CNPJemit`). Cada lado tem os próprios contadores: `total_sieg`/`total_importado`/`ultima_verificacao_em` para o recebido e `issued_total_sieg`/`issued_total_imported`/`issued_checked_at` para o emitido.
 `FiscalXmlSyncScheduler.java:199-205`; `FiscalXmlIntegrationService.java:145-156`; `FiscalXmlSyncControl.java:43-64`.
 
-**RN-05: Lado em dia não gasta requisição.** Se `totalSieg > 0`, `importado >= totalSieg` e a última verificação foi hoje, o lado é pulado.
+**RN-05: Lado em dia não gasta requisição.** Se `totalSieg > 0`, `importado + diferença conhecida do mês >= totalSieg` (RN-08) e a última verificação foi hoje, o lado é pulado. Um lado com `totalSieg = 0` verificado de verdade hoje (janela já gravada) também é pulado, mas só por `TAXIFY_SIEG_ZERO_TOTAL_RECOUNT_HOURS` horas depois da verificação (padrão 6; 0 = reconta a cada tentativa, como antes). Decisão do Tony de 2026-11-27.
 `FiscalXmlSyncScheduler.java:263-267`, `:295-297`.
 
 **RN-06: Retomada da paginação.** Quando a última verificação foi no mesmo mês:
-- `skip` = quantidade já importada do lado;
-- se `totalSieg > 0` e `importado < totalSieg`, a requisição vai como "pendência conhecida" e o `contar-xmls` é pulado.
+- `skip` = notas do lado na janela que **o próprio SIEG já entregou** (`found_in_sieg_at` preenchido), lidas do banco na hora - nunca as que só a SEFAZ ou um upload trouxeram, que não ocupam as primeiras posições da ordem do SIEG (correção B1 de 2026-11-27; antes contava qualquer origem e o SIEG pulava notas);
+- se `totalSieg > 0` e `importado + diferença conhecida < totalSieg`, a requisição vai como "pendência conhecida" e o `contar-xmls` é pulado.
 
-Se o mês virou, ou se o lado nunca foi verificado, `skip = 0` e a pendência não é presumida.
+Se o mês virou, ou se o lado nunca foi verificado, a pendência não é presumida. O `skip` sempre vem do banco (o da janela nova costuma ser 0).
+
+**Mês anterior nos primeiros dias (decisão do Tony de 2026-11-27).** A janela regular vai do dia 1 até hoje, então uma NF-e de um mês que só chega ao SIEG no mês seguinte não seria pedida. Até o dia `TAXIFY_SIEG_PREVIOUS_MONTH_DAYS` (padrão 10; 0 = nunca), a primeira tentativa do dia de cada lado confere também o mês anterior inteiro pela contagem, com as mesmas regras da janela regular: contagem com `Skip = 0`, download só se a contagem passar do que o SIEG já entregou daquele mês mais a diferença conhecida dele, página a partir do que o SIEG entregou e reconciliação (fora da transação) quando a paginação termina abaixo do total. Não mexe nos contadores do mês corrente: guarda só a diferença do mês anterior (segunda vaga, `*_earlier_gap*`, V85) e atualiza "como o mês anterior fechou" (CP-RN-22) quando é esse o mês. As chamadas vão com a finalidade `previous` no contador `sieg.requests`. Custo: 1 contagem por lado por dia nos dias 1 a 10, mais as páginas do que faltar.
 `FiscalXmlSyncScheduler.java:269-278`; `FiscalXmlIntegrationService.java:160-169`.
 
 **RN-07: Conta antes de baixar.**
-- Sem pendência conhecida, chama `contar-xmls`, sem `BaixarEventos`, para contar só as notas.
+- Sem pendência conhecida, chama `contar-xmls`, sem `BaixarEventos` e sempre com `Skip = 0` (a janela inteira), para contar só as notas.
 - Se a contagem dá 0, não baixa e grava o total 0.
+- Se a contagem não passa do que o SIEG já entregou mais a diferença conhecida do mês (RN-08), não baixa (a página seguinte viria vazia).
+- "O que o SIEG já entregou" é contado **na mesma fronteira da janela pedida ao SIEG** (dias UTC): no horário gravado, que é o local da nota, de 21:00 do dia anterior a 20:59:59 do último dia (Recife, -03:00). Uma nota de 30/11 22h de Recife (01:00Z de 1/12) conta na janela de dezembro, como no SIEG - sem falso "faltam" em novembro nem em dezembro. Notas de outro fuso (-04:00, -05:00) podem ficar uma hora fora.
+- A resposta traz a contagem de todos os tipos: a de NFS-e do mesmo filtro segue para a etapa de NFS-e (RN-10 da spec de NFS-e), sem chamada a mais.
 - Se a contagem falha, devolve -1: baixa mesmo assim e **não** grava o total, que continua refletindo só respostas reais do SIEG.
 
 `FiscalXmlIntegrationService.java:171-186`, `:199-209`.
 
-**RN-08: Página vazia limpa a pendência.** No caminho de pendência conhecida, se o `baixar-xmls` volta vazio, o total do SIEG passa a ser igual ao importado. Assim a próxima execução volta a contar, em vez de pedir a mesma página vazia para sempre.
+**RN-08: Fim da paginação abaixo do total e reconciliação (B1, 2026-11-27).** Quando uma página volta com menos de 50 itens e o SIEG entregou menos notas da janela do que conta:
+- se a página pedida era a primeira (`skip = 0`), a passada já foi completa: a diferença (`total − entregues`) fica guardada para o mês (`*_known_gap`, `*_known_gap_month`, V85);
+- senão, e se a diferença for **maior** do que a guardada para o mês, roda uma reconciliação a partir da primeira página, no máximo ceil(total/50) páginas, parando quando completa o total ou numa página curta. Ela roda **fora** da transação do lado: cada página grava na sua própria transação, uma falha para a passada mantendo o que veio e não grava nada (a próxima tentativa pede de novo); só a passada que chega ao fim grava a diferença que sobrou. Uma passada interrompida por falha não é tentada de novo no mesmo dia (por empresa, lado e mês, em memória: um reinício ou a segunda instância podem tentar mais uma vez), para que um erro preso numa página não releia as anteriores a cada vez da empresa na fila. O `POST /fiscal-xml/sincronizar` manual nunca reconcilia;
+- a diferença guardada substitui o antigo "total do SIEG = importado": o total continua o que o SIEG disse (o painel mostra a falta) e o agendador trata o lado como em dia enquanto nada passar dessa diferença. Nota que o SIEG conta e nunca entrega, emitente igual ao destinatário contado nos dois lados e a virada do mês em UTC não releem o mês todo dia.
 `FiscalXmlIntegrationService.java:164-167`, `:240-242`.
 
-**RN-09: O que conta como "importado".** `count` das notas da empresa com `own_issue` igual ao do lado e `issue_date` dentro da janela, **qualquer que seja a origem** (SIEG, SEFAZ ou upload).
+**RN-09: O que conta como "importado".** `count` das notas da empresa com `own_issue` igual ao do lado, `issue_date` dentro da janela e `found_in_sieg_at` preenchido: só as que o SIEG entregou (B1, 2026-11-27). As notas da janela de **qualquer** origem ficam ao lado, em `*_stored_any_source` (V85), para o painel.
 `FiscalXmlIntegrationService.java:236-237`; `FiscalXmlDocumentRepository.java:37-39`.
 
 **RN-10: Requisição ao SIEG.** `TipoXml = 1` (NF-e), `Take = 50`, `Skip` conforme a RN-06 (nunca negativo), `BaixarEventos = true` no download. As datas vão em UTC: início às 00:00:00Z e fim às 23:59:59.999Z do dia informado.
@@ -101,6 +109,7 @@ Se o mês virou, ou se o lado nunca foi verificado, `skip = 0` e a pendência n�
 `SiegClient.java:68-83`.
 
 **RN-14: Varredura de cancelamentos.** Uma vez por dia, por empresa e por lado, são relidas as notas emitidas de hoje − 2 dias até hoje, com os eventos, para pegar cancelamentos feitos depois da importação. A leitura vai de 50 em 50 a partir do início, até 20 páginas, e para quando uma página volta com menos de 50 notas. Os contadores do mês não mudam. O dia só é marcado se a varredura der certo.
+Desde 2026-11-27 (A2), o SIEG só é chamado se o banco tem nota do lado emitida na janela - consulta local, sem requisição; a consulta começa um dia antes (hoje − 3), porque os dias do SIEG são UTC e a data gravada é a local. Sem nota, o dia é marcado sem chamada (o painel segue em dia). Desligável por `TAXIFY_SIEG_EVENTS_ONLY_RECENT_NOTES=false`.
 `FiscalXmlSyncScheduler.java:75-76`, `:237-257`; `FiscalXmlIntegrationService.java:474-493`.
 
 **RN-15: Sincronização manual pelo SIEG.** `POST /integrations/xmls/sincronizar` roda a mesma lógica para uma empresa e uma janela informada. Sem `side`, roda os dois lados (recebido primeiro) e soma os resultados. Atualiza o `fiscal_xml_sync_control` como a rotina automática.
@@ -257,7 +266,7 @@ Fonte legal: o código cita só "180 days from the authorization", sem a norma.
 7. **(RN-06)** Dado um lado verificado no mês anterior com pendência, quando o mês vira, então `Skip = 0` e o `contar-xmls` é chamado.
 8. **(RN-07)** Dado que o `contar-xmls` responde 0 NF-e, quando o lado é sincronizado, então o `baixar-xmls` não é chamado e `total_sieg = 0`.
 9. **(RN-07)** Dado que o `contar-xmls` falha, quando o lado é sincronizado, então o `baixar-xmls` é chamado e `total_sieg` não muda.
-10. **(RN-08)** Dado uma pendência conhecida e um `baixar-xmls` vazio, quando o lado é sincronizado, então `total_sieg` passa a ser igual a `total_importado`.
+10. **(RN-08)** Dado uma passada completa que termina com 60 entregues de 63, então `total_sieg` continua 63, a diferença 3 fica guardada para o mês e as tentativas seguintes (no mesmo dia e no seguinte) não releem o mês; só uma diferença maior volta a reconciliar.
 11. **(RN-11)** Dado `max-requests-per-minute = 2`, quando três chamadas ao SIEG saem no mesmo minuto, então a terceira espera até a primeira sair da janela de 60 s.
 12. **(RN-13)** Dado que o SIEG responde 404 com "Nenhum arquivo XML localizado", quando a página é pedida, então o resultado é uma lista vazia, sem erro.
 13. **(RN-14)** Dado uma nota importada ontem e cancelada hoje, quando a varredura diária do lado roda, então o evento 110111 é gravado e a nota fica `CANCELED`.
@@ -358,7 +367,7 @@ Pool de agendamento: `spring.task.scheduling.pool.size = 3`. As capturas SEFAZ e
 - `SefazNotesService` (confronto e reenvio de ciência) não tem teste.
 - Os controllers `FiscalXmlResource` e `CompanyResource` (permissões por endpoint, 400 sem plano) não têm teste. Só existe o teste genérico `PermissionAuthorizationManagerTest`.
 - Não há teste da janela em UTC (RN-10) nem de notas emitidas perto da meia-noite do último dia do mês.
-- Não há teste de `skip` quando parte das notas do mês veio da SEFAZ ou de upload (RN-06 com RN-09).
+- O `skip` com notas do mês vindas da SEFAZ é coberto por `SiegCallSavingsIntegrationTest` (B1).
 - `SiegFiscalXmlProvider` não tem teste.
 
 ## Fora do escopo / limitações conhecidas
@@ -374,7 +383,7 @@ Pool de agendamento: `spring.task.scheduling.pool.size = 3`. As capturas SEFAZ e
 
 ## Perguntas em aberto
 
-1. **Skip do SIEG e notas de outras fontes.** O `skip` enviado ao SIEG é a contagem de notas do lado no mês vindas de **qualquer** origem (RN-06 com RN-09). Exemplo: a SEFAZ já trouxe 30 entradas do mês e o SIEG tem 100. O SIEG recebe `Skip = 30` e pode nunca devolver as 30 primeiras da ordem dele, que não são necessariamente as mesmas 30. É intencional?
+1. **(Resolvida em 2026-11-27, B1: o skip conta só o que o SIEG entregou.) Skip do SIEG e notas de outras fontes.** O `skip` enviado ao SIEG é a contagem de notas do lado no mês vindas de **qualquer** origem (RN-06 com RN-09). Exemplo: a SEFAZ já trouxe 30 entradas do mês e o SIEG tem 100. O SIEG recebe `Skip = 30` e pode nunca devolver as 30 primeiras da ordem dele, que não são necessariamente as mesmas 30. É intencional?
 2. **Janela em UTC × contagem em horário local.** A janela vai ao SIEG em UTC (RN-10), mas `issue_date` é gravado no horário local da nota (-03:00) e a contagem do "importado" usa esse horário. Notas emitidas depois das 21h do último dia do mês caem no mês seguinte na consulta ao SIEG. Qual fuso deve valer?
 3. **Padrão de `SEFAZ_DIST_UFS`.** O README diz que o padrão é `PE`. O código (`SefazProperties.java:37-38`) e o `application.yaml` usam vazio, que significa todas as UFs. Qual é o valor desejado em produção?
 4. **NSU inicial.** O `ult_nsu` inicial é `"000000000000001"` (`SefazDistControl.java:35`). Se a SEFAZ devolve os documentos *depois* do `ultNSU` informado, o documento de NSU 1 nunca vem. Confirmar o valor correto com quem conhece a NT da distribuição.
@@ -385,3 +394,9 @@ Pool de agendamento: `spring.task.scheduling.pool.size = 3`. As capturas SEFAZ e
 9. **Permissões diferentes para ações parecidas.** A captura SEFAZ manual e o reenvio de ciência exigem ADMIN. A sincronização SIEG manual exige só `INVOICES_SYNC` e a manifestação exige `INVOICES_AUDIT`. É intencional?
 10. **Sigilo.** O `src/main/resources/application-default.yaml`, versionado e modificado no working tree, contém credenciais reais: client id/secret da SIEG, da Conta Azul e usuário, senha e host do banco na EC2. Isso fere a regra "nada de dado real em commit" e precisa de decisão: remover do repositório e rotacionar as credenciais?
 11. **Javadoc desatualizado.** O Javadoc cita classes que não existem (`SiegXmlSyncScheduler` em `FiscalXmlIntegrationService.java:103` e `SiegXmlIntegrationService#importManual` em `FiscalXmlResource.java:166`). Corrigir?
+
+## Economia de chamadas ao SIEG (2026-11-27)
+
+O SIEG aceita 2 requisições por minuto para a conta inteira (2.880 por dia). A rotina gastava pelo menos 8 por empresa por dia antes de trazer nota nova. Mudanças: RN-05 (lado com total 0), RN-06/RN-09 (skip só do SIEG), RN-07 (não baixa o que já veio; contagem de NFS-e aproveitada), RN-08 (diferença guardada e reconciliação fora da transação), RN-14 (eventos só com nota recente) e a NFS-e (spec própria). Cada chamada é medida pelo contador `sieg.requests` com a tag `purpose` (`count`, `page`, `reconcile`, `events`, `nfse`, `recovery`, `priority`, `manual`) e por uma linha diária no log, só com contagens (`TAXIFY_SIEG_REQUEST_LOG_ENABLED`, `TAXIFY_SIEG_REQUEST_LOG_CRON`).
+
+A janela continua em UTC (00:00Z a 23:59Z do dia): não foi possível confirmar se o SIEG aceita offset. A janela de hoje termina às 20:59 de Recife; as notas da noite entram no dia seguinte. Desde 2026-11-27 as contagens locais comparadas com as do SIEG (o "entregue", o `skip`, a diferença, o "qualquer origem" do painel e a NFS-e) usam a mesma fronteira UTC convertida para Recife, e o mês anterior é conferido nos primeiros dias do mês. **Pergunta de fuso resolvida:** a comparação é sempre na fronteira do SIEG; continua em aberto só se o SIEG aceita offset no filtro (se aceitar, a janela poderia ir no dia de Recife).

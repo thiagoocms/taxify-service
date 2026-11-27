@@ -506,11 +506,11 @@ public class CapturePanelQueryService {
         YearMonth current = YearMonth.from(context.rulesClock.today());
         CaptureCompanyDTO.Side received = side(row.receivedImported(), row.receivedTotalSieg(), row.windowFrom(), row.windowTo(),
                 facts.receivedCheckedAt(), row.receivedPrevMonth(), row.receivedPrevImported(), row.receivedPrevTotalSieg(),
-                "received", current);
+                "received", current, row.receivedStoredAnySource());
         CaptureCompanyDTO.Side issued = row.issuedCheckedAt() == null && row.issuedTotalSieg() == null ? null
                 : side(row.issuedImported() == null ? 0 : row.issuedImported(), row.issuedTotalSieg(), row.windowFrom(),
                 row.windowTo(), row.issuedCheckedAt(), row.issuedPrevMonth(), row.issuedPrevImported(), row.issuedPrevTotalSieg(),
-                "issued", current);
+                "issued", current, row.issuedStoredAnySource());
         CapturePriorityRequest request = item.request();
         CaptureCompanyDTO.Priority priority = null;
         if (request != null) {
@@ -529,12 +529,15 @@ public class CapturePanelQueryService {
     }
 
     private CaptureCompanyDTO.Side side(int imported, Integer totalSieg, LocalDate from, LocalDate to, LocalDateTime checkedAt,
-                                        String prevMonth, Integer prevImported, Integer prevTotal, String sideKey, YearMonth current) {
+                                        String prevMonth, Integer prevImported, Integer prevTotal, String sideKey, YearMonth current,
+                                        Integer storedAnySource) {
         String month = checkedAt == null ? (from == null ? null : YearMonth.from(from).toString()) : YearMonth.from(checkedAt).toString();
         Integer missing = totalSieg == null || checkedAt == null ? null : Math.max(0, totalSieg - imported);
+        // "vindas do SIEG / total do SIEG" make the situation; the notes from any source go next to them (2026-11-27)
         String memory = checkedAt == null || from == null || to == null ? null
-                : message("capture.memory.side", String.valueOf(imported), from.format(DATE), to.format(DATE),
-                totalSieg == null ? "?" : String.valueOf(totalSieg), checkedAt.format(DATE_TIME));
+                : message(storedAnySource == null ? "capture.memory.side" : "capture.memory.side.stored", String.valueOf(imported),
+                from.format(DATE), to.format(DATE), totalSieg == null ? "?" : String.valueOf(totalSieg), checkedAt.format(DATE_TIME),
+                storedAnySource == null ? "" : String.valueOf(storedAnySource));
         CaptureCompanyDTO.PreviousMonth previous = null;
         if (prevMonth != null && !prevMonth.isBlank()) {
             YearMonth closed = YearMonth.parse(prevMonth.strip());
@@ -546,7 +549,8 @@ public class CapturePanelQueryService {
                                 String.valueOf(prevImported == null ? 0 : prevImported), String.valueOf(prevTotal == null ? 0 : prevTotal)));
             }
         }
-        return new CaptureCompanyDTO.Side(imported, totalSieg, from, to, offset(checkedAt), month, missing, previous, memory);
+        return new CaptureCompanyDTO.Side(imported, totalSieg, from, to, offset(checkedAt), month, missing, previous, memory,
+                storedAnySource);
     }
 
     private CaptureCompanyDTO.Direct directDto(Verdict verdict, DirectFacts facts, CertificateRow certificate, CompanyRow row,

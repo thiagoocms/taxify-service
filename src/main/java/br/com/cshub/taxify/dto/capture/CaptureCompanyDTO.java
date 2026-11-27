@@ -39,8 +39,13 @@ public record CaptureCompanyDTO(UUID companyId, String companyName, String estab
      * Um lado (recebidas ou emitidas). {@code imported} é "no Taxify (qualquer origem)" - a contagem do RN-09 da
      * captura; {@code month} é o mês a que os contadores se referem.
      */
+    /**
+     * One SIEG side of the window. {@code imported}: the notes SIEG itself delivered (B1) - with {@code totalSieg} they
+     * make {@code missing} and the situation; {@code storedAnySource}: the side's notes of the window in Taxify from any
+     * source (SIEG, SEFAZ, upload) at the same check - shown next to them; null until the side's first check after V85.
+     */
     public record Side(int imported, Integer totalSieg, LocalDate from, LocalDate to, OffsetDateTime checkedAt, String month,
-                       Integer missing, PreviousMonth previousMonth, String memory) {
+                       Integer missing, PreviousMonth previousMonth, String memory, Integer storedAnySource) {
     }
 
     public record PreviousMonth(String month, Integer imported, Integer totalSieg, Integer missing, String memory) {

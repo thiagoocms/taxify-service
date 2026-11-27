@@ -127,8 +127,13 @@ Fonte da regra: o código cita só "Retentions follow the roadmap (M1)" (`NfseXm
 
 **RN-10: Rotina diária do SIEG.** Roda dentro do tick do `FiscalXmlSyncScheduler`, para as empresas elegíveis ao SIEG (`FISCAL_XML_IMPORT` + `SIEG_INTEGRATION`), uma vez por dia por empresa.
 - Na primeira vez, cobre do dia 1 de três meses atrás até hoje.
-- Nas seguintes, cobre de hoje − 35 dias até hoje.
+- Nas seguintes, cobre de hoje − 35 dias até hoje (NFS-e de prefeitura chega atrasada; a cobertura não muda).
 - O dia (`service_invoices_checked_on`) só é marcado se a busca der certo.
+- **Uso da contagem do SIEG (2026-11-27), `TAXIFY_SIEG_NFSE_COUNT_GATE`:**
+  - `off`: baixa os 35 dias todo dia, como sempre;
+  - `shadow` (**padrão**, decisão do Tony): baixa como `off` e, para o mês corrente, compara a contagem de NFS-e que o `contar-xmls` das NF-e já trouxe nesta tentativa (sem chamada a mais; filtro CnpjEmit + filtro CnpjDest) com as NFS-e do mês que o SIEG já tinha entregue (`found_in_sieg_at`, qualquer direção). Uma linha de log por empresa, só com ids e contagens, diz o que o modo `on` teria feito; "would have MISSED" (WARN) = o modo `on` teria pulado um mês que trouxe nota nova. Sem contagem nesta tentativa, a linha diz "not evaluated". **O modo sombra avalia só o mês corrente:** os meses anteriores que o modo `on` confere (com contagem própria) não aparecem no log, porque contá-los custaria 2 chamadas por mês por empresa além do download antigo; a conferência de 2 semanas valida a contagem do SIEG contra as entregas, não a cobertura dos meses anteriores. Conferir por 2 semanas antes de ligar;
+  - `on`: os 35 dias em janelas de mês de calendário; cada janela só é baixada quando a contagem passa do que o SIEG já entregou. O mês corrente usa a contagem já paga; cada mês anterior alcançado por hoje − 35 tem `contar-xmls` próprio (2 chamadas, emitente e tomador). Contagem que falha = desconhecida: baixa a janela. As NFS-e "já entregues" são contadas na mesma fronteira da janela do SIEG (dias UTC, convertidos para Recife: 21:00 do dia anterior a 20:59:59 do último dia) - uma NFS-e de 30/11 22h de Recife conta em dezembro, como no SIEG, e não esconde uma NFS-e atrasada de novembro.
+- O SIEG não documenta se a contagem de NFS-e respeita CnpjEmit/CnpjDest: só o total (soma dos dois filtros) é comparado, nunca a direção. Uma nota em que a empresa é prestadora e tomadora conta duas vezes no SIEG (o mês fica sempre "com diferença" e é baixado).
 
 `FiscalXmlSyncScheduler.java:77-79`, `:198-230`; `V38__SyncControlServiceInvoices.java`.
 
@@ -288,7 +293,7 @@ A tela também é acessada pelos atalhos de `/pendencias` e `/retencoes` (`pende
 | ver spec de captura | `fiscal-xml.sync.*`, `sieg.*` | a rotina diária de NFS-e do SIEG segue o agendador SIEG |
 
 Constantes no código, sem configuração:
-- 35 dias de janela diária e 3 meses na primeira busca (`FiscalXmlSyncScheduler.java:77-79`);
+- 35 dias de janela diária e 3 meses na primeira busca (`FiscalXmlSyncScheduler.SERVICE_INVOICE_LOOKBACK_DAYS` / `SERVICE_INVOICE_FIRST_MONTHS`); o modo de uso da contagem é `TAXIFY_SIEG_NFSE_COUNT_GATE` (`off` | `shadow` | `on`, padrão `shadow`);
 - 50 por página e 20 páginas no SIEG (`ServiceInvoiceService.java:38-40`);
 - 48 h no confronto (`FiscalXmlQueryService.java:145`).
 

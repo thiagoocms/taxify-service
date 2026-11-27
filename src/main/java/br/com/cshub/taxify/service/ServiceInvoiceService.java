@@ -1,6 +1,7 @@
 package br.com.cshub.taxify.service;
 
 import br.com.cshub.taxify.common.DocumentNumbers;
+import br.com.cshub.taxify.common.IssuePeriod;
 import br.com.cshub.taxify.domain.company.Company;
 import br.com.cshub.taxify.domain.xml.ServiceInvoice;
 import br.com.cshub.taxify.enumerated.IntegrationType;
@@ -81,22 +82,110 @@ public class ServiceInvoiceService {
         String apiKey = firmIntegrationService.getApiKey(company.getAccountingFirm().getId(), IntegrationType.SIEG);
         SyncResult result = new SyncResult(0, 0, 0);
         for (LocalDate[] window : windows(from, to)) {
-            for (boolean asProvider : new boolean[]{true, false}) {
-                for (int page = 0; page < MAX_PAGES; page++) {
-                    SiegBaixarXmlsRequest request = new SiegBaixarXmlsRequest(TIPO_XML_NFSE, PAGE_SIZE, page * PAGE_SIZE,
-                            startOfDay(window[0]), endOfDay(window[1]), asProvider ? cnpj : null, asProvider ? null : cnpj, null);
-                    List<byte[]> xmls = siegClient.baixarXmls(request, apiKey);
-                    for (byte[] xml : xmls) {
-                        result = result.plus(store(company, xml, "SIEG"));
-                    }
-                    if (xmls.size() < PAGE_SIZE) {
-                        break;
-                    }
-                }
-            }
+            result = result.plus(downloadWindow(company, cnpj, apiKey, window[0], window[1]));
         }
         log.info("NFS-e from SIEG for company {} ({} to {}): {} new, {} known, {} unreadable", companyId, from, to,
                 result.persistedNew(), result.duplicated(), result.invalid());
+        return result;
+    }
+
+    /**
+     * A1: the company's NFS-e of one window [from, to] (at most a month), downloaded only when SIEG counts more than it
+     * already delivered of that window ({@code found_in_sieg_at}, any direction - a known note is never downloaded again
+     * for nothing). SIEG's total is the sum of its NFS-e counts with the company as issuer (CnpjEmit) and as recipient
+     * (CnpjDest): {@code issuerCount}/{@code recipientCount} when the NF-e sides already counted this window in this
+     * attempt (contar-xmls answers every type), else one contar-xmls for each one missing. SIEG does not document which
+     * filter is the provider and which the taker for NFS-e, so only the total is compared, never a direction. A count that
+     * fails means "unknown": the window is downloaded, as before.
+     */
+    @Transactional
+    public SyncResult syncMonthIfMissing(UUID companyId, LocalDate from, LocalDate to, Integer issuerCount, Integer recipientCount) {
+        Company company = companyValidation.checkExist(companyId);
+        String cnpj = DocumentNumbers.onlyDigits(company.getDocument().getNumber());
+        String apiKey = firmIntegrationService.getApiKey(company.getAccountingFirm().getId(), IntegrationType.SIEG);
+        Integer asIssuer = issuerCount != null ? issuerCount : countNfse(company, apiKey, cnpj, null, from, to);
+        Integer asRecipient = recipientCount != null ? recipientCount : countNfse(company, apiKey, null, cnpj, from, to);
+        long delivered = repository.countByCompany_IdAndIssueDateBetweenAndFoundInSiegAtIsNotNull(companyId,
+                IssuePeriod.siegStart(from), IssuePeriod.siegEnd(to));
+        if (asIssuer != null && asRecipient != null && delivered >= (long) asIssuer + asRecipient) {
+            log.info("NFS-e of company {} ({} to {}): SIEG counts {}, {} already delivered - no download", companyId, from, to,
+                    asIssuer + asRecipient, delivered);
+            return new SyncResult(0, 0, 0);
+        }
+        SyncResult result = downloadWindow(company, cnpj, apiKey, from, to);
+        log.info("NFS-e of company {} ({} to {}): SIEG counts {}, {} delivered before - {} new, {} known, {} unreadable", companyId,
+                from, to, asIssuer == null || asRecipient == null ? "?" : String.valueOf(asIssuer + asRecipient), delivered,
+                result.persistedNew(), result.duplicated(), result.invalid());
+        return result;
+    }
+
+    /**
+     * A1 in shadow (decision of 2026-11-27): [from, to] is downloaded exactly as without the gate, and the current month
+     * ([first day of {@code to}'s month, to]) is checked with the counts this attempt already has - free, no request of its
+     * own: one log line per company with ids and counts, saying what the gate would have done. A line "would have MISSED"
+     * means the gate would have skipped a month that brought new notes - the gate is not safe to turn on. Only the current
+     * month is evaluated: the earlier months of the lookback that the ON mode checks (with counts of their own) never show
+     * up in this log - counting them here would cost 2 requests a month on top of the old download.
+     */
+    @Transactional
+    public SyncResult syncWithShadowGate(UUID companyId, LocalDate from, LocalDate to, Integer issuerCount, Integer recipientCount) {
+        LocalDate monthStart = to.withDayOfMonth(1);
+        boolean counted = issuerCount != null && recipientCount != null;
+        long before = counted ? siegDelivered(companyId, monthStart, to) : 0;
+        SyncResult result = syncFromSieg(companyId, from, to);
+        if (!counted) {
+            log.info("NFS-e shadow gate company {} ({} to {}): no count from this attempt - not evaluated", companyId, monthStart, to);
+            return result;
+        }
+        long after = siegDelivered(companyId, monthStart, to);
+        int siegTotal = issuerCount + recipientCount;
+        boolean wouldSkip = before >= siegTotal;
+        if (wouldSkip && after > before) {
+            log.warn("NFS-e shadow gate company {} ({} to {}): SIEG counts {} (issuer {} + recipient {}), {} delivered before, {} new"
+                    + " in the month - the gate would have MISSED them", companyId, monthStart, to, siegTotal, issuerCount,
+                    recipientCount, before, after - before);
+        } else {
+            log.info("NFS-e shadow gate company {} ({} to {}): SIEG counts {} (issuer {} + recipient {}), {} delivered before, {} new"
+                    + " in the month - the gate would have {}", companyId, monthStart, to, siegTotal, issuerCount, recipientCount,
+                    before, after - before, wouldSkip ? "skipped the month" : "downloaded the month");
+        }
+        return result;
+    }
+
+    private long siegDelivered(UUID companyId, LocalDate from, LocalDate to) {
+        return repository.countByCompany_IdAndIssueDateBetweenAndFoundInSiegAtIsNotNull(companyId, IssuePeriod.siegStart(from),
+                IssuePeriod.siegEnd(to));
+    }
+
+    /** SIEG's NFS-e count for one filter of the window; null = the count failed. */
+    private Integer countNfse(Company company, String apiKey, String cnpjEmit, String cnpjDest, LocalDate from, LocalDate to) {
+        try {
+            SiegBaixarXmlsRequest request = new SiegBaixarXmlsRequest(TIPO_XML_NFSE, PAGE_SIZE, 0, startOfDay(from), endOfDay(to),
+                    cnpjEmit, cnpjDest, null);
+            return siegClient.contarXmls(request, apiKey).nfse();
+        } catch (RuntimeException e) {
+            log.warn("Could not count SIEG NFS-e for company {} - downloading the window: {}", company.getId(),
+                    e.getClass().getSimpleName());
+            return null;
+        }
+    }
+
+    /** Both filters (as provider - CnpjEmit - and as taker - CnpjDest) of one window, paged until a short page. */
+    private SyncResult downloadWindow(Company company, String cnpj, String apiKey, LocalDate from, LocalDate to) {
+        SyncResult result = new SyncResult(0, 0, 0);
+        for (boolean asProvider : new boolean[]{true, false}) {
+            for (int page = 0; page < MAX_PAGES; page++) {
+                SiegBaixarXmlsRequest request = new SiegBaixarXmlsRequest(TIPO_XML_NFSE, PAGE_SIZE, page * PAGE_SIZE,
+                        startOfDay(from), endOfDay(to), asProvider ? cnpj : null, asProvider ? null : cnpj, null);
+                List<byte[]> xmls = siegClient.baixarXmls(request, apiKey);
+                for (byte[] xml : xmls) {
+                    result = result.plus(store(company, xml, "SIEG"));
+                }
+                if (xmls.size() < PAGE_SIZE) {
+                    break;
+                }
+            }
+        }
         return result;
     }
 

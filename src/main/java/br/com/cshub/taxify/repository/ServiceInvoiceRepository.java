@@ -18,6 +18,12 @@ public interface ServiceInvoiceRepository extends AbstractJpaRepository<ServiceI
 
     Optional<ServiceInvoice> findByCompany_IdAndAccessKey(UUID companyId, String accessKey);
 
+    /**
+     * The company's NFS-e of a window that SIEG itself delivered ({@code found_in_sieg_at}), any direction - compared with
+     * SIEG's count before downloading the window (A1). Index idx_service_invoices_company_issue (company_id, issue_date).
+     */
+    long countByCompany_IdAndIssueDateBetweenAndFoundInSiegAtIsNotNull(UUID companyId, LocalDateTime from, LocalDateTime to);
+
     /** The service notes screen; every filter optional (null = any). */
     @Query("select s from ServiceInvoice s where s.company.id = :companyId and s.deleted = false"
             + " and s.issueDate between :from and :to"

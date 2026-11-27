@@ -3,6 +3,8 @@ package br.com.cshub.taxify.integration.fiscalxml;
 import org.springframework.boot.context.properties.ConfigurationProperties;
 import org.springframework.stereotype.Component;
 
+import br.com.cshub.taxify.enumerated.ServiceInvoiceCountGate;
+
 import java.time.LocalDate;
 
 /**
@@ -31,7 +33,43 @@ public class FiscalXmlSyncProperties {
     private int batchSize = 2;
     private LocalDate referenceDate;
     private String storagePath = "./data/fiscal-xml";
+    /**
+     * TAXIFY_SIEG_ZERO_TOTAL_RECOUNT_HOURS - a side checked today whose provider total is 0 counts as up to date for this
+     * many hours, then it is counted again (A3; 6 h, decision of 2026-11-27). 0 = counted on every attempt (the old
+     * behavior).
+     */
+    private int zeroTotalRecountHours = 6;
+    /**
+     * TAXIFY_SIEG_PREVIOUS_MONTH_DAYS - up to this day of the month the previous month's NF-e are checked too, once a day
+     * per side, by the provider's count (decision of 2026-11-27, default 10). 0 = never.
+     */
+    private int previousMonthDays = 10;
+    /** TAXIFY_SIEG_NFSE_COUNT_GATE - off, shadow (default) or on: see {@link ServiceInvoiceCountGate}. */
+    private ServiceInvoiceCountGate serviceInvoiceCountGate = ServiceInvoiceCountGate.SHADOW;
 
+    public int getPreviousMonthDays() {
+        return previousMonthDays;
+    }
+
+    public void setPreviousMonthDays(int previousMonthDays) {
+        this.previousMonthDays = previousMonthDays;
+    }
+
+    public int getZeroTotalRecountHours() {
+        return zeroTotalRecountHours;
+    }
+
+    public void setZeroTotalRecountHours(int zeroTotalRecountHours) {
+        this.zeroTotalRecountHours = zeroTotalRecountHours;
+    }
+
+    public ServiceInvoiceCountGate getServiceInvoiceCountGate() {
+        return serviceInvoiceCountGate;
+    }
+
+    public void setServiceInvoiceCountGate(ServiceInvoiceCountGate serviceInvoiceCountGate) {
+        this.serviceInvoiceCountGate = serviceInvoiceCountGate;
+    }
 
     public boolean isEnabled() {
         return enabled;

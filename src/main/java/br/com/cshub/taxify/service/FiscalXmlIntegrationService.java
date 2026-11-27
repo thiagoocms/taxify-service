@@ -82,8 +82,35 @@ public class FiscalXmlIntegrationService {
      */
     private Clock clock = Clock.system(ClockConfig.RECIFE);
 
-    /** One SIEG side synced by the scheduler: the result and whether contar-xmls failed and the download went on (RN-07). */
-    public record SiegSideOutcome(XmlDownloadResultDTO result, boolean countFailed) {
+    /**
+     * One SIEG side synced by the scheduler: the result, whether contar-xmls failed and the download went on (RN-07), the
+     * NFS-e count the same contar-xmls answered (null = not counted) and the reconciliation the side needs (null = none) -
+     * run by {@link SiegReconciliationService} outside this transaction (B1).
+     */
+    public record SiegSideOutcome(XmlDownloadResultDTO result, boolean countFailed, Integer serviceInvoiceCount,
+                                  ReconciliationNeed reconciliation) {
+
+        public SiegSideOutcome(XmlDownloadResultDTO result, boolean countFailed) {
+            this(result, countFailed, null, null);
+        }
+    }
+
+    /**
+     * B1: a side's paging reached SIEG's last page with fewer notes delivered than SIEG counts, after a page that was not
+     * the first one, and the difference ({@code totalSieg - delivered}) is bigger than the one the last complete pass of the
+     * month left. The re-read goes from the first page, at most {@link #pages()} pages. {@code currentWindow}: the side's
+     * regular window (its bookkeeping is refreshed at the end); false = the previous month checked in the first days.
+     */
+    public record ReconciliationNeed(UUID companyId, FiscalXmlSide side, LocalDate from, LocalDate to, int totalSieg,
+                                     int delivered, boolean currentWindow) {
+
+        public int pages() {
+            return (totalSieg + PAGE_SIZE - 1) / PAGE_SIZE;
+        }
+    }
+
+    /** One page of a reconciliation: the items SIEG returned, the new notes, and what SIEG has delivered of the window now. */
+    public record ReconciledPage(int items, int persistedNew, int delivered) {
     }
 
     public FiscalXmlIntegrationService(SiegClient siegClient, FiscalXmlMetadataParser metadataParser,
@@ -159,16 +186,25 @@ public class FiscalXmlIntegrationService {
     /**
      * The scheduler's call (one side, {@code filter.side()} required): same as {@link #syncFromSieg(XmlDownloadFilterDTO,
      * boolean)}, plus whether the count failed and the download went on anyway - the stage's warning
-     * {@code SIEG_COUNT_FAILED} on the capture panel (CP-RN-10).
+     * {@code SIEG_COUNT_FAILED} on the capture panel (CP-RN-10) -, the NFS-e count the same contar-xmls answered and the
+     * reconciliation the side needs (run outside this transaction by the caller).
+     *
+     * <p>B1: the page asked for starts after what SIEG itself already delivered of this side and window
+     * ({@code found_in_sieg_at}), read now from the database - never the notes another source (SEFAZ, upload) brought,
+     * which are not SIEG's first positions. {@code filter.skip()} is not used here.
      */
     @Transactional
     public SiegSideOutcome syncSideFromSieg(XmlDownloadFilterDTO filter, boolean skipCountCheck) {
         Company company = findCompanyWithCnpj(filter.companyId());
         FiscalXmlSide side = filter.side() == null ? FiscalXmlSide.RECEIVED : filter.side();
-        return syncSideOutcome(company, filter, side, skipCountCheck);
+        int deliveredBySieg = siegDelivered(company.getId(), side, filter.dataEmissaoInicio(), filter.dataEmissaoFim());
+        XmlDownloadFilterDTO resumed = new XmlDownloadFilterDTO(filter.companyId(), filter.xmlType(), filter.dataEmissaoInicio(),
+                filter.dataEmissaoFim(), filter.take(), deliveredBySieg, filter.cnpjDest(), side);
+        return syncSideOutcome(company, resumed, side, skipCountCheck);
     }
 
     private XmlDownloadResultDTO syncSide(Company company, XmlDownloadFilterDTO filter, FiscalXmlSide side, boolean skipCountCheck) {
+        // a manual sync never reconciles (it runs inside the request): the next scheduled attempt does
         return syncSideOutcome(company, filter, side, skipCountCheck).result();
     }
 
@@ -190,34 +226,190 @@ public class FiscalXmlIntegrationService {
         );
 
         String apiKey = firmIntegrationService.getApiKey(company.getAccountingFirm().getId(), IntegrationType.SIEG);
+        FiscalXmlSyncControl known = syncControlRepository.findByCompany_Id(company.getId()).orElse(null);
+        String month = filter.dataEmissaoInicio() == null ? null : YearMonth.from(filter.dataEmissaoInicio()).toString();
+        int knownGap = known == null || month == null ? 0 : known.knownGap(side.ownIssue(), month);
 
         if (skipCountCheck) {
             log.info("Skipping contar-xmls for company {} ({}) - already known pending from a previous check", company.getId(), side);
             List<byte[]> xmlContents = siegClient.baixarXmls(request, apiKey);
-            XmlDownloadResultDTO result = persistAll(company, xmlContents, FiscalXmlSource.SIEG);
-            // An empty page means the "still pending" from the last count no longer holds (notes
-            // gone from SIEG, or counted but never downloadable): drop it, so the next tick counts
-            // again instead of asking for this empty page forever.
-            updateSyncControl(company, side, filter.dataEmissaoInicio(), filter.dataEmissaoFim(), null, xmlContents.isEmpty());
-            return new SiegSideOutcome(result, false);
+            XmlDownloadResultDTO page = persistAll(company, xmlContents, FiscalXmlSource.SIEG);
+            Integer knownTotal = known == null ? null
+                    : side == FiscalXmlSide.ISSUED ? known.getIssuedTotalSieg() : Integer.valueOf(known.getTotalSieg());
+            PagingEnd end = knownTotal == null ? PagingEnd.NONE
+                    : pagingEnd(company, side, filter, request.skip(), knownTotal, xmlContents.size(), knownGap, true);
+            updateSyncControl(company, side, filter.dataEmissaoInicio(), filter.dataEmissaoFim(), null, end.gapToRecord());
+            return new SiegSideOutcome(page, false, null, end.reconciliation());
         }
 
-        int totalSieg = countPendingNfe(company, request, apiKey);
+        SiegDocumentCounts counts = countDocuments(company, request, apiKey);
+        int totalSieg = counts == null ? -1 : counts.nfe();
 
         XmlDownloadResultDTO result;
+        PagingEnd end = PagingEnd.NONE;
         if (totalSieg == 0) {
             log.info("SIEG reports 0 pending NFe for company {} ({}) in this window, skipping baixar-xmls", company.getId(), side);
+            result = new XmlDownloadResultDTO(0, 0, 0, 0, 0, List.of(), List.of(), 0);
+        } else if (totalSieg > 0 && request.skip() != null && request.skip() + knownGap >= totalSieg) {
+            // SIEG counts nothing beyond what it delivered (and the difference a complete pass already left): the page
+            // after them would come back empty
+            log.info("SIEG reports {} NFe for company {} ({}), {} delivered and {} known missing - skipping baixar-xmls",
+                    totalSieg, company.getId(), side, request.skip(), knownGap);
             result = new XmlDownloadResultDTO(0, 0, 0, 0, 0, List.of(), List.of(), 0);
         } else {
             List<byte[]> xmlContents = siegClient.baixarXmls(request, apiKey);
             result = persistAll(company, xmlContents, FiscalXmlSource.SIEG);
+            if (totalSieg > 0) {
+                end = pagingEnd(company, side, filter, request.skip(), totalSieg, xmlContents.size(), knownGap, true);
+            }
         }
 
         if (totalSieg >= 0) {
-            updateSyncControl(company, side, filter.dataEmissaoInicio(), filter.dataEmissaoFim(), totalSieg);
+            updateSyncControl(company, side, filter.dataEmissaoInicio(), filter.dataEmissaoFim(), totalSieg, end.gapToRecord());
         }
 
-        return new SiegSideOutcome(result, totalSieg < 0);
+        return new SiegSideOutcome(result, totalSieg < 0, counts == null ? null : counts.nfse(), end.reconciliation());
+    }
+
+    /**
+     * How a side's paging ended this call. {@code gapToRecord}: a complete pass from the first page ended short - the
+     * difference to keep for the month (null = nothing to record); {@code reconciliation}: the re-read the side needs.
+     */
+    record PagingEnd(Integer gapToRecord, ReconciliationNeed reconciliation) {
+        static final PagingEnd NONE = new PagingEnd(null, null);
+    }
+
+    /**
+     * B1: the page just stored ({@code pageItems} items) may be SIEG's last one while SIEG delivered fewer notes of the
+     * window than its count - SIEG's order changed after the earlier pages (a note that arrived late in an earlier
+     * position), so some notes sit before the skip. A page that was the first one already was a complete pass: its
+     * difference is recorded. Otherwise a reconciliation from the first page is asked for - only when the difference is
+     * bigger than the one the month's last complete pass left ({@code knownGap}): a difference SIEG never closes (notes it
+     * counts and never delivers, a note counted on both sides, the month's edge in UTC) is not re-read every day.
+     */
+    private PagingEnd pagingEnd(Company company, FiscalXmlSide side, XmlDownloadFilterDTO filter, Integer skip, int totalSieg,
+                                int pageItems, int knownGap, boolean currentWindow) {
+        if (pageItems >= PAGE_SIZE) {
+            return PagingEnd.NONE; // a full page: there is more, the next attempt goes on from there
+        }
+        int delivered = siegDelivered(company.getId(), side, filter.dataEmissaoInicio(), filter.dataEmissaoFim());
+        int gap = totalSieg - delivered;
+        if (gap <= 0) {
+            return knownGap > 0 ? new PagingEnd(0, null) : PagingEnd.NONE;
+        }
+        if (skip == null || skip == 0) {
+            return new PagingEnd(gap, null);
+        }
+        if (gap <= knownGap) {
+            return PagingEnd.NONE;
+        }
+        return new PagingEnd(null, new ReconciliationNeed(company.getId(), side, filter.dataEmissaoInicio(), filter.dataEmissaoFim(),
+                totalSieg, delivered, currentWindow));
+    }
+
+    /**
+     * One page ({@code index} x 50, with events) of a reconciliation, stored in its own transaction - a failure on a later
+     * page keeps what the earlier ones brought. Counts and keys only.
+     */
+    @Transactional
+    public ReconciledPage reconcilePage(ReconciliationNeed need, int index) {
+        Company company = findCompanyWithCnpj(need.companyId().toString());
+        String cnpj = DocumentNumbers.onlyDigits(company.getDocument().getNumber());
+        String apiKey = firmIntegrationService.getApiKey(company.getAccountingFirm().getId(), IntegrationType.SIEG);
+        SiegBaixarXmlsRequest request = new SiegBaixarXmlsRequest(TIPO_XML_NFE, PAGE_SIZE, index * PAGE_SIZE,
+                startOfDayUtc(need.from()), endOfDayUtc(need.to()),
+                need.side() == FiscalXmlSide.ISSUED ? cnpj : null,
+                need.side() == FiscalXmlSide.RECEIVED ? cnpj : null,
+                true);
+        List<byte[]> xmlContents = siegClient.baixarXmls(request, apiKey);
+        XmlDownloadResultDTO result = persistAll(company, xmlContents, FiscalXmlSource.SIEG, false);
+        return new ReconciledPage(xmlContents.size(), result.totalPersistedNew(),
+                siegDelivered(company.getId(), need.side(), need.from(), need.to()));
+    }
+
+    /**
+     * A reconciliation ran to its end: the side's "importado" is refreshed and the difference that is left is kept for
+     * the month - the next one only when it grows.
+     */
+    @Transactional
+    public void recordReconciliation(ReconciliationNeed need) {
+        Company company = findCompanyWithCnpj(need.companyId().toString());
+        int delivered = siegDelivered(company.getId(), need.side(), need.from(), need.to());
+        syncControlRepository.findByCompany_Id(company.getId()).ifPresent(control -> {
+            String month = YearMonth.from(need.from()).toString();
+            control.recordKnownGap(need.side().ownIssue(), month, Math.max(0, need.totalSieg() - delivered));
+            if (!need.currentWindow()) {
+                control.refreshPreviousMonth(need.side().ownIssue(), month, need.totalSieg(), delivered);
+            } else if (need.side() == FiscalXmlSide.ISSUED) {
+                control.setIssuedTotalImported(delivered);
+            } else {
+                control.setTotalImportado(delivered);
+            }
+            if (need.currentWindow()) {
+                control.setStoredAnySource(need.side().ownIssue(), storedAnySource(company.getId(), need.side(), need.from(), need.to()));
+            }
+            syncControlRepository.save(control);
+        });
+    }
+
+    /**
+     * The previous month checked again in the first days of the month (an NF-e that only reaches SIEG after its month
+     * ended is otherwise never asked for: the regular window is the current month). Same rules as the regular window: a
+     * count from Skip 0; a download only when SIEG counts more than it delivered of that month plus the difference its
+     * last complete pass left; the page starts after what SIEG delivered; a short end asks for a reconciliation (run by the
+     * caller, outside this transaction) or records the difference. Never touches the current month's bookkeeping - only
+     * the month's difference and, when it is the month the panel shows as closed, how it closed (CP-RN-22).
+     */
+    @Transactional
+    public SiegSideOutcome checkPreviousMonthFromSieg(UUID companyId, FiscalXmlSide side, LocalDate from, LocalDate to) {
+        Company company = findCompanyWithCnpj(companyId.toString());
+        String cnpj = DocumentNumbers.onlyDigits(company.getDocument().getNumber());
+        String apiKey = firmIntegrationService.getApiKey(company.getAccountingFirm().getId(), IntegrationType.SIEG);
+        int delivered = siegDelivered(companyId, side, from, to);
+        SiegBaixarXmlsRequest request = new SiegBaixarXmlsRequest(TIPO_XML_NFE, PAGE_SIZE, delivered, startOfDayUtc(from),
+                endOfDayUtc(to), side == FiscalXmlSide.ISSUED ? cnpj : null, side == FiscalXmlSide.RECEIVED ? cnpj : null, true);
+        SiegDocumentCounts counts = countDocuments(company, request, apiKey);
+        XmlDownloadResultDTO none = new XmlDownloadResultDTO(0, 0, 0, 0, 0, List.of(), List.of(), 0);
+        if (counts == null) {
+            return new SiegSideOutcome(none, true, null, null);
+        }
+        String month = YearMonth.from(from).toString();
+        FiscalXmlSyncControl control = syncControlRepository.findByCompany_Id(companyId).orElse(null);
+        int knownGap = control == null ? 0 : control.knownGap(side.ownIssue(), month);
+        if (counts.nfe() <= delivered + knownGap) {
+            if (control != null) {
+                control.refreshPreviousMonth(side.ownIssue(), month, counts.nfe(), delivered);
+                syncControlRepository.save(control);
+            }
+            return new SiegSideOutcome(none, false, null, null);
+        }
+        log.info("SIEG counts {} NFe of company {} ({}) for {}, {} delivered and {} known missing - asking for the rest",
+                counts.nfe(), companyId, side, month, delivered, knownGap);
+        List<byte[]> xmlContents = siegClient.baixarXmls(request, apiKey);
+        XmlDownloadResultDTO result = persistAll(company, xmlContents, FiscalXmlSource.SIEG, false);
+        XmlDownloadFilterDTO window = new XmlDownloadFilterDTO(companyId.toString(), TIPO_XML_NFE, from, to, PAGE_SIZE, delivered,
+                null, side);
+        PagingEnd end = pagingEnd(company, side, window, delivered, counts.nfe(), xmlContents.size(), knownGap, false);
+        if (control != null) {
+            if (end.gapToRecord() != null) {
+                control.recordKnownGap(side.ownIssue(), month, end.gapToRecord());
+            }
+            control.refreshPreviousMonth(side.ownIssue(), month, counts.nfe(), siegDelivered(companyId, side, from, to));
+            syncControlRepository.save(control);
+        }
+        return new SiegSideOutcome(result, false, null, end.reconciliation());
+    }
+
+    /** The side's notes of the window that SIEG itself delivered (found_in_sieg_at) - SIEG's skip and the "importado" (B1). */
+    private int siegDelivered(UUID companyId, FiscalXmlSide side, LocalDate from, LocalDate to) {
+        return (int) xmlDocumentRepository.countByCompany_IdAndOwnIssueAndIssueDateBetweenAndFoundInSiegAtIsNotNull(
+                companyId, side.ownIssue(), IssuePeriod.siegStart(from), IssuePeriod.siegEnd(to));
+    }
+
+    /** The side's notes of the window in Taxify from any source - shown next to SIEG's numbers on the panel. */
+    private int storedAnySource(UUID companyId, FiscalXmlSide side, LocalDate from, LocalDate to) {
+        return (int) xmlDocumentRepository.countByCompany_IdAndOwnIssueAndIssueDateBetween(companyId, side.ownIssue(),
+                IssuePeriod.siegStart(from), IssuePeriod.siegEnd(to));
     }
 
     private static XmlDownloadResultDTO merge(XmlDownloadResultDTO a, XmlDownloadResultDTO b) {
@@ -230,32 +422,36 @@ public class FiscalXmlIntegrationService {
                 a.totalParseErrors() + b.totalParseErrors(), keys, xmls, a.totalEventsRecorded() + b.totalEventsRecorded());
     }
 
-    private int countPendingNfe(Company company, SiegBaixarXmlsRequest request, String apiKey) {
+    /**
+     * SIEG's count for the side's filter (NF-e and NFS-e); null = the count failed (RN-07: the download goes on). Always
+     * from Skip 0 and without BaixarEventos: the whole window, notes only - comparable with what's stored.
+     */
+    private SiegDocumentCounts countDocuments(Company company, SiegBaixarXmlsRequest request, String apiKey) {
         try {
-            // counted without BaixarEventos: the count must be notes only, comparable with what's stored
-            SiegBaixarXmlsRequest countRequest = new SiegBaixarXmlsRequest(request.tipoXml(), request.take(), request.skip(),
+            SiegBaixarXmlsRequest countRequest = new SiegBaixarXmlsRequest(request.tipoXml(), request.take(), 0,
                     request.dataEmissaoInicio(), request.dataEmissaoFim(), request.cnpjEmit(), request.cnpjDest(), null);
-            return siegClient.contarXmlsNfe(countRequest, apiKey);
+            return siegClient.contarXmls(countRequest, apiKey);
         } catch (Exception e) {
-            log.warn("Could not count pending SIEG NFe for company {} - proceeding with baixar-xmls anyway", company.getId(), e);
-            return -1;
+            log.warn("Could not count pending SIEG NFe for company {} - proceeding with baixar-xmls anyway: {}", company.getId(),
+                    e.getClass().getSimpleName());
+            return null;
         }
     }
 
     /**
-     * {@code totalSieg} is nullable: null means "not re-checked this call" (see the
-     * {@code skipCountCheck} path above) - the existing value on the row is left as-is,
-     * while {@code totalImportado} and {@code ultimaVerificacaoEm} still get refreshed to
-     * reflect whatever baixar-xmls just persisted.
+     * {@code totalSieg} is nullable: null means "not re-checked this call" (see the {@code skipCountCheck} path above) -
+     * the existing value on the row is left as-is, while {@code totalImportado} and {@code ultimaVerificacaoEm} still get
+     * refreshed to reflect whatever baixar-xmls just persisted. The "importado" is what SIEG delivered of the side's
+     * window ({@code found_in_sieg_at}, B1): SIEG's total against SIEG's own notes - a note only SEFAZ or an upload
+     * brought no longer hides one SIEG never delivered. The notes of the window from any source are kept next to it
+     * for the panel.
+     *
+     * @param gapToRecord the difference a complete pass left for the window's month (null = unchanged) - replaces RN-08's
+     *                    "total = imported": SIEG's total stays as SIEG said, and the scheduler counts the side as up to
+     *                    date while nothing beyond that difference shows up
      */
     private void updateSyncControl(Company company, FiscalXmlSide side, LocalDate dataEmissaoInicio, LocalDate dataEmissaoFim,
-                                   Integer totalSieg) {
-        updateSyncControl(company, side, dataEmissaoInicio, dataEmissaoFim, totalSieg, false);
-    }
-
-    /** @param clearPending sets SIEG's total to what is imported - nothing known pending anymore */
-    private void updateSyncControl(Company company, FiscalXmlSide side, LocalDate dataEmissaoInicio, LocalDate dataEmissaoFim,
-                                   Integer totalSieg, boolean clearPending) {
+                                   Integer totalSieg, Integer gapToRecord) {
         FiscalXmlSyncControl control = syncControlRepository.findByCompany_Id(company.getId())
                 .orElseGet(() -> {
                     FiscalXmlSyncControl created = new FiscalXmlSyncControl();
@@ -264,17 +460,14 @@ public class FiscalXmlIntegrationService {
                     created.setUltimaVerificacaoEm(LocalDateTime.now(clock));
                     return created;
                 });
-        LocalDateTime from = IssuePeriod.start(dataEmissaoInicio);
-        LocalDateTime to = IssuePeriod.end(dataEmissaoFim);
-
-        int imported = (int) xmlDocumentRepository.countByCompany_IdAndOwnIssueAndIssueDateBetween(
-                company.getId(), side.ownIssue(), from, to);
+        int imported = siegDelivered(company.getId(), side, dataEmissaoInicio, dataEmissaoFim);
         closePreviousMonth(control, dataEmissaoInicio);
         control.setDataEmissaoInicio(dataEmissaoInicio);
         control.setDataEmissaoFim(dataEmissaoFim);
-        if (clearPending) {
-            totalSieg = imported;
+        if (gapToRecord != null && dataEmissaoInicio != null) {
+            control.recordKnownGap(side.ownIssue(), YearMonth.from(dataEmissaoInicio).toString(), gapToRecord);
         }
+        control.setStoredAnySource(side.ownIssue(), storedAnySource(company.getId(), side, dataEmissaoInicio, dataEmissaoFim));
         if (side == FiscalXmlSide.ISSUED) {
             if (totalSieg != null) {
                 control.setIssuedTotalSieg(totalSieg);
@@ -487,8 +680,8 @@ public class FiscalXmlIntegrationService {
     }
 
     /** @return whether the note changed - the first time this source brings it */
-    private static boolean markFoundIn(FiscalXmlDocument document, FiscalXmlSource source) {
-        LocalDateTime now = LocalDateTime.now();
+    private boolean markFoundIn(FiscalXmlDocument document, FiscalXmlSource source) {
+        LocalDateTime now = LocalDateTime.now(clock);
         if (source == FiscalXmlSource.SIEG && document.getFoundInSiegAt() == null) {
             document.setFoundInSiegAt(now);
             return true;
@@ -526,11 +719,21 @@ public class FiscalXmlIntegrationService {
      * the start; known notes come back as duplicates and cost nothing but the request. Never
      * touches the sync bookkeeping - the monthly counts stay comparable.
      *
+     * <p>A2: a side with no note in the database issued in [from, to] has nothing to be canceled - SIEG is not asked (a
+     * local query, no request). A note not imported yet comes with its events in the regular download. The local query
+     * starts one day earlier than SIEG's window: SIEG's days are UTC (00:00Z to 23:59Z), the stored issue time is the
+     * note's local time - a note of 21:00 Recife on the day before {@code from} is already {@code from} in UTC.
+     *
      * @return new events stored
      */
     @Transactional
     public int refreshRecentEvents(UUID companyId, FiscalXmlSide side, LocalDate from, LocalDate to) {
         Company company = findCompanyWithCnpj(companyId.toString());
+        if (properties.isEventsOnlyWithRecentNotes() && !xmlDocumentRepository.existsByCompany_IdAndOwnIssueAndIssueDateBetween(
+                company.getId(), side.ownIssue(), IssuePeriod.start(from.minusDays(1)), IssuePeriod.end(to))) {
+            log.info("Event sweep for company {} ({}): no note issued from {} to {} - no request spent", company.getId(), side, from, to);
+            return 0;
+        }
         String cnpj = DocumentNumbers.onlyDigits(company.getDocument().getNumber());
         String apiKey = firmIntegrationService.getApiKey(company.getAccountingFirm().getId(), IntegrationType.SIEG);
         int events = 0;

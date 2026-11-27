@@ -123,11 +123,11 @@ class ReformWave1MigrationQaTest {
 
         // segunda subida: nada pendente, nada muda
         jdbc.update("UPDATE ibs_cbs_rates SET legal_basis = 'Art. fictício do QA', version = 3 WHERE ano = 2026");
-        int applied = flyway("latest").migrate().migrationsExecuted;
+        int applied = flyway("84").migrate().migrationsExecuted;
         assertThat(applied).isZero();
         assertThat(jdbc.queryForObject("SELECT legal_basis FROM ibs_cbs_rates WHERE ano = 2026", String.class)).isEqualTo("Art. fictício do QA");
         assertThat(jdbc.queryForObject("SELECT version FROM ibs_cbs_rates WHERE ano = 2026", Integer.class)).isEqualTo(3);
-        assertThat(flyway("latest").validateWithResult().validationSuccessful).isTrue();
+        assertThat(flyway("84").validateWithResult().validationSuccessful).isTrue();
     }
 
     /**

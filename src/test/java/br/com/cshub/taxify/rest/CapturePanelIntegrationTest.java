@@ -306,7 +306,17 @@ class CapturePanelIntegrationTest {
         assertThat(yRow.get("status").asText()).isEqualTo("PENDENTE");
         assertThat(yRow.get("statusReason").asText()).isEqualTo("Faltam 20 NF-e recebidas");
         assertThat(yRow.at("/channels/SIEG/received/memory").asText()).isEqualTo(
-                "180 notas no Taxify (qualquer origem) emitidas de 01/11/2026 a 27/11/2026; o SIEG informou 200 na verificação de 27/11/2026 09:00");
+                "180 notas vindas do SIEG emitidas de 01/11/2026 a 27/11/2026; o SIEG informou 200 na verificação de 27/11/2026 09:00");
+        JsonNode unknownStored = yRow.at("/channels/SIEG/received/storedAnySource");
+        assertThat(unknownStored.isNull() || unknownStored.isMissingNode()).as("not known before the next check").isTrue();
+        // decision of 2026-11-27: next to "vindas do SIEG / total do SIEG", the notes in Taxify from any source
+        jdbc.update("UPDATE fiscal_xml_sync_control SET received_stored_any_source = 195 WHERE company_id = ?", y);
+        JsonNode yStored = row(ok(get(BASE + "/capture-panel"), carlaToken), y);
+        assertThat(yStored.get("status").asText()).as("the situation still comes from SIEG's numbers").isEqualTo("PENDENTE");
+        assertThat(yStored.at("/channels/SIEG/received/storedAnySource").asInt()).isEqualTo(195);
+        assertThat(yStored.at("/channels/SIEG/received/imported").asInt()).isEqualTo(180);
+        assertThat(yStored.at("/channels/SIEG/received/memory").asText()).isEqualTo("180 notas vindas do SIEG (195 no Taxify, de qualquer"
+                + " origem) emitidas de 01/11/2026 a 27/11/2026; o SIEG informou 200 na verificação de 27/11/2026 09:00");
         assertThat(yRow.at("/channels/SIEG/verifiedAt").asText()).isEqualTo("2026-11-27T09:00:00-03:00");
         JsonNode zRow = row(view, z);
         assertThat(zRow.get("status").asText()).isEqualTo("ATRASADA");
@@ -355,7 +365,8 @@ class CapturePanelIntegrationTest {
     @Test
     void failureRecordedByTheSchedulerAndResolved() throws Exception {
         othersAttemptedRecently();
-        control(x, null, 0, 0, 0, 0, NOW.minusHours(2), NOW.toLocalDate());
+        // checked yesterday: a side at 0 checked today would be up to date for 12 h (A3) and never reach SIEG
+        control(x, null, 0, 0, 0, 0, NOW.minusDays(1), NOW.toLocalDate());
         clock.set(NOW.withHour(9).withMinute(40));
         RecordingProvider provider = new RecordingProvider();
         provider.failWith = new SiegIntegrationException("error.sieg.integration.failed",
