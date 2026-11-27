@@ -7607,7 +7607,7 @@
   },
   "~third-party feign:acessoriasClient GET " : {
     "params" : {
-      "header:authorization" : {
+      "header:Authorization" : {
         "type" : "String",
         "required" : true
       }
@@ -7616,7 +7616,7 @@
   },
   "~third-party feign:siegClient POST /api/v1/baixar-xmls produces=[application/json]" : {
     "params" : {
-      "header:apiKey" : {
+      "header:X-API-Key" : {
         "type" : "String",
         "required" : true
       },
@@ -7635,7 +7635,7 @@
   },
   "~third-party feign:siegClient POST /api/v1/contar-xmls produces=[application/json]" : {
     "params" : {
-      "header:apiKey" : {
+      "header:X-API-Key" : {
         "type" : "String",
         "required" : true
       },
@@ -7666,11 +7666,11 @@
   },
   "~third-party feign:siegTokenClient POST /api/v1/create-jwt consumes=[application/json] produces=[application/json]" : {
     "params" : {
-      "header:secretKey" : {
+      "header:X-Secret-Key" : {
         "type" : "String",
         "required" : true
       },
-      "header:clientId" : {
+      "header:X-Client-Id" : {
         "type" : "String",
         "required" : true
       },

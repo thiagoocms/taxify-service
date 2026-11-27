@@ -8,6 +8,7 @@ import org.springframework.context.annotation.ClassPathScanningCandidateComponen
 import org.springframework.core.MethodParameter;
 import org.springframework.core.ResolvableType;
 import org.springframework.core.annotation.AnnotatedElementUtils;
+import org.springframework.core.annotation.AnnotationUtils;
 import org.springframework.core.type.filter.AnnotationTypeFilter;
 import org.springframework.web.bind.annotation.PathVariable;
 import org.springframework.web.bind.annotation.RequestBody;
@@ -58,6 +59,25 @@ import static org.assertj.core.api.Assertions.assertThat;
  * class names), and compares that with the committed baseline {@code contract/api-contract-baseline.json},
  * generated from the code before the refactor. The same goes for the JSON saved in
  * {@code fiscal_period_closings.snapshot} ({@link TaxAssessmentDTO}) and for the error body.
+ *
+ * <p>Param names come from the annotations with {@code @AliasFor} resolved ({@code value} = {@code name}),
+ * falling back to the Java parameter name. Endpoints added after the baseline are ignored; a missing or
+ * changed one fails.
+ *
+ * <p><b>What this guard does NOT cover</b> (check those by hand or with HTTP tests):
+ * <ul>
+ *   <li>{@code sort=} / {@link org.springframework.data.domain.Pageable} and {@code root.get("...")} paths:
+ *       entity property names, resolved only at runtime;</li>
+ *   <li>values produced with {@code .name()} or {@code toString()} into String fields, and enum values
+ *       saved in the database (only the Jackson value of enums typed in DTOs is compared);</li>
+ *   <li>{@code Map}/{@code Object} bodies built by hand (only the declared type is seen);</li>
+ *   <li>PDF, CSV, ZIP and XML payloads (byte[] responses);</li>
+ *   <li>response headers (Content-Disposition, file names), HTTP status codes and error codes/messages;</li>
+ *   <li>the application's ObjectMapper customizations (a plain JsonMapper is used here);</li>
+ *   <li>controllers outside {@code br.com.cshub.taxify.rest};</li>
+ *   <li>ADN, SEFAZ and e-Fisco payloads (XML/HTML/forms, not Jackson) - only SIEG Feign and Acessorias JSON;</li>
+ *   <li>configuration keys and environment variables.</li>
+ * </ul>
  *
  * <p>Regenerate the baseline only on purpose (a deliberate contract change):
  * {@code -Dcontract.write=true}.
@@ -169,11 +189,11 @@ class ApiContractSnapshotTest {
             parameter = parameter.withContainingClass(controller);
             ResolvableType type = ResolvableType.forMethodParameter(parameter);
             String javaName = method.getParameters()[i].getName();
-            RequestParam requestParam = parameter.getParameterAnnotation(RequestParam.class);
-            PathVariable pathVariable = parameter.getParameterAnnotation(PathVariable.class);
-            RequestHeader header = parameter.getParameterAnnotation(RequestHeader.class);
-            RequestPart part = parameter.getParameterAnnotation(RequestPart.class);
-            RequestBody body = parameter.getParameterAnnotation(RequestBody.class);
+            RequestParam requestParam = synthesized(parameter, RequestParam.class);
+            PathVariable pathVariable = synthesized(parameter, PathVariable.class);
+            RequestHeader header = synthesized(parameter, RequestHeader.class);
+            RequestPart part = synthesized(parameter, RequestPart.class);
+            RequestBody body = synthesized(parameter, RequestBody.class);
             if (requestParam != null) {
                 params.set("query:" + name(requestParam.name(), javaName), simpleParam(type, requestParam.required(), requestParam.defaultValue()));
             } else if (pathVariable != null) {
@@ -191,6 +211,12 @@ class ApiContractSnapshotTest {
         endpoint.set("params", params);
         endpoint.set("response", shape(toJavaType(ResolvableType.forMethodReturnType(method, controller)), true, new HashSet<>()));
         return endpoint;
+    }
+
+    /** The annotation with its {@code @AliasFor} resolved ({@code @RequestHeader("X-API-Key")} has name() "X-API-Key"). */
+    private static <A extends java.lang.annotation.Annotation> A synthesized(MethodParameter parameter, Class<A> type) {
+        A raw = parameter.getParameterAnnotation(type);
+        return raw == null ? null : AnnotationUtils.synthesizeAnnotation(raw, parameter.getParameter());
     }
 
     private static String name(String annotated, String javaName) {
