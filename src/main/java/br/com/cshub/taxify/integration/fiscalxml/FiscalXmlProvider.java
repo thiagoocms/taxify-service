@@ -34,6 +34,19 @@ public interface FiscalXmlProvider {
         return 0;
     }
 
+    /**
+     * The company's service invoices (NFS-e) issued in one window [from, to] of at most a month, downloaded only when the
+     * provider's count is above what it already delivered (A1). {@code issuerCount}/{@code recipientCount}: the provider's
+     * NFS-e counts with the company as issuer / as recipient, when already known from this attempt's NF-e counts of the
+     * same window; null = unknown, the provider counts by itself. Providers without a count download the window.
+     *
+     * @return new notes stored
+     */
+    default int syncServiceInvoicesIfMissing(UUID companyId, LocalDate from, LocalDate to, Integer issuerCount,
+                                             Integer recipientCount) {
+        return syncServiceInvoices(companyId, from, to);
+    }
+
     /** One page of a past period's notes, outside the regular bookkeeping. {@code lastPage}: nothing more to ask. */
     record RecoveryPage(int notes, int persistedNew, boolean lastPage) {
     }

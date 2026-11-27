@@ -52,7 +52,7 @@ class SiegClientTest {
 
     @Test
     void contarXmlsNfeThrowsWhenApiKeyIsMissing() {
-        assertThatThrownBy(() -> client.contarXmlsNfe(sampleRequest(), " "))
+        assertThatThrownBy(() -> client.contarXmls(sampleRequest(), " "))
                 .isInstanceOf(SiegIntegrationException.class);
     }
 
@@ -100,19 +100,19 @@ class SiegClientTest {
     }
 
     @Test
-    void contarXmlsNfeReturnsTheNfeCountFromASuccessfulResponse() {
+    void contarXmlsReturnsTheNfeAndNfseCountsFromASuccessfulResponse() {
         when(feignClient.contarXmls(any(), any())).thenReturn(new SiegContarXmlsResponse(
-                true, "", 200, new SiegContarXmlsDataDTO(310, 999, 0, 0, 0), false));
+                true, "", 200, new SiegContarXmlsDataDTO(310, 999, 0, 0, 12), false));
 
-        assertThat(client.contarXmlsNfe(sampleRequest(), API_KEY)).isEqualTo(310);
+        assertThat(client.contarXmls(sampleRequest(), API_KEY)).isEqualTo(new SiegDocumentCounts(310, 12));
     }
 
     @Test
-    void contarXmlsNfeReturnsZeroWhenNfeFieldIsNull() {
+    void contarXmlsReturnsZeroWhenAFieldIsNull() {
         when(feignClient.contarXmls(any(), any())).thenReturn(new SiegContarXmlsResponse(
-                true, "", 200, new SiegContarXmlsDataDTO(null, 999, 0, 0, 0), false));
+                true, "", 200, new SiegContarXmlsDataDTO(null, 999, 0, 0, null), false));
 
-        assertThat(client.contarXmlsNfe(sampleRequest(), API_KEY)).isZero();
+        assertThat(client.contarXmls(sampleRequest(), API_KEY)).isEqualTo(new SiegDocumentCounts(0, 0));
     }
 
     @Test
@@ -120,7 +120,7 @@ class SiegClientTest {
         when(feignClient.contarXmls(any(), any())).thenReturn(new SiegContarXmlsResponse(
                 false, "boom", 500, null, true));
 
-        assertThatThrownBy(() -> client.contarXmlsNfe(sampleRequest(), API_KEY))
+        assertThatThrownBy(() -> client.contarXmls(sampleRequest(), API_KEY))
                 .isInstanceOf(SiegIntegrationException.class);
     }
 
@@ -132,7 +132,7 @@ class SiegClientTest {
                 .thenThrow(new FeignException.InternalServerError("boom", request,
                         "err".getBytes(StandardCharsets.UTF_8), Map.of()));
 
-        assertThatThrownBy(() -> client.contarXmlsNfe(sampleRequest(), API_KEY))
+        assertThatThrownBy(() -> client.contarXmls(sampleRequest(), API_KEY))
                 .isInstanceOf(SiegIntegrationException.class);
     }
 

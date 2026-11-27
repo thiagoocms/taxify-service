@@ -65,6 +65,12 @@ sieg:
   client-id: ${SIEG_CLIENT_ID}
   client-secret: ${SIEG_CLIENT_SECRET}
   max-requests-per-minute: 2
+  # Varredura diária de eventos só no lado com nota no banco emitida na janela (consulta local, sem chamada).
+  events-only-with-recent-notes: ${TAXIFY_SIEG_EVENTS_ONLY_RECENT_NOTES:true}
+  # Linha diária no log com as chamadas ao SIEG desta instância por finalidade (só contagens).
+  request-log:
+    enabled: ${TAXIFY_SIEG_REQUEST_LOG_ENABLED:true}
+    cron: ${TAXIFY_SIEG_REQUEST_LOG_CRON:0 59 23 * * *}
 conta-azul:
   client-id: ${CONTA_AZUL_CLIENT_ID:}
   client-secret: ${CONTA_AZUL_CLIENT_SECRET:}
@@ -85,6 +91,13 @@ fiscal-xml:
     batch-size: ${FISCAL_XML_SYNC_BATCH_SIZE}
     provider: ${FISCAL_XML_SYNC_PROVIDER}
     storage-path: ${FISCAL_XML_STORAGE_PATH}
+    # Economia de chamadas ao SIEG (limite de 2 req/min para a conta inteira).
+    # Lado com total 0 verificado hoje fica "em dia" por N horas antes de recontar (0 = reconta a cada tentativa).
+    zero-total-recount-hours: ${TAXIFY_SIEG_ZERO_TOTAL_RECOUNT_HOURS:12}
+    # NFS-e: baixa o mês só quando a contagem do SIEG passa do que o SIEG já entregou (false = 35 dias todo dia).
+    service-invoice-count-gate: ${TAXIFY_SIEG_NFSE_COUNT_GATE:true}
+    # Até este dia do mês, confere também as NFS-e do mês anterior.
+    service-invoice-previous-month-days: ${TAXIFY_SIEG_NFSE_PREVIOUS_MONTH_DAYS:5}
   # Where the XML files go: local (the volume at storage-path) or s3. With s3, files already on
   # disk keep being read from there; migrate-local=true copies them to the bucket in background.
   # AWS credentials: EC2 instance role (recommended) or AWS_ACCESS_KEY_ID/AWS_SECRET_ACCESS_KEY.

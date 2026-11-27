@@ -15,6 +15,7 @@ import br.com.cshub.taxify.integration.fiscalxml.FiscalXmlSyncProperties;
 import br.com.cshub.taxify.integration.sieg.FiscalXmlFileStorage;
 import br.com.cshub.taxify.integration.sieg.FiscalXmlMetadataParser;
 import br.com.cshub.taxify.integration.sieg.SiegClient;
+import br.com.cshub.taxify.integration.sieg.SiegDocumentCounts;
 import br.com.cshub.taxify.integration.sieg.SiegProperties;
 import br.com.cshub.taxify.repository.FiscalXmlDocumentRepository;
 import br.com.cshub.taxify.repository.FiscalXmlSyncControlRepository;
@@ -88,7 +89,7 @@ class FiscalXmlVerificationClockAndPreviousMonthTest {
     void verificationTimeIsRecifeEvenWithTheJvmInUtc() {
         service.setClock(Clock.fixed(Instant.parse("2026-11-27T13:00:00Z"), ZoneId.of("America/Recife")));
         when(controls.findByCompany_Id(companyId)).thenReturn(Optional.empty());
-        when(siegClient.contarXmlsNfe(any(), any())).thenReturn(0);
+        when(siegClient.contarXmls(any(), any())).thenReturn(new SiegDocumentCounts(0, 0));
 
         service.syncFromSieg(filter(LocalDate.of(2026, 11, 1), LocalDate.of(2026, 11, 27), FiscalXmlSide.ISSUED));
         service.syncFromSieg(filter(LocalDate.of(2026, 11, 1), LocalDate.of(2026, 11, 27), FiscalXmlSide.RECEIVED));
@@ -105,9 +106,9 @@ class FiscalXmlVerificationClockAndPreviousMonthTest {
         service.setClock(Clock.fixed(Instant.parse("2026-12-01T06:00:00Z"), ZoneId.of("America/Recife")));
         FiscalXmlSyncControl y = novemberControl(200, 180, 12, 12);
         when(controls.findByCompany_Id(companyId)).thenReturn(Optional.of(y));
-        when(siegClient.contarXmlsNfe(any(), any())).thenReturn(3);
+        when(siegClient.contarXmls(any(), any())).thenReturn(new SiegDocumentCounts(3, 0));
         when(siegClient.baixarXmls(any(), any())).thenReturn(List.of());
-        when(documents.countByCompany_IdAndOwnIssueAndIssueDateBetween(eq(companyId), eq(false), any(), any())).thenReturn(0L);
+        when(documents.countByCompany_IdAndOwnIssueAndIssueDateBetweenAndFoundInSiegAtIsNotNull(eq(companyId), eq(false), any(), any())).thenReturn(0L);
 
         service.syncFromSieg(filter(LocalDate.of(2026, 12, 1), LocalDate.of(2026, 12, 1), FiscalXmlSide.RECEIVED));
 

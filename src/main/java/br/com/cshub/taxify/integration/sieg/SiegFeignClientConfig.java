@@ -16,11 +16,16 @@ import org.springframework.http.HttpHeaders;
 public class SiegFeignClientConfig {
 
     private static final Logger log = LoggerFactory.getLogger(SiegFeignClientConfig.class);
+    private static final String COUNT_PATH = "contar-xmls";
 
     @Bean
-    public RequestInterceptor siegRequestInterceptor(SiegTokenService tokenService, SiegRateLimiter rateLimiter) {
+    public RequestInterceptor siegRequestInterceptor(SiegTokenService tokenService, SiegRateLimiter rateLimiter,
+                                                     SiegRequestMeter requestMeter) {
         return template -> {
             rateLimiter.acquire();
+            // counted after the limiter's slot: one request really about to go out (A5)
+            String path = template.path();
+            requestMeter.record(path != null && path.contains(COUNT_PATH));
             if (tokenService.isConfigured()) {
                 template.header(HttpHeaders.AUTHORIZATION, "Bearer ".concat(tokenService.getAccessToken()));
                 log.info("SIEG OAuth configured");

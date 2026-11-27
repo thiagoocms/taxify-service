@@ -78,7 +78,7 @@ class SiegClientSafeLogTest {
                 .body(BODY, StandardCharsets.UTF_8).build());
         when(feignClient.contarXmls(any(), any())).thenThrow(error);
 
-        assertThatThrownBy(() -> client.contarXmlsNfe(new SiegBaixarXmlsRequest(1, 50, 0, null, null, null, "11594485000105", null), "key"))
+        assertThatThrownBy(() -> client.contarXmls(new SiegBaixarXmlsRequest(1, 50, 0, null, null, null, "11594485000105", null), "key"))
                 .isInstanceOfSatisfying(SiegIntegrationException.class, e -> {
                     assertThat(e.getHttpStatus()).isEqualTo(401);
                     assertThat(e.getCause()).as("the Feign exception (with the body) is not carried").isNull();

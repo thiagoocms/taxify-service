@@ -355,7 +355,8 @@ class CapturePanelIntegrationTest {
     @Test
     void failureRecordedByTheSchedulerAndResolved() throws Exception {
         othersAttemptedRecently();
-        control(x, null, 0, 0, 0, 0, NOW.minusHours(2), NOW.toLocalDate());
+        // checked yesterday: a side at 0 checked today would be up to date for 12 h (A3) and never reach SIEG
+        control(x, null, 0, 0, 0, 0, NOW.minusDays(1), NOW.toLocalDate());
         clock.set(NOW.withHour(9).withMinute(40));
         RecordingProvider provider = new RecordingProvider();
         provider.failWith = new SiegIntegrationException("error.sieg.integration.failed",

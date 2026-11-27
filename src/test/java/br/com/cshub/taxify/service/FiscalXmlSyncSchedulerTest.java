@@ -259,15 +259,17 @@ class FiscalXmlSyncSchedulerTest {
         verify(provider).syncServiceInvoices(companyA.getId(), LocalDate.of(2026, 5, 1), today);
         verify(syncControlRepository).markServiceInvoicesChecked(never.getId(), today);
 
+        // A1: afterwards only the current month, and only when the provider's count shows something missing
         FiscalXmlSyncControl checkedYesterday = controlFor(companyA, 0);
         checkedYesterday.setServiceInvoicesCheckedOn(today.minusDays(1));
         scheduler.syncServiceInvoicesOncePerDay(provider, checkedYesterday, today);
-        verify(provider).syncServiceInvoices(companyA.getId(), today.minusDays(35), today);
+        verify(provider).syncServiceInvoicesIfMissing(companyA.getId(), LocalDate.of(2026, 8, 1), today, null, null);
 
         FiscalXmlSyncControl checkedToday = controlFor(companyA, 0);
         checkedToday.setServiceInvoicesCheckedOn(today);
         scheduler.syncServiceInvoicesOncePerDay(provider, checkedToday, today);
-        verify(provider, org.mockito.Mockito.times(2)).syncServiceInvoices(any(), any(), any());
+        verify(provider, times(1)).syncServiceInvoices(any(), any(), any());
+        verify(provider, times(1)).syncServiceInvoicesIfMissing(any(), any(), any(), any(), any());
     }
 
     @Test
@@ -286,8 +288,9 @@ class FiscalXmlSyncSchedulerTest {
         verify(provider).sync(receivedSide());
     }
 
+    /** A3: a zero total is only "up to date" for a side really checked (the window written) - a new row is counted. */
     @Test
-    void neverSkipsWhenTotalSiegIsZeroRegardlessOfLastCheckDate() {
+    void aZeroTotalNeverVerifiedIsCountedEvenWhenItsTimeIsToday() {
         properties.setReferenceDate(LocalDate.of(2026, 8, 15));
         FiscalXmlSyncControl neverPending = controlFor(companyA, 0);
         neverPending.setTotalSieg(0);

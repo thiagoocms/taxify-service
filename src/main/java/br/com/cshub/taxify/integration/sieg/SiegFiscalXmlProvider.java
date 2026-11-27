@@ -1,15 +1,18 @@
 package br.com.cshub.taxify.integration.sieg;
 
-import java.util.UUID;
-import java.time.LocalDate;
-import br.com.cshub.taxify.integration.fiscalxml.FiscalXmlSide;
 import br.com.cshub.taxify.dto.sieg.XmlDownloadFilterDTO;
 import br.com.cshub.taxify.dto.sieg.XmlDownloadResultDTO;
 import br.com.cshub.taxify.integration.fiscalxml.FiscalXmlProvider;
+import br.com.cshub.taxify.integration.fiscalxml.FiscalXmlSide;
 import br.com.cshub.taxify.integration.fiscalxml.FiscalXmlSyncRequest;
 import br.com.cshub.taxify.integration.fiscalxml.FiscalXmlSyncResult;
 import br.com.cshub.taxify.service.FiscalXmlIntegrationService;
+import br.com.cshub.taxify.service.ServiceInvoiceService;
 import org.springframework.stereotype.Component;
+
+import java.time.LocalDate;
+import java.util.Optional;
+import java.util.UUID;
 
 /**
  * Adapts SIEG to the {@link FiscalXmlProvider} strategy contract. Registered under the
@@ -22,15 +25,20 @@ public class SiegFiscalXmlProvider implements FiscalXmlProvider {
 
     private final FiscalXmlIntegrationService integrationService;
     private final SiegProperties properties;
-    private final br.com.cshub.taxify.service.ServiceInvoiceService serviceInvoiceService;
+    private final ServiceInvoiceService serviceInvoiceService;
 
     public SiegFiscalXmlProvider(FiscalXmlIntegrationService integrationService, SiegProperties properties,
-                                 br.com.cshub.taxify.service.ServiceInvoiceService serviceInvoiceService) {
+                                 ServiceInvoiceService serviceInvoiceService) {
         this.serviceInvoiceService = serviceInvoiceService;
         this.integrationService = integrationService;
         this.properties = properties;
     }
 
+    /**
+     * One side: SIEG's skip is what SIEG itself already delivered of the window, read by
+     * {@link FiscalXmlIntegrationService#syncSideFromSieg} (B1) - {@code alreadyImportedCount} only matters for a sync
+     * without a side.
+     */
     @Override
     public FiscalXmlSyncResult sync(FiscalXmlSyncRequest request) {
         XmlDownloadFilterDTO filter = new XmlDownloadFilterDTO(
@@ -49,7 +57,7 @@ public class SiegFiscalXmlProvider implements FiscalXmlProvider {
                 : integrationService.syncSideFromSieg(filter, request.knownPending());
         XmlDownloadResultDTO result = outcome.result();
         return new FiscalXmlSyncResult(result.totalPersistedNew(), result.totalDuplicatedSkipped(), result.totalParseErrors(),
-                outcome.countFailed());
+                outcome.countFailed(), outcome.serviceInvoiceCount());
     }
 
     @Override
@@ -58,14 +66,20 @@ public class SiegFiscalXmlProvider implements FiscalXmlProvider {
     }
 
     @Override
-    public java.util.Optional<RecoveryPage> recoverPage(UUID companyId, FiscalXmlSide side, LocalDate from, LocalDate to, int page) {
+    public Optional<RecoveryPage> recoverPage(UUID companyId, FiscalXmlSide side, LocalDate from, LocalDate to, int page) {
         XmlDownloadResultDTO result = integrationService.syncPeriodPageFromSieg(companyId, side, from, to, page);
-        return java.util.Optional.of(new RecoveryPage(result.totalXmlsCounted(), result.totalPersistedNew(),
-                result.totalXmlsCounted() < br.com.cshub.taxify.service.FiscalXmlIntegrationService.pageSize()));
+        return Optional.of(new RecoveryPage(result.totalXmlsCounted(), result.totalPersistedNew(),
+                result.totalXmlsCounted() < FiscalXmlIntegrationService.pageSize()));
     }
 
     @Override
     public int syncServiceInvoices(UUID companyId, LocalDate from, LocalDate to) {
         return serviceInvoiceService.syncFromSieg(companyId, from, to).persistedNew();
+    }
+
+    @Override
+    public int syncServiceInvoicesIfMissing(UUID companyId, LocalDate from, LocalDate to, Integer issuerCount,
+                                            Integer recipientCount) {
+        return serviceInvoiceService.syncMonthIfMissing(companyId, from, to, issuerCount, recipientCount).persistedNew();
     }
 }

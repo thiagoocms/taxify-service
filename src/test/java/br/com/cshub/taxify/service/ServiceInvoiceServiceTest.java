@@ -154,4 +154,65 @@ class ServiceInvoiceServiceTest {
         org.assertj.core.api.Assertions.assertThat(windows.get(3)).containsExactly(java.time.LocalDate.of(2026, 11, 1), java.time.LocalDate.of(2026, 11, 23));
         org.assertj.core.api.Assertions.assertThat(ServiceInvoiceService.windows(java.time.LocalDate.of(2026, 11, 16), java.time.LocalDate.of(2026, 11, 23))).hasSize(1);
     }
+
+    // ------------------------------------------------------------------ A1: download only with a difference
+
+    /** A1: counts known from the NF-e sides (6 as issuer + 4 as recipient = 10), 10 already from SIEG: no request at all. */
+    @Test
+    void aMonthSiegAlreadyDeliveredCostsNoRequest() {
+        when(repository.countByCompany_IdAndIssueDateBetweenAndFoundInSiegAtIsNotNull(eq(company.getId()), any(), any())).thenReturn(10L);
+
+        ServiceInvoiceService.SyncResult result = service.syncMonthIfMissing(company.getId(), LocalDate.of(2026, 11, 1),
+                LocalDate.of(2026, 11, 27), 6, 4);
+
+        assertThat(result.persistedNew()).isZero();
+        verify(siegClient, never()).contarXmls(any(), any());
+        verify(siegClient, never()).baixarXmls(any(), any());
+    }
+
+    /** A1: SIEG counts 11 and 10 came from it - the window is downloaded, both filters. */
+    @Test
+    void aDifferenceDownloadsTheWindow() {
+        when(repository.countByCompany_IdAndIssueDateBetweenAndFoundInSiegAtIsNotNull(eq(company.getId()), any(), any())).thenReturn(10L);
+        when(siegClient.baixarXmls(any(), eq("key"))).thenReturn(List.of());
+
+        service.syncMonthIfMissing(company.getId(), LocalDate.of(2026, 11, 1), LocalDate.of(2026, 11, 27), 7, 4);
+
+        ArgumentCaptor<SiegBaixarXmlsRequest> requests = ArgumentCaptor.captor();
+        verify(siegClient, times(2)).baixarXmls(requests.capture(), eq("key"));
+        assertThat(requests.getAllValues()).extracting(SiegBaixarXmlsRequest::cnpjEmit).containsExactly("11222333000181", null);
+        assertThat(requests.getAllValues()).extracting(SiegBaixarXmlsRequest::cnpjDest).containsExactly(null, "11222333000181");
+        assertThat(requests.getAllValues()).extracting(SiegBaixarXmlsRequest::skip).containsOnly(0);
+    }
+
+    /** A1: the previous month has no count from this attempt - one contar-xmls per filter, NFS-e field, same window. */
+    @Test
+    void unknownCountsAreAskedOncePerFilter() {
+        when(siegClient.contarXmls(any(), eq("key"))).thenReturn(new br.com.cshub.taxify.integration.sieg.SiegDocumentCounts(99, 2));
+        when(repository.countByCompany_IdAndIssueDateBetweenAndFoundInSiegAtIsNotNull(eq(company.getId()),
+                eq(LocalDate.of(2026, 10, 1).atStartOfDay()), eq(LocalDate.of(2026, 10, 31).atTime(java.time.LocalTime.MAX)))).thenReturn(4L);
+
+        service.syncMonthIfMissing(company.getId(), LocalDate.of(2026, 10, 1), LocalDate.of(2026, 10, 31), null, null);
+
+        ArgumentCaptor<SiegBaixarXmlsRequest> counts = ArgumentCaptor.captor();
+        verify(siegClient, times(2)).contarXmls(counts.capture(), eq("key"));
+        assertThat(counts.getAllValues()).extracting(SiegBaixarXmlsRequest::cnpjEmit).containsExactly("11222333000181", null);
+        assertThat(counts.getAllValues()).extracting(SiegBaixarXmlsRequest::cnpjDest).containsExactly(null, "11222333000181");
+        // 2 + 2 = 4 delivered: the NF-e count (99) is not looked at
+        verify(siegClient, never()).baixarXmls(any(), any());
+    }
+
+    /** A1: a count that fails is "unknown" - the window is downloaded, as before the gate. */
+    @Test
+    void aFailedCountDownloadsTheWindow() {
+        when(siegClient.contarXmls(any(), eq("key"))).thenThrow(new br.com.cshub.taxify.exception.SiegIntegrationException(
+                "error.sieg.integration.failed", "x", 503));
+        when(repository.countByCompany_IdAndIssueDateBetweenAndFoundInSiegAtIsNotNull(eq(company.getId()), any(), any())).thenReturn(50L);
+        when(siegClient.baixarXmls(any(), eq("key"))).thenReturn(List.of());
+
+        service.syncMonthIfMissing(company.getId(), LocalDate.of(2026, 10, 1), LocalDate.of(2026, 10, 31), null, 3);
+
+        verify(siegClient, times(1)).contarXmls(any(), any());
+        verify(siegClient, times(2)).baixarXmls(any(), any());
+    }
 }
