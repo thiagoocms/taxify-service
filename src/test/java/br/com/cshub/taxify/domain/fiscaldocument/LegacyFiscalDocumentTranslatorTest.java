@@ -633,11 +633,11 @@ class LegacyFiscalDocumentTranslatorTest {
             FiscalXmlSyncControl control = new FiscalXmlSyncControl();
             audited(control);
             control.setCompany(e1());
-            control.setDataEmissaoInicio(LocalDate.of(2026, 11, 1));
-            control.setDataEmissaoFim(LocalDate.of(2026, 11, 27));
+            control.setIssueDateFrom(LocalDate.of(2026, 11, 1));
+            control.setIssueDateTo(LocalDate.of(2026, 11, 27));
             control.setTotalSieg(40);
-            control.setTotalImportado(37);
-            control.setUltimaVerificacaoEm(LocalDateTime.of(2026, 11, 27, 10, 0));
+            control.setTotalImported(37);
+            control.setLastCheckedAt(LocalDateTime.of(2026, 11, 27, 10, 0));
             control.setIssuedTotalSieg(12);
             control.setIssuedTotalImported(12);
             control.setIssuedCheckedAt(LocalDateTime.of(2026, 11, 27, 10, 5));
@@ -669,8 +669,8 @@ class LegacyFiscalDocumentTranslatorTest {
         void aSideNeverCheckedAndAPreviousMonthEqualToTheCurrentAreNotCopied() {
             FiscalXmlSyncControl control = new FiscalXmlSyncControl();
             control.setCompany(e1());
-            control.setDataEmissaoInicio(LocalDate.of(2026, 11, 1));
-            control.setUltimaVerificacaoEm(COPIED_AT);
+            control.setIssueDateFrom(LocalDate.of(2026, 11, 1));
+            control.setLastCheckedAt(COPIED_AT);
             control.closeIssuedMonth("2026-11", 3, 3);
             assertThat(LegacyFiscalDocumentTranslator.fromSyncControl(control, COPIED_AT))
                     .extracting(CapturePeriodCount::getSide).containsExactly(CaptureSide.RECEIVED);
@@ -680,11 +680,11 @@ class LegacyFiscalDocumentTranslatorTest {
             FiscalXmlSyncControl control = new FiscalXmlSyncControl();
             audited(control);
             control.setCompany(e1());
-            control.setDataEmissaoInicio(LocalDate.of(2026, 11, 1));
-            control.setDataEmissaoFim(LocalDate.of(2026, 11, 27));
+            control.setIssueDateFrom(LocalDate.of(2026, 11, 1));
+            control.setIssueDateTo(LocalDate.of(2026, 11, 27));
             control.setTotalSieg(44);
-            control.setTotalImportado(40);
-            control.setUltimaVerificacaoEm(LocalDateTime.of(2026, 11, 27, 10, 0));
+            control.setTotalImported(40);
+            control.setLastCheckedAt(LocalDateTime.of(2026, 11, 27, 10, 0));
             control.setIssuedTotalSieg(12);
             control.setIssuedTotalImported(12);
             control.setIssuedCheckedAt(LocalDateTime.of(2026, 11, 27, 10, 5));
@@ -732,8 +732,8 @@ class LegacyFiscalDocumentTranslatorTest {
         void aGapSlotOfTheCurrentMonthWithoutCurrentRowStaysOpen() {
             FiscalXmlSyncControl control = new FiscalXmlSyncControl();
             control.setCompany(e1());
-            control.setDataEmissaoInicio(LocalDate.of(2026, 11, 1));
-            control.setUltimaVerificacaoEm(COPIED_AT);
+            control.setIssueDateFrom(LocalDate.of(2026, 11, 1));
+            control.setLastCheckedAt(COPIED_AT);
             ReflectionTestUtils.setField(control, "issuedKnownGapMonth", "2026-11");
             ReflectionTestUtils.setField(control, "issuedKnownGap", 2);
 

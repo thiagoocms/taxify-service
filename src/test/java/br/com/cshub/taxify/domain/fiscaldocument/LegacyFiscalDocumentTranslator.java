@@ -431,7 +431,7 @@ public final class LegacyFiscalDocumentTranslator {
      */
     public static List<CapturePeriodCount> fromSyncControl(FiscalXmlSyncControl control, LocalDateTime copiedAt) {
         Objects.requireNonNull(copiedAt, "copiedAt");
-        YearMonth current = control.getDataEmissaoInicio() == null ? null : YearMonth.from(control.getDataEmissaoInicio());
+        YearMonth current = control.getIssueDateFrom() == null ? null : YearMonth.from(control.getIssueDateFrom());
         List<CapturePeriodCount> counts = new ArrayList<>(side(control, CaptureSide.RECEIVED, current, copiedAt));
         counts.addAll(side(control, CaptureSide.ISSUED, current, copiedAt));
         return counts;
@@ -445,10 +445,10 @@ public final class LegacyFiscalDocumentTranslator {
                 || control.getIssuedCheckedAt() != null;
         if (current != null && everChecked) {
             CapturePeriodCount row = count(control, side, current);
-            row.askedWindow(control.getDataEmissaoInicio(), control.getDataEmissaoFim());
-            LocalDateTime checkedAt = issued ? control.getIssuedCheckedAt() : control.getUltimaVerificacaoEm();
+            row.askedWindow(control.getIssueDateFrom(), control.getIssueDateTo());
+            LocalDateTime checkedAt = issued ? control.getIssuedCheckedAt() : control.getLastCheckedAt();
             row.recordProviderCount(issued ? control.getIssuedTotalSieg() : Integer.valueOf(control.getTotalSieg()), checkedAt);
-            row.recordImported(issued ? orZero(control.getIssuedTotalImported()) : control.getTotalImportado(), checkedAt);
+            row.recordImported(issued ? orZero(control.getIssuedTotalImported()) : control.getTotalImported(), checkedAt);
             row.recordStoredAnySource(issued ? control.getIssuedStoredAnySource() : control.getReceivedStoredAnySource());
             rows.put(current, row);
         }
