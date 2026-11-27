@@ -43,7 +43,7 @@ número do estabelecimento para dar suporte à captura (CP-RN-02, seção 13). A
 | Limite do SIEG | 2 requisições por minuto num limitador **em memória, único para a aplicação inteira** (não é por chave de API nem por escritório). A thread do agendador fica parada esperando vaga | `integration/sieg/SiegRateLimiter.java` |
 | Custo por empresa | 2 a 8 chamadas: contar e baixar de cada lado (o lado "em dia hoje" é pulado sem chamada), eventos 1 vez por dia por lado, NFS-e 1 vez por dia e um passo da recuperação dos meses bloqueados | `FiscalXmlSyncScheduler.java:296-304`, `:374-396` |
 | Quem entra | Assinatura vigente (a de `start_date` mais recente) com `FISCAL_XML_IMPORT` + `SIEG_INTEGRATION`, de escritório liberado pelo `RoutineGate`. Toda empresa ganha linha de controle, mesmo fora do plano. **Empresa inativa não é filtrada** | `FiscalXmlSyncScheduler.java:139-149`, `:182-218` |
-| Contadores | Recebidas: `total_sieg`, `total_importado`, `ultima_verificacao_em`. Emitidas: `issued_total_sieg`, `issued_total_imported`, `issued_checked_at`. "Importado" conta as notas do lado no mês **de qualquer origem** (SIEG, SEFAZ ou upload) | `domain/xml/FiscalXmlSyncControl.java`; `service/FiscalXmlIntegrationService.java:223-249` |
+| Contadores | Recebidas: `total_sieg`, `total_importado`, `ultima_verificacao_em`. Emitidas: `issued_total_sieg`, `issued_total_imported`, `issued_checked_at`. "Importado" conta as notas do lado no mês que **o SIEG entregou** (`found_in_sieg_at`, desde 2026-11-27); `received_stored_any_source` / `issued_stored_any_source` (V85) guardam as de **qualquer origem** na mesma verificação | `domain/xml/FiscalXmlSyncControl.java`; `service/FiscalXmlIntegrationService.java:223-249` |
 | Verificação real | `getVerifiedAt()` = a mais antiga das duas verificações; nula enquanto o lado emitido nunca foi verificado | `FiscalXmlSyncControl.java:81-90` |
 | Diário | `received_events_checked_on`, `issued_events_checked_on`, `service_invoices_checked_on`: o dia só é marcado se a etapa deu certo | `FiscalXmlSyncScheduler.java:327-372` |
 | Falha | **Só vai para o log.** Nada é gravado por empresa ou por etapa. Uma falha num lado aborta o resto da empresa naquela tentativa (o outro lado, os eventos e a NFS-e não rodam) | `FiscalXmlSyncScheduler.java:165-171` |
@@ -200,8 +200,11 @@ pede para alguém rodar o SQL de diagnóstico no banco. As falhas ficam só no l
 
   - `verifiedAt` é o `FiscalXmlSyncControl#getVerifiedAt()` (a mais antiga das duas verificações).
   - O `total SIEG = 0` com `importado = 0`, verificado dentro da janela, é `EM_DIA`.
-  - `importado > total SIEG` (notas que vieram da SEFAZ ou de upload e o SIEG não tem) não é pendência: é `EM_DIA` e a
-    tela mostra os dois números (CP-RN-09).
+  - A situação usa "vindas do SIEG / total do SIEG" (decisão do Tony de 2026-11-27): uma nota que só a SEFAZ ou um upload
+    trouxe não esconde mais uma que o SIEG não entregou. Ao lado, a tela mostra as notas da janela no Taxify de qualquer
+    origem (`storedAnySource`, CP-RN-09). `importado > total SIEG` continua não sendo pendência.
+  - A diferença que sobra depois de uma passada completa do SIEG (nota que ele conta e nunca entrega - RN-08 da captura)
+    continua aparecendo como falta: o total do SIEG não é mais igualado ao importado.
   - Um lado cuja última verificação foi no mês anterior não conta para a pendência do mês corrente: os contadores dele
     são do mês anterior. A tela mostra o mês a que eles se referem.
 - **CP-RN-07 Situação dos canais SEFAZ e ADN.**
@@ -239,7 +242,7 @@ pede para alguém rodar o SQL de diagnóstico no banco. As falhas ficam só no l
   | Empresa | Nome, situação geral e motivo; escritório (só plataforma); "inativa" | `companies`, CP-RN-08 | — |
   | Fila SIEG | Última tentativa; próxima tentativa estimada (CP-RN-12); pedido de "Sincronizar agora" em aberto | `last_attempt_at`, `capture_priority_requests` | "Posição {n} na fila; estimativa {dd/MM HH:mm}" |
   | Fila SIEG | Última verificação completa | `verifiedAt` | "A mais antiga entre recebidas ({hora}) e emitidas ({hora})" |
-  | NF-e recebidas | Importadas / total SIEG, mês | `total_importado`, `total_sieg`, `data_emissao_inicio/fim`, `ultima_verificacao_em` | "{importado} notas no Taxify (qualquer origem) emitidas de {início} a {fim}; o SIEG informou {total} na verificação de {data hora}" |
+  | NF-e recebidas | Importadas / total SIEG, mês | `total_importado`, `total_sieg`, `data_emissao_inicio/fim`, `ultima_verificacao_em` | "{importado} notas vindas do SIEG ({qualquer origem} no Taxify, de qualquer origem) emitidas de {início} a {fim}; o SIEG informou {total} na verificação de {data hora}" - sem o número de qualquer origem (linha ainda não verificada depois da V85): "{importado} notas vindas do SIEG emitidas de {início} a {fim}; o SIEG informou {total} na verificação de {data hora}" |
   | NF-e emitidas | Idem | `issued_*` | Idem |
   | Mês anterior | Como o mês anterior fechou, por lado (CP-RN-22) | `received_prev_*`, `issued_prev_*` | "nov/2026 fechou com {importado} de {total} NF-e recebidas" |
   | Eventos | Último dia varrido, por lado | `received_events_checked_on`, `issued_events_checked_on` | "Cancelamentos dos últimos 3 dias relidos em {data}" |
@@ -250,7 +253,9 @@ pede para alguém rodar o SQL de diagnóstico no banco. As falhas ficam só no l
   | Falhas | Por etapa: última falha (quando, código, mensagem), se já se resolveu, falhas seguidas, aviso | `capture_stage_status` | "Falhou 3 vezes seguidas; último sucesso em {data hora}" |
   | Recuperação | Meses bloqueados ainda em recuperação | `recovery_tasks` com `company_id` e status aberto | "Recuperando 2026-10 e 2026-11" |
 
-  - "Importado" é sempre rotulado como "no Taxify (qualquer origem)". É a mesma contagem do RN-09 da captura.
+  - "Importado" é rotulado como "vindas do SIEG" (RN-09 da captura) e vem com o número "no Taxify (qualquer origem)" ao
+    lado - no JSON, `channels.SIEG.received/issued.imported` e `.storedAnySource` (Integer, null até a primeira verificação
+    do lado depois da V85).
 
 ### Última falha (a parte nova de verdade)
 
@@ -485,8 +490,9 @@ Cenário base (fictício). Hoje é sexta-feira, 2026-11-27, 10:00 em Recife. Pro
 - **CA-CP-03 (CP-RN-06)** Dado X com recebidas 40/40 e emitidas 12/12 verificadas hoje às 08:10, eventos e NFS-e
   varridos hoje e nenhuma falha, quando o painel abre, então X está `EM_DIA`.
 - **CA-CP-04 (CP-RN-06)** Dado Y com recebidas 180 importadas de 200 informadas pelo SIEG, verificadas hoje às 09:00,
-  quando o painel abre, então Y está `PENDENTE` com "Faltam 20 NF-e recebidas", e o detalhe mostra "180 notas no Taxify
-  (qualquer origem) emitidas de 01/11/2026 a 27/11/2026; o SIEG informou 200 na verificação de 27/11/2026 09:00".
+  quando o painel abre, então Y está `PENDENTE` com "Faltam 20 NF-e recebidas", e o detalhe mostra "180 notas vindas do
+  SIEG emitidas de 01/11/2026 a 27/11/2026; o SIEG informou 200 na verificação de 27/11/2026 09:00"; com 195 no Taxify de
+  qualquer origem, "180 notas vindas do SIEG (195 no Taxify, de qualquer origem) emitidas de ..." e `storedAnySource = 195`.
 - **CA-CP-05 (CP-RN-06)** Dado Z com verificação completa em 26/11 08:00 (26 h atrás), quando o painel abre, então Z
   está `ATRASADA` com "Sem verificação completa há 26 h".
 - **CA-CP-06 (CP-RN-06, CP-RN-12)** Dado a situação do bug de 2026-11: 300 empresas com direito, 282 com `last_attempt_at`
@@ -556,7 +562,7 @@ Cenário base (fictício). Hoje é sexta-feira, 2026-11-27, 10:00 em Recife. Pro
 |---|---|---|---|---|
 | CT-CP-01 | Em dia | X: recebidas 40/40 e emitidas 12/12 às 08:10; eventos R/E e NFS-e em 27/11 | SIEG `EM_DIA`; geral `EM_DIA` | CP-RN-06 |
 | CT-CP-02 | Pendente | Y: recebidas `total_sieg = 200`, `total_importado = 180`, 09:00 | `PENDENTE`, "Faltam 20 NF-e recebidas" (200 − 180 = 20) | CP-RN-06 |
-| CT-CP-03 | Importado maior que o SIEG | `total_sieg = 30`, `total_importado = 35` (5 vieram da SEFAZ) | `EM_DIA`; tela "35 no Taxify (qualquer origem) / 30 no SIEG" | CP-RN-06, 09 |
+| CT-CP-03 | Importado maior que o SIEG | `total_sieg = 30`, `total_importado = 35` (5 vieram da SEFAZ) | `EM_DIA`; tela "35 vindas do SIEG / 30 no SIEG" (e o número de qualquer origem ao lado) | CP-RN-06, 09 |
 | CT-CP-04 | Mês sem nota | `total_sieg = 0`, `total_importado = 0`, verificados às 09:30 | `EM_DIA` | CP-RN-06 |
 | CT-CP-05 | Janela de 24 h | `verifiedAt` = 26/11 10:30 (23 h 30) / 26/11 09:30 (24 h 30) | `EM_DIA` / `ATRASADA` "há 24 h" | CP-RN-06 |
 | CT-CP-06 | Nunca verificada por completo | `issued_checked_at` nulo, `last_attempt_at` 27/11 09:00 | `ATRASADA` "Nunca verificada por completo" | CP-RN-06 |
