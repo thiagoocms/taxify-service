@@ -98,7 +98,7 @@ public class EfiscoExtract extends AbstractAuditingEntity {
     private String importedBy;
 
     @OneToMany(mappedBy = "extract", cascade = CascadeType.ALL, orphanRemoval = true)
-    @OrderBy("linha ASC")
+    @OrderBy("lineNumber ASC")
     private List<EfiscoExtractNote> notes = new ArrayList<>();
 
     /** Swaps the notes for a new import's (the old rows are removed with the flush). */
