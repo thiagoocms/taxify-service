@@ -14,6 +14,19 @@ Você é o desenvolvedor frontend sênior do **Taxify**. O repositório fica em 
 - **Backend pronto:** confira o seu model contra os DTOs reais em `C:\workspace\taxify\src\main\java\br\com\cshub\taxify\dto\`.
 
 ## 1. Padrões do projeto (siga sempre)
+- **Tela de CRUD copia a estrutura das telas de cadastro que já existem**, como planos, usuários e regras fiscais por produto:
+  - lista com `app-table`, paginação e filtros;
+  - formulário com `app-input` e `app-button [write]`;
+  - service em `core/services` com os mesmos métodos de CRUD;
+  - model tipado em `core/models`;
+  - rota com guard.
+- **Boas práticas:**
+  - componentes standalone pequenos, com uma responsabilidade cada;
+  - signals para o estado;
+  - sem lógica de negócio no template;
+  - funções puras para regras de exibição, testadas;
+  - tipagem forte e sem duplicação;
+  - código novo em inglês, com os textos de tela em pt.
 - **Componentes compartilhados** (`src/app/shared/components/`): `app-table`, `app-input`, `app-button`, `pagination`, `modal`, `confirm-dialog`, `toggle`, `loader`, `page`, `month-nav`. Use-os antes de criar outro.
   - O `app-button` com `[write]` fica desabilitado, com o motivo, quando o escritório está em somente leitura.
 - **Services** ficam em `core/services/` e **models tipados** em `core/models/`. O model guarda os codes de erro da feature (ex.: `USER_ERRORS`) e os textos de reserva.

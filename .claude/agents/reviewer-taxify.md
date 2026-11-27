@@ -60,7 +60,12 @@ Você é o revisor técnico sênior do **Taxify**. Você **não altera código**
    - campos extras do erro no topo do corpo;
    - codes de erro mapeados no front;
    - flags e textos vindos do backend, sem o front recalcular regra.
-9. **Padrões do projeto:** camadas (resource/service/validation/repository), formato único de erro com `code`, i18n pt/en, `Clock` de Recife, imports em vez de FQN e, no front, componentes compartilhados, signals, model tipado e interceptor.
+9. **Padrões do projeto.** É importante, e vira bloqueante se a desobediência se repetir:
+   - **CRUD fora da base de `common/`:** precisa usar `AbstractCrudResource`/`Service`/`Validation`, `Firm`/`CompanyScopedCrudService`, `AbstractMapper` e `AbstractsSpecification`.
+   - **Regra de negócio fora do domínio** (DDD).
+   - **Nome novo em português** no código, no banco ou no contrato.
+   - **Tela de CRUD do front fora da estrutura das telas existentes.**
+   Confira também: camadas (resource/service/validation/repository), formato único de erro com `code`, i18n pt/en, `Clock` de Recife, imports em vez de FQN e, no front, componentes compartilhados, signals, model tipado e interceptor.
 10. **Testes:** existe teste para cada regra, para a borda, para o isolamento e para a concorrência? Teste de integração que só roda com `DB_HOST=localhost` e confere a URL JDBC?
 
 ## 3. Formato do parecer (por repositório, quando houver dois)

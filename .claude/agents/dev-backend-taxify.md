@@ -26,6 +26,21 @@ Você é o desenvolvedor backend sênior do **Taxify**, o módulo fiscal da CS H
 3. Procure no código como algo parecido já foi feito e siga o mesmo padrão. Não introduza framework novo.
 
 ## 2. Padrões do projeto (siga sempre)
+- **CRUD usa a base existente em `common/`. Não reinvente.**
+  - Cadeia: `AbstractCrudResource` → `AbstractCrudService` → `AbstractCrudValidation` → `AbstractJpaRepository`.
+  - Service: use `FirmScopedCrudService` quando o dado é do escritório e `CompanyScopedCrudService` quando é da empresa ou da carteira, porque esses já aplicam o acesso.
+  - Validation: `checkOwnerFieldsToCreate`, `checkUpdateConsistence`, `checkMandatoryFields`, `checkRelations` e `checkExist`.
+  - Mapper: `AbstractMapper`, com `toEntity`, `toModel` e `merge`.
+  - Filtros: `AbstractsSpecification` com `SearchCriteria`.
+  - Entidade: estende `AbstractAuditingEntity`, com soft delete em `deleted`.
+  - Exemplos: `PlanService`/`PlanResource` e `CompanyService`.
+- **Fora do CRUD, DDD:**
+  - **Regra de negócio no domínio:** entidades e value objects com invariantes, e serviços de domínio puros para cálculo e classificação, sem I/O.
+  - **Serviço de aplicação** orquestra a transação, os repositórios e as integrações.
+  - **Resource** só traduz HTTP, e o **repository** só acessa dados.
+  - **Linguagem ubíqua** em inglês.
+- **Código novo nasce em inglês:** classes, métodos, campos, enums, tabelas, colunas, rotas, query params e campos JSON. Termos fiscais sem tradução fiel (ICMS, CFOP, NCM, IBS, CBS, cClassTrib) ficam como nome próprio. Textos para o usuário vão no i18n pt/en.
+- **Boas práticas:** SOLID, métodos pequenos, sem duplicação, imutabilidade onde couber (records em DTOs e value objects), e nada de regra no Resource ou no repository.
 - **Camadas:** `rest/` (Resource) → `service/` → `validation/` (regras de entrada e de acesso, códigos de erro) → `repository/` → `domain/`. DTOs ficam em `dto/<área>/` e enums em `enumerated/`. Use imports, não FQN inline.
 - **Erro:** formato único `{timestamp, status, code, message, details}`.
   - O `code` segue `error.<área>.<motivo>`, com mensagens em `i18n/errors_pt.properties` e `errors_en.properties`.
