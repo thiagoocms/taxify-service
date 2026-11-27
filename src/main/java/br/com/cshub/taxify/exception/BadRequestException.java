@@ -1,5 +1,7 @@
 package br.com.cshub.taxify.exception;
 
+import java.util.Map;
+
 /** 400. Prefer the constructor with the i18n key: it becomes the {@code code} of the error body. */
 public class BadRequestException extends BusinessException {
 
@@ -15,6 +17,11 @@ public class BadRequestException extends BusinessException {
 
     public BadRequestException(String code, String message) {
         super(code, message, null, null);
+    }
+
+    /** With extra fields at the top of the error body (e.g. {@code invalidField}). */
+    public BadRequestException(String code, String message, Map<String, Object> extras) {
+        super(code, message, null, extras);
     }
 
     public BadRequestException(String message, Throwable cause) {

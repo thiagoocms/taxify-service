@@ -244,6 +244,20 @@ taxify:
     retention-days: ${TAXIFY_CAPTURE_PRIORITY_RETENTION_DAYS:90}
     purge-cron: ${TAXIFY_CAPTURE_PRIORITY_PURGE_CRON:0 45 3 * * *}
     purge-enabled: ${TAXIFY_CAPTURE_PRIORITY_PURGE_ENABLED:true}
+  # Reforma Tributária (specs 2026-11-27, Onda 1).
+  reform:
+    # Levantamento do crédito presumido de CBS sobre o estoque (F5a). Nasce desligado: com false a rotina não roda e
+    # /reform/stock-credit/** responde 404. Ligar na EC2 só depois do QA e do paralelo V-5a-2, com aprovação do Tony.
+    stock-survey:
+      enabled: ${TAXIFY_STOCK_SURVEY_ENABLED:false}
+      # Horário de Recife; uma instância por dia (routine_runs).
+      cron: ${TAXIFY_STOCK_SURVEY_CRON:0 15 6 * * *}
+      # Segunda tentativa do dia: só roda se o dia não tem rodada ou a rodada está vencida (stale-minutes).
+      retry-cron: ${TAXIFY_STOCK_SURVEY_RETRY_CRON:0 0 9 * * *}
+      refresh-cooldown-minutes: ${TAXIFY_STOCK_SURVEY_REFRESH_COOLDOWN_MINUTES:10}
+      # Rodada do dia sem fim registrado há mais que isso: outra instância pode assumir.
+      stale-minutes: ${TAXIFY_STOCK_SURVEY_STALE_MINUTES:120}
+      batch-size: ${TAXIFY_STOCK_SURVEY_BATCH_SIZE:50}
 
 # Timeouts of the Feign clients. OpenFeign 4+ reads only "spring.cloud.openfeign.client.config" - under the old
 # "feign.client.config" prefix these were ignored and every client ran on the defaults (10s connect, 60s read),

@@ -59,7 +59,9 @@ class PermissionAuthorizationManagerTest {
             "PasswordResetResource#reset",
             // the logged-in user's own account: password change and e-mail notices (SN-RN-09, AV-RN-08) - any profile
             "MyAccountResource#changePassword", "MyAccountResource#notificationSettings",
-            "MyAccountResource#updateNotificationSettings");
+            "MyAccountResource#updateNotificationSettings",
+            // Reforma Tributária: the features on (CE-RN-15) and the IBS/CBS reference rates (AL-RN-06) - law text, any profile
+            "ReformResource#features", "ReformResource#ibsCbsRates");
 
     /**
      * F1-RN-08 / CA1-10: every POST/PUT/PATCH/DELETE is a write - blocked for a read-only firm - unless it is one of
@@ -78,6 +80,8 @@ class PermissionAuthorizationManagerTest {
             "PlatformFirmResource#apply", "PlatformFirmResource#updateContact",
             // @AllowedWhenBlocked - /platform/** is always allowed for the platform admin (F1-RN-09); capture panel CP-RN-16
             "PlatformCapturePanelResource#syncNow",
+            // @AllowedWhenBlocked - /platform/** (F1-RN-09): the IBS/CBS rates per year (F1a-0)
+            "PlatformIbsCbsRateResource#save",
             // @AllowedWhenBlocked - password is a credential, the notice a personal preference (P-SN-05, AV-RN-08)
             "PasswordResetResource#forgot", "PasswordResetResource#check", "PasswordResetResource#reset",
             "MyAccountResource#changePassword", "MyAccountResource#updateNotificationSettings");
@@ -173,6 +177,21 @@ class PermissionAuthorizationManagerTest {
         assertThat(rule(br.com.cshub.taxify.rest.CapturePanelResource.class, "panel")).contains(Requirement.anyOf(Permission.INVOICES_SYNC));
         assertThat(rule(br.com.cshub.taxify.rest.CapturePanelResource.class, "company")).contains(Requirement.anyOf(Permission.INVOICES_SYNC));
         assertThat(rule(br.com.cshub.taxify.rest.CapturePanelResource.class, "syncNow")).contains(Requirement.admin());
+
+        // IBS/CBS rates per year (F1a-0, P-AL-02): the console is the platform admin's only
+        for (String endpoint : java.util.List.of("list", "save", "history")) {
+            assertThat(rule(br.com.cshub.taxify.rest.PlatformIbsCbsRateResource.class, endpoint))
+                    .hasValueSatisfying(r -> assertThat(r.platformAdmin()).isTrue());
+        }
+        // stock credit survey (F5a, P-03): reads TAX_ASSESSMENT_VIEW, writes TAX_ASSESSMENT_CLOSE
+        for (String endpoint : java.util.List.of("list", "export", "detail", "history")) {
+            assertThat(rule(br.com.cshub.taxify.rest.StockCreditSurveyResource.class, endpoint))
+                    .contains(Requirement.anyOf(Permission.TAX_ASSESSMENT_VIEW));
+        }
+        for (String endpoint : java.util.List.of("refresh", "changeStatus")) {
+            assertThat(rule(br.com.cshub.taxify.rest.StockCreditSurveyResource.class, endpoint))
+                    .contains(Requirement.anyOf(Permission.TAX_ASSESSMENT_CLOSE));
+        }
 
         PlatformController denied = proxied(new PlatformController(), new PermissionAuthorizationManager(auth -> false));
         authenticateAs("ADMIN");

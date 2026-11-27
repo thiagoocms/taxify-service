@@ -37,11 +37,16 @@ public class FiscalCheckEngine {
         this.ibsCbsRateRepository = ibsCbsRateRepository;
     }
 
-    /** The company's rules and the IBS/CBS rates - two queries. A product code is unique per company (ProductFiscalRuleValidation). */
+    /**
+     * The company's rules and the IBS/CBS rates - two queries. A product code is unique per company
+     * (ProductFiscalRuleValidation). Only the years with LAW status and the three rates enter (AL-RN-02): a PENDING or
+     * ESTIMATE year is "no reference" for the engine, and IBSCBS_RATE doesn't run for it. Read at every call, no cache
+     * (AL-RN-08).
+     */
     public FiscalCheckContext contextFor(UUID companyId) {
         ProductRules rules = ProductRules.of(ruleRepository.findByCompany_IdAndDeletedIsFalse(companyId));
-        Map<Integer, IbsCbsRate> rates = ibsCbsRateRepository.findAll().stream()
-                .collect(Collectors.toMap(IbsCbsRate::getAno, Function.identity()));
+        Map<Integer, IbsCbsRate> rates = ibsCbsRateRepository.findFindingRates().stream()
+                .collect(Collectors.toMap(IbsCbsRate::getYear, Function.identity()));
         return new FiscalCheckContext(companyId, rules, rates);
     }
 

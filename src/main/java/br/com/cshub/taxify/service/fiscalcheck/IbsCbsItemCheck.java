@@ -65,9 +65,9 @@ public class IbsCbsItemCheck implements FiscalCheck {
     }
 
     private void checkRates(FiscalItemIbsCbs group, IbsCbsRate rate, List<FiscalDivergence> divergences) {
-        compareRate("pCBS", "CBS", group.aliquotaCbs(), rate.getAliquotaCbs(), rate.getAno(), divergences);
-        compareRate("pIBSUF", "IBS estadual", group.aliquotaIbsUf(), rate.getAliquotaIbsUf(), rate.getAno(), divergences);
-        compareRate("pIBSMun", "IBS municipal", group.aliquotaIbsMun(), rate.getAliquotaIbsMun(), rate.getAno(), divergences);
+        compareRate("pCBS", "CBS", group.aliquotaCbs(), rate.getCbsRate(), rate.getYear(), divergences);
+        compareRate("pIBSUF", "IBS estadual", group.aliquotaIbsUf(), rate.getIbsStateRate(), rate.getYear(), divergences);
+        compareRate("pIBSMun", "IBS municipal", group.aliquotaIbsMun(), rate.getIbsMunicipalRate(), rate.getYear(), divergences);
     }
 
     private void compareRate(String field, String label, BigDecimal found, BigDecimal expected, int year,
