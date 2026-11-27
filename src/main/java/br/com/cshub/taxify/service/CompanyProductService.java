@@ -51,8 +51,8 @@ public class CompanyProductService {
             return List.of();
         }
 
-        List<String> codigos = rows.stream().map(row -> (String) row[0]).toList();
-        Set<String> withRule = new HashSet<>(ruleRepository.findCodigosWithRule(id, codigos));
+        List<String> productCodes = rows.stream().map(row -> (String) row[0]).toList();
+        Set<String> withRule = new HashSet<>(ruleRepository.findProductCodesWithRule(id, productCodes));
 
         return rows.stream().map(row -> {
             String codigo = (String) row[0];

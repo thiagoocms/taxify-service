@@ -15,7 +15,7 @@ import java.util.List;
 import java.util.UUID;
 
 /**
- * Result das etapas da captura (CP-RN-10). A gravação é um upsert atômico ({@code INSERT ... ON DUPLICATE KEY
+ * Resultado das etapas da captura (CP-RN-10). A gravação é um upsert atômico ({@code INSERT ... ON DUPLICATE KEY
  * UPDATE} na chave única (company_id, stage)) numa transação própria: duas instâncias gravando a mesma etapa nunca
  * colidem, e a falha da gravação nunca desfaz o que a captura já gravou. Sem a sintaxe {@code AS new} (o MySQL 5.7
  * local não tem): os valores vêm dos parâmetros.

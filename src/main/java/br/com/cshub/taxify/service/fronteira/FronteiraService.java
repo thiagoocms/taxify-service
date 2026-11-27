@@ -206,35 +206,35 @@ public class FronteiraService {
 
     /** The month's report to keep and to send: the guide after the adjustments, the notes to revise, the rules used. */
     @Transactional
-    public byte[] reportPdf(String companyId, String periodo) {
+    public byte[] reportPdf(String companyId, String requestedPeriod) {
         Company company = company(companyId);
-        FronteiraDTOs.Report report = report(companyId, periodo);
+        FronteiraDTOs.Report report = report(companyId, requestedPeriod);
         return FronteiraReportPdf.pdf(report, documentOf(company), FronteiraReportPdf.rulesInfo(ruleService.rulesFor(company.getId())));
     }
 
     /** The same notes as a spreadsheet (opens in Excel in Portuguese). */
     @Transactional
-    public byte[] reportCsv(String companyId, String periodo) {
+    public byte[] reportCsv(String companyId, String requestedPeriod) {
         Company company = company(companyId);
-        FronteiraDTOs.Report report = report(companyId, periodo);
+        FronteiraDTOs.Report report = report(companyId, requestedPeriod);
         return FronteiraReportPdf.csv(report, documentOf(company), FronteiraReportPdf.rulesInfo(ruleService.rulesFor(company.getId())));
     }
 
     /** The draft of the revision request (PDF) of the notes e-Fisco charged beyond Taxify's calculation. */
     @Transactional
-    public byte[] revisionRequestPdf(String companyId, String periodo) {
-        return FronteiraRevisionRequestPdf.pdf(revisionDraft(companyId, periodo));
+    public byte[] revisionRequestPdf(String companyId, String requestedPeriod) {
+        return FronteiraRevisionRequestPdf.pdf(revisionDraft(companyId, requestedPeriod));
     }
 
     /** The same draft as plain text, to paste in e-Fisco's form. */
     @Transactional
-    public byte[] revisionRequestText(String companyId, String periodo) {
-        return FronteiraRevisionRequestPdf.textBytes(revisionDraft(companyId, periodo));
+    public byte[] revisionRequestText(String companyId, String requestedPeriod) {
+        return FronteiraRevisionRequestPdf.textBytes(revisionDraft(companyId, requestedPeriod));
     }
 
-    private FronteiraRevisionRequestPdf.Draft revisionDraft(String companyId, String periodo) {
+    private FronteiraRevisionRequestPdf.Draft revisionDraft(String companyId, String requestedPeriod) {
         Company company = company(companyId);
-        FronteiraDTOs.Report report = report(companyId, periodo);
+        FronteiraDTOs.Report report = report(companyId, requestedPeriod);
         if (report.extract() == null) {
             throw new ConflictException("error.fronteira.revision.no.extract", messageService.getMessage("error.fronteira.revision.no.extract"));
         }
@@ -257,12 +257,12 @@ public class FronteiraService {
     static final BigDecimal CALC_TOLERANCE = new BigDecimal("0.03");
 
     @Transactional
-    public FronteiraDTOs.Report report(String companyId, String periodo) {
+    public FronteiraDTOs.Report report(String companyId, String requestedPeriod) {
         Company company = company(companyId);
         List<EfiscoExtract> extracts = extractRepository.findByCompany_IdAndDeletedIsFalseOrderByPeriodDesc(company.getId());
-        YearMonth month = periodo == null || periodo.isBlank()
+        YearMonth month = requestedPeriod == null || requestedPeriod.isBlank()
                 ? (extracts.isEmpty() ? YearMonth.now() : YearMonth.parse(extracts.get(0).getPeriod()))
-                : month(periodo);
+                : month(requestedPeriod);
         return report(company, month);
     }
 
@@ -620,9 +620,9 @@ public class FronteiraService {
 
     /** The kept PDF of a company's extract of a period - for "Ver PDF"; the user's access to the company checked. */
     @Transactional(readOnly = true)
-    public byte[] extractPdf(String companyId, String periodo) {
+    public byte[] extractPdf(String companyId, String requestedPeriod) {
         Company company = company(companyId);
-        EfiscoExtract extract = extractRepository.findByCompany_IdAndPeriodAndDeletedIsFalse(company.getId(), month(periodo).toString())
+        EfiscoExtract extract = extractRepository.findByCompany_IdAndPeriodAndDeletedIsFalse(company.getId(), month(requestedPeriod).toString())
                 .filter(found -> found.getPdfPath() != null)
                 .orElseThrow(() -> new br.com.cshub.taxify.exception.ResourceNotFoundException(messageService.getMessage("error.entity.not.found")));
         try {
@@ -680,8 +680,8 @@ public class FronteiraService {
     }
 
     /** "2026-11", or the current month. */
-    public YearMonth periodOrCurrent(String periodo) {
-        return periodo == null || periodo.isBlank() ? YearMonth.now() : month(periodo);
+    public YearMonth periodOrCurrent(String requestedPeriod) {
+        return requestedPeriod == null || requestedPeriod.isBlank() ? YearMonth.now() : month(requestedPeriod);
     }
 
     private Company company(String companyId) {
@@ -692,9 +692,9 @@ public class FronteiraService {
         }
     }
 
-    private YearMonth month(String periodo) {
+    private YearMonth month(String requestedPeriod) {
         try {
-            return YearMonth.parse(periodo.strip());
+            return YearMonth.parse(requestedPeriod.strip());
         } catch (DateTimeParseException e) {
             throw new BadRequestException("error.generic.bad.request", messageService.getMessage("error.generic.bad.request"));
         }

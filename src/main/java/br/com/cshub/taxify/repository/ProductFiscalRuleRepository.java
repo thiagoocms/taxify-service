@@ -19,10 +19,10 @@ public interface ProductFiscalRuleRepository extends AbstractJpaRepository<Produ
 
     /** Another active rule for the same code and supplier (null = the general rule); {@code id} null on create. */
     @Query("select count(r) > 0 from ProductFiscalRule r where r.company.id = :companyId and r.deleted = false"
-            + " and r.productCode = :codigo"
+            + " and r.productCode = :productCode"
             + " and ((:supplier is null and r.supplierDocument is null) or r.supplierDocument = :supplier)"
             + " and (:id is null or r.id <> :id)")
-    boolean existsDuplicate(@Param("companyId") UUID companyId, @Param("codigo") String productCode,
+    boolean existsDuplicate(@Param("companyId") UUID companyId, @Param("productCode") String productCode,
                             @Param("supplier") String supplierDocument, @Param("id") UUID id);
 
     /** Companies (not deleted) with at least one active rule - the ones the scheduled rectification has work for. */
@@ -33,6 +33,6 @@ public interface ProductFiscalRuleRepository extends AbstractJpaRepository<Produ
     Optional<LocalDateTime> findMaxLastModifiedDateByCompanyId(UUID companyId);
 
     @Query("select r.productCode from ProductFiscalRule r "
-            + "where r.company.id = :companyId and r.deleted = false and r.productCode in :codigos")
-    List<String> findCodigosWithRule(@Param("companyId") UUID companyId, @Param("codigos") Collection<String> codigos);
+            + "where r.company.id = :companyId and r.deleted = false and r.productCode in :productCodes")
+    List<String> findProductCodesWithRule(@Param("companyId") UUID companyId, @Param("productCodes") Collection<String> productCodes);
 }

@@ -86,8 +86,8 @@ public class FiscalXmlFileStorage {
     }
 
     /** The Fronteira extract PDF of a company and period ("2026-11") - one file per import. */
-    public String storeExtractPdf(UUID companyId, String periodo, byte[] pdf) throws IOException {
-        return writer.write("fronteira/" + companyId + "-" + periodo + "-" + System.currentTimeMillis() + ".pdf", pdf);
+    public String storeExtractPdf(UUID companyId, String period, byte[] pdf) throws IOException {
+        return writer.write("fronteira/" + companyId + "-" + period + "-" + System.currentTimeMillis() + ".pdf", pdf);
     }
 
     /** A state certidão PDF (Certidão SEFAZ-PE) of a company - one file per certidão, beside the Fronteira extracts. */

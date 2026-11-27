@@ -11,7 +11,7 @@ import java.util.UUID;
 @Repository
 public interface EfiscoExtractRepository extends AbstractJpaRepository<EfiscoExtract, UUID> {
 
-    Optional<EfiscoExtract> findByCompany_IdAndPeriodAndDeletedIsFalse(UUID companyId, String periodo);
+    Optional<EfiscoExtract> findByCompany_IdAndPeriodAndDeletedIsFalse(UUID companyId, String period);
 
     /** The company's imported periods, latest first. */
     List<EfiscoExtract> findByCompany_IdAndDeletedIsFalseOrderByPeriodDesc(UUID companyId);

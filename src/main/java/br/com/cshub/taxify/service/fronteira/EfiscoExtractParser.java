@@ -131,11 +131,11 @@ public class EfiscoExtractParser {
         if (notes.isEmpty()) {
             throw new InvalidExtractException("Nenhuma nota encontrada no extrato.");
         }
-        YearMonth periodo = periodo(field(header, "PER.{0,2}ODO FISCAL"));
-        if (periodo == null) {
+        YearMonth fiscalPeriod = fiscalPeriod(field(header, "PER.{0,2}ODO FISCAL"));
+        if (fiscalPeriod == null) {
             throw new InvalidExtractException("O extrato não traz o período fiscal (mm/aaaa).");
         }
-        return new Extract(periodo, field(header, "INSCRI.{0,2}O ESTADUAL"), field(header, "RAZ.?O SOCIAL"),
+        return new Extract(fiscalPeriod, field(header, "INSCRI.{0,2}O ESTADUAL"), field(header, "RAZ.?O SOCIAL"),
                 field(header, "ARE"), field(header, "C.?DIGO DA RECEITA"),
                 field(header, "CREDENCIAMENTO ANTECIPA.{0,2}O"), field(header, "CREDENCIAMENTO INTERNO"),
                 date(field(header, "DATA DE VENCIMENTO")), field(header, "N.{0,3}DO EXTRATO"),
@@ -172,7 +172,7 @@ public class EfiscoExtractParser {
         return totals;
     }
 
-    private static YearMonth periodo(String value) {
+    private static YearMonth fiscalPeriod(String value) {
         if (value == null) {
             return null;
         }

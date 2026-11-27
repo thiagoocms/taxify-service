@@ -44,10 +44,10 @@ public class FronteiraResource {
         this.efiscoMemoryService = efiscoMemoryService;
     }
 
-    /** e-Fisco's memória of a note already fetched (by the extract's registro); 204 when never fetched. */
+    /** e-Fisco's memória of a note already fetched (by the extract's recordNumber); 204 when never fetched. */
     @GetMapping("/memoria")
-    public ResponseEntity<EfiscoMemoryService.MemoryDTO> efiscoMemory(@RequestParam String companyId, @RequestParam String registro) {
-        return efiscoMemoryService.kept(service.companyOfPernambuco(companyId), registro)
+    public ResponseEntity<EfiscoMemoryService.MemoryDTO> efiscoMemory(@RequestParam String companyId, @RequestParam("registro") String recordNumber) {
+        return efiscoMemoryService.kept(service.companyOfPernambuco(companyId), recordNumber)
                 .map(ResponseEntity::ok)
                 .orElseGet(() -> ResponseEntity.noContent().build());
     }
@@ -56,8 +56,8 @@ public class FronteiraResource {
     @RequiresPermission(Permission.INVOICES_AUDIT)
     @ReadOnlyOperation
     @PostMapping("/memoria/buscar")
-    public ResponseEntity<EfiscoMemoryService.MemoryDTO> fetchEfiscoMemory(@RequestParam String companyId, @RequestParam String registro) {
-        return ResponseEntity.ok(efiscoMemoryService.fetch(service.companyOfPernambuco(companyId), registro));
+    public ResponseEntity<EfiscoMemoryService.MemoryDTO> fetchEfiscoMemory(@RequestParam String companyId, @RequestParam("registro") String recordNumber) {
+        return ResponseEntity.ok(efiscoMemoryService.fetch(service.companyOfPernambuco(companyId), recordNumber));
     }
 
     /** What the "Sincronizar com e-Fisco" button gets back: how the run went and the comparison after it. */
@@ -70,35 +70,35 @@ public class FronteiraResource {
      */
     @RequiresPermission(Permission.INVOICES_AUDIT)
     @PostMapping("/sincronizar")
-    public ResponseEntity<EfiscoSync> syncWithEfisco(@RequestParam String companyId, @RequestParam(required = false) String periodo) {
+    public ResponseEntity<EfiscoSync> syncWithEfisco(@RequestParam String companyId, @RequestParam(name = "periodo", required = false) String requestedPeriod) {
         var company = service.companyOfPernambuco(companyId);
-        var period = service.periodOrCurrent(periodo);
+        var period = service.periodOrCurrent(requestedPeriod);
         EfiscoSyncService.SyncResult result = efiscoSyncService.syncCompany(company, period);
         return ResponseEntity.ok(new EfiscoSync(result, service.report(companyId, period.toString())));
     }
 
     /** The comparison of a period ("2026-11"); blank = the latest imported. */
     @GetMapping
-    public ResponseEntity<FronteiraDTOs.Report> report(@RequestParam String companyId, @RequestParam(required = false) String periodo) {
-        return ResponseEntity.ok(service.report(companyId, periodo));
+    public ResponseEntity<FronteiraDTOs.Report> report(@RequestParam String companyId, @RequestParam(name = "periodo", required = false) String period) {
+        return ResponseEntity.ok(service.report(companyId, period));
     }
 
     /** The month's report (PDF): summary with the guide after the adjustments, the notes to revise and the rules used. */
     @GetMapping(value = "/relatorio.pdf", produces = MediaType.APPLICATION_PDF_VALUE)
-    public ResponseEntity<byte[]> reportPdf(@RequestParam String companyId, @RequestParam(required = false) String periodo) {
+    public ResponseEntity<byte[]> reportPdf(@RequestParam String companyId, @RequestParam(name = "periodo", required = false) String period) {
         return ResponseEntity.ok()
-                .header("Content-Disposition", "attachment; filename=\"fronteira-" + (periodo == null ? "" : periodo) + ".pdf\"")
+                .header("Content-Disposition", "attachment; filename=\"fronteira-" + (period == null ? "" : period) + ".pdf\"")
                 .contentType(MediaType.APPLICATION_PDF)
-                .body(service.reportPdf(companyId, periodo));
+                .body(service.reportPdf(companyId, period));
     }
 
     /** The month's notes as a spreadsheet, with the calculation and the rules of each one. */
     @GetMapping("/relatorio.csv")
-    public ResponseEntity<byte[]> reportCsv(@RequestParam String companyId, @RequestParam(required = false) String periodo) {
+    public ResponseEntity<byte[]> reportCsv(@RequestParam String companyId, @RequestParam(name = "periodo", required = false) String period) {
         return ResponseEntity.ok()
-                .header("Content-Disposition", "attachment; filename=\"fronteira-" + (periodo == null ? "" : periodo) + ".csv\"")
+                .header("Content-Disposition", "attachment; filename=\"fronteira-" + (period == null ? "" : period) + ".csv\"")
                 .contentType(MediaType.parseMediaType("text/csv; charset=UTF-8"))
-                .body(service.reportCsv(companyId, periodo));
+                .body(service.reportCsv(companyId, period));
     }
 
     /**
@@ -106,29 +106,29 @@ public class FronteiraResource {
      * 409 when there is none.
      */
     @GetMapping("/pedido-revisao.pdf")
-    public ResponseEntity<byte[]> revisionRequestPdf(@RequestParam String companyId, @RequestParam(required = false) String periodo) {
+    public ResponseEntity<byte[]> revisionRequestPdf(@RequestParam String companyId, @RequestParam(name = "periodo", required = false) String period) {
         return ResponseEntity.ok()
-                .header("Content-Disposition", "attachment; filename=\"pedido-revisao-fronteira-" + (periodo == null ? "" : periodo) + ".pdf\"")
+                .header("Content-Disposition", "attachment; filename=\"pedido-revisao-fronteira-" + (period == null ? "" : period) + ".pdf\"")
                 .contentType(MediaType.APPLICATION_PDF)
-                .body(service.revisionRequestPdf(companyId, periodo));
+                .body(service.revisionRequestPdf(companyId, period));
     }
 
     /** The same draft as plain text, to paste in e-Fisco's form. */
     @GetMapping("/pedido-revisao.txt")
-    public ResponseEntity<byte[]> revisionRequestText(@RequestParam String companyId, @RequestParam(required = false) String periodo) {
+    public ResponseEntity<byte[]> revisionRequestText(@RequestParam String companyId, @RequestParam(name = "periodo", required = false) String period) {
         return ResponseEntity.ok()
-                .header("Content-Disposition", "inline; filename=\"pedido-revisao-fronteira-" + (periodo == null ? "" : periodo) + ".txt\"")
+                .header("Content-Disposition", "inline; filename=\"pedido-revisao-fronteira-" + (period == null ? "" : period) + ".txt\"")
                 .contentType(MediaType.parseMediaType("text/plain; charset=UTF-8"))
-                .body(service.revisionRequestText(companyId, periodo));
+                .body(service.revisionRequestText(companyId, period));
     }
 
     /** The kept PDF of the period's extract, to open in the browser ("Ver PDF"). */
     @GetMapping(value = "/extrato/pdf", produces = MediaType.APPLICATION_PDF_VALUE)
-    public ResponseEntity<byte[]> extractPdf(@RequestParam String companyId, @RequestParam String periodo) {
+    public ResponseEntity<byte[]> extractPdf(@RequestParam String companyId, @RequestParam("periodo") String period) {
         return ResponseEntity.ok()
-                .header("Content-Disposition", "inline; filename=\"extrato-" + periodo + ".pdf\"")
+                .header("Content-Disposition", "inline; filename=\"extrato-" + period + ".pdf\"")
                 .contentType(MediaType.APPLICATION_PDF)
-                .body(service.extractPdf(companyId, periodo));
+                .body(service.extractPdf(companyId, period));
     }
 
     /** The extract PDF as downloaded from e-Fisco; the period comes from the file and replaces an earlier import. */
