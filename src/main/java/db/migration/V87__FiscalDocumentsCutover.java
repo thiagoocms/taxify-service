@@ -118,7 +118,7 @@ public class V87__FiscalDocumentsCutover extends BaseJavaMigration {
             unexpected(db, problems, documents, "CHAR_LENGTH(TRIM(ide_modelo)) > 2", "ide_modelo longer than 2");
             unexpected(db, problems, documents, sourceKeyInvalid(db), "source_system outside " + SOURCE_KEY_PATTERN);
             // FD-RN-56: what the backfill rule can't fill is for the Tony to decide
-            long unresolved = db.count("SELECT COUNT(*) FROM " + documents + " WHERE " + CopyMappings.UNRESOLVED_DIRECTION);
+            long unresolved = db.count("SELECT COUNT(*) FROM " + documents + " l WHERE " + CopyMappings.UNRESOLVED_DIRECTION);
             if (unresolved > 0) {
                 log.error("fiscal.documents.cutover.direction.unresolved count={}", unresolved);
                 problems.add(unresolved + " own-issue row(s) without direction nor ide_tipo_operacao 0/1 (FD-RN-56)");

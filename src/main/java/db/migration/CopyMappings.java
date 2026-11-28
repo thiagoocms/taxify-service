@@ -29,21 +29,38 @@ final class CopyMappings {
      * without a usable {@code ide_tipo_operacao} stays NULL here, and V87 stops before the rename when any is left
      * ({@link #UNRESOLVED_DIRECTION}).
      */
-    static final String DERIVED_DIRECTION = "COALESCE(l.direction, CASE WHEN l.own_issue = 1 THEN CASE TRIM(l.ide_tipo_operacao)"
+    static final String DERIVED_DIRECTION = "COALESCE(l.direction, CASE WHEN " + ownIssue() + " THEN CASE TRIM(l.ide_tipo_operacao)"
             + " WHEN '0' THEN 'INBOUND' WHEN '1' THEN 'OUTBOUND' END ELSE 'INBOUND' END)";
+
+    /**
+     * Whether a row (alias {@code l}) is the company's own issue. {@code own_issue} when filled; a row with neither
+     * {@code own_issue} nor {@code direction} gets it as the {@code FiscalDirectionBackfill} of the old version did
+     * ({@code FiscalDirections.isOwnIssue}): the company's document, digits only, is the issuer's CNPJ or CPF. A row with
+     * a direction and no {@code own_issue} stays received, as before.
+     */
+    static String ownIssue() {
+        String company = digitsOf("(SELECT od.number FROM companies oc JOIN documents od ON od.id = oc.document_id"
+                + " WHERE oc.id = l.company_id)");
+        return "(CASE WHEN l.own_issue IS NOT NULL THEN l.own_issue = 1 WHEN l.direction IS NULL THEN COALESCE(NULLIF("
+                + company + ", '') IS NOT NULL AND (" + company + " = " + digitsOf("l.issuer_cnpj") + " OR " + company + " = "
+                + digitsOf("l.emit_cpf") + "), FALSE) ELSE FALSE END)";
+    }
 
     /**
      * I-04-T: a copied CT-e row whose derived direction is not the one of its role - own issue (ISSUER) must be
      * OUTBOUND, anything else (RECIPIENT) INBOUND, the only direction a copied RECIPIENT keeps. A NULL derived direction
      * counts as a violation too. Alias {@code l}.
      */
-    static final String CTE_DIRECTION_VIOLATES_I04T = "l.document_type = 'CTE' AND ((l.own_issue = 1 AND COALESCE("
-            + DERIVED_DIRECTION + ", '') <> 'OUTBOUND') OR (COALESCE(l.own_issue, 0) <> 1 AND COALESCE("
+    static final String CTE_DIRECTION_VIOLATES_I04T = "l.document_type = 'CTE' AND ((" + ownIssue() + " AND COALESCE("
+            + DERIVED_DIRECTION + ", '') <> 'OUTBOUND') OR (NOT " + ownIssue() + " AND COALESCE("
             + DERIVED_DIRECTION + ", '') <> 'INBOUND'))";
 
-    /** Rows whose direction is NULL and the rule above can't fill. */
-    static final String UNRESOLVED_DIRECTION = "direction IS NULL AND own_issue = 1"
-            + " AND (ide_tipo_operacao IS NULL OR TRIM(ide_tipo_operacao) NOT IN ('0', '1'))";
+    /** Rows (alias {@code l}) whose direction is NULL and the rule above can't fill. */
+    static final String UNRESOLVED_DIRECTION = "l.direction IS NULL AND " + ownIssue()
+            + " AND (l.ide_tipo_operacao IS NULL OR TRIM(l.ide_tipo_operacao) NOT IN ('0', '1'))";
+
+    /** Rows with neither own_issue nor direction - the ones {@link #ownIssue} derives (the eve's pre-check counts them). */
+    static final String OWN_ISSUE_DERIVED = "l.own_issue IS NULL AND l.direction IS NULL";
 
     /**
      * FD-RN-57: the effective CFOP of an item of a rectified note - the rule the notes screen used to show the rectified
@@ -81,6 +98,11 @@ final class CopyMappings {
      * 5.7). Anything else left that is not a digit is counted by {@link #RULES_WITH_OTHER_SUPPLIER_CHARACTERS}.
      */
     static String supplierDigits(String column) {
+        return digitsOf(column);
+    }
+
+    /** Digits of a document as stored with a mask ('.', '/', '-', ' ' taken off) - {@code DocumentNumbers.onlyDigits}. */
+    static String digitsOf(String column) {
         return "REPLACE(REPLACE(REPLACE(REPLACE(" + column + ", '.', ''), '/', ''), '-', ''), ' ', '')";
     }
 
@@ -166,7 +188,7 @@ final class CopyMappings {
         m.put("issue_date", "l.issue_date");
         m.put("operation_nature", "l.ide_natureza_operacao");
         m.put("direction", DERIVED_DIRECTION);
-        m.put("company_role", "CASE WHEN l.own_issue = 1 THEN 'ISSUER' ELSE 'RECIPIENT' END");
+        m.put("company_role", "CASE WHEN " + ownIssue() + " THEN 'ISSUER' ELSE 'RECIPIENT' END");
         // FD-RN-10: null = authorized; an authorized row keeps no canceled_at (I-02)
         m.put("status", "CASE WHEN l.status = 'CANCELED' THEN 'CANCELED' ELSE 'AUTHORIZED' END");
         m.put("canceled_at", "CASE WHEN l.status = 'CANCELED' THEN l.canceled_at END");

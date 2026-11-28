@@ -132,7 +132,9 @@ class TranslatorAndCutoverParityTest {
         Map<Table, Map<List<Object>, Map<String, Object>>> expected = translateWithJava();
 
         flyway("87").migrate();
-        assertThat(jdbc.queryForObject("SELECT COUNT(*) FROM legacy_fiscal_xml_documents", Integer.class)).isEqualTo(20);
+        assertThat(jdbc.queryForObject("SELECT COUNT(*) FROM legacy_fiscal_xml_documents", Integer.class)).isEqualTo(21);
+        assertThat(jdbc.queryForMap("SELECT direction, company_role FROM fiscal_documents WHERE access_key = ?", key(208)))
+                .containsEntry("direction", "OUTBOUND").containsEntry("company_role", "ISSUER");
 
         List<String> divergences = new ArrayList<>();
         Map<Table, Integer> compared = new LinkedHashMap<>();
@@ -145,7 +147,7 @@ class TranslatorAndCutoverParityTest {
                 .map(e -> e.getKey().name() + ":" + e.getValue()).toList() + " divergences=" + divergences.size());
         divergences.forEach(d -> System.out.println("  " + d));
 
-        assertThat(compared).containsEntry(DOCUMENTS, 20 + 7).containsEntry(ITEMS, 15).containsEntry(EVENTS, 2);
+        assertThat(compared).containsEntry(DOCUMENTS, 21 + 7).containsEntry(ITEMS, 15).containsEntry(EVENTS, 2);
         // FD-RN-57 on both sides: K1 by the supplier's rule, x6 by the general rules and the interstate destination
         assertThat(jdbc.queryForList("SELECT i.effective_cfop FROM fiscal_document_items i JOIN legacy_fiscal_xml_documents d"
                 + " ON d.id = i.document_id WHERE d.access_key IN (?, ?, ?) ORDER BY d.access_key, i.item_number", String.class,
@@ -260,6 +262,11 @@ class TranslatorAndCutoverParityTest {
                 "codigo", "abc10", "cfop", "2102", "valor_total", "1.00"));
         insert(jdbc, "fiscal_xml_document_items", item("i1000000-0000-4000-8000-000000000112", doc("x6"), "numero_item", 8,
                 "codigo", "P-6", "cfop", "2102", "valor_total", "1.00"));
+        // QA B1: neither own_issue nor direction, issued by the company itself (tpNF 1): own issue as the old backfill
+        // derived it - OUTBOUND, ISSUER - on both sides (K12 of the HTTP parity)
+        insert(jdbc, fxd, nfe(doc("x8"), E1, "access_key", key(208), "direction", null, "own_issue", null,
+                "ide_tipo_operacao", "1", "issue_date", "2026-10-30 10:00:00", "issuer_cnpj", LegacyFixtures.E1_CNPJ,
+                "total_valor_total_nota", "3.00"));
         // a rectified note of a rural producer (CPF), whose rule was saved with the CPF's mask (column of 14 characters)
         insert(jdbc, fxd, nfe(doc("x7"), E1, "access_key", key(207), "direction", "INBOUND", "own_issue", 0,
                 "issue_date", "2026-10-29 10:00:00", "issuer_cnpj", null, "emit_cpf", "39053344705", "ide_destino_operacao", "2",

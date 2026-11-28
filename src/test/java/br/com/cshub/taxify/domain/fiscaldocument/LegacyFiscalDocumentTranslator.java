@@ -21,6 +21,7 @@ import br.com.cshub.taxify.mapper.fiscaldocument.LegacyNfseDirection;
 import br.com.cshub.taxify.mapper.fiscaldocument.LegacySourceNames;
 import br.com.cshub.taxify.domain.fiscalrule.ProductRules;
 import br.com.cshub.taxify.service.fiscalcheck.EffectiveCfops;
+import br.com.cshub.taxify.service.FiscalDirections;
 import org.springframework.test.util.ReflectionTestUtils;
 
 import java.time.LocalDateTime;
@@ -110,6 +111,22 @@ public final class LegacyFiscalDocumentTranslator {
     }
 
     /**
+     * Whether the row is the company's own issue: {@code own_issue} when filled; with neither {@code own_issue} nor a
+     * direction, as the {@code FiscalDirectionBackfill} of the old version derived it ({@code FiscalDirections.isOwnIssue}:
+     * the company's document is the issuer's CNPJ or CPF); a direction without {@code own_issue} stays received.
+     */
+    public static boolean ownIssueOfGoodsRow(FiscalXmlDocument legacy) {
+        if (legacy.getOwnIssue() != null) {
+            return legacy.getOwnIssue();
+        }
+        if (legacy.getDirection() != null || legacy.getCompany() == null || legacy.getCompany().getDocument() == null) {
+            return false;
+        }
+        return FiscalDirections.isOwnIssue(legacy.getCompany().getDocument().getNumber(), legacy.getIssuerCnpj(),
+                legacy.getEmitenteCpf());
+    }
+
+    /**
      * FD-RN-56: the stored direction or, for an old row the backfill did not reach, the rule of
      * {@code FiscalDirectionBackfill}: received = INBOUND; own issue with {@code ide_tipo_operacao} 0 = INBOUND and
      * 1 = OUTBOUND. An own issue without a usable {@code ide_tipo_operacao} cannot be solved and stops the copy.
@@ -118,7 +135,7 @@ public final class LegacyFiscalDocumentTranslator {
         if (legacy.getDirection() != null) {
             return legacy.getDirection();
         }
-        if (!Boolean.TRUE.equals(legacy.getOwnIssue())) {
+        if (!ownIssueOfGoodsRow(legacy)) {
             return FiscalDirection.INBOUND;
         }
         String operationType = FiscalText.trimSpaces(legacy.getTipoOperacao());
@@ -193,7 +210,7 @@ public final class LegacyFiscalDocumentTranslator {
         document.setNumber(legacy.getNumero());
         document.setIssueDate(legacy.getIssueDate());
         document.setOperationNature(legacy.getNaturezaOperacao());
-        document.assignRole(roleOfGoodsRow(legacy.getOwnIssue()), directionOfGoodsRow(legacy));
+        document.assignRole(roleOfGoodsRow(ownIssueOfGoodsRow(legacy)), directionOfGoodsRow(legacy));
         if (legacy.isCanceled()) {
             document.cancel(legacy.getCanceledAt());
         }

@@ -161,7 +161,7 @@ public class V88__FiscalDocumentsParity extends BaseJavaMigration {
                 + " SUM(" + String.format(goods, "l.total_valor_ipi") + "), SUM(" + String.format(goods, "l.total_valor_pis") + "),"
                 + " SUM(" + String.format(goods, "l.total_valor_cofins") + "),"
                 + " SUM(l.ret_pis), SUM(l.ret_cofins), SUM(l.ret_csll), SUM(l.ret_irrf), SUM(l.ret_inss),"
-                + " SUM(l.total_valor_ibs), SUM(l.total_valor_cbs), SUM(CASE WHEN l.own_issue = 1 THEN 1 ELSE 0 END)"
+                + " SUM(l.total_valor_ibs), SUM(l.total_valor_cbs), SUM(CASE WHEN " + CopyMappings.ownIssue() + " THEN 1 ELSE 0 END)"
                 + " FROM " + LegacyTable.DOCUMENTS.legacyName() + " l GROUP BY 1, 2, 3, 4", 4);
     }
 
