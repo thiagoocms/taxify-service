@@ -33,8 +33,9 @@
 | **Provedor de XML plugável** (decisão do Tony, 2026-11-27): trocar o SIEG por outro serviço, ou usar mais de um, sem reescrever o núcleo | **Em duas partes.** Na troca única entra só o **modelo de dados neutro** (origem e canal como valor, nenhuma coluna `*_sieg`, FD-RN-40). O **contrato por capacidades**, o agendador por estratégia, a seleção por escritório, o limitador e os orçamentos por provedor, o painel genérico e o T1/T5 formam a **fase P**, uma release logo depois (seção 7B). Pronta para implementar; P-FP-01 a P-FP-04 têm recomendação |
 | Bugs e desperdício da captura (B1, C1, E1, E2, D1/D2, H2, A1-A5) e as tabelas T1/T5 | **Spec irmã** [Capturas e controles](2026-11-27-capturas-e-controles.md). O B1 é recomendado como **correção antes** desta release (P-FD-07) |
 
-**Bloqueiam:** nada bloqueia a implementação. O **go-live** depende de P-FD-02 (janela de deploy e captura parada por
-até 30 min) e da remedição de leitura na EC2 na véspera (seção 8, pré-requisito 1).
+**Bloqueiam:** nada bloqueia a implementação. **P-FD-02 respondida pelo Tony (2026-11-27): janela em dia útil às 21h
+(Recife).** O **go-live** depende da remedição de leitura na EC2 na véspera (seção 8, pré-requisito 1), do backup
+conferido (FD-RN-52) e da aprovação do Tony no dia.
 
 ---
 
@@ -806,7 +807,7 @@ próprio.
   uma vez.
 
 ### 6.2 Sequência da release (runbook)
-Tudo no horário de Recife, fora do expediente (P-FD-02 sugere 21h de um dia útil).
+Tudo no horário de Recife. **Janela: dia útil às 21h** (P-FD-02, decidida pelo Tony em 2026-11-27).
 
 | Passo | O quê | Quem | Volta, se falhar aqui |
 |---|---|---|---|
@@ -1103,7 +1104,7 @@ de documento." Campos extras: `documentType`, `side`.
 | P-FP-01 | Quem escolhe o provedor do escritório | A plataforma (é contrato e custo da CS Hub com o provedor); o ADMIN vê | Se o ADMIN escolher, entra permissão nova e a conta de custo por escritório |
 | P-FP-02 | `PlanServiceEnum.SIEG_INTEGRATION` passa a significar "captura por provedor de terceiros"? | Sim, sem renomear o valor gravado (renomear fica para a Onda 3 da avaliação de inglês) | Um serviço por provedor no plano: mais linhas de plano e de cobrança |
 | P-FP-03 | `RECOVERY` como origem | Não: é finalidade (FD-RN-51). A origem é o provedor que entregou | Como origem, o B1 deixaria de contar as notas recuperadas pelo SIEG como entregues por ele, e o `Skip` voltaria a errar |
-| P-FP-04 | Escopo do limite do SIEG (2 req/min): por credencial de parceiro (global) ou por API key de escritório? | Manter global (`PLATFORM`), que é a regra do projeto hoje, até o SIEG confirmar por escrito | Por escritório, a capacidade multiplica pelo número de escritórios: só mudar o `scope` no descriptor |
+| ~~P-FP-04~~ | Escopo do limite do SIEG | **Decidida pelo Tony (2026-11-27): por API key do escritório (`CREDENTIAL`)**, com uma faixa por endpoint: `baixar-xmls` 2/min, `contar-xmls` 5/min, `nsu/lote` 60/min, `nsu` 3.000/min (NSU-RN-11 e NSU-RN-29 da [captura por NSU](2026-11-27-captura-sieg-nsu.md)) | — |
 
 ### 7B.11 Riscos da fase P
 - **Mudar a quantidade de chamadas ao SIEG sem querer.** Mitigação: Q-FP-1 e CA-FP-03, e o deploy acompanhado do
@@ -1139,7 +1140,7 @@ de documento." Campos extras: `documentType`, `side`.
 2. **Cópia ensaiada** no MySQL local com um dump anonimizado no mesmo volume (ou com o gerador de massa do Q-FD-1),
    medindo o tempo. Meta: menos de 1 minuto para o volume de hoje.
 3. Backup do passo 1 conferido (restaurado num schema local).
-4. P-FD-02 decidida (janela).
+4. Janela marcada num dia útil às 21h (P-FD-02, decidida).
 5. Branches e specs em andamento ajustadas (seção 9).
 
 **Tempo estimado da cópia com o volume de hoje:** documentos e eventos em menos de 2 s, NFS-e em ~2 s, itens em ~5 s,
@@ -1327,9 +1328,11 @@ todas as tarefas.
 ## 17. Perguntas em aberto
 
 ### Bloqueiam o go-live (não a implementação)
-| P | Pergunta | Opções | Recomendação | Impacto |
-|---|---|---|---|---|
-| **P-FD-02** | Janela da release, com a captura parada por até 30 min e uma instância só | (a) dia útil às 21h; (b) sábado de manhã; (c) não aceitar janela (plano alternativo) | **(a)**: fora do expediente do Fiscal e com o time disponível para acompanhar o primeiro tick | Com (c), o custo sobe duas a três vezes e a remodelagem atrasa semanas |
+Nenhuma pergunta em aberto. P-FD-02 foi decidida:
+
+| P | Pergunta | Decisão |
+|---|---|---|
+| ~~P-FD-02~~ | Janela da release, com a captura parada por até 30 min e uma instância só | **Tony, 2026-11-27: dia útil às 21h (Recife)** |
 
 ### Têm recomendação aceitável
 | P | Pergunta | Opções | Recomendação | Se a resposta for outra |

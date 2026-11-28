@@ -29,15 +29,15 @@ auditoria no modelo novo). O **primeiro arquivo real** (go-live) depende do D-03
 |---|---|---|
 | P-07 | Tony, 2026-11-27 | Tabelas oficiais importadas pelo admin da plataforma no console, valendo para todos os escritórios, com aviso quando passam de 60 dias sem atualização |
 | P-09 | Recomendação aceita | NCM inválido **não bloqueia** o salvamento da regra por produto: só avisa |
-| P-03 | Recomendação aceita | Nenhum serviço novo; a regra de auditoria entra no job que já exige `INVOICE_AUDIT` |
+| P-03 | Recomendação aceita | Nenhum serviço novo (a conferência já existe; a regra de auditoria, quando entrar depois do paralelo, usa o job que já exige `INVOICE_AUDIT`) |
 | P-21 | Recomendação aceita | A plataforma não vê contagens por escritório |
-| P-NC-01 a P-NC-03 | Fechadas nesta revisão pela recomendação | `00` sem achado; aviso só no formulário; auditoria só das emitidas (seção 16) |
+| P-NC-01 a P-NC-03 | Fechadas nesta revisão pela recomendação | `00` sem achado; aviso só no formulário; auditoria só das emitidas (seção 16), quando a auditoria entrar |
+| NCM só alerta | Tony, 2026-11-27 | `WARNING` na conferência durante o paralelo, sem pendência nem e-mail; `NCM_INVALID` e B-NC-3 adiadas para depois do paralelo |
 
-**Relação com a P-06.** A P-06 (alerta até o fim do paralelo, sem pendência nem e-mail) vale para os achados de
-**IBS/CBS**. O NCM não é da Reforma: é conferência de cadastro com tabela vigente há anos. Por isso o F2 mantém a regra
-de auditoria `NCM_INVALID` (pendência **MEDIA**, nascendo "a conferir", **fora do e-mail**, que só leva ALTA). Se o Tony
-quiser o NCM também só como alerta no paralelo, basta não registrar as duas entradas no `CHECK_RULES` (B-NC-3 sai do
-escopo); nada mais muda.
+**NCM só como alerta no paralelo (decisão do Tony, 2026-11-27).** Como os achados de IBS/CBS (P-06), o NCM inexistente
+ou fora de vigência é **só alerta** (`WARNING` na conferência da nota) durante o paralelo: **sem pendência e sem
+e-mail**. A regra de auditoria `NCM_INVALID` (NC-RN-08) e a tarefa B-NC-3 **saem desta entrega** e ficam para depois do
+paralelo (V-NC-1), numa revisão desta spec, com nova decisão do Tony. Os 14 códigos de auditoria atuais não mudam.
 
 **Regra fiscal.** A spec não cria regra fiscal: confere o NCM do item contra a tabela oficial importada. O ato citado
 pelo material (Res. Gecex 926/2026, NCM vigente em 25/11/2026, 15.157 linhas) **continua a validar** até o D-03. O
@@ -82,7 +82,7 @@ emitidas; aviso ao cadastrar a regra por produto.
 |---|---|---|
 | Admin da plataforma (CS Hub) | Importa e ativa a NCM vigente; marca "conferida" | A cada alteração da NCM; checagem mensal |
 | FISCAL (carteira) e ADMIN | Veem o achado na nota e na conferência; tratam a pendência da auditoria; recebem o aviso ao cadastrar regra | Ao conferir |
-| Job da auditoria | Gera o indício `NCM_INVALID` nas notas emitidas das empresas com `INVOICE_AUDIT` | Diário, 05:30 Recife (já existe) |
+| Job da auditoria | **Nada nesta entrega** (a regra `NCM_INVALID` fica para depois do paralelo) | — |
 
 **Teste grátis.** Disponível (as checagens fazem parte da conferência básica).
 **Escritório bloqueado.** Conferência, nota e consulta respondem (GET); a auditoria automática para (já implementado no
@@ -97,7 +97,8 @@ cujo plano tem `INVOICE_AUDIT` (job atual). Módulo "Reforma Tributária": **nã
   os escritórios conferirem pela mesma base.
 - H-NC-2. Como Fiscal, quero ver na nota quando o NCM não existe ou não estava vigente na data, com a versão da tabela,
   para corrigir o cadastro do cliente ou cobrar o fornecedor.
-- H-NC-3. Como ADMIN, quero que a auditoria aponte as notas emitidas com NCM inválido, para tratar como pendência.
+- ~~H-NC-3. Como ADMIN, quero que a auditoria aponte as notas emitidas com NCM inválido, para tratar como pendência.~~
+  Adiada para depois do paralelo (decisão do Tony, 2026-11-27).
 - H-NC-4. Como Fiscal, quero ser avisado ao cadastrar uma regra por produto com NCM que não existe, sem ser impedido de
   salvar, para não travar quando a tabela estiver atrasada.
 
@@ -112,7 +113,8 @@ cujo plano tem `INVOICE_AUDIT` (job atual). Módulo "Reforma Tributária": **nã
 | **NC-RN-05 `NCM_UNKNOWN`** | (a) NCM normalizado que não tem 8 dígitos numéricos (ex.: 7 dígitos, letras): mensagem `"NCM {ncm} incompleto ou fora do formato de 8 dígitos"`. (b) 8 dígitos desconhecido pela TO-RN-07 entre os códigos de **nível 8**: `"NCM {ncm} não existe na tabela {versao}"`. Um código de 2, 4, 5, 6 ou 7 dígitos que exista na tabela como capítulo, posição ou subposição cai em (a): não é código de item |
 | **NC-RN-06 `NCM_NOT_IN_FORCE`** | 8 dígitos conhecido, mas fora de vigência em `D = issue_date.toLocalDate()` (TO-RN-07): `"NCM {ncm} fora de vigência em {dd/MM/aaaa} (vigente de {início} a {fim ou 'sem fim'}, tabela {versao})"` |
 | **NC-RN-07 Formato do achado** | `FiscalDivergence(code, "NCM", ncm, expected, WARNING, message)`. `expected` = descrição oficial do código (até 200 caracteres, cortada com "…") no NC-RN-06; `null` no NC-RN-05. No máximo um achado de NCM por item. `{versao}` = `version_label` da versão de onde veio a linha (no desconhecido, a ativa) |
-| **NC-RN-08 Regra de auditoria `NCM_INVALID`** | Nova constante em `AuditRuleDefinition` (nome em inglês; as 14 existentes não mudam): grupo `COERENCIA`, severidade `MEDIA`, título "NCM inexistente ou fora de vigência nas notas emitidas", fundamento "Nomenclatura Comum do Mercosul: tabela vigente publicada no Portal Único Siscomex; NCM do item obrigatório na NF-e (MOC)", link `https://www.gov.br/siscomex/pt-br`, sem vigência inicial. `AuditEngine.CHECK_RULES` ganha `NCM_UNKNOWN` e `NCM_NOT_IN_FORCE` → `NCM_INVALID`. Como toda regra nova, nasce **"a conferir"** (auditoria RN-01 e RN-03): o achado sai com o título "A conferir: ..." até o time fiscal marcar a regra como conferida. Vira pendência `AUDIT_FINDING` **MEDIA**: não entra no resumo por e-mail, que só leva ALTA. Só notas emitidas (`company_role = ISSUER`, auditoria RN-05) |
+| **NC-RN-08a Só alerta no paralelo** (decisão do Tony, 2026-11-27) | Os achados `NCM_UNKNOWN` e `NCM_NOT_IN_FORCE` são `WARNING` na conferência da nota e na lista de divergências, **e mais nada**: não geram pendência (`pendencies`), não entram em nenhum e-mail e não entram no `CHECK_RULES` da auditoria. O `PendencyFinder` e o `AuditEngine` não mudam nesta entrega |
+| **NC-RN-08 Regra de auditoria `NCM_INVALID`** (**ADIADA** para depois do paralelo; não implementar agora) | Nova constante em `AuditRuleDefinition` (nome em inglês; as 14 existentes não mudam): grupo `COERENCIA`, severidade `MEDIA`, título "NCM inexistente ou fora de vigência nas notas emitidas", fundamento "Nomenclatura Comum do Mercosul: tabela vigente publicada no Portal Único Siscomex; NCM do item obrigatório na NF-e (MOC)", link `https://www.gov.br/siscomex/pt-br`, sem vigência inicial. `AuditEngine.CHECK_RULES` ganha `NCM_UNKNOWN` e `NCM_NOT_IN_FORCE` → `NCM_INVALID`. Como toda regra nova, nasce **"a conferir"** (auditoria RN-01 e RN-03): o achado sai com o título "A conferir: ..." até o time fiscal marcar a regra como conferida. Vira pendência `AUDIT_FINDING` **MEDIA**: não entra no resumo por e-mail, que só leva ALTA. Só notas emitidas (`company_role = ISSUER`, auditoria RN-05) |
 | **NC-RN-09 Consulta por código** | `GET /api/v1/reform/ncm/{code}?date=AAAA-MM-DD` (padrão: hoje em Recife), qualquer usuário autenticado de escritório, sem flag. Devolve a situação pela TO-RN-07, a descrição e a hierarquia (capítulo, posição, subposições) da versão de onde veio a linha. Não é busca por texto |
 | **NC-RN-10 Aviso na regra por produto** (P-09) | Ao sair do campo NCM do formulário da regra por produto, o front chama a NC-RN-09 com a data de hoje. `UNKNOWN`, `INCOMPLETE` ou `NOT_IN_FORCE`: aviso amarelo abaixo do campo ("NCM não encontrado na tabela {versão}" / "NCM incompleto: use 8 dígitos" / "NCM fora de vigência desde {data}"). **Não bloqueia** o salvamento, e o backend da regra por produto não muda. `NO_TABLE` ou erro da consulta: nenhum aviso |
 | **NC-RN-11 Fronteira** | Sem mudança no cálculo da Fronteira PE nesta spec. O achado na nota já explica quando o "sem regra" da Fronteira vem de NCM inválido |
@@ -226,13 +228,12 @@ o conteúdo do arquivo, CNPJ ou valor.
 - **CA-NC-02 (NC-RN-06)** Dado o código `84713012` com fim de vigência em 2026-03-31, quando a nota é de 2026-04-02,
   então há `NCM_NOT_IN_FORCE`; numa nota com `issue_date` 2026-03-31T23:59, não há.
 - **CA-NC-03 (NC-RN-04)** Dado itens com NCM `00`, nulo ou vazio, então não há achado de NCM.
-- **CA-NC-04 (NC-RN-08)** Dado uma empresa com `INVOICE_AUDIT` que emitiu nota com NCM `99999999`, quando a auditoria
-  roda, então há um achado "A conferir: ..." da regra `NCM_INVALID`, pendência `AUDIT_FINDING` MEDIA, e o resumo por
-  e-mail do dia não o inclui.
-- **CA-NC-05 (NC-RN-08)** Dado o catálogo da auditoria, quando se lista as regras da auditoria, então há 15 regras, e
-  `NCM_INVALID` aparece ativa e não conferida.
-- **CA-NC-06 (NC-RN-02)** Dado a flag desligada, então não há `NCM_*` na conferência nem achado `NCM_INVALID` na
-  auditoria.
+- **CA-NC-04 (NC-RN-08a)** Dado uma empresa com `INVOICE_AUDIT` que emitiu nota com NCM `99999999` e a flag ligada,
+  quando a conferência, a auditoria e o `PendencyFinder` rodam, então há o `WARNING` `NCM_UNKNOWN` na nota, **nenhuma**
+  pendência nova, nenhum achado de auditoria de NCM e nenhum e-mail.
+- **CA-NC-05 (NC-RN-08a)** Dado o catálogo da auditoria, quando se lista as regras, então continuam as 14 regras de hoje,
+  sem `NCM_INVALID`.
+- **CA-NC-06 (NC-RN-02)** Dado a flag desligada, então não há `NCM_*` na conferência.
 - **CA-NC-07 (NC-RN-10)** Dado o formulário da regra por produto com NCM `99999999`, quando o usuário sai do campo,
   então aparece o aviso, e o salvamento continua permitido e grava o NCM informado.
 - **CA-NC-08 (NC-RN-01, TO-RN-07)** Dado a versão nova (publicada em 2026-12-01) sem o código `84713099` que a anterior
@@ -273,10 +274,10 @@ Documentos como `Nfe`/`Nfce` do modelo novo.
 | CT-NC-11 | Item `00`, item nulo, item vazio | Sem achado | 04 |
 | CT-NC-12 | Item `0101.21.00` (com pontos, se o parser do XML gravar assim) | Normaliza para `01012100`: sem achado | 04 |
 | CT-NC-13 | Nota `CANCELED` com `99999999` | Sem achado | 03 |
-| CT-NC-14 | Nota recebida de E2 por E1 (`company_role = RECIPIENT`) com `99999999` | Achado na conferência de E1; **sem** achado de auditoria (a auditoria só olha emitidas) | 03, 08 |
-| CT-NC-15 | Auditoria de E1 com 3 notas emitidas com `99999999` | 1 achado "A conferir: 3 nota(s) emitida(s): ncm inexistente ou fora de vigência ..." MEDIA; 1 pendência `AUDIT_FINDING`; resumo por e-mail inalterado | 08 |
-| CT-NC-16 | Mesmo caso com a regra marcada como conferida | Título "Indício: ..." na execução seguinte, mesma pendência | 08 |
-| CT-NC-17 | Flag desligada | Nenhum `NCM_*`; auditoria sem `NCM_INVALID` | 02 |
+| CT-NC-14 | Nota recebida de E2 por E1 (`company_role = RECIPIENT`) com `99999999` | `WARNING` na conferência de E1; nenhuma pendência | 03, 08a |
+| CT-NC-15 | E1 com 3 notas emitidas com `99999999`; rodam a auditoria, o `PendencyFinder` e o resumo por e-mail do dia | 3 `WARNING` `NCM_UNKNOWN` (um por nota); auditoria com as mesmas 14 regras e sem achado de NCM; contagem de pendências de E1 igual à de antes; e-mail inalterado | 08a |
+| CT-NC-16 | Lista de regras da auditoria | 14 regras, sem `NCM_INVALID` | 08a |
+| CT-NC-17 | Flag desligada | Nenhum `NCM_*` | 02 |
 | CT-NC-18 | Flag ligada, nenhuma versão NCM ativa | Nenhum `NCM_*`; `GET /reform/ncm/01012100` → `NO_TABLE` | 03, 09 |
 | CT-NC-19 | Versão "NCM TESTE v2" publicada em 2026-12-01 sem `84713099`; ativada. Notas de 2026-11-20 e 2026-12-02 com `84713099` | Primeira sem achado; segunda `NCM_NOT_IN_FORCE` citando "NCM TESTE v1" | TO-07 |
 | CT-NC-20 | `GET /reform/ncm/0101.21.00` | 200 `IN_FORCE`, `code = 01012100`, `hierarchy` com `01` e `0101` | 09 |
@@ -300,14 +301,14 @@ e pode ser feita junto da Parte A do F1a, com o mesmo cuidado de merge (só depo
 | D-03 | admin da plataforma + PO | Baixar o JSON da NCM vigente do Portal Único Siscomex; confirmar os nomes dos campos (6.2), o formato de data e o tamanho; registrar URL, ato e data; ajustar a configuração se preciso | — |
 | B-NC-1 | backend | V93; entidade `NcmCode`; parser em streaming com o mapeamento configurável plugado no importador genérico do F1a; `rowSummary` do NCM; catálogo NCM no `OfficialCatalog` | B-TO-1 a B-TO-3 (F1a) |
 | B-NC-2 | backend | `NcmCheck` (NC-RN-03 a 07) sobre `GoodsInvoice`/`FiscalDocumentItem`, com a flag; teste de contagem de consultas | B-NC-1, B-FD-05 |
-| B-NC-3 | backend | `NCM_INVALID` em `AuditRuleDefinition` e as duas entradas no `CHECK_RULES`; atualizar os testes que contam 14 regras | B-NC-2 |
+| ~~B-NC-3~~ | backend | **Adiada para depois do paralelo** (decisão do Tony, 2026-11-27): `NCM_INVALID` em `AuditRuleDefinition` e no `CHECK_RULES`. Nesta entrega, só um teste que garante que `NCM_*` não gera pendência nem entra no `CHECK_RULES` | — |
 | B-NC-4 | backend | `GET /reform/ncm/{code}` (NC-RN-09); `ncmCheck` em `ReformFeaturesDTO`; mensagens pt e en | B-NC-1 |
 | F-NC-1 | frontend | Aba "NCM" na página `/plataforma/tabelas-oficiais` do F-TO-1 (mesmos componentes; `rowSummary` por nível) | F-TO-1 |
 | F-NC-2 | frontend | `finding-groups.ts`: grupo novo `NCM` ("NCM") para `NCM_UNKNOWN` e `NCM_NOT_IN_FORCE`; rótulos na conferência e na aba de divergências da nota, com a versão | contrato |
 | F-NC-3 | frontend | Aviso no campo NCM do formulário da regra por produto (NC-RN-10), sem bloquear | contrato (pode começar antes do B-NC-4) |
 | Q-NC-1 | QA | CT-NC-01 a 29 por HTTP real, no MySQL local | B-NC-4, F-NC-3 |
 | Q-NC-2 | QA | Primeira importação real (D-03) local: `rowCount` e `byLevel` contra o total do portal | D-03, B-NC-1 |
-| V-NC-1 | Fiscal | Paralelo de 1 mês em 5 empresas; marcar a regra `NCM_INVALID` como conferida quando confiar nela | go-live |
+| V-NC-1 | Fiscal | Paralelo de 1 mês em 5 empresas, conferindo os `WARNING` de NCM contra a conferência manual. No fim, o Tony decide se o NCM vira regra de auditoria e pendência (B-NC-3) | go-live |
 
 ## 13. Riscos
 

@@ -23,7 +23,14 @@
 > [Captura SIEG por NSU](2026-11-27-captura-sieg-nsu.md). Deixam de existir: a faixa noturna, os orçamentos, a
 > habilitação por empresa, os tetos, `company_capture_settings`, `document_capture_status`, `sieg_request_budgets` e as
 > variáveis `TAXIFY_SIEG_NFCE_*`/`TAXIFY_SIEG_CTE_*`. **Continuam valendo:** a fase 1 (contagens, em
-> `capture_period_counts`), o modelo do CT-e (CX-RN-31 a 34) e as perguntas P-CX-02 e P-CX-10 a P-CX-13.
+> `capture_period_counts`), o modelo do CT-e (CX-RN-31 a 34) e as perguntas P-CX-10 a P-CX-13.
+>
+> **Atualização de 2026-11-28 (decisões do Tony):** a **P-CX-02 foi fechada: a NFC-e capturada soma já** na apuração,
+> na auditoria e nos relatórios, com a regra contra dupla contagem do NSU-RN-30 da spec do NSU (uma chave, uma linha por
+> empresa; nenhuma outra fonte de faturamento existe hoje no Taxify, então não há aviso de dupla fonte). As **telas de
+> NFC-e e CT-e** (filtro por tipo na lista de notas, lista e detalhe do CT-e, upload de CT-e) foram levadas para a
+> [Captura SIEG por NSU](2026-11-27-captura-sieg-nsu.md), seção 5A, que adapta a fase 3a (CX-RN-30 a 37 e a 8.3) ao
+> modelo novo (`fiscal_documents`, sem `transport_documents`), mantendo as rotas `/api/v1/transport-documents`.
 
 ## Ajuste de 2026-11-27: remodelagem dos documentos e tabelas de controle
 
@@ -234,7 +241,7 @@ filtros. Os nomes são fictícios.
 | **CX-RN-26 Virada de mês** | Nos primeiros `TAXIFY_SIEG_NFCE_PREVIOUS_MONTH_DAYS` (padrão 3) dias do mês, a faixa também trata o mês anterior (linha própria em `document_capture_status` com `period_month` do mês anterior), para pegar NFC-e transmitidas tarde. Depois disso, o mês anterior é encerrado. Mês anterior à habilitação nunca é buscado (P-CX-07) |
 | **CX-RN-27 Resultado por etapa** | Cada tentativa grava em `document_capture_status`: `last_attempt_at`, `last_success_at`, `last_failure_at`, `last_failure_code` (lista fechada `CaptureFailureCode`, sem texto do provedor) e `budget_exhausted_at`. O painel de captura mostra a NFC-e como canal próprio |
 | **CX-RN-28 Filtro por modelo nas telas** | `XmlSearchFilterDTO` e a lista de notas ganham o filtro `models` (lista de `"55"`, `"65"`). **Sem o filtro, o backend devolve como hoje** (compatível com o front antigo). O front novo manda `models=["55"]` por padrão e oferece "NF-e", "NFC-e" e "Todas". Mesma regra na conferência da empresa, na manifestação (só NF-e, já é assim) e nos relatórios que listam notas |
-| **CX-RN-29 Impacto nas outras rotinas** | NFC-e capturada é nota como qualquer outra: entra na apuração (receita), na auditoria (`NFCE_CANCELAMENTO`, numeração por série), no motor de conferência e nos relatórios. **O go-live depende da P-CX-02.** A conferência sob demanda de empresa com milhares de NFC-e precisa do filtro por modelo (CX-RN-28) para não carregar tudo |
+| **CX-RN-29 Impacto nas outras rotinas** | NFC-e capturada é nota como qualquer outra: entra na apuração (receita), na auditoria (`NFCE_CANCELAMENTO`, numeração por série), no motor de conferência e nos relatórios. **P-CX-02 fechada pelo Tony em 2026-11-28: soma já** (regra contra dupla contagem no NSU-RN-30 da spec do NSU). A conferência sob demanda de empresa com milhares de NFC-e precisa do filtro por modelo (CX-RN-28) para não carregar tudo |
 
 ### 7.2 Custo no SIEG (conta)
 
@@ -634,7 +641,7 @@ paralelo.
 | P | Bloqueia | Pergunta | Opções | Recomendação | Impacto se for diferente |
 |---|---|---|---|---|---|
 | **P-CX-01** | Ligar a fase 2 | Qual o `TipoXml` da NFC-e no SIEG, e o `CNPJemit` filtra NFC-e? | confirmar na documentação do SIEG e numa chamada de teste | Variável `TAXIFY_SIEG_NFCE_XML_TYPE` (padrão 4, a confirmar) e teste no D-CX-01 | Só o valor da variável |
-| **P-CX-02** | Ligar a fase 2 | O Fiscal confirma que apuração, auditoria e relatórios devem somar as NFC-e capturadas? Algum escritório lança o faturamento do varejo de outra forma (dupla contagem)? | somar; somar só a partir de um mês; não somar | Somar a partir do mês em que a captura foi habilitada, com o paralelo V-CX-1 | "Não somar" exige filtro por modelo na apuração (regra fiscal nova, spec própria) |
+| ~~P-CX-02~~ | — | ~~O Fiscal confirma que apuração, auditoria e relatórios devem somar as NFC-e capturadas?~~ | — | **Fechada pelo Tony em 2026-11-28: soma já**, sem mês de corte. Dupla contagem: NSU-RN-30 da [spec do NSU](2026-11-27-captura-sieg-nsu.md) (não há outra fonte de faturamento no Taxify hoje) | — |
 | **P-CX-03** | Lado tomador do CT-e no SIEG | O `baixar-xmls` filtra CT-e pelo tomador (ou remetente)? Com que campo? | campo próprio do SIEG; não há | Confirmar na documentação; sem filtro, o tomador vem da SEFAZ (fase 3b) e do upload | Sem o lado tomador, a indústria que paga frete fica só com upload até a 3b |
 | **P-CX-04** | Fase 3b | Serviço, versão e regras da distribuição de DF-e do CT-e (CTeDistribuicaoDFe): endpoint, autorizador, quais participantes recebem (inclusive o tomador) | estudar a NT do CT-e | D-CX-03 antes de especificar a 3b | Define se a 3b existe |
 
