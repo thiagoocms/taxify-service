@@ -1,9 +1,9 @@
 package br.com.cshub.taxify.service.fiscalcheck;
 
 import br.com.cshub.taxify.domain.reform.IbsCbsRate;
-import br.com.cshub.taxify.domain.xml.FiscalItemIbsCbs;
-import br.com.cshub.taxify.domain.xml.FiscalXmlDocument;
-import br.com.cshub.taxify.domain.xml.FiscalXmlDocumentItem;
+import br.com.cshub.taxify.domain.fiscaldocument.ItemIbsCbs;
+import br.com.cshub.taxify.domain.fiscaldocument.GoodsInvoice;
+import br.com.cshub.taxify.domain.fiscaldocument.FiscalDocumentItem;
 import br.com.cshub.taxify.enumerated.DivergenceSeverity;
 import org.springframework.stereotype.Component;
 
@@ -36,8 +36,8 @@ public class IbsCbsItemCheck implements FiscalCheck {
     private static final Set<String> TAXED_CSTS = Set.of("000", "200");
 
     @Override
-    public List<FiscalDivergence> check(FiscalXmlDocumentItem item, FiscalCheckContext context) {
-        FiscalItemIbsCbs group = item.getIbsCbs();
+    public List<FiscalDivergence> check(FiscalDocumentItem item, FiscalCheckContext context) {
+        ItemIbsCbs group = item.getIbsCbs();
         if (group == null) {
             return List.of();
         }
@@ -46,15 +46,15 @@ public class IbsCbsItemCheck implements FiscalCheck {
         if (group.cst() != null && TAXED_CSTS.contains(group.cst().trim())) {
             yearOf(item).flatMap(context::ibsCbsRateFor).ifPresent(rate -> checkRates(group, rate, divergences));
         }
-        if (!Boolean.TRUE.equals(group.diferimentoOuDevolucao())) {
+        if (!Boolean.TRUE.equals(group.deferralOrRefund())) {
             checkCalculation(group, divergences);
         }
         return divergences;
     }
 
-    private void checkClassification(FiscalItemIbsCbs group, List<FiscalDivergence> divergences) {
+    private void checkClassification(ItemIbsCbs group, List<FiscalDivergence> divergences) {
         String cst = group.cst() == null ? null : group.cst().trim();
-        String classTrib = group.classificacaoTributaria() == null ? null : group.classificacaoTributaria().trim();
+        String classTrib = group.classCode() == null ? null : group.classCode().trim();
         if (classTrib == null || !classTrib.matches("\\d{6}")) {
             divergences.add(new FiscalDivergence(CLASS_TRIB, "cClassTrib", classTrib, null, DivergenceSeverity.WARNING,
                     "cClassTrib ausente ou fora do formato de 6 dígitos"));
@@ -64,10 +64,10 @@ public class IbsCbsItemCheck implements FiscalCheck {
         }
     }
 
-    private void checkRates(FiscalItemIbsCbs group, IbsCbsRate rate, List<FiscalDivergence> divergences) {
-        compareRate("pCBS", "CBS", group.aliquotaCbs(), rate.getCbsRate(), rate.getYear(), divergences);
-        compareRate("pIBSUF", "IBS estadual", group.aliquotaIbsUf(), rate.getIbsStateRate(), rate.getYear(), divergences);
-        compareRate("pIBSMun", "IBS municipal", group.aliquotaIbsMun(), rate.getIbsMunicipalRate(), rate.getYear(), divergences);
+    private void checkRates(ItemIbsCbs group, IbsCbsRate rate, List<FiscalDivergence> divergences) {
+        compareRate("pCBS", "CBS", group.cbsRate(), rate.getCbsRate(), rate.getYear(), divergences);
+        compareRate("pIBSUF", "IBS estadual", group.stateRate(), rate.getIbsStateRate(), rate.getYear(), divergences);
+        compareRate("pIBSMun", "IBS municipal", group.cityRate(), rate.getIbsMunicipalRate(), rate.getYear(), divergences);
     }
 
     private void compareRate(String field, String label, BigDecimal found, BigDecimal expected, int year,
@@ -79,17 +79,17 @@ public class IbsCbsItemCheck implements FiscalCheck {
         }
     }
 
-    private void checkCalculation(FiscalItemIbsCbs group, List<FiscalDivergence> divergences) {
-        BigDecimal base = group.baseCalculo();
+    private void checkCalculation(ItemIbsCbs group, List<FiscalDivergence> divergences) {
+        BigDecimal base = group.base();
         if (base != null) {
-            compareValue("vCBS", "CBS", base, group.aliquotaCbs(), group.reducaoAliquotaCbs(), group.valorCbs(), divergences);
-            compareValue("vIBSUF", "IBS estadual", base, group.aliquotaIbsUf(), group.reducaoAliquotaIbsUf(), group.valorIbsUf(), divergences);
-            compareValue("vIBSMun", "IBS municipal", base, group.aliquotaIbsMun(), group.reducaoAliquotaIbsMun(), group.valorIbsMun(), divergences);
+            compareValue("vCBS", "CBS", base, group.cbsRate(), group.cbsRateReduction(), group.cbsAmount(), divergences);
+            compareValue("vIBSUF", "IBS estadual", base, group.stateRate(), group.stateRateReduction(), group.stateAmount(), divergences);
+            compareValue("vIBSMun", "IBS municipal", base, group.cityRate(), group.cityRateReduction(), group.cityAmount(), divergences);
         }
-        if (group.valorIbs() != null && group.valorIbsUf() != null && group.valorIbsMun() != null) {
-            BigDecimal sum = group.valorIbsUf().add(group.valorIbsMun());
-            if (Money.differs(group.valorIbs(), sum)) {
-                divergences.add(new FiscalDivergence(CALCULATION, "vIBS", Money.show(group.valorIbs()), Money.show(sum),
+        if (group.ibsAmount() != null && group.stateAmount() != null && group.cityAmount() != null) {
+            BigDecimal sum = group.stateAmount().add(group.cityAmount());
+            if (Money.differs(group.ibsAmount(), sum)) {
+                divergences.add(new FiscalDivergence(CALCULATION, "vIBS", Money.show(group.ibsAmount()), Money.show(sum),
                         DivergenceSeverity.ERROR, "vIBS diferente de vIBSUF + vIBSMun"));
             }
         }
@@ -107,9 +107,9 @@ public class IbsCbsItemCheck implements FiscalCheck {
         }
     }
 
-    private static Optional<Integer> yearOf(FiscalXmlDocumentItem item) {
+    private static Optional<Integer> yearOf(FiscalDocumentItem item) {
         return Optional.ofNullable(item.getDocument())
-                .map(FiscalXmlDocument::getIssueDate)
+                .map(GoodsInvoice::getIssueDate)
                 .map(LocalDateTime::getYear);
     }
 }

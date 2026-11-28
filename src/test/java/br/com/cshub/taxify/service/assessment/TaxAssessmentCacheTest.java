@@ -1,8 +1,11 @@
 package br.com.cshub.taxify.service.assessment;
 
 import br.com.cshub.taxify.domain.company.Company;
-import br.com.cshub.taxify.domain.xml.FiscalXmlDocument;
-import br.com.cshub.taxify.domain.xml.FiscalXmlDocumentItem;
+import br.com.cshub.taxify.domain.fiscaldocument.FiscalDocumentItem;
+import br.com.cshub.taxify.domain.fiscaldocument.GoodsInvoice;
+import br.com.cshub.taxify.domain.document.Document;
+import br.com.cshub.taxify.enumerated.DocumentTypeEnum;
+import br.com.cshub.taxify.support.TestNotes;
 import br.com.cshub.taxify.dto.assessment.TaxAssessmentDTO;
 import jakarta.persistence.EntityManagerFactory;
 import org.junit.jupiter.api.Test;
@@ -67,10 +70,10 @@ class TaxAssessmentCacheTest {
         Company company = new Company();
         UUID id = UUID.randomUUID();
         company.setId(id);
-        FiscalXmlDocument document = new FiscalXmlDocument();
-        document.setCompany(company);
-        FiscalXmlDocumentItem item = new FiscalXmlDocumentItem();
-        item.setDocument(document);
+        company.setDocument(new Document(TestNotes.COMPANY_CNPJ, DocumentTypeEnum.CNPJ));
+        GoodsInvoice document = TestNotes.note(company).build();
+        FiscalDocumentItem item = TestNotes.item(1).build();
+        document.addItem(item);
 
         cache.put(id, october, dto(id), cache.version(id));
         invalidator.changed(item);

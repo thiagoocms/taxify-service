@@ -1,4 +1,4 @@
-package br.com.cshub.taxify.domain.xml;
+package legacy.xml;
 
 import jakarta.persistence.Column;
 import jakarta.persistence.Embeddable;

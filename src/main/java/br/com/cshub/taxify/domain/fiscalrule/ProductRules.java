@@ -1,8 +1,8 @@
 package br.com.cshub.taxify.domain.fiscalrule;
 
 import br.com.cshub.taxify.common.DocumentNumbers;
-import br.com.cshub.taxify.domain.xml.FiscalXmlDocument;
-import br.com.cshub.taxify.domain.xml.FiscalXmlDocumentItem;
+import br.com.cshub.taxify.domain.fiscaldocument.FiscalDocument;
+import br.com.cshub.taxify.domain.fiscaldocument.FiscalDocumentItem;
 
 import java.util.Collection;
 import java.util.HashMap;
@@ -65,17 +65,16 @@ public final class ProductRules {
     }
 
     /** The rule for the item, by its code and the note's issuer. */
-    public Optional<ProductFiscalRule> forItem(FiscalXmlDocumentItem item) {
-        return find(item.getCodigo(), supplierOf(item.getDocument()));
+    public Optional<ProductFiscalRule> forItem(FiscalDocumentItem item) {
+        return find(item.getProduct().code(), supplierOf(item.getDocument()));
     }
 
     /** CNPJ (or CPF, a rural producer) of the note's issuer - the supplier on a received note. */
-    public static String supplierOf(FiscalXmlDocument document) {
+    public static String supplierOf(FiscalDocument document) {
         if (document == null) {
             return null;
         }
-        return document.getIssuerCnpj() != null && !document.getIssuerCnpj().isBlank()
-                ? document.getIssuerCnpj() : document.getEmitenteCpf();
+        return document.getIssuer().document();
     }
 
     private static String key(String codigo, String supplier) {

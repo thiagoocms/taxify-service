@@ -13,7 +13,9 @@ import br.com.cshub.taxify.integration.sefaz.SefazDistResponse;
 import br.com.cshub.taxify.integration.sefaz.SefazEventClient;
 import br.com.cshub.taxify.integration.sefaz.SefazEventResponse;
 import br.com.cshub.taxify.integration.sefaz.SefazProperties;
-import br.com.cshub.taxify.repository.FiscalXmlDocumentRepository;
+import br.com.cshub.taxify.domain.fiscaldocument.DocumentSourceKey;
+import br.com.cshub.taxify.enumerated.RetrievalMode;
+import br.com.cshub.taxify.repository.FiscalDocumentRepository;
 import br.com.cshub.taxify.repository.SefazNoteSummaryRepository;
 import br.com.cshub.taxify.repository.SubscriptionRepository;
 import br.com.cshub.taxify.domain.subscription.Subscription;
@@ -53,7 +55,7 @@ public class SefazManifestService {
     private static final java.util.Set<String> FETCH_GIVE_UP = java.util.Set.of("632", "640", "641", "653");
 
     private final SefazNoteSummaryRepository summaryRepository;
-    private final FiscalXmlDocumentRepository documentRepository;
+    private final FiscalDocumentRepository documentRepository;
     private final FiscalXmlEventService eventService;
     private final FiscalXmlIntegrationService integrationService;
     private final SefazEventClient eventClient;
@@ -61,7 +63,7 @@ public class SefazManifestService {
     private final SefazProperties properties;
     private final SubscriptionRepository subscriptionRepository;
 
-    public SefazManifestService(SefazNoteSummaryRepository summaryRepository, FiscalXmlDocumentRepository documentRepository,
+    public SefazManifestService(SefazNoteSummaryRepository summaryRepository, FiscalDocumentRepository documentRepository,
                                 FiscalXmlEventService eventService, FiscalXmlIntegrationService integrationService,
                                 SefazEventClient eventClient, SefazDistClient distClient, SefazProperties properties,
                                 SubscriptionRepository subscriptionRepository) {
@@ -104,8 +106,9 @@ public class SefazManifestService {
             }
             var stored = documentRepository.findFirstByCompany_IdAndAccessKey(company.getId(), summary.accessKey());
             if (stored.isPresent()) {
-                if (stored.get().getFoundInSefazAt() == null) {
-                    stored.get().setFoundInSefazAt(LocalDateTime.now());
+                // FD-RN-31: SEFAZ has the note (a summary of it) - only the first time marks it
+                if (stored.get().firstSeenIn(DocumentSourceKey.SEFAZ_DFE).isEmpty()) {
+                    stored.get().markSeenIn(DocumentSourceKey.SEFAZ_DFE, RetrievalMode.CURSOR, LocalDateTime.now());
                     documentRepository.save(stored.get());
                 }
                 continue;

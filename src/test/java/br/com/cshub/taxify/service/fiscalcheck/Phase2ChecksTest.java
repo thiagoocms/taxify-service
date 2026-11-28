@@ -1,10 +1,13 @@
 package br.com.cshub.taxify.service.fiscalcheck;
 
+import br.com.cshub.taxify.support.TestNotes;
 import br.com.cshub.taxify.domain.fiscalrule.ProductFiscalRule;
 import br.com.cshub.taxify.domain.fiscalrule.ProductTaxRule;
-import br.com.cshub.taxify.domain.xml.FiscalItemTaxDetail;
-import br.com.cshub.taxify.domain.xml.FiscalXmlDocument;
-import br.com.cshub.taxify.domain.xml.FiscalXmlDocumentItem;
+
+import br.com.cshub.taxify.domain.fiscaldocument.GoodsInvoice;
+import br.com.cshub.taxify.domain.fiscaldocument.GoodsTotals;
+import br.com.cshub.taxify.domain.fiscaldocument.ItemFederalTax;
+import br.com.cshub.taxify.domain.fiscaldocument.FiscalDocumentItem;
 import br.com.cshub.taxify.enumerated.DivergenceSeverity;
 import org.junit.jupiter.api.Test;
 
@@ -27,11 +30,11 @@ class Phase2ChecksTest {
     void ruleComparesTheTaxFieldsItSets() {
         ProductFiscalRule rule = rule(new ProductTaxRule("0", "00", "102", new BigDecimal("18"), "0300700",
                 "50", new BigDecimal("5"), "01", new BigDecimal("1.65"), "01", new BigDecimal("7.6"), "000", "000001"));
-        FiscalXmlDocumentItem item = item(document("3", "1", "SP", "SP"), "00", "100", "12", "12.00",
+        FiscalDocumentItem item = item(document("3", "1", "SP", "SP"), "00", "100", "12", "12.00",
                 detail("1", null, "0300799", null, null, null, "100", "5", "100", "1.65", "100", "3"));
-        item.setSituacaoTributariaIpi("50");
-        item.setSituacaoTributariaPis("01");
-        item.setSituacaoTributariaCofins("02");
+        item.setIpi(new ItemFederalTax("50", item.getIpi().base(), item.getIpi().rate(), item.getIpi().amount()));
+        item.setPis(new ItemFederalTax("01", item.getPis().base(), item.getPis().rate(), item.getPis().amount()));
+        item.setCofins(new ItemFederalTax("02", item.getCofins().base(), item.getCofins().rate(), item.getCofins().amount()));
 
         List<FiscalDivergence> found = new ProductRuleCheck().check(item, contextWith(rule));
 
@@ -48,11 +51,11 @@ class Phase2ChecksTest {
     void ruleComparesCsosnOnlyWithCsosnNotesAndInternalRateOnlyInInternalOperations() {
         ProductFiscalRule rule = rule(new ProductTaxRule(null, "00", "101", new BigDecimal("18"), null,
                 null, null, null, null, null, null, null, null));
-        FiscalXmlDocumentItem simples = item(document("1", "1", "SP", "SP"), "102", null, null, null,
+        FiscalDocumentItem simples = item(document("1", "1", "SP", "SP"), "102", null, null, null,
                 detail("0", "102", null, null, null, null, null, null, null, null, null, null));
-        FiscalXmlDocumentItem interstate = item(document("3", "2", "SP", "BA"), "00", "100", "7", "7.00",
+        FiscalDocumentItem interstate = item(document("3", "2", "SP", "BA"), "00", "100", "7", "7.00",
                 detail("0", null, null, null, null, null, null, null, null, null, null, null));
-        interstate.setCfop("6102"); // the rule's 5102 on an interstate operation
+        TestNotes.withCfop(interstate, "6102"); // the rule's 5102 on an interstate operation
 
         assertThat(new ProductRuleCheck().check(simples, contextWith(rule)))
                 .extracting(FiscalDivergence::code).containsExactly(ProductRuleCheck.CSOSN);
@@ -64,11 +67,11 @@ class Phase2ChecksTest {
     @Test
     void codeMustFitTheIssuerRegime() {
         TaxRegimeCodeCheck check = new TaxRegimeCodeCheck();
-        FiscalXmlDocumentItem simplesWithCst = item(document("1", "1", "SP", "SP"), "00", null, null, null,
+        FiscalDocumentItem simplesWithCst = item(document("1", "1", "SP", "SP"), "00", null, null, null,
                 detail("0", null, null, null, null, null, null, null, null, null, null, null));
-        FiscalXmlDocumentItem normalWithCsosn = item(document("3", "1", "SP", "SP"), "102", null, null, null,
+        FiscalDocumentItem normalWithCsosn = item(document("3", "1", "SP", "SP"), "102", null, null, null,
                 detail("0", "102", null, null, null, null, null, null, null, null, null, null));
-        FiscalXmlDocumentItem fine = item(document("2", "1", "SP", "SP"), "00", null, null, null,
+        FiscalDocumentItem fine = item(document("2", "1", "SP", "SP"), "00", null, null, null,
                 detail("0", null, null, null, null, null, null, null, null, null, null, null));
 
         assertThat(check.check(simplesWithCst, noRules)).extracting(FiscalDivergence::field).containsExactly("CST_ICMS");
@@ -80,12 +83,12 @@ class Phase2ChecksTest {
 
     @Test
     void flagsMiscalculatedTaxesAndTaxOnAnExemptCode() {
-        FiscalXmlDocumentItem item = item(document("3", "1", "SP", "SP"), "10", "100", "18", "17.00",
+        FiscalDocumentItem item = item(document("3", "1", "SP", "SP"), "10", "100", "18", "17.00",
                 detail("0", null, null, "140", "18", "7.20", "100", "5", "100", "1.65", "100", "7.6"));
-        item.setValorIpi(new BigDecimal("5.00"));
-        item.setValorPis(new BigDecimal("1.65"));
-        item.setValorCofins(new BigDecimal("7.60"));
-        item.setSituacaoTributariaPis("06");
+        item.setIpi(new ItemFederalTax(item.getIpi().cst(), item.getIpi().base(), item.getIpi().rate(), new BigDecimal("5.00")));
+        item.setPis(new ItemFederalTax(item.getPis().cst(), item.getPis().base(), item.getPis().rate(), new BigDecimal("1.65")));
+        item.setCofins(new ItemFederalTax(item.getCofins().cst(), item.getCofins().base(), item.getCofins().rate(), new BigDecimal("7.60")));
+        item.setPis(new ItemFederalTax("06", item.getPis().base(), item.getPis().rate(), item.getPis().amount()));
 
         List<FiscalDivergence> found = new TaxCalculationCheck().check(item, noRules);
 
@@ -99,10 +102,10 @@ class Phase2ChecksTest {
 
     @Test
     void correctItemAndSimplesItemHaveNoCalculationFinding() {
-        FiscalXmlDocumentItem correct = item(document("3", "1", "SP", "SP"), "10", "100", "18", "18.00",
+        FiscalDocumentItem correct = item(document("3", "1", "SP", "SP"), "10", "100", "18", "18.00",
                 detail("0", null, null, "140", "18", "7.20", "100", "5", null, null, null, null));
-        correct.setValorIpi(new BigDecimal("5.00"));
-        FiscalXmlDocumentItem simples = item(document("1", "1", "SP", "SP"), "102", null, null, null,
+        correct.setIpi(new ItemFederalTax(correct.getIpi().cst(), correct.getIpi().base(), correct.getIpi().rate(), new BigDecimal("5.00")));
+        FiscalDocumentItem simples = item(document("1", "1", "SP", "SP"), "102", null, null, null,
                 detail("0", "102", null, null, null, null, null, null, null, null, null, null));
 
         assertThat(new TaxCalculationCheck().check(correct, noRules)).isEmpty();
@@ -125,9 +128,9 @@ class Phase2ChecksTest {
 
     @Test
     void flagsWrongInterstateRateAndCfopOfAnotherDestination() {
-        FiscalXmlDocumentItem item = item(document("3", "2", "SP", "BA"), "00", "100", "12", "12.00",
+        FiscalDocumentItem item = item(document("3", "2", "SP", "BA"), "00", "100", "12", "12.00",
                 detail("0", null, null, null, null, null, null, null, null, null, null, null));
-        item.setCfop("5102");
+        TestNotes.withCfop(item, "5102");
 
         assertThat(new OperationCheck().check(item, noRules))
                 .extracting(FiscalDivergence::code, FiscalDivergence::expected)
@@ -138,9 +141,9 @@ class Phase2ChecksTest {
 
     @Test
     void importedGoodsAtFourPercentIsFine() {
-        FiscalXmlDocumentItem item = item(document("3", "2", "SP", "BA"), "00", "100", "4", "4.00",
+        FiscalDocumentItem item = item(document("3", "2", "SP", "BA"), "00", "100", "4", "4.00",
                 detail("1", null, null, null, null, null, null, null, null, null, null, null));
-        item.setCfop("6102");
+        TestNotes.withCfop(item, "6102");
 
         assertThat(new OperationCheck().check(item, noRules)).isEmpty();
     }
@@ -149,12 +152,11 @@ class Phase2ChecksTest {
 
     @Test
     void totalsMustMatchTheItems() {
-        FiscalXmlDocument document = document("3", "1", "SP", "SP");
-        FiscalXmlDocumentItem a = item(document, "00", "100", "18", "18.00", null);
-        FiscalXmlDocumentItem b = item(document, "00", "50", "18", "9.00", null);
-        document.setBaseCalculoIcms(new BigDecimal("150"));
-        document.setValorIcms(new BigDecimal("27.00"));
-        document.setValorIpi(new BigDecimal("3.00"));
+        GoodsInvoice document = document("3", "1", "SP", "SP");
+        FiscalDocumentItem a = item(document, "00", "100", "18", "18.00", null);
+        FiscalDocumentItem b = item(document, "00", "50", "18", "9.00", null);
+        document.setGoodsTotals(new GoodsTotals(new BigDecimal("150"), new BigDecimal("27.00"), null, null, null, null, null,
+                null, null, null, null, null, new BigDecimal("3.00"), null, null, null, null));
 
         assertThat(new IcmsTotalsCheck().check(document, List.of(a, b), noRules))
                 .extracting(FiscalDivergence::field, FiscalDivergence::found, FiscalDivergence::expected)
@@ -175,38 +177,38 @@ class Phase2ChecksTest {
         return rule;
     }
 
-    private static FiscalXmlDocument document(String crt, String idDest, String fromUf, String toUf) {
-        FiscalXmlDocument document = new FiscalXmlDocument();
-        document.setId(UUID.randomUUID());
-        document.setDocumentType("NFE");
-        document.setIssueDate(LocalDateTime.of(2026, 5, 1, 10, 0));
-        document.setEmitenteRegimeTributario(crt);
-        document.setDestinoOperacao(idDest);
-        document.setEmitenteUf(fromUf);
-        document.setDestinatarioUf(toUf);
-        return document;
+    private static GoodsInvoice document(String crt, String idDest, String fromUf, String toUf) {
+        return TestNotes.note(TestNotes.company(TestNotes.COMPANY_CNPJ)).issuedAt(LocalDateTime.of(2026, 5, 1, 10, 0))
+                .taxRegime(crt).destinationType(idDest).issuerUf(fromUf).recipientUf(toUf).build();
     }
 
-    private static FiscalXmlDocumentItem item(FiscalXmlDocument document, String cstIcms, String base, String rate,
-                                              String value, FiscalItemTaxDetail detail) {
-        FiscalXmlDocumentItem item = new FiscalXmlDocumentItem();
-        item.setDocument(document);
-        item.setCodigo("P1");
-        item.setCfop("5102");
-        item.setSituacaoTributariaIcms(cstIcms);
-        item.setBaseCalculoIcms(base == null ? null : new BigDecimal(base));
-        item.setAliquotaIcms(rate == null ? null : new BigDecimal(rate));
-        item.setValorIcms(value == null ? null : new BigDecimal(value));
-        item.setTaxDetail(detail);
+    /** The tax detail fields of an item the old test set at once (origin, CSOSN, CEST, ST, IPI/PIS/COFINS base and rate). */
+    private record Detail(String origin, String csosn, String cest, String baseSt, String rateSt, String valueSt,
+                          String baseIpi, String rateIpi, String basePis, String ratePis, String baseCofins,
+                          String rateCofins) {
+    }
+
+    private static FiscalDocumentItem item(GoodsInvoice document, String cstIcms, String base, String rate,
+                                           String value, Detail detail) {
+        TestNotes.ItemBuilder builder = TestNotes.item(document.getItems().size() + 1).code("P1").cfop("5102")
+                .icms(cstIcms, base, rate, value);
+        if (detail != null) {
+            builder.icmsDetail(detail.origin(), detail.csosn()).cest(detail.cest())
+                    .icmsSt(detail.baseSt(), detail.rateSt(), detail.valueSt())
+                    .ipi(null, detail.baseIpi(), detail.rateIpi(), null)
+                    .pis(null, detail.basePis(), detail.ratePis(), null)
+                    .cofins(null, detail.baseCofins(), detail.rateCofins(), null);
+        }
+        FiscalDocumentItem item = builder.build();
+        document.addItem(item);
         return item;
     }
 
-    private static FiscalItemTaxDetail detail(String origem, String csosn, String cest, String baseSt, String rateSt,
-                                              String valueSt, String baseIpi, String rateIpi, String basePis, String ratePis,
-                                              String baseCofins, String rateCofins) {
-        return new FiscalItemTaxDetail(cest, null, origem, csosn, null, null, null, null, null,
-                dec(baseSt), dec(rateSt), dec(valueSt), dec(baseIpi), dec(rateIpi), dec(basePis), dec(ratePis),
-                dec(baseCofins), dec(rateCofins));
+    private static Detail detail(String origem, String csosn, String cest, String baseSt, String rateSt,
+                                 String valueSt, String baseIpi, String rateIpi, String basePis, String ratePis,
+                                 String baseCofins, String rateCofins) {
+        return new Detail(origem, csosn, cest, baseSt, rateSt, valueSt, baseIpi, rateIpi, basePis, ratePis, baseCofins,
+                rateCofins);
     }
 
     private static BigDecimal dec(String value) {

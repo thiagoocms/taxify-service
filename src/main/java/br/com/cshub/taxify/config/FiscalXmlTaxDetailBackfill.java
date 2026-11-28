@@ -1,14 +1,15 @@
 package br.com.cshub.taxify.config;
 
-import br.com.cshub.taxify.domain.xml.FiscalXmlDocument;
-import br.com.cshub.taxify.domain.xml.FiscalXmlDocumentItem;
-import br.com.cshub.taxify.domain.xml.FiscalXmlHeaderExtras;
+import br.com.cshub.taxify.domain.fiscaldocument.FiscalDocumentItem;
+import br.com.cshub.taxify.domain.fiscaldocument.GoodsInvoice;
+import br.com.cshub.taxify.integration.fiscalxml.NfeRetentions;
+import br.com.cshub.taxify.mapper.fiscaldocument.FiscalDocumentFactory;
 import br.com.cshub.taxify.dto.fiscalxml.FiscalXmlImpostoItemDTO;
 import br.com.cshub.taxify.dto.fiscalxml.FiscalXmlProdutoDTO;
 import br.com.cshub.taxify.integration.sieg.FiscalXmlFileStorage;
 import br.com.cshub.taxify.integration.sieg.FiscalXmlMetadata;
 import br.com.cshub.taxify.integration.sieg.FiscalXmlMetadataParser;
-import br.com.cshub.taxify.repository.FiscalXmlDocumentRepository;
+import br.com.cshub.taxify.repository.GoodsInvoiceRepository;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 import org.springframework.beans.factory.annotation.Value;
@@ -48,7 +49,7 @@ public class FiscalXmlTaxDetailBackfill {
     private static final int BATCH = 200;
 
     private final boolean enabled;
-    private final FiscalXmlDocumentRepository repository;
+    private final GoodsInvoiceRepository repository;
     private final FiscalXmlFileStorage storage;
     private final FiscalXmlMetadataParser parser;
     private final TransactionTemplate transactionTemplate;
@@ -56,7 +57,7 @@ public class FiscalXmlTaxDetailBackfill {
     private volatile boolean stopping;
 
     public FiscalXmlTaxDetailBackfill(@Value("${fiscal-xml.tax-detail-backfill.enabled:true}") boolean enabled,
-                                      FiscalXmlDocumentRepository repository, FiscalXmlFileStorage storage,
+                                      GoodsInvoiceRepository repository, FiscalXmlFileStorage storage,
                                       FiscalXmlMetadataParser parser, TransactionTemplate transactionTemplate) {
         this.enabled = enabled;
         this.repository = repository;
@@ -111,7 +112,7 @@ public class FiscalXmlTaxDetailBackfill {
     Outcome backfill(UUID documentId) {
         try {
             return transactionTemplate.execute(status -> {
-                FiscalXmlDocument document = repository.findById(documentId).orElse(null);
+                GoodsInvoice document = repository.findById(documentId).orElse(null);
                 if (document == null) {
                     return Outcome.MISSING;
                 }
@@ -126,13 +127,13 @@ public class FiscalXmlTaxDetailBackfill {
                     return Outcome.FAILED;
                 }
                 FiscalXmlMetadata metadata = parser.parse(xml);
-                if (!"NFE".equals(metadata.documentType())) {
+                if (!FiscalXmlMetadata.NFE.equals(metadata.documentType())) {
                     log.warn("Note {} could not be parsed as NFe - marked as done without tax detail", documentId);
                     markDone(document);
                     return Outcome.UNREADABLE;
                 }
                 apply(document, metadata);
-                br.com.cshub.taxify.integration.fiscalxml.NfeRetentions.parse(xml).applyTo(document);
+                document.setWithholdings(NfeRetentions.parse(xml).toWithholdings());
                 markDone(document);
                 return Outcome.UPDATED;
             });
@@ -143,10 +144,10 @@ public class FiscalXmlTaxDetailBackfill {
     }
 
     /** Only the fields the older parser didn't have or got wrong - items matched by nItem, else by position. */
-    static void apply(FiscalXmlDocument document, FiscalXmlMetadata metadata) {
-        document.setHeaderExtras(FiscalXmlHeaderExtras.of(metadata));
+    static void apply(GoodsInvoice document, FiscalXmlMetadata metadata) {
+        FiscalDocumentFactory.refreshHeaderExtras(document, metadata);
         if (metadata.totais() != null) {
-            document.setIbsCbsTotals(metadata.totais().ibsCbs());
+            document.setIbsCbsTotals(FiscalDocumentFactory.ibsCbsTotals(metadata.totais().ibsCbs()));
         }
         List<FiscalXmlProdutoDTO> produtos = metadata.produtos();
         Map<Integer, FiscalXmlProdutoDTO> byNumber = new HashMap<>();
@@ -155,23 +156,20 @@ public class FiscalXmlTaxDetailBackfill {
                 byNumber.putIfAbsent(produto.numeroItem(), produto);
             }
         });
-        List<FiscalXmlDocumentItem> items = document.getItens();
+        List<FiscalDocumentItem> items = document.getItems();
         for (int i = 0; i < items.size(); i++) {
-            FiscalXmlDocumentItem item = items.get(i);
-            FiscalXmlProdutoDTO produto = item.getNumeroItem() != null
-                    ? byNumber.get(item.getNumeroItem())
+            FiscalDocumentItem item = items.get(i);
+            FiscalXmlProdutoDTO produto = item.getItemNumber() != null
+                    ? byNumber.get(item.getItemNumber())
                     : (i < produtos.size() ? produtos.get(i) : null);
             FiscalXmlImpostoItemDTO impostos = produto == null ? null : produto.impostos();
             if (impostos != null) {
-                item.setTaxDetail(impostos.detalhe());
-                item.setIbsCbs(impostos.ibsCbs());
-                item.setSituacaoTributariaIpi(impostos.situacaoTributariaIpi());
-                item.setValorIpi(impostos.valorIpi());
+                FiscalDocumentFactory.refreshTaxDetail(item, impostos);
             }
         }
     }
 
-    private void markDone(FiscalXmlDocument document) {
+    private void markDone(GoodsInvoice document) {
         document.setMetadataVersion(FiscalXmlMetadataParser.CURRENT_VERSION);
         repository.save(document);
     }

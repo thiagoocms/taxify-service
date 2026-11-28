@@ -2,8 +2,10 @@ package br.com.cshub.taxify.service.assessment;
 
 import br.com.cshub.taxify.domain.company.Company;
 import br.com.cshub.taxify.domain.company.CompanyTaxRegime;
-import br.com.cshub.taxify.domain.xml.FiscalXmlDocument;
-import br.com.cshub.taxify.domain.xml.FiscalXmlDocumentItem;
+import br.com.cshub.taxify.domain.fiscaldocument.Cte;
+import br.com.cshub.taxify.domain.fiscaldocument.FiscalDocument;
+import br.com.cshub.taxify.domain.fiscaldocument.FiscalDocumentItem;
+import br.com.cshub.taxify.domain.fiscaldocument.GoodsInvoice;
 import jakarta.annotation.PostConstruct;
 import jakarta.persistence.EntityManagerFactory;
 import org.hibernate.engine.spi.SessionFactoryImplementor;
@@ -74,7 +76,8 @@ public class TaxAssessmentCacheInvalidator implements PostInsertEventListener, P
     }
 
     void changed(Object entity) {
-        if (!(entity instanceof FiscalXmlDocument || entity instanceof FiscalXmlDocumentItem
+        // the goods invoices and CT-e (what the old fiscal XML table held), their items, the company and its regime
+        if (!(entity instanceof GoodsInvoice || entity instanceof Cte || entity instanceof FiscalDocumentItem
                 || entity instanceof Company || entity instanceof CompanyTaxRegime)) {
             return;
         }
@@ -122,8 +125,8 @@ public class TaxAssessmentCacheInvalidator implements PostInsertEventListener, P
 
     private static UUID companyOf(Object entity) {
         Company company = switch (entity) {
-            case FiscalXmlDocument document -> document.getCompany();
-            case FiscalXmlDocumentItem item -> item.getDocument() == null ? null : item.getDocument().getCompany();
+            case FiscalDocument document -> document.getCompany();
+            case FiscalDocumentItem item -> item.getDocument() == null ? null : item.getDocument().getCompany();
             case CompanyTaxRegime regime -> regime.getCompany();
             case Company c -> c;
             default -> null;

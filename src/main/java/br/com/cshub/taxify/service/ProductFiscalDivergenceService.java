@@ -4,10 +4,10 @@ import br.com.cshub.taxify.common.IssuePeriod;
 import br.com.cshub.taxify.common.RequestIds;
 import br.com.cshub.taxify.common.MessageService;
 import br.com.cshub.taxify.domain.fiscalrule.ProductFiscalRule;
-import br.com.cshub.taxify.domain.xml.FiscalXmlDocument;
-import br.com.cshub.taxify.domain.xml.FiscalXmlDocumentItem;
+import br.com.cshub.taxify.domain.fiscaldocument.GoodsInvoice;
+import br.com.cshub.taxify.domain.fiscaldocument.FiscalDocumentItem;
 import br.com.cshub.taxify.dto.fiscalrule.ProductFiscalDivergenceDTO;
-import br.com.cshub.taxify.repository.FiscalXmlDocumentItemRepository;
+import br.com.cshub.taxify.repository.FiscalDocumentItemRepository;
 import br.com.cshub.taxify.service.fiscalcheck.FiscalCheckContext;
 import br.com.cshub.taxify.service.fiscalcheck.FiscalCheckEngine;
 import br.com.cshub.taxify.service.fiscalcheck.ProductRuleCheck;
@@ -23,7 +23,7 @@ import java.util.Set;
 import java.util.UUID;
 
 /**
- * Compares already-downloaded/stored {@link FiscalXmlDocumentItem}s against the
+ * Compares already-downloaded/stored {@link FiscalDocumentItem}s against the
  * {@link ProductFiscalRule} registered for each product, to find notes that were
  * issued with the wrong CFOP/NCM and need rectifying - the actual correction still
  * happens upstream (in the issuing system), this only tells you what to fix.
@@ -37,12 +37,12 @@ public class ProductFiscalDivergenceService {
 
     private static final Set<String> RULE_CODES = Set.of(ProductRuleCheck.CFOP, ProductRuleCheck.NCM);
 
-    private final FiscalXmlDocumentItemRepository itemRepository;
+    private final FiscalDocumentItemRepository itemRepository;
     private final FiscalCheckEngine checkEngine;
     private final CompanyValidation companyValidation;
     private final MessageService messageService;
 
-    public ProductFiscalDivergenceService(FiscalXmlDocumentItemRepository itemRepository, FiscalCheckEngine checkEngine,
+    public ProductFiscalDivergenceService(FiscalDocumentItemRepository itemRepository, FiscalCheckEngine checkEngine,
                                           CompanyValidation companyValidation, MessageService messageService) {
         this.itemRepository = itemRepository;
         this.checkEngine = checkEngine;
@@ -58,11 +58,11 @@ public class ProductFiscalDivergenceService {
         LocalDateTime from = IssuePeriod.start(dataEmissaoInicio);
         LocalDateTime to = IssuePeriod.end(dataEmissaoFim);
 
-        List<FiscalXmlDocumentItem> items = itemRepository.findByDocument_Company_IdAndDocument_IssueDateBetween(id, from, to);
+        List<FiscalDocumentItem> items = itemRepository.findByDocument_Company_IdAndDocument_IssueDateBetween(id, from, to);
         FiscalCheckContext context = checkEngine.contextFor(id);
 
         List<ProductFiscalDivergenceDTO> divergences = new ArrayList<>();
-        for (FiscalXmlDocumentItem item : items) {
+        for (FiscalDocumentItem item : items) {
             if (!FiscalCheckEngine.isCheckable(item.getDocument())) {
                 continue;
             }
@@ -75,17 +75,17 @@ public class ProductFiscalDivergenceService {
         return divergences;
     }
 
-    private ProductFiscalDivergenceDTO toDivergenceDTO(FiscalXmlDocumentItem item, ProductFiscalRule rule) {
-        FiscalXmlDocument document = item.getDocument();
+    private ProductFiscalDivergenceDTO toDivergenceDTO(FiscalDocumentItem item, ProductFiscalRule rule) {
+        GoodsInvoice document = item.getDocument();
         return new ProductFiscalDivergenceDTO(
                 document.getId().toString(),
                 document.getAccessKey(),
                 document.getIssueDate(),
-                item.getCodigo(),
-                item.getDescricao(),
-                item.getCfop(),
+                item.getProduct().code(),
+                item.getProduct().description(),
+                item.cfop(),
                 ProductRuleCheck.expectedCfop(item, rule),
-                item.getNcm(),
+                item.getProduct().ncm(),
                 rule.getCorrectNcm()
         );
     }

@@ -1,10 +1,11 @@
 package br.com.cshub.taxify.integration.storage;
 
 import br.com.cshub.taxify.common.MessageService;
-import br.com.cshub.taxify.domain.xml.FiscalXmlDocument;
+import br.com.cshub.taxify.domain.fiscaldocument.GoodsInvoice;
+import br.com.cshub.taxify.support.TestNotes;
 import br.com.cshub.taxify.integration.fiscalxml.FiscalXmlSyncProperties;
 import br.com.cshub.taxify.integration.sieg.FiscalXmlFileStorage;
-import br.com.cshub.taxify.repository.FiscalXmlDocumentRepository;
+import br.com.cshub.taxify.repository.FiscalDocumentRepository;
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.io.TempDir;
 import org.springframework.beans.factory.ObjectProvider;
@@ -87,12 +88,10 @@ class FiscalXmlStorageMigrationTest {
         Path original = Files.createDirectories(disk.resolve("company-1")).resolve("KEY.xml");
         Files.writeString(original, "<nfe/>");
 
-        FiscalXmlDocument onDisk = new FiscalXmlDocument();
-        onDisk.setId(UUID.randomUUID());
-        onDisk.setXmlFilePath(original.toString());
+        GoodsInvoice onDisk = TestNotes.note(TestNotes.company(TestNotes.COMPANY_CNPJ)).xml(original.toString()).build();
         // rectified copy already purged: not on disk any more
         onDisk.setRectifiedFilePath(disk.resolve("company-1").resolve("KEY-retificado-1.xml").toString());
-        FiscalXmlDocumentRepository repository = mock(FiscalXmlDocumentRepository.class);
+        FiscalDocumentRepository repository = mock(FiscalDocumentRepository.class);
         when(repository.findWithFileOutsideS3(eq(""), any())).thenReturn(List.of(onDisk));
         when(repository.findWithFileOutsideS3(eq(onDisk.getId().toString()), any())).thenReturn(List.of());
         FiscalXmlStorageProperties properties = new FiscalXmlStorageProperties();

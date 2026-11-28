@@ -1011,14 +1011,16 @@ class ReformWave1QaHttpTest {
 
     private String note(String company, String direction, String status, LocalDateTime issuedAt, boolean deleted) {
         String id = UUID.randomUUID().toString();
-        jdbc.update("INSERT INTO fiscal_xml_documents (id, deleted, created_date, created_by, document_type, source_system, company_id,"
-                        + " xml_file_path, direction, status, issue_date) VALUES (?, ?, ?, 'qa', 'NFE', 'SIEG', ?, 'xml/ficticio-qa.xml', ?, ?, ?)",
-                id, deleted, Timestamp.valueOf(NOW), company, direction, status, Timestamp.valueOf(issuedAt));
+        jdbc.update("INSERT INTO fiscal_documents (id, deleted, created_date, created_by, document_type, model, source_system, company_id,"
+                        + " xml_file_path, direction, company_role, status, issue_date, metadata_version)"
+                        + " VALUES (?, ?, ?, 'qa', 'NFE', '55', 'SIEG', ?, 'xml/ficticio-qa.xml', ?, ?, ?, ?, 0)",
+                id, deleted, Timestamp.valueOf(NOW), company, direction, "OUTBOUND".equals(direction) ? "ISSUER" : "RECIPIENT",
+                status == null ? "AUTHORIZED" : status, Timestamp.valueOf(issuedAt));
         return id;
     }
 
     private void item(String document, String cfop, String value, String cstPis, String ncm) {
-        jdbc.update("INSERT INTO fiscal_xml_document_items (id, document_id, cfop, valor_total, cst_pis, ncm) VALUES (?, ?, ?, ?, ?, ?)",
+        jdbc.update("INSERT INTO fiscal_document_items (id, document_id, cfop, total_amount, pis_cst, ncm) VALUES (?, ?, ?, ?, ?, ?)",
                 UUID.randomUUID().toString(), document, cfop, value == null ? null : new BigDecimal(value), cstPis, ncm);
     }
 
@@ -1026,8 +1028,8 @@ class ReformWave1QaHttpTest {
     private String ibsNote(String company, LocalDateTime issuedAt, String cst, String classTrib, String cbs, String ibsUf,
                            String ibsMun, String status) {
         String document = note(company, "OUTBOUND", status, issuedAt, false);
-        jdbc.update("INSERT INTO fiscal_xml_document_items (id, document_id, numero_item, cfop, valor_total, ibscbs_cst, ibscbs_class_trib,"
-                        + " cbs_aliquota, ibs_uf_aliquota, ibs_mun_aliquota) VALUES (?, ?, 1, '5102', 100.00, ?, ?, ?, ?, ?)",
+        jdbc.update("INSERT INTO fiscal_document_items (id, document_id, item_number, cfop, total_amount, ibs_cbs_cst, ibs_cbs_class_code,"
+                        + " cbs_rate, ibs_state_rate, ibs_city_rate) VALUES (?, ?, 1, '5102', 100.00, ?, ?, ?, ?, ?)",
                 UUID.randomUUID().toString(), document, cst, classTrib, new BigDecimal(cbs), new BigDecimal(ibsUf), new BigDecimal(ibsMun));
         return document;
     }

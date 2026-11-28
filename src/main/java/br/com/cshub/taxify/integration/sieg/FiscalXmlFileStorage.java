@@ -1,7 +1,7 @@
 package br.com.cshub.taxify.integration.sieg;
 
 import br.com.cshub.taxify.common.MessageService;
-import br.com.cshub.taxify.domain.xml.FiscalXmlDocument;
+import br.com.cshub.taxify.domain.fiscaldocument.FiscalDocument;
 import br.com.cshub.taxify.exception.SiegIntegrationException;
 import br.com.cshub.taxify.integration.fiscalxml.FiscalXmlSyncProperties;
 import br.com.cshub.taxify.integration.storage.FiscalXmlStorageProperties;
@@ -22,7 +22,7 @@ import java.util.UUID;
  * The one place fiscal XML files are written, read and deleted. New files go to the
  * configured storage ({@code fiscal-xml.storage.type}: local disk or S3), organized as
  * {companyId}/{file}; each file is read back from wherever its location says it is, so
- * notes stored on disk before the move to S3 keep opening. {@link FiscalXmlDocument}
+ * notes stored on disk before the move to S3 keep opening. {@link FiscalDocument}
  * keeps only that location plus the parsed field values - not the XML itself.
  */
 @Component

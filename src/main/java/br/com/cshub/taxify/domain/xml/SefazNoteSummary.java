@@ -13,7 +13,7 @@ import java.util.UUID;
 /**
  * A note SEFAZ handed over only as a summary (resNFe): the company is the recipient and no
  * "Ciência da Operação" was registered yet, so the full XML isn't released. Kept apart from
- * fiscal_xml_documents - a summary has no items, so it must not reach the checks, the
+ * fiscal_documents - a summary has no items, so it must not reach the checks, the
  * rectification or the assessment. Completed ({@link #completedAt}) once the full note arrives
  * from any source.
  */

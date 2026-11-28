@@ -1,7 +1,5 @@
 package br.com.cshub.taxify.dto.fiscalxml;
 
-import br.com.cshub.taxify.domain.xml.FiscalItemIbsCbs;
-import br.com.cshub.taxify.domain.xml.FiscalItemTaxDetail;
 
 import java.math.BigDecimal;
 
@@ -21,7 +19,7 @@ public record FiscalXmlImpostoItemDTO(
         BigDecimal valorPis,
         String situacaoTributariaCofins,
         BigDecimal valorCofins,
-        FiscalItemTaxDetail detalhe,
-        FiscalItemIbsCbs ibsCbs
+        FiscalItemTaxDetailDTO detalhe,
+        FiscalItemIbsCbsDTO ibsCbs
 ) {
 }

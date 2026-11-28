@@ -4,13 +4,13 @@ import br.com.cshub.taxify.domain.company.Company;
 import br.com.cshub.taxify.domain.document.Document;
 import br.com.cshub.taxify.domain.plan.Plan;
 import br.com.cshub.taxify.domain.subscription.Subscription;
-import br.com.cshub.taxify.domain.xml.FiscalXmlDocument;
-import br.com.cshub.taxify.domain.xml.FiscalXmlSyncControl;
+import br.com.cshub.taxify.domain.fiscaldocument.GoodsInvoice;
+import br.com.cshub.taxify.support.TestNotes;
 import br.com.cshub.taxify.dto.fiscalrule.FiscalXmlRectificationResultDTO;
 import br.com.cshub.taxify.enumerated.DocumentTypeEnum;
 import br.com.cshub.taxify.enumerated.PlanServiceEnum;
 import br.com.cshub.taxify.integration.fiscalxml.FiscalXmlRectificationProperties;
-import br.com.cshub.taxify.repository.FiscalXmlDocumentRepository;
+import br.com.cshub.taxify.repository.GoodsInvoiceRepository;
 import br.com.cshub.taxify.repository.FiscalXmlSyncControlRepository;
 import br.com.cshub.taxify.repository.ProductFiscalRuleRepository;
 import br.com.cshub.taxify.repository.SubscriptionRepository;
@@ -39,7 +39,7 @@ import static org.mockito.Mockito.when;
 class FiscalXmlRectificationSchedulerTest {
 
     @Mock
-    private FiscalXmlDocumentRepository documentRepository;
+    private GoodsInvoiceRepository documentRepository;
     @Mock
     private ProductFiscalRuleRepository ruleRepository;
     @Mock
@@ -56,7 +56,7 @@ class FiscalXmlRectificationSchedulerTest {
         scheduler = new FiscalXmlRectificationScheduler(documentRepository, ruleRepository,
                 subscriptionRepository, rectificationService, properties, br.com.cshub.taxify.service.firmaccess.FirmAccessTestSupport.allowAll());
         when(ruleRepository.findMaxLastModifiedDateByCompanyId(any())).thenReturn(Optional.empty());
-        when(documentRepository.findByCompany_IdAndIssueDateBetweenOrderByIssueDateDesc(any(), any(), any())).thenReturn(List.of());
+        when(documentRepository.findIssuedBetween(any(), any(), any())).thenReturn(List.of());
     }
 
     @Test
@@ -105,11 +105,9 @@ class FiscalXmlRectificationSchedulerTest {
     @Test
     void rectifiesEveryDocumentReturnedForAnEligibleCompany() {
         Company company = entitledCompanyWithRules(PlanServiceEnum.FISCAL_XML_IMPORT, PlanServiceEnum.SIEG_INTEGRATION);
-        FiscalXmlDocument docOne = new FiscalXmlDocument();
-        docOne.setId(UUID.randomUUID());
-        FiscalXmlDocument docTwo = new FiscalXmlDocument();
-        docTwo.setId(UUID.randomUUID());
-        when(documentRepository.findByCompany_IdAndIssueDateBetweenOrderByIssueDateDesc(eq(company.getId()), any(), any()))
+        GoodsInvoice docOne = TestNotes.note(company).build();
+        GoodsInvoice docTwo = TestNotes.note(company).build();
+        when(documentRepository.findIssuedBetween(eq(company.getId()), any(), any()))
                 .thenReturn(List.of(docOne, docTwo));
         when(rectificationService.rectify(any())).thenReturn(new FiscalXmlRectificationResultDTO(null, null, null, null, List.of()));
 
@@ -122,11 +120,9 @@ class FiscalXmlRectificationSchedulerTest {
     @Test
     void oneFailingDocumentDoesNotStopTheRest() {
         Company company = entitledCompanyWithRules(PlanServiceEnum.FISCAL_XML_IMPORT, PlanServiceEnum.SIEG_INTEGRATION);
-        FiscalXmlDocument failing = new FiscalXmlDocument();
-        failing.setId(UUID.randomUUID());
-        FiscalXmlDocument ok = new FiscalXmlDocument();
-        ok.setId(UUID.randomUUID());
-        when(documentRepository.findByCompany_IdAndIssueDateBetweenOrderByIssueDateDesc(eq(company.getId()), any(), any()))
+        GoodsInvoice failing = TestNotes.note(company).build();
+        GoodsInvoice ok = TestNotes.note(company).build();
+        when(documentRepository.findIssuedBetween(eq(company.getId()), any(), any()))
                 .thenReturn(List.of(failing, ok));
         when(rectificationService.rectify(failing.getId())).thenThrow(new RuntimeException("boom"));
         when(rectificationService.rectify(ok.getId())).thenReturn(new FiscalXmlRectificationResultDTO(null, null, null, null, List.of()));
@@ -143,12 +139,12 @@ class FiscalXmlRectificationSchedulerTest {
         subscribe(failingCompany, PlanServiceEnum.FISCAL_XML_IMPORT, PlanServiceEnum.SIEG_INTEGRATION);
         subscribe(okCompany, PlanServiceEnum.FISCAL_XML_IMPORT, PlanServiceEnum.SIEG_INTEGRATION);
         when(ruleRepository.findCompaniesWithRules()).thenReturn(List.of(failingCompany, okCompany));
-        when(documentRepository.findByCompany_IdAndIssueDateBetweenOrderByIssueDateDesc(eq(failingCompany.getId()), any(), any()))
+        when(documentRepository.findIssuedBetween(eq(failingCompany.getId()), any(), any()))
                 .thenThrow(new RuntimeException("boom"));
 
         scheduler.rectifyAllCompanies();
 
-        verify(documentRepository).findByCompany_IdAndIssueDateBetweenOrderByIssueDateDesc(eq(okCompany.getId()), any(), any());
+        verify(documentRepository).findIssuedBetween(eq(okCompany.getId()), any(), any());
     }
 
     private Company entitledCompanyWithRules(PlanServiceEnum... services) {
@@ -165,14 +161,6 @@ class FiscalXmlRectificationSchedulerTest {
         subscription.setPlan(plan);
         when(subscriptionRepository.findFirstByCompanyIdAndDeletedIsFalseAndStartDateLessThanEqualAndEndDateGreaterThanEqualOrderByStartDateDesc(
                 eq(company.getId()), any(), any())).thenReturn(Optional.of(subscription));
-    }
-
-    private FiscalXmlSyncControl controlFor(Company company, int totalSieg, int totalImportado) {
-        FiscalXmlSyncControl control = new FiscalXmlSyncControl();
-        control.setCompany(company);
-        control.setTotalSieg(totalSieg);
-        control.setTotalImported(totalImportado);
-        return control;
     }
 
     private Company companyWith() {

@@ -1,15 +1,15 @@
 package br.com.cshub.taxify.domain.fiscaldocument;
 
 import br.com.cshub.taxify.domain.AbstractAuditingEntity;
-import br.com.cshub.taxify.domain.xml.FiscalIbsCbsTotals;
-import br.com.cshub.taxify.domain.xml.FiscalItemIbsCbs;
-import br.com.cshub.taxify.domain.xml.FiscalItemTaxDetail;
-import br.com.cshub.taxify.domain.xml.FiscalXmlDocument;
-import br.com.cshub.taxify.domain.xml.FiscalXmlDocumentItem;
-import br.com.cshub.taxify.domain.xml.FiscalXmlEvent;
-import br.com.cshub.taxify.domain.xml.FiscalXmlHeaderExtras;
-import br.com.cshub.taxify.domain.xml.FiscalXmlSyncControl;
-import br.com.cshub.taxify.domain.xml.ServiceInvoice;
+import legacy.xml.FiscalIbsCbsTotals;
+import legacy.xml.FiscalItemIbsCbs;
+import legacy.xml.FiscalItemTaxDetail;
+import legacy.xml.FiscalXmlDocument;
+import legacy.xml.FiscalXmlDocumentItem;
+import legacy.xml.FiscalXmlEvent;
+import legacy.xml.FiscalXmlHeaderExtras;
+import legacy.xml.FiscalXmlSyncControl;
+import legacy.xml.ServiceInvoice;
 import br.com.cshub.taxify.enumerated.CaptureSide;
 import br.com.cshub.taxify.enumerated.CompanyDocumentRole;
 import br.com.cshub.taxify.enumerated.FiscalDirection;
@@ -405,9 +405,10 @@ class LegacyFiscalDocumentTranslatorTest {
             legacy.setMetadataVersion(null);
             Nfe copy = (Nfe) LegacyFiscalDocumentTranslator.fromGoodsRow(legacy);
             assertThat(copy.getMetadataVersion()).isZero();
-            assertThat(copy.getHeader()).isNull();
-            assertThat(copy.getGoodsTotals()).isNull();
-            assertThat(copy.getWithholdings()).isNull();
+            // an empty group is stored as NULL columns and read as the group's EMPTY value (never null to the callers)
+            assertThat(copy.getHeader()).isEqualTo(GoodsInvoiceHeader.EMPTY);
+            assertThat(copy.getGoodsTotals()).isEqualTo(GoodsTotals.EMPTY);
+            assertThat(copy.getWithholdings()).isEqualTo(Withholdings.EMPTY);
             assertThat(copy.getIbsCbsTotals()).isNull();
             assertThat(copy.getReview()).isNull();
             assertThat(copy.getReviewStatus()).isEqualTo(ReviewStatus.PENDING);
@@ -560,7 +561,7 @@ class LegacyFiscalDocumentTranslatorTest {
             assertThat(first.getDocument()).isSameAs(copy);
             assertThat(first.getProduct().code()).isEqualTo("P1");
             assertThat(first.getCommercial()).isEqualTo(new TradeUnit("M", new BigDecimal("10.0000"), new BigDecimal("60.0000")));
-            assertThat(first.getTaxable()).isNull();
+            assertThat(first.getTaxable()).isEqualTo(TradeUnit.EMPTY);
             assertThat(first.getIcms()).isEqualTo(new ItemIcms("0", "00", null, "3", new BigDecimal("600.00"),
                     new BigDecimal("18.0000"), new BigDecimal("10.0000"), new BigDecimal("108.00"), null));
             assertThat(first.getPis()).isEqualTo(new ItemFederalTax("01", new BigDecimal("600.00"), new BigDecimal("1.6500"),
@@ -569,8 +570,8 @@ class LegacyFiscalDocumentTranslatorTest {
             assertThat(first.getIbsCbs().cbsAmount()).isEqualByComparingTo("5.40");
             assertThat(first.getIbsCbs().stateRate()).hasToString("0.1000");
             FiscalDocumentItem second = copy.getItems().get(1);
-            assertThat(second.getIcmsSt()).isNull();
-            assertThat(second.getSimplesCredit()).isNull();
+            assertThat(second.getIcmsSt()).isEqualTo(ItemIcmsSt.EMPTY);
+            assertThat(second.getSimplesCredit()).isEqualTo(SimplesCredit.EMPTY);
             assertThat(second.getIbsCbs()).isNull();
         }
     }

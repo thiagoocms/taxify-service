@@ -7,7 +7,7 @@ import org.springframework.stereotype.Component;
  * Settings for {@link br.com.cshub.taxify.service.FiscalXmlPurgeScheduler} - deletes the
  * physical XML files (original and rectified copies) of notes older than {@code
  * retentionMonths}, freeing disk space. Only the files on disk are removed; the
- * extracted field values in {@link br.com.cshub.taxify.domain.xml.FiscalXmlDocument}'s
+ * extracted field values in {@link br.com.cshub.taxify.domain.fiscaldocument.FiscalDocument}'s
  * own columns stay in the database either way, so historical reporting keeps working -
  * only re-exporting the raw XML of a purged note stops being possible.
  */

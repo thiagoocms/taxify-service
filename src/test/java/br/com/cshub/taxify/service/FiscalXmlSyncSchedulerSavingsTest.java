@@ -18,6 +18,11 @@ import br.com.cshub.taxify.repository.CompanyRepository;
 import br.com.cshub.taxify.repository.FiscalXmlSyncControlRepository;
 import br.com.cshub.taxify.repository.SubscriptionRepository;
 import br.com.cshub.taxify.service.firmaccess.FirmAccessTestSupport;
+import br.com.cshub.taxify.domain.fiscaldocument.CaptureCounts;
+import br.com.cshub.taxify.domain.fiscaldocument.CapturePeriodCount;
+import br.com.cshub.taxify.enumerated.CaptureSide;
+import br.com.cshub.taxify.support.InMemoryCaptureCounts;
+import java.time.YearMonth;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.extension.ExtendWith;
@@ -63,6 +68,8 @@ class FiscalXmlSyncSchedulerSavingsTest {
 
     private FiscalXmlSyncProperties properties;
     private Company company;
+    /** The capture counts per side and month (FD-RN-32). */
+    private final InMemoryCaptureCounts counts = new InMemoryCaptureCounts();
 
     @BeforeEach
     void setUp() {
@@ -83,21 +90,17 @@ class FiscalXmlSyncSchedulerSavingsTest {
     private FiscalXmlSyncScheduler scheduler(LocalDateTime recifeNow) {
         Clock clock = Clock.fixed(recifeNow.atZone(RECIFE).toInstant(), RECIFE);
         return new FiscalXmlSyncScheduler(companyRepository, syncControlRepository, subscriptionRepository,
-                Map.of("sieg", provider), properties, FirmAccessTestSupport.allowAll(), null, clock);
+                Map.of("sieg", provider), properties, FirmAccessTestSupport.allowAll(), null, clock, null, null, counts.service());
     }
 
     /** Both sides verified this month with total 0 at {@code checkedAt}; events and NFS-e already done today. */
     private FiscalXmlSyncControl zeroControl(LocalDateTime checkedAt) {
         FiscalXmlSyncControl control = new FiscalXmlSyncControl();
         control.setCompany(company);
-        control.setIssueDateFrom(checkedAt.toLocalDate().withDayOfMonth(1));
-        control.setIssueDateTo(checkedAt.toLocalDate());
-        control.setTotalSieg(0);
-        control.setTotalImported(0);
-        control.setLastCheckedAt(checkedAt);
-        control.setIssuedTotalSieg(0);
-        control.setIssuedTotalImported(0);
-        control.setIssuedCheckedAt(checkedAt);
+        counts.rows().clear();
+        YearMonth month = YearMonth.from(checkedAt);
+        counts.seed(company, CaptureSide.RECEIVED, month, 0, 0, checkedAt).askedWindow(month.atDay(1), checkedAt.toLocalDate());
+        counts.seed(company, CaptureSide.ISSUED, month, 0, 0, checkedAt).askedWindow(month.atDay(1), checkedAt.toLocalDate());
         control.setReceivedEventsCheckedOn(checkedAt.toLocalDate());
         control.setIssuedEventsCheckedOn(checkedAt.toLocalDate());
         control.setServiceInvoicesCheckedOn(checkedAt.toLocalDate());
@@ -214,9 +217,8 @@ class FiscalXmlSyncSchedulerSavingsTest {
     @Test
     void aKnownGapMakesTheSideUpToDate() {
         FiscalXmlSyncControl control = zeroControl(LocalDateTime.of(2026, 11, 27, 8, 0));
-        control.setTotalSieg(63);
-        control.setTotalImported(60);
-        control.recordKnownGap(false, "2026-11", 3);
+        received(63, 60, LocalDateTime.of(2026, 11, 27, 8, 0));
+        counts.gap(company, CaptureSide.RECEIVED, YearMonth.of(2026, 11), 3);
         when(syncControlRepository.findAllWithCompany()).thenReturn(List.of(control));
 
         scheduler(LocalDateTime.of(2026, 11, 27, 9, 0)).syncAllCompanies();
@@ -228,9 +230,8 @@ class FiscalXmlSyncSchedulerSavingsTest {
     @Test
     void aKnownGapOfAnotherMonthDoesNotCount() {
         FiscalXmlSyncControl control = zeroControl(LocalDateTime.of(2026, 11, 27, 8, 0));
-        control.setTotalSieg(63);
-        control.setTotalImported(60);
-        control.recordKnownGap(false, "2026-10", 3);
+        received(63, 60, LocalDateTime.of(2026, 11, 27, 8, 0));
+        counts.gap(company, CaptureSide.RECEIVED, YearMonth.of(2026, 10), 3);
         when(syncControlRepository.findAllWithCompany()).thenReturn(List.of(control));
         when(provider.sync(any())).thenReturn(new FiscalXmlSyncResult(0, 0, 0));
 
@@ -314,20 +315,31 @@ class FiscalXmlSyncSchedulerSavingsTest {
         verify(provider, never()).checkPreviousMonth(any(), any(), any(), any());
     }
 
-    /** Two slots of known difference per side: the current month and the previous one never push each other out. */
+    /**
+     * The known difference is per month (spec 3.11): the current month and the previous one never push each other out -
+     * and, one row per month, there is no limit of two slots any more (a third month keeps the others).
+     */
     @Test
-    void theKnownDifferenceKeepsTwoMonths() {
-        FiscalXmlSyncControl control = new FiscalXmlSyncControl();
-        control.recordKnownGap(false, "2026-11", 3);
-        control.recordKnownGap(false, "2026-12", 1);
-        control.recordKnownGap(false, "2026-11", 2);
-        assertThat(control.knownGap(false, "2026-11")).isEqualTo(2);
-        assertThat(control.knownGap(false, "2026-12")).isEqualTo(1);
-        control.recordKnownGap(false, "2027-01", 4); // takes November's slot, the older one
-        assertThat(control.knownGap(false, "2026-11")).isZero();
-        assertThat(control.knownGap(false, "2026-12")).isEqualTo(1);
-        assertThat(control.knownGap(false, "2027-01")).isEqualTo(4);
-        assertThat(control.knownGap(true, "2026-12")).as("each side apart").isZero();
+    void theKnownDifferenceIsKeptPerMonth() {
+        CaptureCounts control = CaptureCounts.siegNfe(company, java.util.List.of());
+        LocalDateTime at = LocalDateTime.of(2027, 1, 5, 9, 0);
+        control.recordKnownGap(CaptureSide.RECEIVED, YearMonth.of(2026, 11), 3, at);
+        control.recordKnownGap(CaptureSide.RECEIVED, YearMonth.of(2026, 12), 1, at);
+        control.recordKnownGap(CaptureSide.RECEIVED, YearMonth.of(2026, 11), 2, at);
+        assertThat(control.knownGap(CaptureSide.RECEIVED, YearMonth.of(2026, 11))).isEqualTo(2);
+        assertThat(control.knownGap(CaptureSide.RECEIVED, YearMonth.of(2026, 12))).isEqualTo(1);
+        control.recordKnownGap(CaptureSide.RECEIVED, YearMonth.of(2027, 1), 4, at);
+        assertThat(control.knownGap(CaptureSide.RECEIVED, YearMonth.of(2026, 11))).as("no slot taken any more").isEqualTo(2);
+        assertThat(control.knownGap(CaptureSide.RECEIVED, YearMonth.of(2026, 12))).isEqualTo(1);
+        assertThat(control.knownGap(CaptureSide.RECEIVED, YearMonth.of(2027, 1))).isEqualTo(4);
+        assertThat(control.knownGap(CaptureSide.ISSUED, YearMonth.of(2026, 12))).as("each side apart").isZero();
+    }
+
+    /** The received side of the month of {@code checkedAt}: SIEG's total and what it delivered, checked then. */
+    private void received(int total, int imported, LocalDateTime checkedAt) {
+        CapturePeriodCount row = counts.require(company.getId(), CaptureSide.RECEIVED, YearMonth.from(checkedAt));
+        row.recordProviderCount(total, checkedAt);
+        row.recordImported(imported, checkedAt);
     }
 
     /** A stage that throws puts the outer scope back - nothing leaks to the next company on the thread. */

@@ -2,7 +2,9 @@ package br.com.cshub.taxify.service;
 
 import br.com.cshub.taxify.domain.company.Company;
 import br.com.cshub.taxify.domain.company.StateRegistration;
-import br.com.cshub.taxify.domain.xml.FiscalXmlDocument;
+import br.com.cshub.taxify.domain.fiscaldocument.GoodsInvoice;
+import br.com.cshub.taxify.domain.fiscaldocument.PartyAddress;
+import br.com.cshub.taxify.support.TestNotes;
 import org.junit.jupiter.api.Test;
 
 import java.util.List;
@@ -12,19 +14,11 @@ import static org.assertj.core.api.Assertions.assertThat;
 
 class CompanyRegistrationServiceTest {
 
-    private static FiscalXmlDocument ownNote() {
-        FiscalXmlDocument note = new FiscalXmlDocument();
-        note.setEmitenteLogradouro("Rua das Flores");
-        note.setEmitenteEnderecoNumero("100");
-        note.setEmitenteBairro("Centro");
-        note.setEmitenteCodigoMunicipio("2604106");
-        note.setEmitenteMunicipio("Caruaru");
-        note.setEmitenteUf("PE");
-        note.setEmitenteCep("55.000-000");
-        note.setEmitenteCnae("4781-4/00");
-        note.setEmitenteInscricaoEstadual("0123456-78");
-        note.setEmitenteInscricaoMunicipal("998877");
-        return note;
+    private static GoodsInvoice ownNote() {
+        return TestNotes.note(TestNotes.company(TestNotes.COMPANY_CNPJ)).ownIssue()
+                .issuerAddress(new PartyAddress("Rua das Flores", "100", null, "Centro", "Caruaru", "55.000-000", null, null, null))
+                .issuerCity("2604106").issuerUf("PE").issuerCnae("4781-4/00").issuerStateRegistration("0123456-78")
+                .issuerMunicipalRegistration("998877").build();
     }
 
     @Test

@@ -3,13 +3,20 @@ package br.com.cshub.taxify.service;
 import br.com.cshub.taxify.common.DocumentNumbers;
 import br.com.cshub.taxify.common.IssuePeriod;
 import br.com.cshub.taxify.domain.company.Company;
-import br.com.cshub.taxify.domain.xml.ServiceInvoice;
+import br.com.cshub.taxify.domain.fiscaldocument.DocumentSourceKey;
+import br.com.cshub.taxify.domain.fiscaldocument.Nfse;
+import br.com.cshub.taxify.enumerated.RetrievalMode;
+import br.com.cshub.taxify.exception.FiscalDocumentInvariantException;
+import br.com.cshub.taxify.enumerated.InvariantScope;
+import br.com.cshub.taxify.mapper.fiscaldocument.FiscalDocumentFactory;
+import br.com.cshub.taxify.mapper.fiscaldocument.LegacyNfseDirection;
+import br.com.cshub.taxify.mapper.fiscaldocument.LegacySourceNames;
 import br.com.cshub.taxify.enumerated.IntegrationType;
 import br.com.cshub.taxify.integration.nfse.NfseXml;
 import br.com.cshub.taxify.integration.sieg.FiscalXmlFileStorage;
 import br.com.cshub.taxify.integration.sieg.SiegDownloadXmlsRequest;
 import br.com.cshub.taxify.integration.sieg.SiegClient;
-import br.com.cshub.taxify.repository.ServiceInvoiceRepository;
+import br.com.cshub.taxify.repository.NfseRepository;
 import br.com.cshub.taxify.validation.CompanyValidation;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
@@ -17,6 +24,7 @@ import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 
 import java.time.Instant;
+import java.time.LocalDateTime;
 import java.time.LocalDate;
 import java.time.LocalTime;
 import java.time.ZoneOffset;
@@ -42,13 +50,13 @@ public class ServiceInvoiceService {
 
     public enum Stored { NEW, DUPLICATE, INVALID }
 
-    private final ServiceInvoiceRepository repository;
+    private final NfseRepository repository;
     private final FiscalXmlFileStorage fileStorage;
     private final SiegClient siegClient;
     private final FirmIntegrationService firmIntegrationService;
     private final CompanyValidation companyValidation;
 
-    public ServiceInvoiceService(ServiceInvoiceRepository repository, FiscalXmlFileStorage fileStorage, SiegClient siegClient,
+    public ServiceInvoiceService(NfseRepository repository, FiscalXmlFileStorage fileStorage, SiegClient siegClient,
                                  FirmIntegrationService firmIntegrationService, CompanyValidation companyValidation) {
         this.repository = repository;
         this.fileStorage = fileStorage;
@@ -105,8 +113,7 @@ public class ServiceInvoiceService {
         String apiKey = firmIntegrationService.getApiKey(company.getAccountingFirm().getId(), IntegrationType.SIEG);
         Integer asIssuer = issuerCount != null ? issuerCount : countNfse(company, apiKey, cnpj, null, from, to);
         Integer asRecipient = recipientCount != null ? recipientCount : countNfse(company, apiKey, null, cnpj, from, to);
-        long delivered = repository.countByCompany_IdAndIssueDateBetweenAndFoundInSiegAtIsNotNull(companyId,
-                IssuePeriod.siegStart(from), IssuePeriod.siegEnd(to));
+        long delivered = siegDelivered(companyId, from, to);
         if (asIssuer != null && asRecipient != null && delivered >= (long) asIssuer + asRecipient) {
             log.info("NFS-e of company {} ({} to {}): SIEG counts {}, {} already delivered - no download", companyId, from, to,
                     asIssuer + asRecipient, delivered);
@@ -153,8 +160,8 @@ public class ServiceInvoiceService {
     }
 
     private long siegDelivered(UUID companyId, LocalDate from, LocalDate to) {
-        return repository.countByCompany_IdAndIssueDateBetweenAndFoundInSiegAtIsNotNull(companyId, IssuePeriod.siegStart(from),
-                IssuePeriod.siegEnd(to));
+        return repository.countDeliveredBy(companyId, IssuePeriod.siegStart(from), IssuePeriod.siegEnd(to),
+                DocumentSourceKey.SIEG, RetrievalMode.PERIOD);
     }
 
     /** SIEG's NFS-e count for one filter of the window; null = the count failed. */
@@ -203,7 +210,12 @@ public class ServiceInvoiceService {
         return windows;
     }
 
-    /** Stores one NFS-e XML of the company (any layout); a known note only takes a cancellation. */
+    /**
+     * Stores one NFS-e XML of the company (any layout); a known note only takes a cancellation and the origin.
+     * {@code source} is the name the callers use today ({@code SIEG}, {@code ADN}, {@code UPLOAD}, {@code SEFAZ_DIST}),
+     * translated to the source of the model ({@link LegacySourceNames}). A note that breaks an invariant of the new model
+     * (FD-RN-03) is not stored: INVALID, as an unreadable one.
+     */
     @Transactional
     public Stored store(Company company, byte[] xml, String source) {
         Optional<NfseXml> parsed = NfseXml.parse(xml);
@@ -211,21 +223,28 @@ public class ServiceInvoiceService {
             return Stored.INVALID;
         }
         NfseXml nfse = parsed.get();
-        Optional<ServiceInvoice> known = repository.findByCompany_IdAndAccessKey(company.getId(), nfse.accessKey());
+        DocumentSourceKey origin = LegacySourceNames.toSource(source);
+        Optional<Nfse> known = repository.findByCompany_IdAndAccessKey(company.getId(), nfse.accessKey());
         if (known.isPresent()) {
-            boolean changed = markFoundIn(known.get(), source);
-            if (nfse.canceled() && !known.get().isCanceled()) {
-                known.get().setCanceled(true);
-                changed = true;
+            markSeenIn(known.get(), origin);
+            if (nfse.canceled()) {
+                known.get().cancelByLayout();
             }
-            if (changed) {
-                repository.save(known.get());
-            }
+            repository.save(known.get());
             return Stored.DUPLICATE;
         }
-        String path = fileStorage.store(company.getId(), "NFSE-" + nfse.accessKey(), xml);
-        ServiceInvoice invoice = toEntity(company, nfse, path, source);
-        markFoundIn(invoice, source);
+        Nfse invoice;
+        try {
+            invoice = FiscalDocumentFactory.fromParsed(nfse, company, origin, "NFSE-" + nfse.accessKey());
+            markSeenIn(invoice, origin);
+            invoice.verifyInvariants(InvariantScope.CREATE);
+        } catch (FiscalDocumentInvariantException | IllegalArgumentException e) {
+            log.warn("fiscal.document.invariant.violated id={} type=NFSE invariant={} source={}", null,
+                    e instanceof FiscalDocumentInvariantException violated ? violated.getInvariant() : e.getClass().getSimpleName(),
+                    source);
+            return Stored.INVALID;
+        }
+        invoice.setXmlFilePath(fileStorage.store(company.getId(), "NFSE-" + nfse.accessKey(), xml));
         repository.save(invoice);
         return Stored.NEW;
     }
@@ -236,78 +255,21 @@ public class ServiceInvoiceService {
         return repository.findByCompany_IdAndAccessKey(company.getId(), accessKey)
                 .filter(invoice -> !invoice.isCanceled())
                 .map(invoice -> {
-                    invoice.setCanceled(true);
+                    invoice.cancelByLayout();
                     repository.save(invoice);
                     return true;
                 })
                 .orElse(false);
     }
 
-    /** @return whether the note changed - the first time this source brings it */
-    static boolean markFoundIn(ServiceInvoice invoice, String source) {
-        java.time.LocalDateTime now = java.time.LocalDateTime.now();
-        if ("SIEG".equals(source) && invoice.getFoundInSiegAt() == null) {
-            invoice.setFoundInSiegAt(now);
-            return true;
-        }
-        if ("ADN".equals(source) && invoice.getFoundInAdnAt() == null) {
-            invoice.setFoundInAdnAt(now);
-            return true;
-        }
-        return false;
+    /** FD-RN-31: the source delivered the note now - first or last time. */
+    private void markSeenIn(Nfse invoice, DocumentSourceKey source) {
+        invoice.markSeenIn(source, source.currentRetrievalMode(), LocalDateTime.now());
     }
 
+    /** The company is the provider (PRESTADA), the taker (TOMADA) or neither (TERCEIRO). */
     static String directionOf(Company company, NfseXml nfse) {
-        String own = company.getDocument() == null ? null : DocumentNumbers.onlyDigits(company.getDocument().getNumber());
-        if (own != null && own.equals(nfse.prestadorDocumento())) {
-            return ServiceInvoice.PRESTADA;
-        }
-        if (own != null && own.equals(nfse.tomadorDocumento())) {
-            return ServiceInvoice.TOMADA;
-        }
-        return ServiceInvoice.TERCEIRO;
-    }
-
-    public static ServiceInvoice toEntity(Company company, NfseXml nfse, String path, String source) {
-        ServiceInvoice invoice = new ServiceInvoice();
-        invoice.setCompany(company);
-        invoice.setAccessKey(nfse.accessKey());
-        invoice.setLayout(nfse.layout());
-        invoice.setNumero(nfse.numero());
-        invoice.setCodigoVerificacao(nfse.codigoVerificacao());
-        invoice.setIssueDate(nfse.issueDate() != null ? nfse.issueDate()
-                : nfse.competence() != null ? nfse.competence().atStartOfDay() : null);
-        invoice.setCompetence(nfse.competence() != null ? nfse.competence()
-                : nfse.issueDate() != null ? nfse.issueDate().toLocalDate() : null);
-        invoice.setDirection(directionOf(company, nfse));
-        invoice.setPrestadorDocumento(nfse.prestadorDocumento());
-        invoice.setPrestadorNome(nfse.prestadorNome());
-        invoice.setPrestadorMunicipio(nfse.prestadorMunicipio());
-        invoice.setTomadorDocumento(nfse.tomadorDocumento());
-        invoice.setTomadorNome(nfse.tomadorNome());
-        invoice.setMunicipioIncidencia(nfse.municipioIncidencia());
-        invoice.setCodigoServico(nfse.codigoServico());
-        invoice.setCodigoTributacaoMunicipal(nfse.codigoTributacaoMunicipal());
-        invoice.setDescricaoServico(nfse.descricaoServico());
-        invoice.setValorServico(nfse.valorServico());
-        invoice.setValorDeducoes(nfse.valorDeducoes());
-        invoice.setBaseCalculo(nfse.baseCalculo());
-        invoice.setAliquotaIss(nfse.aliquotaIss());
-        invoice.setValorIss(nfse.valorIss());
-        invoice.setIssRetido(nfse.issRetido());
-        invoice.setValorIssRetido(nfse.valorIssRetido());
-        invoice.setValorIrrf(nfse.valorIrrf());
-        invoice.setValorPis(nfse.valorPis());
-        invoice.setValorCofins(nfse.valorCofins());
-        invoice.setPisCofinsRetidos(nfse.pisCofinsRetidos());
-        invoice.setValorCsll(nfse.valorCsll());
-        invoice.setValorInss(nfse.valorInss());
-        invoice.setValorLiquido(nfse.valorLiquido());
-        invoice.setCanceled(nfse.canceled());
-        invoice.setXmlFilePath(path);
-        invoice.setSourceSystem(source);
-        invoice.setDeleted(false);
-        return invoice;
+        return FiscalDocumentFactory.nfseDirection(company, nfse).name();
     }
 
     private static Instant startOfDay(LocalDate date) {

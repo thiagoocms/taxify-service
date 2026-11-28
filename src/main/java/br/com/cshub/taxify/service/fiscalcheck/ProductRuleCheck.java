@@ -2,10 +2,10 @@ package br.com.cshub.taxify.service.fiscalcheck;
 
 import br.com.cshub.taxify.domain.fiscalrule.ProductFiscalRule;
 import br.com.cshub.taxify.domain.fiscalrule.ProductTaxRule;
-import br.com.cshub.taxify.domain.xml.FiscalItemIbsCbs;
-import br.com.cshub.taxify.domain.xml.FiscalItemTaxDetail;
-import br.com.cshub.taxify.domain.xml.FiscalXmlDocument;
-import br.com.cshub.taxify.domain.xml.FiscalXmlDocumentItem;
+import br.com.cshub.taxify.domain.fiscaldocument.ItemIbsCbs;
+import br.com.cshub.taxify.domain.fiscaldocument.ItemIcms;
+import br.com.cshub.taxify.domain.fiscaldocument.GoodsInvoice;
+import br.com.cshub.taxify.domain.fiscaldocument.FiscalDocumentItem;
 import br.com.cshub.taxify.enumerated.DivergenceSeverity;
 import org.springframework.stereotype.Component;
 
@@ -51,7 +51,7 @@ public class ProductRuleCheck implements FiscalCheck {
      * would all "diverge" from an entry CFOP.
      */
     @Override
-    public List<FiscalDivergence> check(FiscalXmlDocumentItem item, FiscalCheckContext context) {
+    public List<FiscalDivergence> check(FiscalDocumentItem item, FiscalCheckContext context) {
         if (item.getDocument() != null && item.getDocument().isOwnIssue()) {
             return List.of();
         }
@@ -61,45 +61,45 @@ public class ProductRuleCheck implements FiscalCheck {
     }
 
     /** The rule's CFOP with the first digit of this note's operation (1102 → 2102 interstate). */
-    public static String expectedCfop(FiscalXmlDocumentItem item, ProductFiscalRule rule) {
+    public static String expectedCfop(FiscalDocumentItem item, ProductFiscalRule rule) {
         return OperationCfops.forOperation(rule.getCorrectCfop(),
-                item.getDocument() == null ? null : item.getDocument().getDestinoOperacao());
+                item.getDocument() == null ? null : item.getDocument().getHeader().destinationType());
     }
 
-    private List<FiscalDivergence> compare(FiscalXmlDocumentItem item, ProductFiscalRule rule) {
+    private List<FiscalDivergence> compare(FiscalDocumentItem item, ProductFiscalRule rule) {
         List<FiscalDivergence> divergences = new ArrayList<>();
         if (!rectifiedUnder(item.getDocument(), rule)) {
-            text(divergences, CFOP, "CFOP", "CFOP", item.getCfop(), expectedCfop(item, rule), true);
-            text(divergences, NCM, "NCM", "NCM", item.getNcm(), rule.getCorrectNcm(), true);
+            text(divergences, CFOP, "CFOP", "CFOP", item.cfop(), expectedCfop(item, rule), true);
+            text(divergences, NCM, "NCM", "NCM", item.getProduct().ncm(), rule.getCorrectNcm(), true);
         }
 
         ProductTaxRule tax = rule.getTaxRule();
         if (tax == null) {
             return divergences;
         }
-        FiscalItemTaxDetail detail = item.getTaxDetail();
-        if (detail != null) {
-            text(divergences, ORIGEM, "orig", "Origem", detail.origemMercadoria(), tax.goodsOrigin(), false);
-            text(divergences, CEST, "CEST", "CEST", detail.cest(), tax.cest(), false);
-            if (detail.csosn() != null) {
-                text(divergences, CSOSN, "CSOSN", "CSOSN", detail.csosn(), tax.csosn(), false);
+        ItemIcms icms = item.getIcms();
+        if (item.hasTaxDetail()) {
+            text(divergences, ORIGEM, "orig", "Origem", icms.origin(), tax.goodsOrigin(), false);
+            text(divergences, CEST, "CEST", "CEST", item.getProduct().cest(), tax.cest(), false);
+            if (icms.csosn() != null) {
+                text(divergences, CSOSN, "CSOSN", "CSOSN", icms.csosn(), tax.csosn(), false);
             } else {
-                text(divergences, CST_ICMS, "CST_ICMS", "CST de ICMS", item.getSituacaoTributariaIcms(), tax.cstIcms(), false);
+                text(divergences, CST_ICMS, "CST_ICMS", "CST de ICMS", icms.cst(), tax.cstIcms(), false);
             }
-            rate(divergences, ALIQUOTA_IPI, "pIPI", "Alíquota de IPI", detail.aliquotaIpi(), tax.ipiRate());
-            rate(divergences, ALIQUOTA_PIS, "pPIS", "Alíquota de PIS", detail.aliquotaPis(), tax.pisRate());
-            rate(divergences, ALIQUOTA_COFINS, "pCOFINS", "Alíquota de COFINS", detail.aliquotaCofins(), tax.cofinsRate());
+            rate(divergences, ALIQUOTA_IPI, "pIPI", "Alíquota de IPI", item.getIpi().rate(), tax.ipiRate());
+            rate(divergences, ALIQUOTA_PIS, "pPIS", "Alíquota de PIS", item.getPis().rate(), tax.pisRate());
+            rate(divergences, ALIQUOTA_COFINS, "pCOFINS", "Alíquota de COFINS", item.getCofins().rate(), tax.cofinsRate());
         }
         if (isInternal(item.getDocument())) {
-            rate(divergences, ALIQUOTA_ICMS, "pICMS", "Alíquota interna de ICMS", item.getAliquotaIcms(), tax.icmsRate());
+            rate(divergences, ALIQUOTA_ICMS, "pICMS", "Alíquota interna de ICMS", icms.rate(), tax.icmsRate());
         }
-        text(divergences, CST_IPI, "CST_IPI", "CST de IPI", item.getSituacaoTributariaIpi(), tax.cstIpi(), false);
-        text(divergences, CST_PIS, "CST_PIS", "CST de PIS", item.getSituacaoTributariaPis(), tax.cstPis(), false);
-        text(divergences, CST_COFINS, "CST_COFINS", "CST de COFINS", item.getSituacaoTributariaCofins(), tax.cstCofins(), false);
-        FiscalItemIbsCbs ibsCbs = item.getIbsCbs();
+        text(divergences, CST_IPI, "CST_IPI", "CST de IPI", item.getIpi().cst(), tax.cstIpi(), false);
+        text(divergences, CST_PIS, "CST_PIS", "CST de PIS", item.getPis().cst(), tax.cstPis(), false);
+        text(divergences, CST_COFINS, "CST_COFINS", "CST de COFINS", item.getCofins().cst(), tax.cstCofins(), false);
+        ItemIbsCbs ibsCbs = item.getIbsCbs();
         if (ibsCbs != null) {
             text(divergences, CST_IBSCBS, "CST_IBSCBS", "CST de IBS/CBS", ibsCbs.cst(), tax.cstIbsCbs(), false);
-            text(divergences, CLASS_TRIB, "cClassTrib", "cClassTrib", ibsCbs.classificacaoTributaria(), tax.taxClassification(), false);
+            text(divergences, CLASS_TRIB, "cClassTrib", "cClassTrib", ibsCbs.classCode(), tax.taxClassification(), false);
         }
         return divergences;
     }
@@ -134,7 +134,7 @@ public class ProductRuleCheck implements FiscalCheck {
      * A rule edited after the last rectification run makes the rectified copy stale - it diverges again.
      * Tax codes are only swapped within the same XML group, so those are still compared.
      */
-    public static boolean rectifiedUnder(FiscalXmlDocument document, ProductFiscalRule rule) {
+    public static boolean rectifiedUnder(GoodsInvoice document, ProductFiscalRule rule) {
         if (document == null || document.getRectifiedFilePath() == null || document.getLastRectificationCheckedAt() == null) {
             return false;
         }
@@ -142,8 +142,8 @@ public class ProductRuleCheck implements FiscalCheck {
         return ruleChangedAt == null || !ruleChangedAt.isAfter(document.getLastRectificationCheckedAt());
     }
 
-    private static boolean isInternal(FiscalXmlDocument document) {
-        return document != null && INTERNAL.equals(trim(document.getDestinoOperacao()));
+    private static boolean isInternal(GoodsInvoice document) {
+        return document != null && INTERNAL.equals(trim(document.getHeader().destinationType()));
     }
 
     private static String trim(String value) {

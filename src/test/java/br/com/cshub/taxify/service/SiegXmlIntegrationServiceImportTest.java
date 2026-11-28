@@ -1,5 +1,6 @@
 package br.com.cshub.taxify.service;
 
+import br.com.cshub.taxify.support.TestNotes;
 import br.com.cshub.taxify.integration.fiscalxml.FiscalEventData;
 import br.com.cshub.taxify.integration.fiscalxml.FiscalEventParser;
 import br.com.cshub.taxify.common.MessageService;
@@ -15,7 +16,11 @@ import br.com.cshub.taxify.integration.fiscalxml.FiscalXmlSyncProperties;
 import br.com.cshub.taxify.integration.sieg.SiegClient;
 import br.com.cshub.taxify.integration.sieg.SiegProperties;
 import br.com.cshub.taxify.repository.CompanyRepository;
-import br.com.cshub.taxify.repository.FiscalXmlDocumentRepository;
+import br.com.cshub.taxify.domain.fiscaldocument.DocumentSourceKey;
+import br.com.cshub.taxify.domain.fiscaldocument.FiscalDocument;
+import br.com.cshub.taxify.repository.FiscalDocumentRepository;
+import br.com.cshub.taxify.repository.GoodsInvoiceRepository;
+import br.com.cshub.taxify.support.InMemoryCaptureCounts;
 import br.com.cshub.taxify.repository.FiscalXmlSyncControlRepository;
 import br.com.cshub.taxify.validation.CompanyValidation;
 import org.junit.jupiter.api.BeforeEach;
@@ -48,7 +53,7 @@ class SiegXmlIntegrationServiceImportTest {
             <nfeProc xmlns="http://www.portalfiscal.inf.br/nfe">
               <NFe>
                 <infNFe Id="NFe35240112345678000199550010000000011000000010" versao="4.00">
-                  <ide><dhEmi>2026-09-01T10:15:00-03:00</dhEmi></ide>
+                  <ide><mod>55</mod><dhEmi>2026-09-01T10:15:00-03:00</dhEmi></ide>
                   <emit><CNPJ>12345678000199</CNPJ></emit>
                   <dest><CNPJ>98765432000188</CNPJ></dest>
                 </infNFe>
@@ -59,7 +64,9 @@ class SiegXmlIntegrationServiceImportTest {
     @Mock
     private SiegClient siegClient;
     @Mock
-    private FiscalXmlDocumentRepository xmlDocumentRepository;
+    private FiscalDocumentRepository xmlDocumentRepository;
+    @Mock
+    private GoodsInvoiceRepository goodsInvoiceRepository;
     @Mock
     private FiscalXmlSyncControlRepository syncControlRepository;
     @Mock
@@ -96,7 +103,8 @@ class SiegXmlIntegrationServiceImportTest {
 
         service = new FiscalXmlIntegrationService(siegClient, new FiscalXmlMetadataParser(),
                 new FiscalXmlFileStorage(syncProperties, messageService), new FiscalXmlPackageExtractor(),
-                xmlDocumentRepository, syncControlRepository, companyValidation, messageService, properties, firmIntegrationService,
+                xmlDocumentRepository, goodsInvoiceRepository, new InMemoryCaptureCounts().service(), syncControlRepository,
+                companyValidation, messageService, properties, firmIntegrationService,
                 new FiscalEventParser(), eventService, summaryRepository, serviceInvoiceService);
         lenient().when(xmlDocumentRepository.save(any())).thenAnswer(invocation -> invocation.getArgument(0));
     }
@@ -205,11 +213,13 @@ class SiegXmlIntegrationServiceImportTest {
     void anUploadedNoteKeepsItsOriginAndIsNotCountedForEitherSource() {
         service.importManual(companyId.toString(), NFE_XML.getBytes(StandardCharsets.UTF_8));
 
-        org.mockito.ArgumentCaptor<br.com.cshub.taxify.domain.xml.FiscalXmlDocument> saved = org.mockito.ArgumentCaptor.captor();
+        org.mockito.ArgumentCaptor<FiscalDocument> saved = org.mockito.ArgumentCaptor.captor();
         verify(xmlDocumentRepository).save(saved.capture());
-        assertThat(saved.getValue().getSourceSystem()).isEqualTo("UPLOAD");
-        assertThat(saved.getValue().getFoundInSiegAt()).isNull();
-        assertThat(saved.getValue().getFoundInSefazAt()).isNull();
+        assertThat(saved.getValue().getSourceSystem()).isEqualTo(DocumentSourceKey.UPLOAD);
+        assertThat(saved.getValue().firstSeenIn(DocumentSourceKey.SIEG)).isEmpty();
+        assertThat(saved.getValue().firstSeenIn(DocumentSourceKey.SEFAZ_DFE)).isEmpty();
+        // FD-RN-31: the upload is an origin too
+        assertThat(saved.getValue().firstSeenIn(DocumentSourceKey.UPLOAD)).isPresent();
     }
 
     @Test
@@ -220,25 +230,25 @@ class SiegXmlIntegrationServiceImportTest {
 
         service.importFromSefaz(companyId, java.util.List.of(NFE_XML.getBytes(StandardCharsets.UTF_8)));
 
-        org.mockito.ArgumentCaptor<br.com.cshub.taxify.domain.xml.FiscalXmlDocument> saved = org.mockito.ArgumentCaptor.captor();
+        org.mockito.ArgumentCaptor<FiscalDocument> saved = org.mockito.ArgumentCaptor.captor();
         verify(xmlDocumentRepository).save(saved.capture());
-        assertThat(saved.getValue().getSourceSystem()).isEqualTo("SEFAZ_DIST");
-        assertThat(saved.getValue().getFoundInSefazAt()).isNotNull();
+        assertThat(saved.getValue().getSourceSystem()).isEqualTo(DocumentSourceKey.SEFAZ_DFE);
+        assertThat(saved.getValue().firstSeenIn(DocumentSourceKey.SEFAZ_DFE)).isPresent();
         assertThat(summary.isCompleted()).isTrue();
     }
 
     @Test
     void aNoteAlreadyStoredIsMarkedAsFoundByTheNewSource() {
-        br.com.cshub.taxify.domain.xml.FiscalXmlDocument known = new br.com.cshub.taxify.domain.xml.FiscalXmlDocument();
         String key = "35240112345678000199550010000000011000000010";
+        FiscalDocument known = TestNotes.note(TestNotes.company(TestNotes.COMPANY_CNPJ)).key(key).build();
         when(xmlDocumentRepository.existsByCompany_IdAndAccessKey(companyId, key)).thenReturn(true);
         when(xmlDocumentRepository.findFirstByCompany_IdAndAccessKey(companyId, key)).thenReturn(java.util.Optional.of(known));
 
         XmlDownloadResultDTO result = service.importFromSefaz(companyId, java.util.List.of(NFE_XML.getBytes(StandardCharsets.UTF_8)));
 
         assertThat(result.totalDuplicatedSkipped()).isEqualTo(1);
-        assertThat(known.getFoundInSefazAt()).isNotNull();
-        assertThat(known.getFoundInSiegAt()).isNull();
+        assertThat(known.firstSeenIn(DocumentSourceKey.SEFAZ_DFE)).isPresent();
+        assertThat(known.firstSeenIn(DocumentSourceKey.SIEG)).isEmpty();
         verify(xmlDocumentRepository).save(known);
     }
 
@@ -253,7 +263,9 @@ class SiegXmlIntegrationServiceImportTest {
         XmlDownloadResultDTO result = service.importManual(companyId.toString(), "not xml at all".getBytes(StandardCharsets.UTF_8));
 
         assertThat(result.totalParseErrors()).isEqualTo(1);
-        assertThat(result.totalPersistedNew()).isEqualTo(1);
+        // FD-RN-03: a file that is no NF-e, NFC-e nor CT-e has no subtype in the new model - not stored (before: an
+        // UNKNOWN row of the old table)
+        assertThat(result.totalPersistedNew()).isZero();
     }
 
     @Test

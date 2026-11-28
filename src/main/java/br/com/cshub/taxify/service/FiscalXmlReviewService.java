@@ -5,11 +5,11 @@ import br.com.cshub.taxify.common.CurrentUserService;
 import br.com.cshub.taxify.common.MessageService;
 import br.com.cshub.taxify.common.TenantAccessService;
 import br.com.cshub.taxify.domain.user.User;
-import br.com.cshub.taxify.domain.xml.FiscalXmlDocument;
+import br.com.cshub.taxify.domain.fiscaldocument.FiscalDocument;
 import br.com.cshub.taxify.enumerated.ReviewStatus;
 import br.com.cshub.taxify.exception.BadRequestException;
 import br.com.cshub.taxify.exception.ResourceNotFoundException;
-import br.com.cshub.taxify.repository.FiscalXmlDocumentRepository;
+import br.com.cshub.taxify.repository.FiscalDocumentRepository;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 
@@ -22,13 +22,13 @@ import java.util.UUID;
 @Service
 public class FiscalXmlReviewService {
 
-    private final FiscalXmlDocumentRepository documentRepository;
+    private final FiscalDocumentRepository documentRepository;
     private final TenantAccessService tenantAccessService;
     private final CurrentUserService currentUserService;
     private final MessageService messageService;
     private final InvoiceAuditTrail auditTrail;
 
-    public FiscalXmlReviewService(FiscalXmlDocumentRepository documentRepository, TenantAccessService tenantAccessService,
+    public FiscalXmlReviewService(FiscalDocumentRepository documentRepository, TenantAccessService tenantAccessService,
                                   CurrentUserService currentUserService, MessageService messageService, InvoiceAuditTrail auditTrail) {
         this.auditTrail = auditTrail;
         this.documentRepository = documentRepository;
@@ -51,9 +51,8 @@ public class FiscalXmlReviewService {
         if (status == ReviewStatus.DIVERGENT && (note == null || note.isBlank())) {
             throw new BadRequestException("error.review.note.required", messageService.getMessage("error.review.note.required"));
         }
-        List<FiscalXmlDocument> documents = documentRepository.findAllById(documentIds).stream()
-                .filter(document -> !document.isDeleted())
-                .toList();
+        // NF-e, NFC-e and CT-e only (the notes screen) - an NFS-e id is "not found" (FD-RN-17)
+        List<FiscalDocument> documents = documentRepository.findXmlDocuments(documentIds);
         if (documents.size() != documentIds.stream().distinct().count()) {
             throw new ResourceNotFoundException("error.entity.not.found", messageService.getMessage("error.entity.not.found"));
         }
@@ -73,7 +72,7 @@ public class FiscalXmlReviewService {
     }
 
     /** The access key; a note without one (manual upload of an odd file) is identified by its id. */
-    static String noteKey(FiscalXmlDocument document) {
+    static String noteKey(FiscalDocument document) {
         return document.accessKeyOrId();
     }
 }

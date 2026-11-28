@@ -4,7 +4,7 @@ import br.com.cshub.taxify.common.MessageService;
 import br.com.cshub.taxify.domain.company.Company;
 import br.com.cshub.taxify.domain.fiscalrule.ProductFiscalRule;
 import br.com.cshub.taxify.dto.fiscalrule.ProductRuleSuggestionDTO;
-import br.com.cshub.taxify.repository.FiscalXmlDocumentItemRepository;
+import br.com.cshub.taxify.repository.FiscalDocumentItemRepository;
 import br.com.cshub.taxify.repository.ProductFiscalRuleRepository;
 import br.com.cshub.taxify.validation.CompanyValidation;
 import org.junit.jupiter.api.Test;
@@ -21,7 +21,7 @@ import static org.mockito.Mockito.when;
 
 class ProductRuleSuggestionServiceTest {
 
-    private final FiscalXmlDocumentItemRepository itemRepository = mock(FiscalXmlDocumentItemRepository.class);
+    private final FiscalDocumentItemRepository itemRepository = mock(FiscalDocumentItemRepository.class);
     private final ProductFiscalRuleRepository ruleRepository = mock(ProductFiscalRuleRepository.class);
     private final CompanyValidation companyValidation = mock(CompanyValidation.class);
     private final ProductRuleSuggestionService service = new ProductRuleSuggestionService(itemRepository, ruleRepository,

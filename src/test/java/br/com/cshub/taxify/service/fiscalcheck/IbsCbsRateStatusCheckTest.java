@@ -1,10 +1,11 @@
 package br.com.cshub.taxify.service.fiscalcheck;
 
+import br.com.cshub.taxify.support.TestNotes;
 import br.com.cshub.taxify.domain.reform.IbsCbsRate;
 import br.com.cshub.taxify.domain.reform.IbsCbsRatePolicy;
-import br.com.cshub.taxify.domain.xml.FiscalItemIbsCbs;
-import br.com.cshub.taxify.domain.xml.FiscalXmlDocument;
-import br.com.cshub.taxify.domain.xml.FiscalXmlDocumentItem;
+import br.com.cshub.taxify.domain.fiscaldocument.ItemIbsCbs;
+import br.com.cshub.taxify.domain.fiscaldocument.GoodsInvoice;
+import br.com.cshub.taxify.domain.fiscaldocument.FiscalDocumentItem;
 import br.com.cshub.taxify.enumerated.DivergenceSeverity;
 import br.com.cshub.taxify.enumerated.IbsCbsRateStatus;
 import br.com.cshub.taxify.repository.IbsCbsRateRepository;
@@ -68,10 +69,10 @@ class IbsCbsRateStatusCheckTest {
         when(rateRepository.findFindingRates()).thenReturn(List.of(law2026()));
         FiscalCheckContext context = engine.contextFor(companyId);
 
-        FiscalXmlDocumentItem correct = item(LocalDateTime.of(2026, 12, 31, 23, 59), "000", "0.9", "0.1", "0");
+        FiscalDocumentItem correct = item(LocalDateTime.of(2026, 12, 31, 23, 59), "000", "0.9", "0.1", "0");
         assertThat(itemCheck.check(correct, context)).isEmpty();
 
-        FiscalXmlDocumentItem wrong = item(LocalDateTime.of(2026, 6, 1, 10, 0), "000", "1", "0.1", "0");
+        FiscalDocumentItem wrong = item(LocalDateTime.of(2026, 6, 1, 10, 0), "000", "1", "0.1", "0");
         assertThat(itemCheck.check(wrong, context)).filteredOn(d -> d.code().equals(IbsCbsItemCheck.RATE))
                 .singleElement().satisfies(divergence -> {
                     assertThat(divergence.expected()).isEqualTo("0.9");
@@ -85,7 +86,7 @@ class IbsCbsRateStatusCheckTest {
         when(rateRepository.findFindingRates()).thenReturn(List.of(law2026()));
         FiscalCheckContext context = engine.contextFor(companyId);
 
-        FiscalXmlDocumentItem note2027 = item(LocalDateTime.of(2027, 1, 1, 0, 0), "000", "5.0", "0.1", "0");
+        FiscalDocumentItem note2027 = item(LocalDateTime.of(2027, 1, 1, 0, 0), "000", "5.0", "0.1", "0");
         assertThat(itemCheck.check(note2027, context)).extracting(FiscalDivergence::code).doesNotContain(IbsCbsItemCheck.RATE);
     }
 
@@ -95,7 +96,7 @@ class IbsCbsRateStatusCheckTest {
         when(rateRepository.findFindingRates()).thenReturn(List.of(law2026(), law2027()));
         FiscalCheckContext context = engine.contextFor(companyId);
 
-        FiscalXmlDocumentItem note2027 = item(LocalDateTime.of(2027, 1, 1, 0, 0), "000", "5.0", "0.1", "0");
+        FiscalDocumentItem note2027 = item(LocalDateTime.of(2027, 1, 1, 0, 0), "000", "5.0", "0.1", "0");
         assertThat(itemCheck.check(note2027, context)).filteredOn(d -> d.code().equals(IbsCbsItemCheck.RATE))
                 .singleElement().satisfies(divergence -> {
                     assertThat(divergence.field()).isEqualTo("pCBS");
@@ -110,26 +111,21 @@ class IbsCbsRateStatusCheckTest {
         when(rateRepository.findFindingRates()).thenReturn(List.of(law2026(), law2027()));
         FiscalCheckContext context = engine.contextFor(companyId);
 
-        FiscalXmlDocumentItem immune = item(LocalDateTime.of(2027, 3, 1, 9, 0), "410", "5", "0.1", "0");
+        FiscalDocumentItem immune = item(LocalDateTime.of(2027, 3, 1, 9, 0), "410", "5", "0.1", "0");
         assertThat(itemCheck.check(immune, context)).extracting(FiscalDivergence::code).doesNotContain(IbsCbsItemCheck.RATE);
         verify(ruleRepository, times(1)).findByCompany_IdAndDeletedIsFalse(any());
     }
 
-    private static FiscalXmlDocumentItem item(LocalDateTime issuedAt, String cst, String pCbs, String pIbsUf, String pIbsMun) {
-        FiscalXmlDocument document = new FiscalXmlDocument();
-        document.setId(UUID.randomUUID());
-        document.setDocumentType("NFE");
-        document.setIssueDate(issuedAt);
-        document.setEmitenteRegimeTributario("3");
+    private static FiscalDocumentItem item(LocalDateTime issuedAt, String cst, String pCbs, String pIbsUf, String pIbsMun) {
+        GoodsInvoice document = TestNotes.note(TestNotes.company(TestNotes.COMPANY_CNPJ)).issuedAt(issuedAt).taxRegime("3").build();
         BigDecimal base = new BigDecimal("100");
         BigDecimal ibsUf = base.multiply(new BigDecimal(pIbsUf)).movePointLeft(2);
         BigDecimal ibsMun = base.multiply(new BigDecimal(pIbsMun)).movePointLeft(2);
         BigDecimal cbs = base.multiply(new BigDecimal(pCbs)).movePointLeft(2);
-        FiscalItemIbsCbs group = new FiscalItemIbsCbs(cst, cst + "001", base, new BigDecimal(pIbsUf), null, ibsUf,
+        ItemIbsCbs group = new ItemIbsCbs(cst, cst + "001", base, new BigDecimal(pIbsUf), null, ibsUf,
                 new BigDecimal(pIbsMun), null, ibsMun, ibsUf.add(ibsMun), new BigDecimal(pCbs), null, cbs, false);
-        FiscalXmlDocumentItem item = new FiscalXmlDocumentItem();
-        item.setDocument(document);
-        item.setIbsCbs(group);
+        FiscalDocumentItem item = TestNotes.item(1).ibsCbs(group).build();
+        document.addItem(item);
         return item;
     }
 }

@@ -1,4 +1,4 @@
-package br.com.cshub.taxify.domain.xml;
+package legacy.xml;
 
 import br.com.cshub.taxify.enumerated.ReviewStatus;
 import br.com.cshub.taxify.enumerated.FiscalDocumentStatus;
@@ -15,7 +15,7 @@ import java.util.ArrayList;
 import java.util.List;
 import java.util.UUID;
 
-@Entity
+@Entity(name = "LegacyFiscalXmlDocument")
 /*
  * Unique per company, not globally: a note between two clients of the same firm is the
  * issuer's exit AND the recipient's entry - each company keeps its own row (see

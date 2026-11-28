@@ -1,21 +1,24 @@
 package br.com.cshub.taxify.service;
 
+import br.com.cshub.taxify.support.TestNotes;
 import br.com.cshub.taxify.domain.accountingfirm.AccountingFirm;
 import br.com.cshub.taxify.domain.company.Company;
 import br.com.cshub.taxify.domain.document.Document;
-import br.com.cshub.taxify.domain.xml.ServiceInvoice;
+import br.com.cshub.taxify.domain.fiscaldocument.Nfse;
 import br.com.cshub.taxify.enumerated.DocumentTypeEnum;
 import br.com.cshub.taxify.enumerated.IntegrationType;
 import br.com.cshub.taxify.integration.nfse.NfseXmlTest;
 import br.com.cshub.taxify.integration.sieg.FiscalXmlFileStorage;
 import br.com.cshub.taxify.integration.sieg.SiegDownloadXmlsRequest;
 import br.com.cshub.taxify.integration.sieg.SiegClient;
-import br.com.cshub.taxify.repository.ServiceInvoiceRepository;
+import br.com.cshub.taxify.repository.NfseRepository;
 import br.com.cshub.taxify.validation.CompanyValidation;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.extension.ExtendWith;
 import org.mockito.ArgumentCaptor;
+import br.com.cshub.taxify.domain.fiscaldocument.DocumentSourceKey;
+import br.com.cshub.taxify.mapper.fiscaldocument.NfseApiMapper;
 import org.mockito.Mock;
 import org.mockito.junit.jupiter.MockitoExtension;
 import org.mockito.junit.jupiter.MockitoSettings;
@@ -41,7 +44,7 @@ import static org.mockito.Mockito.when;
 class ServiceInvoiceServiceTest {
 
     @Mock
-    private ServiceInvoiceRepository repository;
+    private NfseRepository repository;
     @Mock
     private FiscalXmlFileStorage fileStorage;
     @Mock
@@ -77,17 +80,17 @@ class ServiceInvoiceServiceTest {
         service.store(company, bytes(NfseXmlTest.national("1", "2")), "UPLOAD");
         service.store(company, bytes(NfseXmlTest.ABRASF), "UPLOAD");
 
-        ArgumentCaptor<ServiceInvoice> saved = ArgumentCaptor.captor();
+        ArgumentCaptor<Nfse> saved = ArgumentCaptor.captor();
         verify(repository, times(2)).save(saved.capture());
-        assertThat(saved.getAllValues().get(0).getDirection()).isEqualTo("PRESTADA"); // company is the provider
-        assertThat(saved.getAllValues().get(1).getDirection()).isEqualTo("TOMADA");   // company is the taker
-        assertThat(saved.getAllValues().get(1).getSourceSystem()).isEqualTo("UPLOAD");
+        assertThat(NfseApiMapper.direction(saved.getAllValues().get(0))).isEqualTo("PRESTADA"); // company is the provider
+        assertThat(NfseApiMapper.direction(saved.getAllValues().get(1))).isEqualTo("TOMADA");   // company is the taker
+        assertThat(saved.getAllValues().get(1).getSourceSystem()).isEqualTo(DocumentSourceKey.UPLOAD);
         assertThat(saved.getAllValues().get(1).getXmlFilePath()).isEqualTo("path.xml");
     }
 
     @Test
     void aKnownNoteIsSkippedButTakesACancellation() {
-        ServiceInvoice known = new ServiceInvoice();
+        Nfse known = TestNotes.nfse(company, "TOMADA", "100.00");
         when(repository.findByCompany_IdAndAccessKey(company.getId(), "ABRASF-2611606-55444333000122-4567")).thenReturn(Optional.of(known));
 
         assertThat(service.store(company, bytes(NfseXmlTest.ABRASF), "SIEG")).isEqualTo(ServiceInvoiceService.Stored.DUPLICATE);
@@ -102,21 +105,21 @@ class ServiceInvoiceServiceTest {
     @Test
     void eachSourceIsMarkedWhenItBringsTheNote() {
         service.store(company, bytes(NfseXmlTest.ABRASF), "SIEG");
-        ArgumentCaptor<ServiceInvoice> saved = ArgumentCaptor.captor();
+        ArgumentCaptor<Nfse> saved = ArgumentCaptor.captor();
         verify(repository).save(saved.capture());
-        ServiceInvoice invoice = saved.getValue();
-        assertThat(invoice.getFoundInSiegAt()).isNotNull();
-        assertThat(invoice.getFoundInAdnAt()).isNull();
+        Nfse invoice = saved.getValue();
+        assertThat(invoice.firstSeenIn(DocumentSourceKey.SIEG)).isPresent();
+        assertThat(invoice.firstSeenIn(DocumentSourceKey.NFSE_ADN)).isEmpty();
 
         when(repository.findByCompany_IdAndAccessKey(company.getId(), invoice.getAccessKey())).thenReturn(Optional.of(invoice));
         assertThat(service.store(company, bytes(NfseXmlTest.ABRASF), "ADN")).isEqualTo(ServiceInvoiceService.Stored.DUPLICATE);
-        assertThat(invoice.getFoundInAdnAt()).isNotNull();
-        assertThat(invoice.getSourceSystem()).isEqualTo("SIEG"); // the origin stays the first source
+        assertThat(invoice.firstSeenIn(DocumentSourceKey.NFSE_ADN)).isPresent();
+        assertThat(invoice.getSourceSystem()).isEqualTo(DocumentSourceKey.SIEG); // the origin stays the first source
     }
 
     @Test
     void aCancellationEventMarksTheNote() {
-        ServiceInvoice invoice = new ServiceInvoice();
+        Nfse invoice = TestNotes.nfse(company, "TOMADA", "100.00");
         when(repository.findByCompany_IdAndAccessKey(company.getId(), "K")).thenReturn(Optional.of(invoice));
 
         assertThat(service.markCanceled(company, "K")).isTrue();
@@ -160,7 +163,7 @@ class ServiceInvoiceServiceTest {
     /** A1: counts known from the NF-e sides (6 as issuer + 4 as recipient = 10), 10 already from SIEG: no request at all. */
     @Test
     void aMonthSiegAlreadyDeliveredCostsNoRequest() {
-        when(repository.countByCompany_IdAndIssueDateBetweenAndFoundInSiegAtIsNotNull(eq(company.getId()), any(), any())).thenReturn(10L);
+        when(repository.countDeliveredBy(eq(company.getId()), any(), any(), any(), any())).thenReturn(10L);
 
         ServiceInvoiceService.SyncResult result = service.syncMonthIfMissing(company.getId(), LocalDate.of(2026, 11, 1),
                 LocalDate.of(2026, 11, 27), 6, 4);
@@ -173,7 +176,7 @@ class ServiceInvoiceServiceTest {
     /** A1: SIEG counts 11 and 10 came from it - the window is downloaded, both filters. */
     @Test
     void aDifferenceDownloadsTheWindow() {
-        when(repository.countByCompany_IdAndIssueDateBetweenAndFoundInSiegAtIsNotNull(eq(company.getId()), any(), any())).thenReturn(10L);
+        when(repository.countDeliveredBy(eq(company.getId()), any(), any(), any(), any())).thenReturn(10L);
         when(siegClient.downloadXmls(any(), eq("key"))).thenReturn(List.of());
 
         service.syncMonthIfMissing(company.getId(), LocalDate.of(2026, 11, 1), LocalDate.of(2026, 11, 27), 7, 4);
@@ -189,8 +192,8 @@ class ServiceInvoiceServiceTest {
     @Test
     void unknownCountsAreAskedOncePerFilter() {
         when(siegClient.countXmls(any(), eq("key"))).thenReturn(new br.com.cshub.taxify.integration.sieg.SiegDocumentCounts(99, 2));
-        when(repository.countByCompany_IdAndIssueDateBetweenAndFoundInSiegAtIsNotNull(eq(company.getId()),
-                eq(LocalDate.of(2026, 9, 30).atTime(21, 0)), eq(LocalDate.of(2026, 10, 31).atTime(java.time.LocalTime.MAX).minusHours(3)))).thenReturn(4L); // SIEG's UTC days in Recife time
+        when(repository.countDeliveredBy(eq(company.getId()),
+                eq(LocalDate.of(2026, 9, 30).atTime(21, 0)), eq(LocalDate.of(2026, 10, 31).atTime(java.time.LocalTime.MAX).minusHours(3)), any(), any())).thenReturn(4L); // SIEG's UTC days in Recife time
 
         service.syncMonthIfMissing(company.getId(), LocalDate.of(2026, 10, 1), LocalDate.of(2026, 10, 31), null, null);
 
@@ -207,7 +210,7 @@ class ServiceInvoiceServiceTest {
     void aFailedCountDownloadsTheWindow() {
         when(siegClient.countXmls(any(), eq("key"))).thenThrow(new br.com.cshub.taxify.exception.SiegIntegrationException(
                 "error.sieg.integration.failed", "x", 503));
-        when(repository.countByCompany_IdAndIssueDateBetweenAndFoundInSiegAtIsNotNull(eq(company.getId()), any(), any())).thenReturn(50L);
+        when(repository.countDeliveredBy(eq(company.getId()), any(), any(), any(), any())).thenReturn(50L);
         when(siegClient.downloadXmls(any(), eq("key"))).thenReturn(List.of());
 
         service.syncMonthIfMissing(company.getId(), LocalDate.of(2026, 10, 1), LocalDate.of(2026, 10, 31), null, 3);

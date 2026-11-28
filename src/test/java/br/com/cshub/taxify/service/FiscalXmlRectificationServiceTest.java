@@ -8,15 +8,17 @@ import br.com.cshub.taxify.domain.company.Company;
 import br.com.cshub.taxify.domain.fiscalrule.ProductFiscalRule;
 import br.com.cshub.taxify.domain.invoice.InvoiceAuditLog;
 import br.com.cshub.taxify.domain.user.User;
-import br.com.cshub.taxify.domain.xml.FiscalXmlDocument;
-import br.com.cshub.taxify.domain.xml.FiscalXmlDocumentItem;
+import br.com.cshub.taxify.domain.fiscaldocument.Cte;
+import br.com.cshub.taxify.domain.fiscaldocument.FiscalDocument;
+import br.com.cshub.taxify.domain.fiscaldocument.GoodsInvoice;
+import br.com.cshub.taxify.support.TestNotes;
 import br.com.cshub.taxify.dto.fiscalrule.FiscalXmlRectificationResultDTO;
 import br.com.cshub.taxify.enumerated.InvoiceAuditStatus;
 import br.com.cshub.taxify.exception.BadRequestException;
 import br.com.cshub.taxify.exception.ResourceNotFoundException;
 import br.com.cshub.taxify.integration.fiscalxml.FiscalXmlSyncProperties;
 import br.com.cshub.taxify.integration.sieg.FiscalXmlFileStorage;
-import br.com.cshub.taxify.repository.FiscalXmlDocumentRepository;
+import br.com.cshub.taxify.repository.FiscalDocumentRepository;
 import br.com.cshub.taxify.repository.InvoiceAuditLogRepository;
 import br.com.cshub.taxify.repository.ProductFiscalRuleRepository;
 import org.junit.jupiter.api.BeforeEach;
@@ -66,7 +68,7 @@ class FiscalXmlRectificationServiceTest {
             """;
 
     @Mock
-    private FiscalXmlDocumentRepository documentRepository;
+    private FiscalDocumentRepository documentRepository;
     @Mock
     private ProductFiscalRuleRepository ruleRepository;
     @Mock
@@ -104,20 +106,20 @@ class FiscalXmlRectificationServiceTest {
         lenient().when(currentUserService.getCurrentUser()).thenReturn(Optional.empty());
     }
 
-    private FiscalXmlDocument document() {
-        FiscalXmlDocument document = new FiscalXmlDocument();
-        document.setId(documentId);
+    private Company company() {
         Company company = new Company(companyId);
         company.setAccountingFirm(new AccountingFirm(UUID.randomUUID()));
-        document.setCompany(company);
-        document.setAccessKey("35240112345678000199550010000000011000000010");
-        document.setXmlFilePath(originalFile.toString());
-        return document;
+        return company;
+    }
+
+    private GoodsInvoice document() {
+        return TestNotes.note(company()).id(documentId).key("35240112345678000199550010000000011000000010")
+                .xml(originalFile.toString()).metadataVersion(null).build();
     }
 
     @Test
     void throwsWhenDocumentDoesNotExist() {
-        when(documentRepository.findFirstByIdAndDeletedIsFalse(documentId)).thenReturn(Optional.empty());
+        when(documentRepository.findXmlDocument(documentId)).thenReturn(Optional.empty());
 
         assertThatThrownBy(() -> service.rectify(documentId)).isInstanceOf(ResourceNotFoundException.class);
     }
@@ -125,14 +127,14 @@ class FiscalXmlRectificationServiceTest {
     @Test
     void throwsWhenXmlIsNotAnNfe() throws IOException {
         Files.writeString(originalFile, "<somethingElse></somethingElse>", StandardCharsets.UTF_8);
-        when(documentRepository.findFirstByIdAndDeletedIsFalse(documentId)).thenReturn(Optional.of(document()));
+        when(documentRepository.findXmlDocument(documentId)).thenReturn(Optional.of(document()));
 
         assertThatThrownBy(() -> service.rectify(documentId)).isInstanceOf(BadRequestException.class);
     }
 
     @Test
     void doesNothingWhenNoRuleIsRegisteredForTheProduct() {
-        when(documentRepository.findFirstByIdAndDeletedIsFalse(documentId)).thenReturn(Optional.of(document()));
+        when(documentRepository.findXmlDocument(documentId)).thenReturn(Optional.of(document()));
         when(ruleRepository.findByCompany_IdAndDeletedIsFalse(companyId)).thenReturn(List.of());
 
         FiscalXmlRectificationResultDTO result = service.rectify(documentId);
@@ -148,7 +150,7 @@ class FiscalXmlRectificationServiceTest {
 
     @Test
     void doesNothingWhenTheItemAlreadyMatchesTheRule() {
-        when(documentRepository.findFirstByIdAndDeletedIsFalse(documentId)).thenReturn(Optional.of(document()));
+        when(documentRepository.findXmlDocument(documentId)).thenReturn(Optional.of(document()));
         ProductFiscalRule rule = new ProductFiscalRule(UUID.randomUUID());
         rule.setProductCode("P001");
         rule.setCorrectCfop("5405");
@@ -164,7 +166,7 @@ class FiscalXmlRectificationServiceTest {
 
     @Test
     void writesANewFileWithTheCorrectedCfopAndLeavesTheOriginalUntouched() throws IOException {
-        when(documentRepository.findFirstByIdAndDeletedIsFalse(documentId)).thenReturn(Optional.of(document()));
+        when(documentRepository.findXmlDocument(documentId)).thenReturn(Optional.of(document()));
         ProductFiscalRule rule = new ProductFiscalRule(UUID.randomUUID());
         rule.setProductCode("P001");
         rule.setCorrectCfop("5102");
@@ -193,14 +195,14 @@ class FiscalXmlRectificationServiceTest {
         assertThat(savedLog.getNotes()).contains("CFOP").contains("5405").contains("5102");
         assertThat(savedLog.getUser()).isNull();
 
-        ArgumentCaptor<FiscalXmlDocument> documentCaptor = ArgumentCaptor.forClass(FiscalXmlDocument.class);
+        ArgumentCaptor<FiscalDocument> documentCaptor = ArgumentCaptor.forClass(FiscalDocument.class);
         verify(documentRepository).save(documentCaptor.capture());
-        assertThat(documentCaptor.getValue().getRectifiedFilePath()).isEqualTo(result.rectifiedFilePath());
+        assertThat(((GoodsInvoice) documentCaptor.getValue()).getRectifiedFilePath()).isEqualTo(result.rectifiedFilePath());
     }
 
     @Test
     void attachesTheAuthenticatedUserToTheAuditLogWhenThereIsOne() {
-        when(documentRepository.findFirstByIdAndDeletedIsFalse(documentId)).thenReturn(Optional.of(document()));
+        when(documentRepository.findXmlDocument(documentId)).thenReturn(Optional.of(document()));
         ProductFiscalRule rule = new ProductFiscalRule(UUID.randomUUID());
         rule.setProductCode("P001");
         rule.setCorrectCfop("5102");
@@ -217,7 +219,7 @@ class FiscalXmlRectificationServiceTest {
 
     @Test
     void rerunningWithTheSameRuleDoesNotWriteAnotherFileOrLog() {
-        when(documentRepository.findFirstByIdAndDeletedIsFalse(documentId)).thenReturn(Optional.of(document()));
+        when(documentRepository.findXmlDocument(documentId)).thenReturn(Optional.of(document()));
         ProductFiscalRule rule = new ProductFiscalRule(UUID.randomUUID());
         rule.setProductCode("P001");
         rule.setCorrectCfop("5102");
@@ -247,9 +249,9 @@ class FiscalXmlRectificationServiceTest {
 
     @Test
     void removingTheRuleSendsTheNoteBackToTheOriginalXml() {
-        FiscalXmlDocument document = document();
+        GoodsInvoice document = document();
         document.setRectifiedFilePath("rectified/old.xml");
-        when(documentRepository.findFirstByIdAndDeletedIsFalse(documentId)).thenReturn(Optional.of(document));
+        when(documentRepository.findXmlDocument(documentId)).thenReturn(Optional.of(document));
         when(ruleRepository.findByCompany_IdAndDeletedIsFalse(companyId)).thenReturn(List.of());
 
         FiscalXmlRectificationResultDTO result = service.rectify(documentId);
@@ -264,8 +266,8 @@ class FiscalXmlRectificationServiceTest {
 
     @Test
     void addingTheSameRuleBackAfterARevertRectifiesAgain() {
-        FiscalXmlDocument document = document();
-        when(documentRepository.findFirstByIdAndDeletedIsFalse(documentId)).thenReturn(Optional.of(document));
+        GoodsInvoice document = document();
+        when(documentRepository.findXmlDocument(documentId)).thenReturn(Optional.of(document));
         ProductFiscalRule rule = new ProductFiscalRule(UUID.randomUUID());
         rule.setProductCode("P001");
         rule.setCorrectCfop("5102");
@@ -283,7 +285,7 @@ class FiscalXmlRectificationServiceTest {
 
     @Test
     void alsoCorrectsNcmWhenTheRulePinsOne() throws IOException {
-        when(documentRepository.findFirstByIdAndDeletedIsFalse(documentId)).thenReturn(Optional.of(document()));
+        when(documentRepository.findXmlDocument(documentId)).thenReturn(Optional.of(document()));
         ProductFiscalRule rule = new ProductFiscalRule(UUID.randomUUID());
         rule.setProductCode("P001");
         rule.setCorrectCfop("5405");
@@ -298,17 +300,10 @@ class FiscalXmlRectificationServiceTest {
     }
 
     /** A note saved by the current parser, with its one item stored as columns (CFOP 5405, NCM 12345678). */
-    private FiscalXmlDocument parsedDocument() {
-        FiscalXmlDocument document = document();
-        document.setDocumentType("NFE");
-        document.setMetadataVersion(4);
-        FiscalXmlDocumentItem item = new FiscalXmlDocumentItem();
-        item.setDocument(document);
-        item.setCodigo("P001");
-        item.setCfop("5405");
-        item.setNcm("12345678");
-        document.getItens().add(item);
-        return document;
+    private GoodsInvoice parsedDocument() {
+        return TestNotes.note(company()).id(documentId).key("35240112345678000199550010000000011000000010")
+                .xml(originalFile.toString()).metadataVersion(4)
+                .item(TestNotes.item(1).code("P001").cfop("5405").ncm("12345678")).build();
     }
 
     private ProductFiscalRule ruleWithCfop(String cfop) {
@@ -321,7 +316,7 @@ class FiscalXmlRectificationServiceTest {
     @Test
     void doesNotReadTheFileWhenTheStoredItemsAlreadyMatchTheRules() throws IOException {
         Files.delete(originalFile); // reading it would fail the rectification
-        when(documentRepository.findFirstByIdAndDeletedIsFalse(documentId)).thenReturn(Optional.of(parsedDocument()));
+        when(documentRepository.findXmlDocument(documentId)).thenReturn(Optional.of(parsedDocument()));
         when(ruleRepository.findByCompany_IdAndDeletedIsFalse(companyId)).thenReturn(List.of(ruleWithCfop("5405")));
 
         FiscalXmlRectificationResultDTO result = service.rectify(documentId);
@@ -333,9 +328,9 @@ class FiscalXmlRectificationServiceTest {
     @Test
     void revertsWithoutReadingTheFileWhenTheRuleNoLongerDiverges() throws IOException {
         Files.delete(originalFile);
-        FiscalXmlDocument document = parsedDocument();
+        GoodsInvoice document = parsedDocument();
         document.setRectifiedFilePath(tempDir.resolve("old-rectified.xml").toString());
-        when(documentRepository.findFirstByIdAndDeletedIsFalse(documentId)).thenReturn(Optional.of(document));
+        when(documentRepository.findXmlDocument(documentId)).thenReturn(Optional.of(document));
         when(ruleRepository.findByCompany_IdAndDeletedIsFalse(companyId)).thenReturn(List.of());
 
         service.rectify(documentId);
@@ -345,7 +340,7 @@ class FiscalXmlRectificationServiceTest {
 
     @Test
     void readsTheFileWhenAStoredItemDiffersFromItsRule() {
-        when(documentRepository.findFirstByIdAndDeletedIsFalse(documentId)).thenReturn(Optional.of(parsedDocument()));
+        when(documentRepository.findXmlDocument(documentId)).thenReturn(Optional.of(parsedDocument()));
         ProductFiscalRule rule = ruleWithCfop("5102");
         when(ruleRepository.findByCompany_IdAndDeletedIsFalse(companyId)).thenReturn(List.of(rule));
         when(ruleRepository.findByCompany_IdAndDeletedIsFalse(companyId)).thenReturn(List.of(rule));
@@ -359,9 +354,9 @@ class FiscalXmlRectificationServiceTest {
     @Test
     void rejectsAnotherDocumentTypeWithoutReadingTheFile() throws IOException {
         Files.delete(originalFile);
-        FiscalXmlDocument document = document();
-        document.setDocumentType("CTE");
-        when(documentRepository.findFirstByIdAndDeletedIsFalse(documentId)).thenReturn(Optional.of(document));
+        Cte document = TestNotes.takenCte(company());
+        document.setId(documentId);
+        when(documentRepository.findXmlDocument(documentId)).thenReturn(Optional.of(document));
 
         assertThatThrownBy(() -> service.rectify(documentId)).isInstanceOf(BadRequestException.class);
     }

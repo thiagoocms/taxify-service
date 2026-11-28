@@ -1,4 +1,4 @@
-package br.com.cshub.taxify.domain.xml;
+package legacy.xml;
 
 import br.com.cshub.taxify.domain.AbstractAuditingEntity;
 import br.com.cshub.taxify.domain.company.Company;
@@ -24,7 +24,7 @@ import java.util.UUID;
  * manifestação...). Kept by access key, so an event that arrives before its note is not
  * lost: it's linked (and applied) when the note shows up - see FiscalXmlEventService.
  */
-@Entity
+@Entity(name = "LegacyFiscalXmlEvent")
 @Table(name = "fiscal_xml_events",
         uniqueConstraints = @UniqueConstraint(name = "uk_fiscal_xml_event",
                 columnNames = {"company_id", "access_key", "event_type", "sequence_number"}),

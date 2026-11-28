@@ -12,8 +12,8 @@ import br.com.cshub.taxify.enumerated.PendencyStatus;
 import br.com.cshub.taxify.enumerated.PendencyType;
 import br.com.cshub.taxify.enumerated.TaxRegime;
 import br.com.cshub.taxify.exception.BadRequestException;
-import br.com.cshub.taxify.repository.FiscalXmlDocumentItemRepository;
-import br.com.cshub.taxify.repository.FiscalXmlDocumentRepository;
+import br.com.cshub.taxify.repository.FiscalDocumentItemRepository;
+import br.com.cshub.taxify.repository.GoodsInvoiceRepository;
 import br.com.cshub.taxify.repository.PendencyRepository;
 import br.com.cshub.taxify.service.assessment.TaxAssessmentService;
 import br.com.cshub.taxify.service.retention.RetentionCalculator;
@@ -52,15 +52,15 @@ public class ReportService {
     private static final BigDecimal IRPJ_ADDITIONAL_LIMIT = BigDecimal.valueOf(240_000);
 
     private final TaxAssessmentService assessmentService;
-    private final FiscalXmlDocumentRepository documentRepository;
-    private final FiscalXmlDocumentItemRepository itemRepository;
+    private final GoodsInvoiceRepository documentRepository;
+    private final FiscalDocumentItemRepository itemRepository;
     private final PendencyRepository pendencyRepository;
     private final RetentionCalculator retentionCalculator;
     private final CompanyValidation companyValidation;
     private final MessageService messageService;
 
-    public ReportService(TaxAssessmentService assessmentService, FiscalXmlDocumentRepository documentRepository,
-                         FiscalXmlDocumentItemRepository itemRepository, PendencyRepository pendencyRepository,
+    public ReportService(TaxAssessmentService assessmentService, GoodsInvoiceRepository documentRepository,
+                         FiscalDocumentItemRepository itemRepository, PendencyRepository pendencyRepository,
                          RetentionCalculator retentionCalculator, CompanyValidation companyValidation,
                          MessageService messageService) {
         this.assessmentService = assessmentService;

@@ -1,7 +1,9 @@
 package br.com.cshub.taxify.service;
 
 import br.com.cshub.taxify.domain.company.Company;
-import br.com.cshub.taxify.domain.xml.FiscalXmlDocument;
+import br.com.cshub.taxify.domain.fiscaldocument.DocumentSourceKey;
+import br.com.cshub.taxify.domain.fiscaldocument.FiscalDocument;
+import br.com.cshub.taxify.support.TestNotes;
 import br.com.cshub.taxify.domain.xml.SefazNoteSummary;
 import br.com.cshub.taxify.domain.xml.SefazNoteSummary.CienciaStatus;
 import br.com.cshub.taxify.integration.fiscalxml.FiscalEventData;
@@ -12,7 +14,7 @@ import br.com.cshub.taxify.integration.sefaz.SefazDistResponse;
 import br.com.cshub.taxify.integration.sefaz.SefazEventClient;
 import br.com.cshub.taxify.integration.sefaz.SefazEventResponse;
 import br.com.cshub.taxify.integration.sefaz.SefazProperties;
-import br.com.cshub.taxify.repository.FiscalXmlDocumentRepository;
+import br.com.cshub.taxify.repository.FiscalDocumentRepository;
 import br.com.cshub.taxify.repository.SefazNoteSummaryRepository;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
@@ -52,7 +54,7 @@ class SefazManifestServiceTest {
     @Mock
     private SefazNoteSummaryRepository summaryRepository;
     @Mock
-    private FiscalXmlDocumentRepository documentRepository;
+    private FiscalDocumentRepository documentRepository;
     @Mock
     private FiscalXmlEventService eventService;
     @Mock
@@ -123,13 +125,13 @@ class SefazManifestServiceTest {
 
     @Test
     void aSummaryOfANoteAlreadyStoredOnlyMarksThatSefazHasIt() {
-        FiscalXmlDocument stored = new FiscalXmlDocument();
+        FiscalDocument stored = TestNotes.note(TestNotes.company(TestNotes.COMPANY_CNPJ)).key(KEY_1).build();
         when(documentRepository.findFirstByCompany_IdAndAccessKey(company.getId(), KEY_1)).thenReturn(Optional.of(stored));
 
         int created = service.recordSummaries(company, List.of(resNFe(KEY_1)));
 
         assertThat(created).isZero();
-        assertThat(stored.getFoundInSefazAt()).isNotNull();
+        assertThat(stored.firstSeenIn(DocumentSourceKey.SEFAZ_DFE)).isPresent();
         verify(summaryRepository, never()).save(any());
     }
 

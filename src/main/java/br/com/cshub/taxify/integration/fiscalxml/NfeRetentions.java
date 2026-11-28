@@ -1,6 +1,6 @@
 package br.com.cshub.taxify.integration.fiscalxml;
 
-import br.com.cshub.taxify.domain.xml.FiscalXmlDocument;
+import br.com.cshub.taxify.domain.fiscaldocument.Withholdings;
 import org.w3c.dom.Document;
 import org.w3c.dom.Element;
 
@@ -31,12 +31,9 @@ public record NfeRetentions(BigDecimal pis, BigDecimal cofins, BigDecimal csll, 
                 decimal(retTrib, "vIRRF"), decimal(retTrib, "vRetPrev"));
     }
 
-    public void applyTo(FiscalXmlDocument document) {
-        document.setRetPis(pis);
-        document.setRetCofins(cofins);
-        document.setRetCsll(csll);
-        document.setRetIrrf(irrf);
-        document.setRetInss(inss);
+    /** The retentions as the document keeps them ({@code withheld_*_amount}). */
+    public Withholdings toWithholdings() {
+        return new Withholdings(pis, cofins, csll, irrf, inss);
     }
 
     private static BigDecimal decimal(Element parent, String name) {

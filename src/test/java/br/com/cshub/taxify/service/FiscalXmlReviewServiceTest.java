@@ -3,13 +3,13 @@ package br.com.cshub.taxify.service;
 import br.com.cshub.taxify.common.CurrentUserService;
 import br.com.cshub.taxify.common.MessageService;
 import br.com.cshub.taxify.common.TenantAccessService;
-import br.com.cshub.taxify.domain.company.Company;
 import br.com.cshub.taxify.domain.user.User;
-import br.com.cshub.taxify.domain.xml.FiscalXmlDocument;
+import br.com.cshub.taxify.domain.fiscaldocument.FiscalDocument;
+import br.com.cshub.taxify.support.TestNotes;
 import br.com.cshub.taxify.enumerated.ReviewStatus;
 import br.com.cshub.taxify.exception.BadRequestException;
 import br.com.cshub.taxify.exception.ResourceNotFoundException;
-import br.com.cshub.taxify.repository.FiscalXmlDocumentRepository;
+import br.com.cshub.taxify.repository.FiscalDocumentRepository;
 import org.junit.jupiter.api.Test;
 
 import java.util.List;
@@ -26,27 +26,24 @@ import static org.mockito.Mockito.when;
 
 class FiscalXmlReviewServiceTest {
 
-    private final FiscalXmlDocumentRepository repository = mock(FiscalXmlDocumentRepository.class);
+    private final FiscalDocumentRepository repository = mock(FiscalDocumentRepository.class);
     private final TenantAccessService tenantAccessService = mock(TenantAccessService.class);
     private final CurrentUserService currentUserService = mock(CurrentUserService.class);
     private final MessageService messageService = mock(MessageService.class);
     private final InvoiceAuditTrail auditTrail = mock(InvoiceAuditTrail.class);
     private final FiscalXmlReviewService service = new FiscalXmlReviewService(repository, tenantAccessService, currentUserService, messageService, auditTrail);
 
-    private FiscalXmlDocument note() {
-        FiscalXmlDocument note = new FiscalXmlDocument();
-        note.setId(UUID.randomUUID());
-        note.setCompany(new Company(UUID.randomUUID()));
-        return note;
+    private FiscalDocument note() {
+        return TestNotes.note(TestNotes.company(TestNotes.COMPANY_CNPJ)).withoutKey().build();
     }
 
     @Test
     void reviewRecordsWhoAndWhen() {
-        FiscalXmlDocument note = note();
+        FiscalDocument note = note();
         User user = new User();
         user.setLogin("maria");
         when(currentUserService.getCurrentUser()).thenReturn(Optional.of(user));
-        when(repository.findAllById(any())).thenReturn(List.of(note));
+        when(repository.findXmlDocuments(any())).thenReturn(List.of(note));
 
         assertThat(service.review(List.of(note.getId()), ReviewStatus.REVIEWED, null)).isEqualTo(1);
 
@@ -59,9 +56,9 @@ class FiscalXmlReviewServiceTest {
 
     @Test
     void backToPendingClearsWhoAndWhen() {
-        FiscalXmlDocument note = note();
+        FiscalDocument note = note();
         note.review(ReviewStatus.REVIEWED, "maria", null, java.time.LocalDateTime.now());
-        when(repository.findAllById(any())).thenReturn(List.of(note));
+        when(repository.findXmlDocuments(any())).thenReturn(List.of(note));
         when(currentUserService.getCurrentUser()).thenReturn(Optional.empty());
 
         service.review(List.of(note.getId()), ReviewStatus.PENDING, null);
@@ -82,7 +79,7 @@ class FiscalXmlReviewServiceTest {
     @Test
     void anUnknownNoteFailsTheWholeCall() {
         when(messageService.getMessage(anyString())).thenReturn("msg");
-        when(repository.findAllById(any())).thenReturn(List.of(note()));
+        when(repository.findXmlDocuments(any())).thenReturn(List.of(note()));
 
         assertThatThrownBy(() -> service.review(List.of(UUID.randomUUID(), UUID.randomUUID()), ReviewStatus.REVIEWED, null))
                 .isInstanceOf(ResourceNotFoundException.class);

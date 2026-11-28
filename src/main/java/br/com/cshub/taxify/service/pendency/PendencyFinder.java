@@ -5,7 +5,8 @@ import br.com.cshub.taxify.domain.company.Company;
 import br.com.cshub.taxify.domain.pendency.Pendency;
 import br.com.cshub.taxify.domain.plan.Plan;
 import br.com.cshub.taxify.domain.subscription.Subscription;
-import br.com.cshub.taxify.domain.xml.FiscalXmlDocument;
+import br.com.cshub.taxify.domain.fiscaldocument.DocumentSourceKey;
+import br.com.cshub.taxify.domain.fiscaldocument.GoodsInvoice;
 import br.com.cshub.taxify.domain.xml.SefazDistControl;
 import br.com.cshub.taxify.domain.xml.SefazNoteSummary;
 import br.com.cshub.taxify.dto.fiscalxml.ManifestationDTOs;
@@ -15,7 +16,7 @@ import br.com.cshub.taxify.enumerated.PlanServiceEnum;
 import br.com.cshub.taxify.enumerated.ReviewStatus;
 import br.com.cshub.taxify.integration.sefaz.SefazProperties;
 import br.com.cshub.taxify.repository.CompanyTaxRegimeRepository;
-import br.com.cshub.taxify.repository.FiscalXmlDocumentRepository;
+import br.com.cshub.taxify.repository.GoodsInvoiceRepository;
 import br.com.cshub.taxify.repository.SefazDistControlRepository;
 import br.com.cshub.taxify.repository.SefazNoteSummaryRepository;
 import br.com.cshub.taxify.repository.SubscriptionRepository;
@@ -63,7 +64,7 @@ public class PendencyFinder {
     private final CompanyCertificateService certificateService;
     private final SefazDistControlRepository controlRepository;
     private final SefazNoteSummaryRepository summaryRepository;
-    private final FiscalXmlDocumentRepository documentRepository;
+    private final GoodsInvoiceRepository documentRepository;
     private final CompanyTaxRegimeRepository regimeRepository;
     private final SubscriptionRepository subscriptionRepository;
     private final SefazManifestationScreenService manifestationService;
@@ -73,7 +74,7 @@ public class PendencyFinder {
     private final TaxClearancePendencies taxClearancePendencies;
 
     public PendencyFinder(CompanyCertificateService certificateService, SefazDistControlRepository controlRepository,
-                          SefazNoteSummaryRepository summaryRepository, FiscalXmlDocumentRepository documentRepository,
+                          SefazNoteSummaryRepository summaryRepository, GoodsInvoiceRepository documentRepository,
                           CompanyTaxRegimeRepository regimeRepository, SubscriptionRepository subscriptionRepository,
                           SefazManifestationScreenService manifestationService, SefazProperties sefazProperties,
                           br.com.cshub.taxify.service.retention.RetentionCalculator retentionCalculator,
@@ -209,26 +210,26 @@ public class PendencyFinder {
 
     private void sources(Company company, LocalDateTime now, List<Finding> findings) {
         LocalDateTime cutoff = now.minusHours(FiscalXmlQueryService.SOURCE_COMPARISON_HOURS);
-        for (FiscalXmlDocument document : documentRepository.findOnlySieg(company.getId(), cutoff,
-                now.minusDays(SEFAZ_WINDOW_DAYS), limit())) {
+        for (GoodsInvoice document : documentRepository.findOnlySieg(company.getId(), cutoff,
+                now.minusDays(SEFAZ_WINDOW_DAYS), DocumentSourceKey.SIEG, DocumentSourceKey.SEFAZ_DFE, limit())) {
             findings.add(noteFinding(PendencyType.SOURCE_ONLY_SIEG, document,
-                    "Nota só no SIEG - NF " + document.getNumero() + " de " + nameOr(document.getEmitenteNome()),
+                    "Nota só no SIEG - NF " + document.getNumber() + " de " + nameOr(document.getIssuer().name()),
                     "O SIEG trouxe a nota há mais de 48h e a SEFAZ não entregou. Confira se o certificado é da"
                             + " empresa destinatária e se a captura pela SEFAZ está em dia."));
         }
-        for (FiscalXmlDocument document : documentRepository.findOnlySefaz(company.getId(), cutoff, limit())) {
+        for (GoodsInvoice document : documentRepository.findOnlySefaz(company.getId(), cutoff, DocumentSourceKey.SIEG,
+                DocumentSourceKey.SEFAZ_DFE, limit())) {
             findings.add(noteFinding(PendencyType.SOURCE_ONLY_SEFAZ, document,
-                    "Nota só na SEFAZ - NF " + document.getNumero() + " de " + nameOr(document.getEmitenteNome()),
+                    "Nota só na SEFAZ - NF " + document.getNumber() + " de " + nameOr(document.getIssuer().name()),
                     "A SEFAZ entregou a nota há mais de 48h e o SIEG não trouxe. Confira a sincronização do SIEG."));
         }
     }
 
     private void divergent(Company company, LocalDateTime now, List<Finding> findings) {
-        for (FiscalXmlDocument document : documentRepository
-                .findByCompany_IdAndDeletedIsFalseAndReviewStatusAndIssueDateGreaterThanEqualOrderByIssueDateAsc(
+        for (GoodsInvoice document : documentRepository.findReviewedSince(
                         company.getId(), ReviewStatus.DIVERGENT, now.minusMonths(DIVERGENT_MONTHS), limit())) {
             findings.add(noteFinding(PendencyType.NOTE_DIVERGENT, document,
-                    "Nota com divergência - NF " + document.getNumero() + " de " + nameOr(document.getEmitenteNome()),
+                    "Nota com divergência - NF " + document.getNumber() + " de " + nameOr(document.getIssuer().name()),
                     document.getReviewNote() != null && !document.getReviewNote().isBlank()
                             ? "Conferência: " + document.getReviewNote()
                             : "Conferida com divergência - corrija (regra, retificação) e marque como conferida."));
@@ -267,7 +268,7 @@ public class PendencyFinder {
                 "Sem o regime a apuração e as checagens por regime não funcionam. Informe no cadastro da empresa."));
     }
 
-    private static Finding noteFinding(PendencyType type, FiscalXmlDocument document, String title, String detail) {
+    private static Finding noteFinding(PendencyType type, GoodsInvoice document, String title, String detail) {
         return new Finding(type, type.defaultSeverity, key(type, document.getAccessKey() != null ? document.getAccessKey() : document.getId()),
                 competence(document.getIssueDate()), Pendency.OBJECT_NOTE, document.getId().toString(), title, detail);
     }

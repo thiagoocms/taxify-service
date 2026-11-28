@@ -329,7 +329,7 @@ public class CapturePanelQueryService {
         Integer position = context.openByCompany.containsKey(row.companyId())
                 ? context.priorityPosition.get(row.companyId())
                 : context.normalPosition.get(row.companyId());
-        // a row only seeded (never verified) has ultima_verificacao_em filled on creation: that is not a verification
+        // a side is verified only once a sync wrote its window (the received side of a row only seeded has no check)
         LocalDateTime receivedCheckedAt = row.windowFrom() == null ? null : row.receivedCheckedAt();
 
         SiegFacts sieg = new SiegFacts(firmAllowed, CaptureEntitlement.sieg(services), hasSubscription, row.lastAttemptAt(),
@@ -446,12 +446,10 @@ public class CapturePanelQueryService {
     private PageExtras pageExtras(List<Evaluated> page, Scope scope, boolean detail) {
         List<UUID> ids = detail ? page.stream().map(item -> item.row.companyId()).toList() : List.of();
         Map<UUID, Map<String, LocalDateTime>> invoices = new HashMap<>();
-        for (var note : panelRepository.lastInvoices(ids)) {
-            invoices.computeIfAbsent(note.companyId(), key -> new HashMap<>()).merge(note.source(), note.at(), CapturePanelQueryService::later);
-        }
         Map<UUID, Map<String, LocalDateTime>> serviceInvoices = new HashMap<>();
-        for (var note : panelRepository.lastServiceInvoices(ids)) {
-            serviceInvoices.computeIfAbsent(note.companyId(), key -> new HashMap<>()).merge(note.source(), note.at(), CapturePanelQueryService::later);
+        for (var note : panelRepository.lastDocuments(ids)) {
+            (note.service() ? serviceInvoices : invoices).computeIfAbsent(note.companyId(), key -> new HashMap<>())
+                    .merge(note.source(), note.at(), CapturePanelQueryService::later);
         }
         Map<UUID, Set<YearMonth>> recoveries = new HashMap<>();
         for (var task : panelRepository.openRecoveries(ids)) {

@@ -1,6 +1,6 @@
 package br.com.cshub.taxify.service.fiscalcheck;
 
-import br.com.cshub.taxify.domain.xml.FiscalXmlDocumentItem;
+import br.com.cshub.taxify.domain.fiscaldocument.FiscalDocumentItem;
 
 import java.util.List;
 
@@ -13,5 +13,5 @@ import java.util.List;
 public interface FiscalCheck {
 
     /** @return what is wrong with the item - empty when nothing (or when the check doesn't apply) */
-    List<FiscalDivergence> check(FiscalXmlDocumentItem item, FiscalCheckContext context);
+    List<FiscalDivergence> check(FiscalDocumentItem item, FiscalCheckContext context);
 }

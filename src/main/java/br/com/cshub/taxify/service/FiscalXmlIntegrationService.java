@@ -11,10 +11,21 @@ import br.com.cshub.taxify.common.DocumentNumbers;
 import br.com.cshub.taxify.enumerated.IntegrationType;
 import br.com.cshub.taxify.common.MessageService;
 import br.com.cshub.taxify.domain.company.Company;
-import br.com.cshub.taxify.domain.xml.FiscalXmlDocument;
-import br.com.cshub.taxify.domain.xml.FiscalXmlDocumentItem;
-import br.com.cshub.taxify.domain.xml.FiscalXmlHeaderExtras;
+import br.com.cshub.taxify.domain.fiscaldocument.CaptureCounts;
+import br.com.cshub.taxify.domain.fiscaldocument.CapturePeriodCount;
+import br.com.cshub.taxify.domain.fiscaldocument.DocumentSourceKey;
+import br.com.cshub.taxify.domain.fiscaldocument.FiscalDocument;
+import br.com.cshub.taxify.domain.fiscaldocument.GoodsInvoice;
 import br.com.cshub.taxify.domain.xml.FiscalXmlSyncControl;
+import br.com.cshub.taxify.enumerated.CaptureSide;
+import br.com.cshub.taxify.enumerated.InvariantScope;
+import br.com.cshub.taxify.enumerated.RetrievalMode;
+import br.com.cshub.taxify.exception.FiscalDocumentInvariantException;
+import br.com.cshub.taxify.mapper.fiscaldocument.FiscalDocumentFactory;
+import br.com.cshub.taxify.mapper.fiscaldocument.LegacySourceNames;
+import br.com.cshub.taxify.repository.FiscalDocumentRepository;
+import br.com.cshub.taxify.repository.GoodsInvoiceRepository;
+import br.com.cshub.taxify.service.capture.CaptureCountsService;
 import br.com.cshub.taxify.dto.fiscalxml.*;
 import br.com.cshub.taxify.dto.sieg.XmlDownloadFilterDTO;
 import br.com.cshub.taxify.dto.sieg.XmlDownloadResultDTO;
@@ -22,10 +33,8 @@ import br.com.cshub.taxify.exception.BadRequestException;
 import br.com.cshub.taxify.exception.SiegIntegrationException;
 import br.com.cshub.taxify.integration.fiscalxml.FiscalXmlPackageExtractor;
 import br.com.cshub.taxify.integration.sieg.*;
-import br.com.cshub.taxify.repository.FiscalXmlDocumentRepository;
 import br.com.cshub.taxify.repository.FiscalXmlSyncControlRepository;
 import br.com.cshub.taxify.repository.SefazNoteSummaryRepository;
-import br.com.cshub.taxify.enumerated.FiscalXmlSource;
 import br.com.cshub.taxify.integration.nfse.NfseXml;
 import br.com.cshub.taxify.integration.fiscalxml.NfeRetentions;
 import br.com.cshub.taxify.validation.CompanyValidation;
@@ -66,7 +75,9 @@ public class FiscalXmlIntegrationService {
     private final FiscalXmlMetadataParser metadataParser;
     private final FiscalXmlFileStorage fileStorage;
     private final FiscalXmlPackageExtractor packageExtractor;
-    private final FiscalXmlDocumentRepository xmlDocumentRepository;
+    private final FiscalDocumentRepository documentRepository;
+    private final GoodsInvoiceRepository goodsInvoiceRepository;
+    private final CaptureCountsService countsService;
     private final FiscalXmlSyncControlRepository syncControlRepository;
     private final CompanyValidation companyValidation;
     private final MessageService messageService;
@@ -115,7 +126,8 @@ public class FiscalXmlIntegrationService {
 
     public FiscalXmlIntegrationService(SiegClient siegClient, FiscalXmlMetadataParser metadataParser,
                                        FiscalXmlFileStorage fileStorage, FiscalXmlPackageExtractor packageExtractor,
-                                       FiscalXmlDocumentRepository xmlDocumentRepository, FiscalXmlSyncControlRepository syncControlRepository,
+                                       FiscalDocumentRepository documentRepository, GoodsInvoiceRepository goodsInvoiceRepository,
+                                       CaptureCountsService countsService, FiscalXmlSyncControlRepository syncControlRepository,
                                        CompanyValidation companyValidation, MessageService messageService, SiegProperties properties,
                                        FirmIntegrationService firmIntegrationService, FiscalEventParser eventParser,
                                        FiscalXmlEventService eventService, SefazNoteSummaryRepository summaryRepository,
@@ -129,7 +141,9 @@ public class FiscalXmlIntegrationService {
         this.metadataParser = metadataParser;
         this.fileStorage = fileStorage;
         this.packageExtractor = packageExtractor;
-        this.xmlDocumentRepository = xmlDocumentRepository;
+        this.documentRepository = documentRepository;
+        this.goodsInvoiceRepository = goodsInvoiceRepository;
+        this.countsService = countsService;
         this.syncControlRepository = syncControlRepository;
         this.companyValidation = companyValidation;
         this.messageService = messageService;
@@ -226,16 +240,16 @@ public class FiscalXmlIntegrationService {
         );
 
         String apiKey = firmIntegrationService.getApiKey(company.getAccountingFirm().getId(), IntegrationType.SIEG);
-        FiscalXmlSyncControl known = syncControlRepository.findByCompany_Id(company.getId()).orElse(null);
-        String month = filter.dataEmissaoInicio() == null ? null : YearMonth.from(filter.dataEmissaoInicio()).toString();
-        int knownGap = known == null || month == null ? 0 : known.knownGap(side.ownIssue(), month);
+        CaptureCounts known = countsService.siegNfe(company);
+        YearMonth month = filter.dataEmissaoInicio() == null ? null : YearMonth.from(filter.dataEmissaoInicio());
+        int knownGap = known.knownGap(side.captureSide(), month);
 
         if (skipCountCheck) {
             log.info("Skipping contar-xmls for company {} ({}) - already known pending from a previous check", company.getId(), side);
             List<byte[]> xmlContents = siegClient.downloadXmls(request, apiKey);
-            XmlDownloadResultDTO page = persistAll(company, xmlContents, FiscalXmlSource.SIEG);
-            Integer knownTotal = known == null ? null
-                    : side == FiscalXmlSide.ISSUED ? known.getIssuedTotalSieg() : Integer.valueOf(known.getTotalSieg());
+            XmlDownloadResultDTO page = persistAll(company, xmlContents, DocumentSourceKey.SIEG);
+            Integer knownTotal = month == null ? null
+                    : known.row(side.captureSide(), month).map(CapturePeriodCount::getProviderTotal).orElse(null);
             PagingEnd end = knownTotal == null ? PagingEnd.NONE
                     : pagingEnd(company, side, filter, request.skip(), knownTotal, xmlContents.size(), knownGap, true);
             updateSyncControl(company, side, filter.dataEmissaoInicio(), filter.dataEmissaoFim(), null, end.gapToRecord());
@@ -258,7 +272,7 @@ public class FiscalXmlIntegrationService {
             result = new XmlDownloadResultDTO(0, 0, 0, 0, 0, List.of(), List.of(), 0);
         } else {
             List<byte[]> xmlContents = siegClient.downloadXmls(request, apiKey);
-            result = persistAll(company, xmlContents, FiscalXmlSource.SIEG);
+            result = persistAll(company, xmlContents, DocumentSourceKey.SIEG);
             if (totalSieg > 0) {
                 end = pagingEnd(company, side, filter, request.skip(), totalSieg, xmlContents.size(), knownGap, true);
             }
@@ -322,7 +336,7 @@ public class FiscalXmlIntegrationService {
                 need.side() == FiscalXmlSide.RECEIVED ? cnpj : null,
                 true);
         List<byte[]> xmlContents = siegClient.downloadXmls(request, apiKey);
-        XmlDownloadResultDTO result = persistAll(company, xmlContents, FiscalXmlSource.SIEG, false);
+        XmlDownloadResultDTO result = persistAll(company, xmlContents, DocumentSourceKey.SIEG, false);
         return new ReconciledPage(xmlContents.size(), result.totalPersistedNew(),
                 siegDelivered(company.getId(), need.side(), need.from(), need.to()));
     }
@@ -335,21 +349,18 @@ public class FiscalXmlIntegrationService {
     public void recordReconciliation(ReconciliationNeed need) {
         Company company = findCompanyWithCnpj(need.companyId().toString());
         int delivered = siegDelivered(company.getId(), need.side(), need.from(), need.to());
-        syncControlRepository.findByCompany_Id(company.getId()).ifPresent(control -> {
-            String month = YearMonth.from(need.from()).toString();
-            control.recordKnownGap(need.side().ownIssue(), month, Math.max(0, need.totalSieg() - delivered));
-            if (!need.currentWindow()) {
-                control.refreshPreviousMonth(need.side().ownIssue(), month, need.totalSieg(), delivered);
-            } else if (need.side() == FiscalXmlSide.ISSUED) {
-                control.setIssuedTotalImported(delivered);
-            } else {
-                control.setTotalImported(delivered);
-            }
-            if (need.currentWindow()) {
-                control.setStoredAnySource(need.side().ownIssue(), storedAnySource(company.getId(), need.side(), need.from(), need.to()));
-            }
-            syncControlRepository.save(control);
-        });
+        CaptureCounts counts = countsService.siegNfe(company);
+        CaptureSide side = need.side().captureSide();
+        YearMonth month = YearMonth.from(need.from());
+        counts.recordKnownGap(side, month, Math.max(0, need.totalSieg() - delivered), LocalDateTime.now(clock));
+        if (!need.currentWindow()) {
+            counts.refreshPreviousMonth(side, month, need.totalSieg(), delivered);
+        } else {
+            CapturePeriodCount row = counts.rowFor(side, month);
+            row.correctImported(delivered);
+            row.recordStoredAnySource(storedAnySource(company.getId(), need.side(), need.from(), need.to()));
+        }
+        countsService.save(counts);
     }
 
     /**
@@ -373,43 +384,43 @@ public class FiscalXmlIntegrationService {
         if (counts == null) {
             return new SiegSideOutcome(none, true, null, null);
         }
-        String month = YearMonth.from(from).toString();
-        FiscalXmlSyncControl control = syncControlRepository.findByCompany_Id(companyId).orElse(null);
-        int knownGap = control == null ? 0 : control.knownGap(side.ownIssue(), month);
+        YearMonth month = YearMonth.from(from);
+        CaptureSide captureSide = side.captureSide();
+        CaptureCounts control = countsService.siegNfe(company);
+        int knownGap = control.knownGap(captureSide, month);
         if (counts.nfe() <= delivered + knownGap) {
-            if (control != null) {
-                control.refreshPreviousMonth(side.ownIssue(), month, counts.nfe(), delivered);
-                syncControlRepository.save(control);
-            }
+            control.refreshPreviousMonth(captureSide, month, counts.nfe(), delivered);
+            countsService.save(control);
             return new SiegSideOutcome(none, false, null, null);
         }
         log.info("SIEG counts {} NFe of company {} ({}) for {}, {} delivered and {} known missing - asking for the rest",
                 counts.nfe(), companyId, side, month, delivered, knownGap);
         List<byte[]> xmlContents = siegClient.downloadXmls(request, apiKey);
-        XmlDownloadResultDTO result = persistAll(company, xmlContents, FiscalXmlSource.SIEG, false);
+        XmlDownloadResultDTO result = persistAll(company, xmlContents, DocumentSourceKey.SIEG, false);
         XmlDownloadFilterDTO window = new XmlDownloadFilterDTO(companyId.toString(), TIPO_XML_NFE, from, to, PAGE_SIZE, delivered,
                 null, side);
         PagingEnd end = pagingEnd(company, side, window, delivered, counts.nfe(), xmlContents.size(), knownGap, false);
-        if (control != null) {
-            if (end.gapToRecord() != null) {
-                control.recordKnownGap(side.ownIssue(), month, end.gapToRecord());
-            }
-            control.refreshPreviousMonth(side.ownIssue(), month, counts.nfe(), siegDelivered(companyId, side, from, to));
-            syncControlRepository.save(control);
+        if (end.gapToRecord() != null) {
+            control.recordKnownGap(captureSide, month, end.gapToRecord(), LocalDateTime.now(clock));
         }
+        control.refreshPreviousMonth(captureSide, month, counts.nfe(), siegDelivered(companyId, side, from, to));
+        countsService.save(control);
         return new SiegSideOutcome(result, false, null, end.reconciliation());
     }
 
-    /** The side's notes of the window that SIEG itself delivered (found_in_sieg_at) - SIEG's skip and the "importado" (B1). */
+    /**
+     * The side's notes of the window that SIEG itself delivered in its period mode (origin SIEG + PERIOD in
+     * {@code fiscal_document_sources}) - SIEG's skip and the "importado" (B1, CA-FD-18).
+     */
     private int siegDelivered(UUID companyId, FiscalXmlSide side, LocalDate from, LocalDate to) {
-        return (int) xmlDocumentRepository.countByCompany_IdAndOwnIssueAndIssueDateBetweenAndFoundInSiegAtIsNotNull(
-                companyId, side.ownIssue(), IssuePeriod.siegStart(from), IssuePeriod.siegEnd(to));
+        return (int) goodsInvoiceRepository.countDeliveredBy(companyId, side.ownIssue(), IssuePeriod.siegStart(from),
+                IssuePeriod.siegEnd(to), DocumentSourceKey.SIEG, RetrievalMode.PERIOD);
     }
 
     /** The side's notes of the window in Taxify from any source - shown next to SIEG's numbers on the panel. */
     private int storedAnySource(UUID companyId, FiscalXmlSide side, LocalDate from, LocalDate to) {
-        return (int) xmlDocumentRepository.countByCompany_IdAndOwnIssueAndIssueDateBetween(companyId, side.ownIssue(),
-                IssuePeriod.siegStart(from), IssuePeriod.siegEnd(to));
+        return (int) goodsInvoiceRepository.countStored(companyId, side.ownIssue(), IssuePeriod.siegStart(from),
+                IssuePeriod.siegEnd(to));
     }
 
     private static XmlDownloadResultDTO merge(XmlDownloadResultDTO a, XmlDownloadResultDTO b) {
@@ -452,57 +463,33 @@ public class FiscalXmlIntegrationService {
      */
     private void updateSyncControl(Company company, FiscalXmlSide side, LocalDate dataEmissaoInicio, LocalDate dataEmissaoFim,
                                    Integer totalSieg, Integer gapToRecord) {
-        FiscalXmlSyncControl control = syncControlRepository.findByCompany_Id(company.getId())
-                .orElseGet(() -> {
-                    FiscalXmlSyncControl created = new FiscalXmlSyncControl();
-                    created.setCompany(company);
-                    created.setDeleted(false);
-                    created.setLastCheckedAt(LocalDateTime.now(clock));
-                    return created;
-                });
+        ensureControlRow(company);
+        LocalDateTime now = LocalDateTime.now(clock);
         int imported = siegDelivered(company.getId(), side, dataEmissaoInicio, dataEmissaoFim);
-        closePreviousMonth(control, dataEmissaoInicio);
-        control.setIssueDateFrom(dataEmissaoInicio);
-        control.setIssueDateTo(dataEmissaoFim);
-        if (gapToRecord != null && dataEmissaoInicio != null) {
-            control.recordKnownGap(side.ownIssue(), YearMonth.from(dataEmissaoInicio).toString(), gapToRecord);
+        CaptureCounts counts = countsService.siegNfe(company);
+        counts.closePreviousMonth(dataEmissaoInicio, now);
+        // a manual sync without a window start (the scheduler always sends one) counts on the current month, windowless
+        YearMonth month = dataEmissaoInicio == null ? YearMonth.from(now) : YearMonth.from(dataEmissaoInicio);
+        CapturePeriodCount row = counts.rowFor(side.captureSide(), month);
+        row.askedWindow(dataEmissaoInicio, dataEmissaoFim);
+        if (gapToRecord != null) {
+            counts.recordKnownGap(side.captureSide(), month, gapToRecord, now);
         }
-        control.setStoredAnySource(side.ownIssue(), storedAnySource(company.getId(), side, dataEmissaoInicio, dataEmissaoFim));
-        if (side == FiscalXmlSide.ISSUED) {
-            if (totalSieg != null) {
-                control.setIssuedTotalSieg(totalSieg);
-            }
-            control.setIssuedTotalImported(imported);
-            control.setIssuedCheckedAt(LocalDateTime.now(clock));
-        } else {
-            if (totalSieg != null) {
-                control.setTotalSieg(totalSieg);
-            }
-            control.setTotalImported(imported);
-            control.setLastCheckedAt(LocalDateTime.now(clock));
+        row.recordStoredAnySource(storedAnySource(company.getId(), side, dataEmissaoInicio, dataEmissaoFim));
+        if (totalSieg != null) {
+            row.recordProviderCount(totalSieg, now);
         }
-        syncControlRepository.save(control);
+        row.recordImported(imported, now);
+        countsService.save(counts);
     }
 
-    /**
-     * CP-RN-22: the window moves to a later month - each side's counters are still the old month's, so they are kept as
-     * "how that month closed" before being replaced. The window is shared by both sides: the first side to write the new
-     * month closes both. A side last checked before the old window (stale counters, or never checked) is not closed. A
-     * manual sync of an earlier month (window going back) closes nothing.
-     */
-    static void closePreviousMonth(FiscalXmlSyncControl control, LocalDate newWindowStart) {
-        LocalDate oldStart = control.getIssueDateFrom();
-        if (oldStart == null || newWindowStart == null || !YearMonth.from(newWindowStart).isAfter(YearMonth.from(oldStart))) {
-            return;
-        }
-        String month = YearMonth.from(oldStart).toString();
-        // one day of margin: the window's day comes from the JVM's zone, the verification time from Recife's
-        LocalDate checkedFrom = oldStart.minusDays(1);
-        if (control.getLastCheckedAt() != null && !control.getLastCheckedAt().toLocalDate().isBefore(checkedFrom)) {
-            control.closeReceivedMonth(month, control.getTotalSieg(), control.getTotalImported());
-        }
-        if (control.getIssuedCheckedAt() != null && !control.getIssuedCheckedAt().toLocalDate().isBefore(checkedFrom)) {
-            control.closeIssuedMonth(month, control.getIssuedTotalSieg(), control.getIssuedTotalImported());
+    /** The company's row of the capture queue, created the first time it is synced (the scheduler creates the others). */
+    private void ensureControlRow(Company company) {
+        if (syncControlRepository.findByCompany_Id(company.getId()).isEmpty()) {
+            FiscalXmlSyncControl created = new FiscalXmlSyncControl();
+            created.setCompany(company);
+            created.setDeleted(false);
+            syncControlRepository.save(created);
         }
     }
 
@@ -538,7 +525,7 @@ public class FiscalXmlIntegrationService {
             found = packageExtractor.forEachXml(upload, xml -> {
                 batch.add(xml);
                 if (batch.size() >= UPLOAD_BATCH) {
-                    total[0] = plus(total[0], persistAll(companyForBatch(id), batch, FiscalXmlSource.UPLOAD, false));
+                    total[0] = plus(total[0], persistAll(companyForBatch(id), batch, DocumentSourceKey.UPLOAD, false));
                     batch.clear();
                     releaseMemory();
                 }
@@ -550,7 +537,7 @@ public class FiscalXmlIntegrationService {
             throw new BadRequestException("error.fiscalXml.import.no.xml.found", messageService.getMessage("error.fiscalXml.import.no.xml.found"));
         }
         if (!batch.isEmpty()) {
-            total[0] = plus(total[0], persistAll(companyForBatch(id), batch, FiscalXmlSource.UPLOAD, false));
+            total[0] = plus(total[0], persistAll(companyForBatch(id), batch, DocumentSourceKey.UPLOAD, false));
         }
         return total[0];
     }
@@ -588,7 +575,7 @@ public class FiscalXmlIntegrationService {
      */
     @Transactional
     public XmlDownloadResultDTO importFromSefaz(UUID companyId, List<byte[]> xmlContents) {
-        return persistAll(findCompanyWithCnpj(companyId.toString()), xmlContents, FiscalXmlSource.SEFAZ_DIST);
+        return persistAll(findCompanyWithCnpj(companyId.toString()), xmlContents, DocumentSourceKey.SEFAZ_DFE);
     }
 
     /**
@@ -598,12 +585,12 @@ public class FiscalXmlIntegrationService {
      * {@code source} is kept on a new note and marks, on new and known notes alike, that this
      * source has it (the SIEG x SEFAZ comparison); a SEFAZ summary of the note is completed.
      */
-    private XmlDownloadResultDTO persistAll(Company company, List<byte[]> xmlContents, FiscalXmlSource source) {
+    private XmlDownloadResultDTO persistAll(Company company, List<byte[]> xmlContents, DocumentSourceKey source) {
         return persistAll(company, xmlContents, source, true);
     }
 
     /** @param withItems whether the answer lists each note with its XML (the SIEG search screen) or only counts and keys */
-    private XmlDownloadResultDTO persistAll(Company company, List<byte[]> xmlContents, FiscalXmlSource source, boolean withItems) {
+    private XmlDownloadResultDTO persistAll(Company company, List<byte[]> xmlContents, DocumentSourceKey source, boolean withItems) {
         int persistedNew = 0;
         int duplicated = 0;
         int parseErrors = 0;
@@ -622,9 +609,9 @@ public class FiscalXmlIntegrationService {
             }
             notes++;
 
-            // a service invoice (NFS-e) goes to its own table - it has no NF-e fields to fill
+            // a service invoice (NFS-e) is an Nfse - it has no NF-e fields to fill
             if (NfseXml.looksLikeNfse(xmlBytes)) {
-                switch (serviceInvoiceService.store(company, xmlBytes, source.name())) {
+                switch (serviceInvoiceService.store(company, xmlBytes, LegacySourceNames.toLegacyName(source))) {
                     case NEW -> persistedNew++;
                     case DUPLICATE -> duplicated++;
                     case INVALID -> parseErrors++;
@@ -635,28 +622,32 @@ public class FiscalXmlIntegrationService {
             FiscalXmlMetadata metadata = metadataParser.parse(xmlBytes);
             String xmlContent = new String(xmlBytes, StandardCharsets.UTF_8);
 
-            if ("UNKNOWN".equals(metadata.documentType()) && metadata.accessKey() == null) {
+            if (FiscalXmlMetadata.UNKNOWN.equals(metadata.documentType())) {
+                // FD-RN-03: a file that is no NF-e, NFC-e nor CT-e has no subtype in the new model - a read failure,
+                // not stored (the old table kept it as document_type UNKNOWN)
                 parseErrors++;
+                continue;
             }
 
-            if (metadata.accessKey() != null && xmlDocumentRepository.existsByCompany_IdAndAccessKey(company.getId(), metadata.accessKey())) {
+            if (metadata.accessKey() != null && documentRepository.existsByCompany_IdAndAccessKey(company.getId(), metadata.accessKey())) {
                 duplicated++;
-                xmlDocumentRepository.findFirstByCompany_IdAndAccessKey(company.getId(), metadata.accessKey())
-                        .filter(known -> markFoundIn(known, source))
-                        .ifPresent(xmlDocumentRepository::save);
+                documentRepository.findFirstByCompany_IdAndAccessKey(company.getId(), metadata.accessKey())
+                        .ifPresent(known -> {
+                            known.markSeenIn(source, source.currentRetrievalMode(), LocalDateTime.now(clock));
+                            documentRepository.save(known);
+                        });
                 if (withItems) {
                     xmls.add(toItemDTO(metadata, xmlContent));
                 }
                 continue;
             }
 
-            String xmlFilePath = fileStorage.store(company.getId(), metadata.accessKey(), xmlBytes);
-            FiscalXmlDocument fresh = toDocument(metadata, company, xmlFilePath);
-            NfeRetentions.parse(xmlBytes).applyTo(fresh);
-            fresh.setSourceSystem(source.name());
-            markFoundIn(fresh, source);
-            completeSummary(company, fresh);
-            FiscalXmlDocument document = xmlDocumentRepository.save(fresh);
+            Optional<FiscalDocument> fresh = newDocument(metadata, company, source, xmlBytes);
+            if (fresh.isEmpty()) {
+                parseErrors++;
+                continue;
+            }
+            FiscalDocument document = documentRepository.save(fresh.get());
             eventService.linkPendingEvents(document);
             persistedNew++;
             if (metadata.accessKey() != null) {
@@ -679,25 +670,40 @@ public class FiscalXmlIntegrationService {
         );
     }
 
-    /** @return whether the note changed - the first time this source brings it */
-    private boolean markFoundIn(FiscalXmlDocument document, FiscalXmlSource source) {
-        LocalDateTime now = LocalDateTime.now(clock);
-        if (source == FiscalXmlSource.SIEG && document.getFoundInSiegAt() == null) {
-            document.setFoundInSiegAt(now);
-            return true;
+    /**
+     * The document of a new XML (FD-RN-03): built by {@link FiscalDocumentFactory}, its file stored, seen in
+     * {@code source} (FD-RN-31) and the SEFAZ summary of the note completed; its invariants checked (CREATE). A document
+     * that breaks one is not stored - a read failure of the batch, logged with the invariant code only.
+     */
+    private Optional<FiscalDocument> newDocument(FiscalXmlMetadata metadata, Company company, DocumentSourceKey source,
+                                                 byte[] xmlBytes) {
+        try {
+            FiscalDocument document = FiscalDocumentFactory.fromParsed(metadata, company, source, PENDING_FILE,
+                    FiscalXmlMetadataParser.CURRENT_VERSION, NfeRetentions.parse(xmlBytes)).orElse(null);
+            if (document == null) {
+                return Optional.empty();
+            }
+            LocalDateTime now = LocalDateTime.now(clock);
+            document.markSeenIn(source, source.currentRetrievalMode(), now);
+            completeSummary(company, document);
+            document.verifyInvariants(InvariantScope.CREATE);
+            document.setXmlFilePath(fileStorage.store(company.getId(), metadata.accessKey(), xmlBytes));
+            return Optional.of(document);
+        } catch (FiscalDocumentInvariantException e) {
+            log.warn("fiscal.document.invariant.violated id={} type={} invariant={} source={}", null,
+                    e.getDocumentType(), e.getInvariant(), LegacySourceNames.toLegacyName(source));
+            return Optional.empty();
         }
-        if (source == FiscalXmlSource.SEFAZ_DIST && document.getFoundInSefazAt() == null) {
-            document.setFoundInSefazAt(now);
-            return true;
-        }
-        return false;
     }
+
+    /** Placeholder path while the invariants are checked, before the file is stored (I-09 needs a path). */
+    private static final String PENDING_FILE = "pending";
 
     /**
      * A SEFAZ summary of this note (an entry waiting for Ciência) is done now that the full XML is
      * here, whichever source brought it - and SEFAZ counts as having had the note since then.
      */
-    private void completeSummary(Company company, FiscalXmlDocument document) {
+    private void completeSummary(Company company, FiscalDocument document) {
         if (document.getAccessKey() == null) {
             return;
         }
@@ -706,8 +712,9 @@ public class FiscalXmlIntegrationService {
                 .ifPresent(summary -> {
                     summary.setCompletedAt(LocalDateTime.now());
                     summaryRepository.save(summary);
-                    if (document.getFoundInSefazAt() == null) {
-                        document.setFoundInSefazAt(summary.getCreatedDate() != null ? summary.getCreatedDate() : LocalDateTime.now());
+                    if (document.firstSeenIn(DocumentSourceKey.SEFAZ_DFE).isEmpty()) {
+                        document.markSeenIn(DocumentSourceKey.SEFAZ_DFE, RetrievalMode.CURSOR,
+                                summary.getCreatedDate() != null ? summary.getCreatedDate() : LocalDateTime.now());
                     }
                 });
     }
@@ -729,7 +736,7 @@ public class FiscalXmlIntegrationService {
     @Transactional
     public int refreshRecentEvents(UUID companyId, FiscalXmlSide side, LocalDate from, LocalDate to) {
         Company company = findCompanyWithCnpj(companyId.toString());
-        if (properties.isEventsOnlyWithRecentNotes() && !xmlDocumentRepository.existsByCompany_IdAndOwnIssueAndIssueDateBetween(
+        if (properties.isEventsOnlyWithRecentNotes() && !goodsInvoiceRepository.existsIssuedBetween(
                 company.getId(), side.ownIssue(), IssuePeriod.start(from.minusDays(1)), IssuePeriod.end(to))) {
             log.info("Event sweep for company {} ({}): no note issued from {} to {} - no request spent", company.getId(), side, from, to);
             return 0;
@@ -743,7 +750,7 @@ public class FiscalXmlIntegrationService {
                     side == FiscalXmlSide.ISSUED ? cnpj : null,
                     side == FiscalXmlSide.RECEIVED ? cnpj : null,
                     true);
-            XmlDownloadResultDTO result = persistAll(company, siegClient.downloadXmls(request, apiKey), FiscalXmlSource.SIEG);
+            XmlDownloadResultDTO result = persistAll(company, siegClient.downloadXmls(request, apiKey), DocumentSourceKey.SIEG);
             events += result.totalEventsRecorded();
             if (result.totalXmlsCounted() < PAGE_SIZE) {
                 break;
@@ -770,7 +777,7 @@ public class FiscalXmlIntegrationService {
                 side == FiscalXmlSide.RECEIVED ? cnpj : null,
                 true);
         // counts and keys only - the recovery never answers with the XMLs themselves
-        return persistAll(company, siegClient.downloadXmls(request, apiKey), FiscalXmlSource.SIEG, false);
+        return persistAll(company, siegClient.downloadXmls(request, apiKey), DocumentSourceKey.SIEG, false);
     }
 
     public static int pageSize() {
@@ -779,7 +786,7 @@ public class FiscalXmlIntegrationService {
 
     /**
      * Same company/period lookup as {@link FiscalXmlQueryService#search}, but serves each note's
-     * rectified version ({@link FiscalXmlDocument#getRectifiedFilePath()}) instead of the
+     * rectified version ({@link GoodsInvoice#getRectifiedFilePath()}) instead of the
      * original whenever one exists - so an exported nota reflects the corrected CFOP/NCM
      * a {@link FiscalXmlRectificationService} run applied, not what SEFAZ originally
      * issued. A note never rectified simply falls back to {@code xmlFilePath}.
@@ -791,12 +798,11 @@ public class FiscalXmlIntegrationService {
         LocalDateTime from = IssuePeriod.start(filter.dataEmissaoInicio());
         LocalDateTime to = IssuePeriod.end(filter.dataEmissaoFim());
 
-        List<FiscalXmlDocument> documents = xmlDocumentRepository
-                .findByCompany_IdAndIssueDateBetweenOrderByIssueDateDesc(company.getId(), from, to);
+        List<FiscalDocument> documents = documentRepository.findXmlDocumentsIssuedBetween(company.getId(), from, to);
 
         List<FiscalXmlItemDTO> xmls = new ArrayList<>();
-        for (FiscalXmlDocument document : documents) {
-            String path = document.getRectifiedFilePath() != null ? document.getRectifiedFilePath() : document.getXmlFilePath();
+        for (FiscalDocument document : documents) {
+            String path = exportedPath(document);
             try {
                 byte[] xmlBytes = fileStorage.read(path);
                 FiscalXmlMetadata metadata = metadataParser.parse(xmlBytes);
@@ -822,14 +828,13 @@ public class FiscalXmlIntegrationService {
         LocalDateTime from = IssuePeriod.start(filter.dataEmissaoInicio());
         LocalDateTime to = IssuePeriod.end(filter.dataEmissaoFim());
 
-        List<FiscalXmlDocument> documents = xmlDocumentRepository
-                .findByCompany_IdAndIssueDateBetweenOrderByIssueDateDesc(company.getId(), from, to);
+        List<FiscalDocument> documents = documentRepository.findXmlDocumentsIssuedBetween(company.getId(), from, to);
 
         ByteArrayOutputStream buffer = new ByteArrayOutputStream();
         Set<String> usedNames = new HashSet<>();
         try (ZipOutputStream zip = new ZipOutputStream(buffer)) {
-            for (FiscalXmlDocument document : documents) {
-                String path = document.getRectifiedFilePath() != null ? document.getRectifiedFilePath() : document.getXmlFilePath();
+            for (FiscalDocument document : documents) {
+                String path = exportedPath(document);
                 byte[] xmlBytes;
                 try {
                     xmlBytes = fileStorage.read(path);
@@ -847,7 +852,15 @@ public class FiscalXmlIntegrationService {
         return buffer.toByteArray();
     }
 
-    private String uniqueEntryName(FiscalXmlDocument document, Set<String> usedNames) {
+    /** The rectified file of a goods invoice when there is one, else the original. */
+    private static String exportedPath(FiscalDocument document) {
+        if (document instanceof GoodsInvoice goods && goods.getRectifiedFilePath() != null) {
+            return goods.getRectifiedFilePath();
+        }
+        return document.getXmlFilePath();
+    }
+
+    private String uniqueEntryName(FiscalDocument document, Set<String> usedNames) {
         String base = document.accessKeyOrId();
         String name = base + ".xml";
         int suffix = 2;
@@ -855,168 +868,6 @@ public class FiscalXmlIntegrationService {
             name = base + "-" + suffix++ + ".xml";
         }
         return name;
-    }
-
-    private FiscalXmlDocument toDocument(FiscalXmlMetadata metadata, Company company, String xmlFilePath) {
-        FiscalXmlDocument document = new FiscalXmlDocument();
-        document.setCompany(company);
-        document.setAccessKey(metadata.accessKey());
-        document.setDocumentType(metadata.documentType());
-        document.setIssuerCnpj(metadata.issuerCnpj());
-        document.setRecipientCnpj(metadata.recipientCnpj());
-        document.setIssueDate(metadata.issueDate());
-        document.setXmlFilePath(xmlFilePath);
-        document.setMetadataVersion(FiscalXmlMetadataParser.CURRENT_VERSION);
-        document.setDeleted(false);
-        String issuerCpf = metadata.emitente() == null ? null : metadata.emitente().cpf();
-        String tipoOperacao = metadata.identificacao() == null ? null : metadata.identificacao().tipoOperacao();
-        boolean ownIssue = FiscalDirections.isOwnIssue(company.getDocument().getNumber(), metadata.issuerCnpj(), issuerCpf);
-        document.setOwnIssue(ownIssue);
-        document.setDirection(FiscalDirections.directionOf(ownIssue, tipoOperacao));
-
-        applyIdentificacao(document, metadata.identificacao());
-        applyEmitente(document, metadata.emitente());
-        applyDestinatario(document, metadata.destinatario());
-        applyTotais(document, metadata.totais());
-        document.setHeaderExtras(FiscalXmlHeaderExtras.of(metadata));
-
-        for (FiscalXmlProdutoDTO produto : metadata.produtos()) {
-            document.getItens().add(toItemEntity(produto, document));
-        }
-
-        return document;
-    }
-
-    private void applyIdentificacao(FiscalXmlDocument document, FiscalXmlIdentificacaoDTO ide) {
-        if (ide == null) {
-            return;
-        }
-        document.setCodigoUf(ide.codigoUf());
-        document.setNaturezaOperacao(ide.naturezaOperacao());
-        document.setModelo(ide.modelo());
-        document.setSerie(ide.serie());
-        document.setNumero(ide.numero());
-        document.setDataSaidaEntrada(ide.dataSaidaEntrada());
-        document.setTipoOperacao(ide.tipoOperacao());
-        document.setDestinoOperacao(ide.destinoOperacao());
-        document.setCodigoMunicipioFatoGerador(ide.codigoMunicipioFatoGerador());
-        document.setAmbiente(ide.ambiente());
-        document.setFinalidadeEmissao(ide.finalidadeEmissao());
-        document.setConsumidorFinal(ide.consumidorFinal());
-        document.setIndicadorPresenca(ide.indicadorPresenca());
-    }
-
-    private void applyEmitente(FiscalXmlDocument document, FiscalXmlEmitenteDTO emit) {
-        if (emit == null) {
-            return;
-        }
-        document.setEmitenteCpf(emit.cpf());
-        document.setEmitenteNome(emit.nome());
-        document.setEmitenteNomeFantasia(emit.nomeFantasia());
-        document.setEmitenteInscricaoEstadual(emit.inscricaoEstadual());
-        document.setEmitenteInscricaoEstadualSubstitutoTributario(emit.inscricaoEstadualSubstitutoTributario());
-        document.setEmitenteInscricaoMunicipal(emit.inscricaoMunicipal());
-        document.setEmitenteCnae(emit.cnae());
-        document.setEmitenteRegimeTributario(emit.regimeTributario());
-
-        FiscalXmlEnderecoDTO endereco = emit.endereco();
-        if (endereco != null) {
-            document.setEmitenteLogradouro(endereco.logradouro());
-            document.setEmitenteEnderecoNumero(endereco.numero());
-            document.setEmitenteComplemento(endereco.complemento());
-            document.setEmitenteBairro(endereco.bairro());
-            document.setEmitenteCodigoMunicipio(endereco.codigoMunicipio());
-            document.setEmitenteMunicipio(endereco.municipio());
-            document.setEmitenteUf(endereco.uf());
-            document.setEmitenteCep(endereco.cep());
-            document.setEmitenteTelefone(endereco.telefone());
-        }
-    }
-
-    private void applyDestinatario(FiscalXmlDocument document, FiscalXmlDestinatarioDTO dest) {
-        if (dest == null) {
-            return;
-        }
-        document.setDestinatarioCpf(dest.cpf());
-        document.setDestinatarioIdEstrangeiro(dest.idEstrangeiro());
-        document.setDestinatarioNome(dest.nome());
-        document.setDestinatarioInscricaoEstadual(dest.inscricaoEstadual());
-        document.setDestinatarioIndicadorIe(dest.indicadorIe());
-        document.setDestinatarioEmail(dest.email());
-
-        FiscalXmlEnderecoDTO endereco = dest.endereco();
-        if (endereco != null) {
-            document.setDestinatarioLogradouro(endereco.logradouro());
-            document.setDestinatarioEnderecoNumero(endereco.numero());
-            document.setDestinatarioComplemento(endereco.complemento());
-            document.setDestinatarioBairro(endereco.bairro());
-            document.setDestinatarioCodigoMunicipio(endereco.codigoMunicipio());
-            document.setDestinatarioMunicipio(endereco.municipio());
-            document.setDestinatarioUf(endereco.uf());
-            document.setDestinatarioCep(endereco.cep());
-            document.setDestinatarioTelefone(endereco.telefone());
-        }
-    }
-
-    private void applyTotais(FiscalXmlDocument document, FiscalXmlTotaisDTO totais) {
-        if (totais == null) {
-            return;
-        }
-        document.setBaseCalculoIcms(totais.baseCalculoIcms());
-        document.setValorIcms(totais.valorIcms());
-        document.setValorIcmsDesonerado(totais.valorIcmsDesonerado());
-        document.setValorFcp(totais.valorFcp());
-        document.setBaseCalculoIcmsSt(totais.baseCalculoIcmsSt());
-        document.setValorIcmsSt(totais.valorIcmsSt());
-        document.setValorFcpSt(totais.valorFcpSt());
-        document.setValorProdutos(totais.valorProdutos());
-        document.setValorFrete(totais.valorFrete());
-        document.setValorSeguro(totais.valorSeguro());
-        document.setValorDesconto(totais.valorDesconto());
-        document.setValorImportacao(totais.valorImportacao());
-        document.setValorIpi(totais.valorIpi());
-        document.setValorPis(totais.valorPis());
-        document.setValorCofins(totais.valorCofins());
-        document.setValorOutrasDespesas(totais.valorOutrasDespesas());
-        document.setValorTotalNota(totais.valorTotalNota());
-        document.setValorAproximadoTributos(totais.valorAproximadoTributos());
-        document.setIbsCbsTotals(totais.ibsCbs());
-    }
-
-    private FiscalXmlDocumentItem toItemEntity(FiscalXmlProdutoDTO produto, FiscalXmlDocument document) {
-        FiscalXmlDocumentItem item = new FiscalXmlDocumentItem();
-        item.setDocument(document);
-        item.setNumeroItem(produto.numeroItem());
-        item.setCodigo(produto.codigo());
-        item.setCodigoBarras(produto.codigoBarras());
-        item.setDescricao(produto.descricao());
-        item.setNcm(produto.ncm());
-        item.setCfop(produto.cfop());
-        item.setUnidadeComercial(produto.unidadeComercial());
-        item.setQuantidadeComercial(produto.quantidadeComercial());
-        item.setValorUnitarioComercial(produto.valorUnitarioComercial());
-        item.setValorTotal(produto.valorTotal());
-        item.setUnidadeTributavel(produto.unidadeTributavel());
-        item.setQuantidadeTributavel(produto.quantidadeTributavel());
-        item.setValorUnitarioTributavel(produto.valorUnitarioTributavel());
-
-        FiscalXmlImpostoItemDTO impostos = produto.impostos();
-        if (impostos != null) {
-            item.setSituacaoTributariaIcms(impostos.situacaoTributariaIcms());
-            item.setBaseCalculoIcms(impostos.baseCalculoIcms());
-            item.setAliquotaIcms(impostos.aliquotaIcms());
-            item.setValorIcms(impostos.valorIcms());
-            item.setSituacaoTributariaIpi(impostos.situacaoTributariaIpi());
-            item.setValorIpi(impostos.valorIpi());
-            item.setSituacaoTributariaPis(impostos.situacaoTributariaPis());
-            item.setValorPis(impostos.valorPis());
-            item.setSituacaoTributariaCofins(impostos.situacaoTributariaCofins());
-            item.setValorCofins(impostos.valorCofins());
-            item.setTaxDetail(impostos.detalhe());
-            item.setIbsCbs(impostos.ibsCbs());
-        }
-
-        return item;
     }
 
     private FiscalXmlItemDTO toItemDTO(FiscalXmlMetadata metadata, String xmlContent) {

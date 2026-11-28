@@ -1,8 +1,8 @@
 package br.com.cshub.taxify.service.fiscalcheck;
 
-import br.com.cshub.taxify.domain.xml.FiscalItemTaxDetail;
-import br.com.cshub.taxify.domain.xml.FiscalXmlDocument;
-import br.com.cshub.taxify.domain.xml.FiscalXmlDocumentItem;
+import br.com.cshub.taxify.domain.fiscaldocument.ItemIcms;
+import br.com.cshub.taxify.domain.fiscaldocument.GoodsInvoice;
+import br.com.cshub.taxify.domain.fiscaldocument.FiscalDocumentItem;
 import br.com.cshub.taxify.enumerated.DivergenceSeverity;
 import org.springframework.stereotype.Component;
 
@@ -51,14 +51,14 @@ public class OperationCheck implements FiscalCheck {
     static final BigDecimal TWELVE = new BigDecimal("12");
 
     @Override
-    public List<FiscalDivergence> check(FiscalXmlDocumentItem item, FiscalCheckContext context) {
-        FiscalXmlDocument document = item.getDocument();
-        String destination = document == null ? null : trim(document.getDestinoOperacao());
+    public List<FiscalDivergence> check(FiscalDocumentItem item, FiscalCheckContext context) {
+        GoodsInvoice document = item.getDocument();
+        String destination = document == null ? null : trim(document.getHeader().destinationType());
         if (destination == null || !CFOP_GROUPS.containsKey(destination)) {
             return List.of();
         }
         List<FiscalDivergence> divergences = new ArrayList<>();
-        String cfop = trim(item.getCfop());
+        String cfop = trim(item.cfop());
         if (cfop != null && !cfop.isEmpty() && !CFOP_GROUPS.get(destination).contains(cfop.charAt(0))) {
             divergences.add(new FiscalDivergence(CFOP_DESTINATION, "CFOP", cfop, EXPECTED_GROUPS.get(destination),
                     DivergenceSeverity.WARNING,
@@ -70,23 +70,23 @@ public class OperationCheck implements FiscalCheck {
         return divergences;
     }
 
-    private java.util.Optional<FiscalDivergence> interstateRate(FiscalXmlDocumentItem item, FiscalXmlDocument document) {
-        FiscalItemTaxDetail detail = item.getTaxDetail();
-        String cst = trim(item.getSituacaoTributariaIcms());
-        BigDecimal rate = item.getAliquotaIcms();
-        if (detail == null || detail.csosn() != null || cst == null || !CSTS_WITH_RATE.contains(cst)
+    private java.util.Optional<FiscalDivergence> interstateRate(FiscalDocumentItem item, GoodsInvoice document) {
+        ItemIcms icms = item.getIcms();
+        String cst = trim(icms.cst());
+        BigDecimal rate = icms.rate();
+        if (!item.hasTaxDetail() || icms.csosn() != null || cst == null || !CSTS_WITH_RATE.contains(cst)
                 || rate == null || rate.signum() == 0) {
             return java.util.Optional.empty();
         }
-        BigDecimal expected = expectedInterstateRate(detail.origemMercadoria(), trim(document.getEmitenteUf()), trim(document.getDestinatarioUf()));
+        BigDecimal expected = expectedInterstateRate(icms.origin(), trim(document.getIssuer().uf()), trim(document.getRecipient().uf()));
         if (expected == null || rate.compareTo(expected) == 0) {
             return java.util.Optional.empty();
         }
         return java.util.Optional.of(new FiscalDivergence(INTERSTATE_RATE, "pICMS", Money.show(rate), Money.show(expected),
                 DivergenceSeverity.ERROR,
                 "Alíquota interestadual de ICMS %s%% - de %s para %s com origem %s deveria ser %s%%".formatted(
-                        Money.show(rate), document.getEmitenteUf(), document.getDestinatarioUf(),
-                        detail.origemMercadoria(), Money.show(expected))));
+                        Money.show(rate), document.getIssuer().uf(), document.getRecipient().uf(),
+                        icms.origin(), Money.show(expected))));
     }
 
     /** Null when it can't be told (UF or origin unknown, same UF on both sides). */

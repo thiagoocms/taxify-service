@@ -1,10 +1,11 @@
 package br.com.cshub.taxify.service;
 
+import br.com.cshub.taxify.support.TestNotes;
 import br.com.cshub.taxify.integration.fiscalxml.FiscalEventParser;
 import br.com.cshub.taxify.common.MessageService;
 import br.com.cshub.taxify.domain.company.Company;
 import br.com.cshub.taxify.domain.document.Document;
-import br.com.cshub.taxify.domain.xml.FiscalXmlDocument;
+import br.com.cshub.taxify.domain.fiscaldocument.GoodsInvoice;
 import br.com.cshub.taxify.dto.fiscalxml.FiscalXmlItemDTO;
 import br.com.cshub.taxify.dto.sieg.XmlDownloadFilterDTO;
 import br.com.cshub.taxify.enumerated.DocumentTypeEnum;
@@ -14,7 +15,9 @@ import br.com.cshub.taxify.integration.sieg.FiscalXmlFileStorage;
 import br.com.cshub.taxify.integration.sieg.FiscalXmlMetadataParser;
 import br.com.cshub.taxify.integration.sieg.SiegClient;
 import br.com.cshub.taxify.integration.sieg.SiegProperties;
-import br.com.cshub.taxify.repository.FiscalXmlDocumentRepository;
+import br.com.cshub.taxify.repository.FiscalDocumentRepository;
+import br.com.cshub.taxify.repository.GoodsInvoiceRepository;
+import br.com.cshub.taxify.support.InMemoryCaptureCounts;
 import br.com.cshub.taxify.repository.FiscalXmlSyncControlRepository;
 import br.com.cshub.taxify.validation.CompanyValidation;
 import org.junit.jupiter.api.BeforeEach;
@@ -83,7 +86,9 @@ class FiscalXmlIntegrationServiceExportTest {
     @Mock
     private SiegClient siegClient;
     @Mock
-    private FiscalXmlDocumentRepository xmlDocumentRepository;
+    private FiscalDocumentRepository xmlDocumentRepository;
+    @Mock
+    private GoodsInvoiceRepository goodsInvoiceRepository;
     @Mock
     private FiscalXmlSyncControlRepository syncControlRepository;
     @Mock
@@ -113,7 +118,8 @@ class FiscalXmlIntegrationServiceExportTest {
 
         service = new FiscalXmlIntegrationService(siegClient, new FiscalXmlMetadataParser(),
                 new FiscalXmlFileStorage(properties, messageService), new FiscalXmlPackageExtractor(),
-                xmlDocumentRepository, syncControlRepository, companyValidation, messageService, new SiegProperties(), firmIntegrationService,
+                xmlDocumentRepository, goodsInvoiceRepository, new InMemoryCaptureCounts().service(), syncControlRepository,
+                companyValidation, messageService, new SiegProperties(), firmIntegrationService,
                 new FiscalEventParser(), eventService,
                 org.mockito.Mockito.mock(br.com.cshub.taxify.repository.SefazNoteSummaryRepository.class),
                 org.mockito.Mockito.mock(ServiceInvoiceService.class));
@@ -124,9 +130,9 @@ class FiscalXmlIntegrationServiceExportTest {
         Path originalFile = tempDir.resolve("original.xml");
         Files.writeString(originalFile, ORIGINAL_XML, StandardCharsets.UTF_8);
 
-        FiscalXmlDocument document = new FiscalXmlDocument();
+        GoodsInvoice document = TestNotes.note(TestNotes.company(TestNotes.COMPANY_CNPJ)).build();
         document.setXmlFilePath(originalFile.toString());
-        when(xmlDocumentRepository.findByCompany_IdAndIssueDateBetweenOrderByIssueDateDesc(any(), any(), any()))
+        when(xmlDocumentRepository.findXmlDocumentsIssuedBetween(any(), any(), any()))
                 .thenReturn(List.of(document));
 
         List<FiscalXmlItemDTO> result = service.exportXmls(filter());
@@ -142,10 +148,10 @@ class FiscalXmlIntegrationServiceExportTest {
         Path rectifiedFile = tempDir.resolve("original-retificado.xml");
         Files.writeString(rectifiedFile, RECTIFIED_XML, StandardCharsets.UTF_8);
 
-        FiscalXmlDocument document = new FiscalXmlDocument();
+        GoodsInvoice document = TestNotes.note(TestNotes.company(TestNotes.COMPANY_CNPJ)).build();
         document.setXmlFilePath(originalFile.toString());
         document.setRectifiedFilePath(rectifiedFile.toString());
-        when(xmlDocumentRepository.findByCompany_IdAndIssueDateBetweenOrderByIssueDateDesc(any(), any(), any()))
+        when(xmlDocumentRepository.findXmlDocumentsIssuedBetween(any(), any(), any()))
                 .thenReturn(List.of(document));
 
         List<FiscalXmlItemDTO> result = service.exportXmls(filter());
@@ -157,9 +163,9 @@ class FiscalXmlIntegrationServiceExportTest {
 
     @Test
     void skipsADocumentWhoseFileCannotBeReadInsteadOfFailingTheWholeExport() {
-        FiscalXmlDocument missingFile = new FiscalXmlDocument();
+        GoodsInvoice missingFile = TestNotes.note(TestNotes.company(TestNotes.COMPANY_CNPJ)).build();
         missingFile.setXmlFilePath(tempDir.resolve("does-not-exist.xml").toString());
-        when(xmlDocumentRepository.findByCompany_IdAndIssueDateBetweenOrderByIssueDateDesc(any(), any(), any()))
+        when(xmlDocumentRepository.findXmlDocumentsIssuedBetween(any(), any(), any()))
                 .thenReturn(List.of(missingFile));
 
         List<FiscalXmlItemDTO> result = service.exportXmls(filter());
@@ -174,18 +180,18 @@ class FiscalXmlIntegrationServiceExportTest {
         Path rectifiedFile = tempDir.resolve("original-retificado.xml");
         Files.writeString(rectifiedFile, RECTIFIED_XML, StandardCharsets.UTF_8);
 
-        FiscalXmlDocument rectified = new FiscalXmlDocument();
+        GoodsInvoice rectified = TestNotes.note(TestNotes.company(TestNotes.COMPANY_CNPJ)).build();
         rectified.setId(UUID.randomUUID());
         rectified.setAccessKey("35240112345678000199550010000000011000000010");
         rectified.setXmlFilePath(originalFile.toString());
         rectified.setRectifiedFilePath(rectifiedFile.toString());
 
-        FiscalXmlDocument neverRectified = new FiscalXmlDocument();
+        GoodsInvoice neverRectified = TestNotes.note(TestNotes.company(TestNotes.COMPANY_CNPJ)).build();
         neverRectified.setId(UUID.randomUUID());
         neverRectified.setAccessKey("99999912345678000199550010000000011000000099");
         neverRectified.setXmlFilePath(originalFile.toString());
 
-        when(xmlDocumentRepository.findByCompany_IdAndIssueDateBetweenOrderByIssueDateDesc(any(), any(), any()))
+        when(xmlDocumentRepository.findXmlDocumentsIssuedBetween(any(), any(), any()))
                 .thenReturn(List.of(rectified, neverRectified));
 
         byte[] zipBytes = service.exportXmlsZip(filter());
@@ -203,15 +209,15 @@ class FiscalXmlIntegrationServiceExportTest {
         Path originalFile = tempDir.resolve("original.xml");
         Files.writeString(originalFile, ORIGINAL_XML, StandardCharsets.UTF_8);
 
-        FiscalXmlDocument noAccessKey = new FiscalXmlDocument();
+        GoodsInvoice noAccessKey = TestNotes.note(TestNotes.company(TestNotes.COMPANY_CNPJ)).withoutKey().build();
         noAccessKey.setId(UUID.randomUUID());
         noAccessKey.setXmlFilePath(originalFile.toString());
 
-        FiscalXmlDocument missingFile = new FiscalXmlDocument();
+        GoodsInvoice missingFile = TestNotes.note(TestNotes.company(TestNotes.COMPANY_CNPJ)).build();
         missingFile.setId(UUID.randomUUID());
         missingFile.setXmlFilePath(tempDir.resolve("does-not-exist.xml").toString());
 
-        when(xmlDocumentRepository.findByCompany_IdAndIssueDateBetweenOrderByIssueDateDesc(any(), any(), any()))
+        when(xmlDocumentRepository.findXmlDocumentsIssuedBetween(any(), any(), any()))
                 .thenReturn(List.of(noAccessKey, missingFile));
 
         byte[] zipBytes = service.exportXmlsZip(filter());

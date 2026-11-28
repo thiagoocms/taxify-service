@@ -1,8 +1,8 @@
 package br.com.cshub.taxify.service.fiscalcheck;
 
-import br.com.cshub.taxify.domain.xml.FiscalItemTaxDetail;
-import br.com.cshub.taxify.domain.xml.FiscalXmlDocument;
-import br.com.cshub.taxify.domain.xml.FiscalXmlDocumentItem;
+import br.com.cshub.taxify.domain.fiscaldocument.GoodsInvoice;
+import br.com.cshub.taxify.domain.fiscaldocument.GoodsTotals;
+import br.com.cshub.taxify.domain.fiscaldocument.FiscalDocumentItem;
 import br.com.cshub.taxify.enumerated.DivergenceSeverity;
 import org.springframework.stereotype.Component;
 
@@ -23,28 +23,25 @@ public class IcmsTotalsCheck implements FiscalDocumentCheck {
     public static final String CODE = "ICMS_TOTALS";
 
     @Override
-    public List<FiscalDivergence> check(FiscalXmlDocument document, List<FiscalXmlDocumentItem> items, FiscalCheckContext context) {
-        if (items.isEmpty() || !"NFE".equals(document.getDocumentType())) {
+    public List<FiscalDivergence> check(GoodsInvoice document, List<FiscalDocumentItem> items, FiscalCheckContext context) {
+        if (items.isEmpty()) {
             return List.of();
         }
+        GoodsTotals totals = document.getGoodsTotals();
         List<FiscalDivergence> divergences = new ArrayList<>();
-        compare(divergences, "vBC", "Base de ICMS", document.getBaseCalculoIcms(), items, FiscalXmlDocumentItem::getBaseCalculoIcms);
-        compare(divergences, "vICMS", "ICMS", document.getValorIcms(), items, FiscalXmlDocumentItem::getValorIcms);
-        compare(divergences, "vIPI", "IPI", document.getValorIpi(), items, FiscalXmlDocumentItem::getValorIpi);
-        compare(divergences, "vPIS", "PIS", document.getValorPis(), items, FiscalXmlDocumentItem::getValorPis);
-        compare(divergences, "vCOFINS", "COFINS", document.getValorCofins(), items, FiscalXmlDocumentItem::getValorCofins);
-        if (items.stream().map(FiscalXmlDocumentItem::getTaxDetail).allMatch(Objects::nonNull)) {
-            compare(divergences, "vST", "ICMS-ST", document.getValorIcmsSt(), items,
-                    item -> {
-                        FiscalItemTaxDetail detail = item.getTaxDetail();
-                        return detail.valorIcmsSt();
-                    });
+        compare(divergences, "vBC", "Base de ICMS", totals.icmsBase(), items, item -> item.getIcms().base());
+        compare(divergences, "vICMS", "ICMS", totals.icmsAmount(), items, item -> item.getIcms().amount());
+        compare(divergences, "vIPI", "IPI", totals.ipiAmount(), items, item -> item.getIpi().amount());
+        compare(divergences, "vPIS", "PIS", totals.pisAmount(), items, item -> item.getPis().amount());
+        compare(divergences, "vCOFINS", "COFINS", totals.cofinsAmount(), items, item -> item.getCofins().amount());
+        if (items.stream().allMatch(FiscalDocumentItem::hasTaxDetail)) {
+            compare(divergences, "vST", "ICMS-ST", totals.icmsStAmount(), items, item -> item.getIcmsSt().amount());
         }
         return divergences;
     }
 
     private static void compare(List<FiscalDivergence> divergences, String field, String label, BigDecimal total,
-                                List<FiscalXmlDocumentItem> items, Function<FiscalXmlDocumentItem, BigDecimal> value) {
+                                List<FiscalDocumentItem> items, Function<FiscalDocumentItem, BigDecimal> value) {
         if (total == null) {
             return;
         }

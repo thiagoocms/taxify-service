@@ -1,14 +1,15 @@
 package br.com.cshub.taxify.service;
 
+import br.com.cshub.taxify.support.TestNotes;
 import br.com.cshub.taxify.common.MessageService;
 import br.com.cshub.taxify.domain.company.Company;
 import br.com.cshub.taxify.domain.fiscalrule.ProductFiscalRule;
-import br.com.cshub.taxify.domain.xml.FiscalXmlDocument;
-import br.com.cshub.taxify.domain.xml.FiscalXmlDocumentItem;
+import br.com.cshub.taxify.domain.fiscaldocument.GoodsInvoice;
+import br.com.cshub.taxify.domain.fiscaldocument.FiscalDocumentItem;
 import br.com.cshub.taxify.dto.fiscalrule.ProductFiscalDivergenceDTO;
 import br.com.cshub.taxify.exception.BadRequestException;
 import br.com.cshub.taxify.exception.ResourceNotFoundException;
-import br.com.cshub.taxify.repository.FiscalXmlDocumentItemRepository;
+import br.com.cshub.taxify.repository.FiscalDocumentItemRepository;
 import br.com.cshub.taxify.repository.ProductFiscalRuleRepository;
 import br.com.cshub.taxify.service.fiscalcheck.FiscalCheckEngine;
 import br.com.cshub.taxify.service.fiscalcheck.ProductRuleCheck;
@@ -35,7 +36,7 @@ import static org.mockito.Mockito.when;
 class ProductFiscalDivergenceServiceTest {
 
     @Mock
-    private FiscalXmlDocumentItemRepository itemRepository;
+    private FiscalDocumentItemRepository itemRepository;
     @Mock
     private ProductFiscalRuleRepository ruleRepository;
     @Mock
@@ -77,7 +78,7 @@ class ProductFiscalDivergenceServiceTest {
 
     @Test
     void flagsAnItemWhoseCfopDoesNotMatchTheRegisteredRule() {
-        FiscalXmlDocumentItem item = itemWith("P001", "5405", "12345678");
+        FiscalDocumentItem item = itemWith("P001", "5405", "12345678");
         when(itemRepository.findByDocument_Company_IdAndDocument_IssueDateBetween(eq(companyId), any(), any()))
                 .thenReturn(List.of(item));
 
@@ -95,7 +96,7 @@ class ProductFiscalDivergenceServiceTest {
 
     @Test
     void flagsAnItemWhoseNcmDivergesWhenTheRulePinsOne() {
-        FiscalXmlDocumentItem item = itemWith("P002", "5102", "11111111");
+        FiscalDocumentItem item = itemWith("P002", "5102", "11111111");
         when(itemRepository.findByDocument_Company_IdAndDocument_IssueDateBetween(eq(companyId), any(), any()))
                 .thenReturn(List.of(item));
 
@@ -111,7 +112,7 @@ class ProductFiscalDivergenceServiceTest {
 
     @Test
     void doesNotFlagAnItemThatMatchesTheRule() {
-        FiscalXmlDocumentItem item = itemWith("P003", "5102", "12345678");
+        FiscalDocumentItem item = itemWith("P003", "5102", "12345678");
         when(itemRepository.findByDocument_Company_IdAndDocument_IssueDateBetween(eq(companyId), any(), any()))
                 .thenReturn(List.of(item));
 
@@ -123,7 +124,7 @@ class ProductFiscalDivergenceServiceTest {
 
     @Test
     void skipsItemsWithNoRegisteredRule() {
-        FiscalXmlDocumentItem item = itemWith("P004", "5405", "12345678");
+        FiscalDocumentItem item = itemWith("P004", "5405", "12345678");
         when(itemRepository.findByDocument_Company_IdAndDocument_IssueDateBetween(eq(companyId), any(), any()))
                 .thenReturn(List.of(item));
         when(ruleRepository.findByCompany_IdAndDeletedIsFalse(companyId)).thenReturn(List.of(ruleWith("OUTRO", "5102", null)));
@@ -133,7 +134,7 @@ class ProductFiscalDivergenceServiceTest {
 
     @Test
     void aNoteRectifiedWithTheCurrentRuleNoLongerDiverges() {
-        FiscalXmlDocumentItem item = itemWith("P005", "5405", "11111111");
+        FiscalDocumentItem item = itemWith("P005", "5405", "11111111");
         item.getDocument().setRectifiedFilePath("s3://bucket/fiscal-xml/retificado.xml");
         item.getDocument().setLastRectificationCheckedAt(LocalDateTime.now());
         when(itemRepository.findByDocument_Company_IdAndDocument_IssueDateBetween(eq(companyId), any(), any()))
@@ -147,8 +148,8 @@ class ProductFiscalDivergenceServiceTest {
 
     @Test
     void theCompanysOwnNotesAreNotCheckedAgainstTheEntryRules() {
-        FiscalXmlDocumentItem sale = itemWith("P010", "5102", "11111111");
-        sale.getDocument().setOwnIssue(true);
+        FiscalDocumentItem sale = itemWith("P010", "5102", "11111111");
+        TestNotes.asOwnIssue(sale.getDocument());
         when(itemRepository.findByDocument_Company_IdAndDocument_IssueDateBetween(eq(companyId), any(), any()))
                 .thenReturn(List.of(sale));
         when(ruleRepository.findByCompany_IdAndDeletedIsFalse(companyId)).thenReturn(List.of(ruleWith("P010", "1102", null)));
@@ -158,10 +159,10 @@ class ProductFiscalDivergenceServiceTest {
 
     @Test
     void theRuleCfopTakesTheFirstDigitOfTheNoteOperation() {
-        FiscalXmlDocumentItem interstate = itemWith("P011", "2102", "11111111");
-        interstate.getDocument().setDestinoOperacao("2");
-        FiscalXmlDocumentItem internalWrong = itemWith("P011", "2102", "11111111");
-        internalWrong.getDocument().setDestinoOperacao("1");
+        FiscalDocumentItem interstate = itemWith("P011", "2102", "11111111");
+        TestNotes.withDestinationType(interstate.getDocument(), "2");
+        FiscalDocumentItem internalWrong = itemWith("P011", "2102", "11111111");
+        TestNotes.withDestinationType(internalWrong.getDocument(), "1");
         when(itemRepository.findByDocument_Company_IdAndDocument_IssueDateBetween(eq(companyId), any(), any()))
                 .thenReturn(List.of(interstate, internalWrong));
         when(ruleRepository.findByCompany_IdAndDeletedIsFalse(companyId)).thenReturn(List.of(ruleWith("P011", "1102", null)));
@@ -175,10 +176,10 @@ class ProductFiscalDivergenceServiceTest {
 
     @Test
     void aSupplierRuleOnlyAppliesToThatSuppliersNotes() {
-        FiscalXmlDocumentItem fromA = itemWith("001", "5102", "11111111");
-        fromA.getDocument().setIssuerCnpj("11222333000181");
-        FiscalXmlDocumentItem fromB = itemWith("001", "5102", "11111111");
-        fromB.getDocument().setIssuerCnpj("99888777000166");
+        FiscalDocumentItem fromA = itemWith("001", "5102", "11111111");
+        TestNotes.withIssuerCnpj(fromA.getDocument(), "11222333000181");
+        FiscalDocumentItem fromB = itemWith("001", "5102", "11111111");
+        TestNotes.withIssuerCnpj(fromB.getDocument(), "99888777000166");
         when(itemRepository.findByDocument_Company_IdAndDocument_IssueDateBetween(eq(companyId), any(), any()))
                 .thenReturn(List.of(fromA, fromB));
         ProductFiscalRule ofA = ruleWith("001", "1102", null);
@@ -192,9 +193,9 @@ class ProductFiscalDivergenceServiceTest {
 
     @Test
     void canceledAndDeletedNotesAreNotDivergences() {
-        FiscalXmlDocumentItem canceled = itemWith("P007", "5405", "11111111");
-        canceled.getDocument().setStatus(br.com.cshub.taxify.enumerated.FiscalDocumentStatus.CANCELED);
-        FiscalXmlDocumentItem deleted = itemWith("P007", "5405", "11111111");
+        FiscalDocumentItem canceled = itemWith("P007", "5405", "11111111");
+        canceled.getDocument().cancel(null);
+        FiscalDocumentItem deleted = itemWith("P007", "5405", "11111111");
         deleted.getDocument().setDeleted(true);
         when(itemRepository.findByDocument_Company_IdAndDocument_IssueDateBetween(eq(companyId), any(), any()))
                 .thenReturn(List.of(canceled, deleted));
@@ -205,7 +206,7 @@ class ProductFiscalDivergenceServiceTest {
 
     @Test
     void aRuleEditedAfterTheRectificationMakesTheNoteDivergeAgain() {
-        FiscalXmlDocumentItem item = itemWith("P006", "5405", "11111111");
+        FiscalDocumentItem item = itemWith("P006", "5405", "11111111");
         item.getDocument().setRectifiedFilePath("s3://bucket/fiscal-xml/retificado.xml");
         item.getDocument().setLastRectificationCheckedAt(LocalDateTime.now().minusDays(2));
         when(itemRepository.findByDocument_Company_IdAndDocument_IssueDateBetween(eq(companyId), any(), any()))
@@ -217,18 +218,11 @@ class ProductFiscalDivergenceServiceTest {
         assertThat(service.findDivergences(companyId.toString(), null, null)).hasSize(1);
     }
 
-    private FiscalXmlDocumentItem itemWith(String codigo, String cfop, String ncm) {
-        FiscalXmlDocument document = new FiscalXmlDocument();
-        document.setId(UUID.randomUUID());
-        document.setAccessKey("35240112345678000199550010000000011000000010");
-        document.setIssueDate(LocalDateTime.now());
-
-        FiscalXmlDocumentItem item = new FiscalXmlDocumentItem();
-        item.setDocument(document);
-        item.setCodigo(codigo);
-        item.setCfop(cfop);
-        item.setNcm(ncm);
-        item.setDescricao("Produto " + codigo);
+    private FiscalDocumentItem itemWith(String codigo, String cfop, String ncm) {
+        GoodsInvoice document = TestNotes.note(TestNotes.company(TestNotes.COMPANY_CNPJ))
+                .key("35240112345678000199550010000000011000000010").issuedAt(LocalDateTime.now()).build();
+        FiscalDocumentItem item = TestNotes.item(1).code(codigo).cfop(cfop).ncm(ncm).description("Produto " + codigo).build();
+        document.addItem(item);
         return item;
     }
 

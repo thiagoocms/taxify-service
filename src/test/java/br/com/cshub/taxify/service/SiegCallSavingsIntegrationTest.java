@@ -15,6 +15,10 @@ import br.com.cshub.taxify.integration.sieg.SiegDocumentCounts;
 import br.com.cshub.taxify.repository.AccountingFirmRepository;
 import br.com.cshub.taxify.repository.CompanyRepository;
 import br.com.cshub.taxify.repository.FiscalXmlSyncControlRepository;
+import br.com.cshub.taxify.domain.fiscaldocument.CaptureCounts;
+import br.com.cshub.taxify.domain.fiscaldocument.CapturePeriodCount;
+import br.com.cshub.taxify.enumerated.CaptureSide;
+import br.com.cshub.taxify.service.capture.CaptureCountsService;
 import br.com.cshub.taxify.repository.SubscriptionRepository;
 import br.com.cshub.taxify.service.firmaccess.FirmAccessService;
 import br.com.cshub.taxify.service.firmaccess.MutableClock;
@@ -53,7 +57,7 @@ import static org.mockito.Mockito.when;
 /**
  * B1 (a captura perdia notas): o {@code skip} do SIEG era o total de notas do lado no mês vindas de QUALQUER fonte. Com
  * notas da SEFAZ (ou de upload) no banco, o SIEG pulava posições da ordem dele que não eram aquelas notas, e as notas
- * dessas posições nunca chegavam. Agora o skip conta só as notas que o próprio SIEG já entregou ({@code found_in_sieg_at}),
+ * dessas posições nunca chegavam. Agora o skip conta só as notas que o próprio SIEG já entregou (origem SIEG + PERIOD),
  * e ao chegar ao fim com menos do que o total do SIEG uma passada de reconciliação relê do início.
  *
  * <p>E a economia de chamadas (A1 NFS-e só com diferença, A2 eventos só com nota recente, A3 lado com total 0) por um
@@ -114,6 +118,8 @@ class SiegCallSavingsIntegrationTest {
     private SubscriptionRepository subscriptionRepository;
     @Autowired
     private FirmAccessService firmAccessService;
+    @Autowired
+    private CaptureCountsService countsService;
 
     private String firmId;
     private String companyId;
@@ -207,9 +213,9 @@ class SiegCallSavingsIntegrationTest {
         assertThat(stored()).as("every note SIEG has is stored").isEqualTo(100);
         assertThat(missing(keys)).isEmpty();
         assertThat(foundInSieg()).as("the SEFAZ notes were seen in SIEG too").isEqualTo(100);
-        FiscalXmlSyncControl control = controlRepository.findByCompany_Id(UUID.fromString(companyId)).orElseThrow();
-        assertThat(control.getTotalSieg()).isEqualTo(100);
-        assertThat(control.getTotalImported()).isEqualTo(100);
+        CapturePeriodCount control = received();
+        assertThat(control.getProviderTotal()).isEqualTo(100);
+        assertThat(control.getImportedTotal()).isEqualTo(100);
     }
 
     /**
@@ -237,9 +243,9 @@ class SiegCallSavingsIntegrationTest {
         // the regular page at skip 60 (5 known notes, the end) + the reconciliation from 0 (at most ceil(65/50) = 2 pages),
         // which stops on the first page: the 5 late notes were there
         assertThat(downloads).extracting(SiegDownloadXmlsRequest::skip).containsExactly(60, 0);
-        FiscalXmlSyncControl control = controlRepository.findByCompany_Id(UUID.fromString(companyId)).orElseThrow();
-        assertThat(control.getTotalImported()).isEqualTo(65);
-        assertThat(control.getTotalSieg()).isEqualTo(65);
+        CapturePeriodCount control = received();
+        assertThat(control.getImportedTotal()).isEqualTo(65);
+        assertThat(control.getProviderTotal()).isEqualTo(65);
     }
 
     /**
@@ -256,11 +262,12 @@ class SiegCallSavingsIntegrationTest {
         // skip 0 (full page), then skip 50 (10 notes, the end, 60 of 63) + the reconciliation: pages 0 and 50
         assertThat(downloads).extracting(SiegDownloadXmlsRequest::skip).containsExactly(0, 50, 0, 50);
         assertThat(stored()).isEqualTo(60);
-        Map<String, Object> row = control();
-        assertThat(row.get("total_sieg")).as("SIEG's own total, not cleared").isEqualTo(63);
-        assertThat(row.get("total_importado")).isEqualTo(60);
-        assertThat(row.get("received_known_gap")).isEqualTo(3);
-        assertThat(row.get("received_known_gap_month").toString().strip()).isEqualTo("2026-12");
+        CapturePeriodCount december = received();
+        assertThat(december.getProviderTotal()).as("SIEG's own total, not cleared").isEqualTo(63);
+        assertThat(december.getImportedTotal()).isEqualTo(60);
+        // the known gap of the month is on December's row (capture_period_counts, FD-RN-32)
+        assertThat(december.getKnownGap()).isEqualTo(3);
+        assertThat(december.getPeriodMonth()).isEqualTo(YearMonth.of(2026, 12));
 
         downloads.clear();
         attempt();
@@ -313,8 +320,7 @@ class SiegCallSavingsIntegrationTest {
         attempt(true); // counts 66, page at 60 (6 known/new), the end with 63 of 66: reconcile 0 (ok), 50 (fails)
 
         assertThat(missing(late)).as("the first page's notes were kept").isEmpty();
-        Map<String, Object> row = control();
-        assertThat(row.get("received_known_gap")).as("an interrupted pass records nothing").isNull();
+        assertThat(received().getKnownGap()).as("an interrupted pass records nothing").isNull();
         assertThat(reconcilePages.get()).isEqualTo(2);
 
         // the same day, the pending still known: only the regular page - the interrupted pass is not re-read before tomorrow
@@ -331,7 +337,7 @@ class SiegCallSavingsIntegrationTest {
         attempt();
         assertThat(downloads).extracting(SiegDownloadXmlsRequest::skip).containsExactly(63, 0, 50);
         assertThat(stored()).isEqualTo(66);
-        assertThat(control().get("received_known_gap")).isEqualTo(0);
+        assertThat(received().getKnownGap()).isEqualTo(0);
     }
 
     /**
@@ -374,11 +380,12 @@ class SiegCallSavingsIntegrationTest {
         // December's NFS-e window (its count came with the NF-e ones) as issuer and as taker
         assertThat(calls).containsExactly("count", "nfe", "nfe", "count", "count", "count", "nfse", "nfse");
         assertThat(stored()).isOne();
-        assertThat(jdbc.queryForObject("SELECT COUNT(*) FROM service_invoices WHERE company_id = ? AND found_in_sieg_at IS NOT NULL",
+        assertThat(jdbc.queryForObject("SELECT COUNT(*) FROM fiscal_documents d WHERE d.company_id = ? AND d.document_type = 'NFSE'"
+                + " AND EXISTS (SELECT 1 FROM fiscal_document_sources s WHERE s.document_id = d.id AND s.source = 'SIEG')",
                 Integer.class, companyId)).isEqualTo(2);
         row = control();
-        assertThat(row.get("total_sieg")).isEqualTo(1);
-        assertThat(row.get("total_importado")).isEqualTo(1);
+        assertThat(received().getProviderTotal()).isEqualTo(1);
+        assertThat(received().getImportedTotal()).isEqualTo(1);
         assertThat(row.get("issued_events_checked_on").toString()).isEqualTo("2026-12-21");
 
         calls.clear();
@@ -404,7 +411,8 @@ class SiegCallSavingsIntegrationTest {
         scheduler.syncAllCompanies();
 
         assertThat(calls).containsExactly("count", "count", "nfse", "nfse", "nfse", "nfse");
-        assertThat(jdbc.queryForObject("SELECT COUNT(*) FROM service_invoices WHERE company_id = ?", Integer.class, companyId)).isOne();
+        assertThat(jdbc.queryForObject("SELECT COUNT(*) FROM fiscal_documents WHERE company_id = ? AND document_type = 'NFSE'",
+                Integer.class, companyId)).isOne();
     }
 
     private FiscalXmlSyncScheduler scheduler(ServiceInvoiceCountGate gate) {
@@ -413,11 +421,21 @@ class SiegCallSavingsIntegrationTest {
         properties.setEnabled(true);
         properties.setBatchSize(1000); // whatever else the local database holds; the SIEG mock only answers for this company
         return new FiscalXmlSyncScheduler(companyRepository, controlRepository, subscriptionRepository, providers, properties,
-                firmAccessService, null, clock);
+                firmAccessService, null, clock, null, null, countsService);
     }
 
     private Map<String, Object> control() {
         return jdbc.queryForMap("SELECT * FROM fiscal_xml_sync_control WHERE company_id = ?", companyId);
+    }
+
+    /** The received side's counts of the company (capture_period_counts, FD-RN-32). */
+    private CaptureCounts counts() {
+        return countsService.siegNfe(companyRepository.findById(UUID.fromString(companyId)).orElseThrow());
+    }
+
+    /** The received side's row of December (the month of these tests). */
+    private CapturePeriodCount received() {
+        return counts().row(CaptureSide.RECEIVED, YearMonth.of(2026, 12)).orElseThrow();
     }
 
     /** A national-layout NFS-e provided by a supplier and taken by {@code taker}. */
@@ -452,13 +470,15 @@ class SiegCallSavingsIntegrationTest {
     /** @param nextDay the side was last checked on an earlier day: never up to date, and a pending is counted again */
     private void attempt(boolean nextDay) {
         LocalDate today = LocalDate.of(2026, 12, 20);
-        FiscalXmlSyncControl control = controlRepository.findByCompany_Id(UUID.fromString(companyId)).orElse(null);
-        boolean sameMonth = control != null && control.getIssueDateFrom() != null
-                && YearMonth.from(control.getLastCheckedAt()).equals(YearMonth.from(today));
-        int imported = sameMonth ? control.getTotalImported() : 0;
-        int gap = control == null ? 0 : control.knownGap(false, YearMonth.from(today).toString());
-        boolean knownPending = !nextDay && sameMonth && control.getTotalSieg() > 0 && imported + gap < control.getTotalSieg();
-        if (!nextDay && sameMonth && control.getTotalSieg() > 0 && imported + gap >= control.getTotalSieg()) {
+        CaptureCounts counts = counts();
+        CapturePeriodCount control = counts.row(CaptureSide.RECEIVED, YearMonth.from(today)).orElse(null);
+        boolean sameMonth = control != null && control.getWindowStart() != null && control.getImportedCountedAt() != null
+                && YearMonth.from(control.getImportedCountedAt()).equals(YearMonth.from(today));
+        int imported = sameMonth ? control.getImportedTotal() : 0;
+        int gap = counts.knownGap(CaptureSide.RECEIVED, YearMonth.from(today));
+        int total = control == null || control.getProviderTotal() == null ? 0 : control.getProviderTotal();
+        boolean knownPending = !nextDay && sameMonth && total > 0 && imported + gap < total;
+        if (!nextDay && sameMonth && total > 0 && imported + gap >= total) {
             return; // up to date today (FiscalXmlSyncScheduler.SideState#isUpToDate)
         }
         providers.get("sieg").sync(new FiscalXmlSyncRequest(UUID.fromString(companyId), today.withDayOfMonth(1), today, imported,
@@ -476,16 +496,17 @@ class SiegCallSavingsIntegrationTest {
     }
 
     private int stored() {
-        return jdbc.queryForObject("SELECT COUNT(*) FROM fiscal_xml_documents WHERE company_id = ?", Integer.class, companyId);
+        return jdbc.queryForObject("SELECT COUNT(*) FROM fiscal_documents WHERE company_id = ? AND document_type IN ('NFE', 'NFCE')",
+                Integer.class, companyId);
     }
 
     private int foundInSieg() {
-        return jdbc.queryForObject("SELECT COUNT(*) FROM fiscal_xml_documents WHERE company_id = ? AND found_in_sieg_at IS NOT NULL",
+        return jdbc.queryForObject("SELECT COUNT(DISTINCT document_id) FROM fiscal_document_sources WHERE company_id = ? AND source = 'SIEG'",
                 Integer.class, companyId);
     }
 
     private List<String> missing(List<String> keys) {
-        List<String> stored = jdbc.queryForList("SELECT access_key FROM fiscal_xml_documents WHERE company_id = ?", String.class, companyId);
+        List<String> stored = jdbc.queryForList("SELECT access_key FROM fiscal_documents WHERE company_id = ?", String.class, companyId);
         return keys.stream().filter(key -> !stored.contains(key)).toList();
     }
 
@@ -522,7 +543,7 @@ class SiegCallSavingsIntegrationTest {
         if (firmId == null) {
             return;
         }
-        jdbc.update("DELETE i FROM fiscal_xml_document_items i JOIN fiscal_xml_documents d ON d.id = i.document_id WHERE d.company_id = ?",
+        jdbc.update("DELETE i FROM fiscal_document_items i JOIN fiscal_documents d ON d.id = i.document_id WHERE d.company_id = ?",
                 companyId);
         for (int pass = 0; pass < 3; pass++) {
             for (String table : jdbc.queryForList("SELECT DISTINCT table_name FROM information_schema.columns WHERE table_schema = DATABASE()"
@@ -554,7 +575,7 @@ class SiegCallSavingsIntegrationTest {
                 <nfeProc xmlns="http://www.portalfiscal.inf.br/nfe">
                   <NFe>
                     <infNFe Id="NFe%s" versao="4.00">
-                      <ide><dhEmi>%s</dhEmi></ide>
+                      <ide><mod>55</mod><dhEmi>%s</dhEmi></ide>
                       <emit><CNPJ>%s</CNPJ></emit>
                       <dest><CNPJ>%s</CNPJ></dest>
                     </infNFe>

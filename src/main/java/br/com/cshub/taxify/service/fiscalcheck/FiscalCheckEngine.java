@@ -3,8 +3,9 @@ package br.com.cshub.taxify.service.fiscalcheck;
 import br.com.cshub.taxify.domain.fiscalrule.ProductRules;
 import br.com.cshub.taxify.domain.fiscalrule.ProductFiscalRule;
 import br.com.cshub.taxify.domain.reform.IbsCbsRate;
-import br.com.cshub.taxify.domain.xml.FiscalXmlDocument;
-import br.com.cshub.taxify.domain.xml.FiscalXmlDocumentItem;
+import br.com.cshub.taxify.domain.fiscaldocument.FiscalDocument;
+import br.com.cshub.taxify.domain.fiscaldocument.GoodsInvoice;
+import br.com.cshub.taxify.domain.fiscaldocument.FiscalDocumentItem;
 import br.com.cshub.taxify.repository.IbsCbsRateRepository;
 import br.com.cshub.taxify.repository.ProductFiscalRuleRepository;
 import org.springframework.stereotype.Service;
@@ -50,12 +51,15 @@ public class FiscalCheckEngine {
         return new FiscalCheckContext(companyId, rules, rates);
     }
 
-    /** Canceled or deleted notes are listed but never checked (no divergence, no conferência finding). */
-    public static boolean isCheckable(FiscalXmlDocument document) {
-        return document != null && !document.isDeleted() && !document.isCanceled();
+    /**
+     * Only goods invoices (NF-e, NFC-e) are checked; canceled or deleted notes are listed but never checked (no
+     * divergence, no conferência finding). A CT-e has no items and no check (CX-RN-40).
+     */
+    public static boolean isCheckable(FiscalDocument document) {
+        return document instanceof GoodsInvoice && !document.isDeleted() && !document.isCanceled();
     }
 
-    public List<FiscalDivergence> check(FiscalXmlDocumentItem item, FiscalCheckContext context) {
+    public List<FiscalDivergence> check(FiscalDocumentItem item, FiscalCheckContext context) {
         List<FiscalDivergence> divergences = new ArrayList<>();
         for (FiscalCheck check : checks) {
             divergences.addAll(check.check(item, context));
@@ -63,7 +67,7 @@ public class FiscalCheckEngine {
         return divergences;
     }
 
-    public List<FiscalDivergence> checkDocument(FiscalXmlDocument document, List<FiscalXmlDocumentItem> items,
+    public List<FiscalDivergence> checkDocument(GoodsInvoice document, List<FiscalDocumentItem> items,
                                                 FiscalCheckContext context) {
         List<FiscalDivergence> divergences = new ArrayList<>();
         for (FiscalDocumentCheck check : documentChecks) {

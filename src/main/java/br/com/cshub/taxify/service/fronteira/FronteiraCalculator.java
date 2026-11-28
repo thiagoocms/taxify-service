@@ -3,9 +3,8 @@ package br.com.cshub.taxify.service.fronteira;
 import br.com.cshub.taxify.domain.fiscalrule.ProductFiscalRule;
 import br.com.cshub.taxify.domain.fiscalrule.ProductRules;
 import br.com.cshub.taxify.domain.fronteira.FronteiraRule;
-import br.com.cshub.taxify.domain.xml.FiscalItemTaxDetail;
-import br.com.cshub.taxify.domain.xml.FiscalXmlDocument;
-import br.com.cshub.taxify.domain.xml.FiscalXmlDocumentItem;
+import br.com.cshub.taxify.domain.fiscaldocument.GoodsInvoice;
+import br.com.cshub.taxify.domain.fiscaldocument.FiscalDocumentItem;
 import br.com.cshub.taxify.enumerated.FronteiraRuleKind;
 import br.com.cshub.taxify.service.EntryCfops;
 import br.com.cshub.taxify.service.fiscalcheck.OperationCheck;
@@ -112,17 +111,17 @@ public final class FronteiraCalculator {
     private FronteiraCalculator() {
     }
 
-    public static NoteResult calculate(FiscalXmlDocument document, List<FiscalXmlDocumentItem> items, Context context) {
+    public static NoteResult calculate(GoodsInvoice document, List<FiscalDocumentItem> items, Context context) {
         List<ItemResult> results = new ArrayList<>();
         BigDecimal value = BigDecimal.ZERO;
         BigDecimal min = BigDecimal.ZERO;
         BigDecimal max = BigDecimal.ZERO;
         boolean reviewed = true;
         boolean semRegra = false;
-        List<FiscalXmlDocumentItem> sorted = items.stream()
-                .sorted(Comparator.comparing(FiscalXmlDocumentItem::getNumeroItem, Comparator.nullsLast(Comparator.naturalOrder())))
+        List<FiscalDocumentItem> sorted = items.stream()
+                .sorted(Comparator.comparing(FiscalDocumentItem::getItemNumber, Comparator.nullsLast(Comparator.naturalOrder())))
                 .toList();
-        for (FiscalXmlDocumentItem item : sorted) {
+        for (FiscalDocumentItem item : sorted) {
             ItemResult result = item(document, item, context);
             results.add(result);
             if (result.treatment() == Treatment.SEM_REGRA) {
@@ -139,7 +138,7 @@ public final class FronteiraCalculator {
 
     // ---------------------------------------------------------------- one item
 
-    static ItemResult item(FiscalXmlDocument document, FiscalXmlDocumentItem item, Context context) {
+    static ItemResult item(GoodsInvoice document, FiscalDocumentItem item, Context context) {
         LocalDate day = document.getIssueDate() == null ? null : document.getIssueDate().toLocalDate();
         Values v = values(document, item);
         List<String> memoria = new ArrayList<>();
@@ -158,18 +157,18 @@ public final class FronteiraCalculator {
 
         // the entry CFOP the company books: its product fiscal rule's, else the supplier's turned into an entry
         Optional<ProductFiscalRule> productRule = context.productRules() == null ? Optional.empty()
-                : context.productRules().find(item.getCodigo(), ProductRules.supplierOf(document));
+                : context.productRules().find(item.getProduct().code(), ProductRules.supplierOf(document));
         String ruleCfop = productRule.map(ProductFiscalRule::getCorrectCfop).map(String::strip).filter(cfop -> cfop.length() == 4).orElse(null);
-        String entry = ruleCfop != null ? ruleCfop : EntryCfops.fromSupplier(item.getCfop());
+        String entry = ruleCfop != null ? ruleCfop : EntryCfops.fromSupplier(item.cfop());
         String operation = entry != null && entry.length() == 4 ? entry.substring(1) : "";
         if (ruleCfop != null) {
-            memoria.add("CFOP de entrada %s, da regra fiscal do produto (o fornecedor emitiu %s)".formatted(ruleCfop, item.getCfop()));
+            memoria.add("CFOP de entrada %s, da regra fiscal do produto (o fornecedor emitiu %s)".formatted(ruleCfop, item.cfop()));
         }
 
         // devolução, remessa and ST already withheld are never antecipação - no formula changes that
         if (operation.startsWith("2") || (operation.startsWith("9") && !TAXED_OTHERS.contains(operation))
                 || Set.of("410", "411").contains(operation)) {
-            memoria.add("CFOP %s (entrada %s): devolução, remessa ou outras - sem antecipação".formatted(item.getCfop(), entry));
+            memoria.add("CFOP %s (entrada %s): devolução, remessa ou outras - sem antecipação".formatted(item.cfop(), entry));
             return result(variables, item, Treatment.SEM_ANTECIPACAO, v.partida, BigDecimal.ZERO, BigDecimal.ZERO, BigDecimal.ZERO, true, used, memoria, null);
         }
         if (v.stRetido.signum() > 0) {
@@ -195,7 +194,7 @@ public final class FronteiraCalculator {
         variables.put("icms_origem", v.icmsOrigem);
         variables.put("credito_sn", v.creditoSn == null ? BigDecimal.ZERO : v.creditoSn);
         variables.put("credito", credito);
-        variables.put("aliquota_origem", fraction(item.getAliquotaIcms()));
+        variables.put("aliquota_origem", fraction(item.getIcms().rate()));
         variables.put("inter", inter == null ? BigDecimal.ZERO : inter);
         variables.put("interna", interna.map(rule -> fraction(rule.getRate())).orElse(BigDecimal.ZERO));
         variables.put("mva", st.map(rule -> fraction(rule.getMva())).orElse(BigDecimal.ZERO));
@@ -246,10 +245,10 @@ public final class FronteiraCalculator {
         if (inter == null) {
             return semRegra(variables, item, v.partida, used, memoria, "Alíquota interestadual desconhecida (UF do emitente ou origem da mercadoria em branco).");
         }
-        memoria.add("Alíquota interestadual: %s (de %s para %s, origem %s)".formatted(percent(inter), document.getEmitenteUf(),
+        memoria.add("Alíquota interestadual: %s (de %s para %s, origem %s)".formatted(percent(inter), document.getIssuer().uf(),
                 UF, originOf(item)));
         if (interna.isEmpty()) {
-            return semRegra(variables, item, v.partida, used, memoria, "Sem alíquota interna de PE na tabela de ICMS para o NCM " + item.getNcm() + ".");
+            return semRegra(variables, item, v.partida, used, memoria, "Sem alíquota interna de PE na tabela de ICMS para o NCM " + item.getProduct().ncm() + ".");
         }
         BigDecimal internalRate = fraction(interna.get().getRate());
         used.add(interna.get().getId());
@@ -382,12 +381,12 @@ public final class FronteiraCalculator {
      * filled in must match; product beats supplier beats CEST beats a longer NCM prefix, and the
      * company's own rule beats a global one.
      */
-    static Optional<FronteiraRule> bestMatch(List<FronteiraRule> rules, FronteiraRuleKind kind, FiscalXmlDocument document,
-                                             FiscalXmlDocumentItem item, LocalDate day) {
-        String ncm = digits(item.getNcm());
-        String cest = item.getTaxDetail() == null ? "" : digits(item.getTaxDetail().cest());
-        String codigo = item.getCodigo() == null ? "" : item.getCodigo().strip();
-        String supplier = digits(document.getIssuerCnpj());
+    static Optional<FronteiraRule> bestMatch(List<FronteiraRule> rules, FronteiraRuleKind kind, GoodsInvoice document,
+                                             FiscalDocumentItem item, LocalDate day) {
+        String ncm = digits(item.getProduct().ncm());
+        String cest = item.hasTaxDetail() ? digits(item.getProduct().cest()) : "";
+        String codigo = item.getProduct().code() == null ? "" : item.getProduct().code().strip();
+        String supplier = digits(document.getIssuer().cnpj());
         return rules.stream()
                 .filter(rule -> rule.getKind() == kind && rule.isEnabled() && !rule.isDeleted() && rule.validOn(day))
                 .filter(rule -> blank(rule.getNcm()) || ncm.startsWith(digits(rule.getNcm())))
@@ -412,9 +411,9 @@ public final class FronteiraCalculator {
      * The mercadoria com agregação of the item: matched like the other rules (product, supplier, CEST, NCM), and
      * also by the origin region (blank = any) and whether the supplier is of the Simples (blank = any).
      */
-    private static Optional<FronteiraRule> agregacaoRule(List<FronteiraRule> rules, FiscalXmlDocument document, FiscalXmlDocumentItem item,
+    private static Optional<FronteiraRule> agregacaoRule(List<FronteiraRule> rules, GoodsInvoice document, FiscalDocumentItem item,
                                                          LocalDate day, boolean supplierSimples) {
-        String uf = document.getEmitenteUf() == null ? "" : document.getEmitenteUf().strip().toUpperCase(Locale.ROOT);
+        String uf = document.getIssuer().uf() == null ? "" : document.getIssuer().uf().strip().toUpperCase(Locale.ROOT);
         String region = SUL_SUDESTE_UFS.contains(uf) ? SUL_SUDESTE : DEMAIS_REGIOES;
         return bestMatch(rules.stream()
                 .filter(rule -> rule.getKind() == FronteiraRuleKind.AGREGACAO)
@@ -429,7 +428,7 @@ public final class FronteiraCalculator {
      * credenciamento that gives it; a Simples company with no credenciamento match takes the rule
      * without description (art. 363-A), or the only one there is.
      */
-    private static Optional<FronteiraRule> cargaLiquidaRule(Context context, FiscalXmlDocument document, FiscalXmlDocumentItem item,
+    private static Optional<FronteiraRule> cargaLiquidaRule(Context context, GoodsInvoice document, FiscalDocumentItem item,
                                                             LocalDate day) {
         List<FronteiraRule> candidates = context.rules().stream()
                 .filter(rule -> rule.getKind() == FronteiraRuleKind.SIMPLES_PERCENTUAL && rule.isEnabled() && !rule.isDeleted() && rule.validOn(day))
@@ -469,19 +468,20 @@ public final class FronteiraCalculator {
      * The note's freight, insurance and other expenses go to the items by product value, kept unrounded until the
      * final value (e-Fisco: FreteProporcionalItem = FreteFOB × item ÷ produtos); the discount doesn't reduce.
      */
-    private static Values values(FiscalXmlDocument document, FiscalXmlDocumentItem item) {
-        BigDecimal produto = zero(item.getValorTotal());
-        BigDecimal ipi = zero(item.getValorIpi());
-        BigDecimal products = zero(document.getValorProdutos());
-        BigDecimal frete = share(zero(document.getValorFrete()), produto, products);
-        BigDecimal outras = share(zero(document.getValorSeguro()).add(zero(document.getValorOutrasDespesas())), produto, products);
+    private static Values values(GoodsInvoice document, FiscalDocumentItem item) {
+        BigDecimal produto = zero(item.getTotalAmount());
+        BigDecimal ipi = zero(item.getIpi().amount());
+        BigDecimal products = zero(document.getGoodsTotals().productsAmount());
+        BigDecimal frete = share(zero(document.getGoodsTotals().freightAmount()), produto, products);
+        BigDecimal outras = share(zero(document.getGoodsTotals().insuranceAmount()).add(zero(document.getGoodsTotals().otherExpensesAmount())), produto, products);
         BigDecimal despesas = frete.add(outras);
-        FiscalItemTaxDetail detail = item.getTaxDetail();
-        BigDecimal st = detail == null ? BigDecimal.ZERO : zero(detail.valorIcmsSt());
-        BigDecimal icmsOrigem = zero(item.getValorIcms());
-        BigDecimal creditoSn = detail == null ? null : detail.valorCreditoSn();
-        String crt = document.getEmitenteRegimeTributario() == null ? "" : document.getEmitenteRegimeTributario().strip();
-        boolean supplierSimples = (detail != null && detail.csosn() != null && !detail.csosn().isBlank()) || SIMPLES_CRT.contains(crt);
+        boolean withDetail = item.hasTaxDetail();
+        BigDecimal st = withDetail ? zero(item.getIcmsSt().amount()) : BigDecimal.ZERO;
+        BigDecimal icmsOrigem = zero(item.getIcms().amount());
+        BigDecimal creditoSn = withDetail ? item.getSimplesCredit().amount() : null;
+        String crt = document.getIssuerDetails().taxRegimeCode() == null ? "" : document.getIssuerDetails().taxRegimeCode().strip();
+        String csosn = withDetail ? item.getIcms().csosn() : null;
+        boolean supplierSimples = (csosn != null && !csosn.isBlank()) || SIMPLES_CRT.contains(crt);
         boolean readCredit = document.getMetadataVersion() != null && document.getMetadataVersion() >= SIMPLES_CREDIT_VERSION;
         boolean creditUnknown = supplierSimples && icmsOrigem.signum() == 0 && creditoSn == null && !readCredit;
         BigDecimal credito = icmsOrigem.signum() > 0 ? icmsOrigem : zero(creditoSn);
@@ -495,29 +495,29 @@ public final class FronteiraCalculator {
     }
 
     /** By origin and UF (Res. Senado 22/1989 and 13/2012); the item's own rate when that can't be told. */
-    private static BigDecimal interstateRate(FiscalXmlDocument document, FiscalXmlDocumentItem item) {
+    private static BigDecimal interstateRate(GoodsInvoice document, FiscalDocumentItem item) {
         String origin = originOf(item);
-        String from = document.getEmitenteUf() == null ? null : document.getEmitenteUf().strip().toUpperCase(Locale.ROOT);
+        String from = document.getIssuer().uf() == null ? null : document.getIssuer().uf().strip().toUpperCase(Locale.ROOT);
         BigDecimal expected = OperationCheck.expectedInterstateRate(origin, from, UF);
         if (expected != null) {
             return fraction(expected);
         }
-        return item.getAliquotaIcms() == null || item.getAliquotaIcms().signum() == 0 ? null : fraction(item.getAliquotaIcms());
+        return item.getIcms().rate() == null || item.getIcms().rate().signum() == 0 ? null : fraction(item.getIcms().rate());
     }
 
-    private static String originOf(FiscalXmlDocumentItem item) {
-        return item.getTaxDetail() == null ? null : item.getTaxDetail().origemMercadoria();
+    private static String originOf(FiscalDocumentItem item) {
+        return item.hasTaxDetail() ? item.getIcms().origin() : null;
     }
 
-    private static ItemResult result(Map<String, BigDecimal> variables, FiscalXmlDocumentItem item, Treatment treatment, BigDecimal partida,
+    private static ItemResult result(Map<String, BigDecimal> variables, FiscalDocumentItem item, Treatment treatment, BigDecimal partida,
                                      BigDecimal value, BigDecimal min, BigDecimal max, boolean reviewed, List<UUID> used,
                                      List<String> memoria, String motivo) {
-        return new ItemResult(item.getNumeroItem() == null ? 0 : item.getNumeroItem(), item.getCodigo(), item.getDescricao(), item.getNcm(),
-                item.getCfop(), treatment, partida, value, min, max, reviewed, List.copyOf(used), List.copyOf(memoria), motivo,
+        return new ItemResult(item.getItemNumber() == null ? 0 : item.getItemNumber(), item.getProduct().code(), item.getProduct().description(), item.getProduct().ncm(),
+                item.cfop(), treatment, partida, value, min, max, reviewed, List.copyOf(used), List.copyOf(memoria), motivo,
                 java.util.Collections.unmodifiableMap(new LinkedHashMap<>(variables)));
     }
 
-    private static ItemResult semRegra(Map<String, BigDecimal> variables, FiscalXmlDocumentItem item, BigDecimal partida, List<UUID> used,
+    private static ItemResult semRegra(Map<String, BigDecimal> variables, FiscalDocumentItem item, BigDecimal partida, List<UUID> used,
                                        List<String> memoria, String motivo) {
         memoria.add("Sem regra: " + motivo);
         return result(variables, item, Treatment.SEM_REGRA, partida, BigDecimal.ZERO, BigDecimal.ZERO, BigDecimal.ZERO, false, used,

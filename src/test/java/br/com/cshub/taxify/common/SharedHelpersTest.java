@@ -3,7 +3,8 @@ package br.com.cshub.taxify.common;
 import br.com.cshub.taxify.domain.fiscalrule.ProductFiscalRule;
 import br.com.cshub.taxify.domain.fiscalrule.ProductRules;
 import br.com.cshub.taxify.service.fiscalcheck.OperationCfops;
-import br.com.cshub.taxify.domain.xml.FiscalXmlDocument;
+import br.com.cshub.taxify.domain.fiscaldocument.GoodsInvoice;
+import br.com.cshub.taxify.support.TestNotes;
 import br.com.cshub.taxify.exception.BadRequestException;
 import br.com.cshub.taxify.integration.fiscalxml.FiscalXmlDom;
 import br.com.cshub.taxify.integration.fiscalxml.FiscalXmlDomParser;
@@ -84,8 +85,7 @@ class SharedHelpersTest {
 
     @Test
     void noteKeyIsTheAccessKeyOrTheId() {
-        FiscalXmlDocument document = new FiscalXmlDocument();
-        document.setId(UUID.randomUUID());
+        GoodsInvoice document = TestNotes.note(TestNotes.company(TestNotes.COMPANY_CNPJ)).withoutKey().build();
 
         assertThat(document.accessKeyOrId()).isEqualTo(document.getId().toString());
         document.setAccessKey(" ");

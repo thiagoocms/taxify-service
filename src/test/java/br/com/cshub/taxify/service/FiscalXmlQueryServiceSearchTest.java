@@ -1,10 +1,11 @@
 package br.com.cshub.taxify.service;
 
+import br.com.cshub.taxify.support.TestNotes;
 import br.com.cshub.taxify.common.MessageService;
 import br.com.cshub.taxify.common.TenantAccessService;
 import br.com.cshub.taxify.domain.company.Company;
 import br.com.cshub.taxify.domain.fiscalrule.ProductFiscalRule;
-import br.com.cshub.taxify.domain.xml.FiscalXmlDocument;
+import br.com.cshub.taxify.domain.fiscaldocument.GoodsInvoice;
 import br.com.cshub.taxify.dto.fiscalxml.FiscalXmlSummaryDTO;
 import br.com.cshub.taxify.dto.fiscalxml.XmlSearchFilterDTO;
 import br.com.cshub.taxify.dto.fiscalxml.FiscalXmlSummaryDTO.DivergenceSummary;
@@ -14,8 +15,9 @@ import org.springframework.data.domain.Page;
 import java.util.Map;
 import br.com.cshub.taxify.integration.sieg.FiscalXmlFileStorage;
 import br.com.cshub.taxify.integration.sieg.FiscalXmlMetadataParser;
-import br.com.cshub.taxify.repository.FiscalXmlDocumentItemRepository;
-import br.com.cshub.taxify.repository.FiscalXmlDocumentRepository;
+import br.com.cshub.taxify.repository.FiscalDocumentItemRepository;
+import br.com.cshub.taxify.repository.FiscalDocumentRepository;
+import br.com.cshub.taxify.repository.GoodsInvoiceRepository;
 import br.com.cshub.taxify.repository.ProductFiscalRuleRepository;
 import br.com.cshub.taxify.validation.CompanyValidation;
 import org.junit.jupiter.api.Test;
@@ -39,9 +41,11 @@ import static org.mockito.Mockito.when;
 class FiscalXmlQueryServiceSearchTest {
 
     @Mock
-    private FiscalXmlDocumentRepository documentRepository;
+    private FiscalDocumentRepository documentRepository;
     @Mock
-    private FiscalXmlDocumentItemRepository itemRepository;
+    private GoodsInvoiceRepository goodsInvoiceRepository;
+    @Mock
+    private FiscalDocumentItemRepository itemRepository;
     @Mock
     private CompanyValidation companyValidation;
     @Mock
@@ -57,22 +61,20 @@ class FiscalXmlQueryServiceSearchTest {
     @Mock
     private DocumentDivergenceService divergenceService;
 
-    private static FiscalXmlDocument document() {
-        FiscalXmlDocument document = new FiscalXmlDocument();
-        document.setId(UUID.randomUUID());
-        return document;
+    private static GoodsInvoice document() {
+        return TestNotes.note(TestNotes.company(TestNotes.COMPANY_CNPJ)).build();
     }
 
     @Test
     void oneCfopForTheWholeNoteOrSeveralWhenSegmented() {
-        FiscalXmlQueryService service = new FiscalXmlQueryService(documentRepository, itemRepository, new FiscalXmlMetadataParser(),
+        FiscalXmlQueryService service = new FiscalXmlQueryService(documentRepository, goodsInvoiceRepository, itemRepository, new FiscalXmlMetadataParser(),
                 companyValidation, tenantAccessService, messageService, eventService, fileStorage, ruleRepository, divergenceService);
         Company company = new Company(UUID.randomUUID());
         when(companyValidation.checkExist(company.getId())).thenReturn(company);
-        FiscalXmlDocument single = document();
-        FiscalXmlDocument segmented = document();
-        FiscalXmlDocument withoutItems = document();
-        when(documentRepository.search(eq(company.getId()), any(), any(), any(), any(), any(), any(), any(), any(), any(), any(), any()))
+        GoodsInvoice single = document();
+        GoodsInvoice segmented = document();
+        GoodsInvoice withoutItems = document();
+        when(documentRepository.search(eq(company.getId()), any(), any(), any(), any(), any(), any(), any(), any(), any(), any(), any(), any(), any()))
                 .thenReturn(new PageImpl<>(List.of(single, segmented, withoutItems)));
         when(itemRepository.countByDocumentIds(any())).thenReturn(List.of());
         when(itemRepository.findDistinctCfopsByDocumentIds(any())).thenReturn(List.of(
@@ -90,15 +92,15 @@ class FiscalXmlQueryServiceSearchTest {
 
     @Test
     void aRectifiedNoteShowsTheCfopOfTheRuleItWasRectifiedWith() {
-        FiscalXmlQueryService service = new FiscalXmlQueryService(documentRepository, itemRepository, new FiscalXmlMetadataParser(),
+        FiscalXmlQueryService service = new FiscalXmlQueryService(documentRepository, goodsInvoiceRepository, itemRepository, new FiscalXmlMetadataParser(),
                 companyValidation, tenantAccessService, messageService, eventService, fileStorage, ruleRepository, divergenceService);
         Company company = new Company(UUID.randomUUID());
         when(companyValidation.checkExist(company.getId())).thenReturn(company);
-        FiscalXmlDocument rectified = document();
+        GoodsInvoice rectified = document();
         rectified.setRectifiedFilePath("s3://bucket/retificado.xml");
         rectified.setLastRectificationCheckedAt(LocalDateTime.now());
-        FiscalXmlDocument original = document();
-        when(documentRepository.search(eq(company.getId()), any(), any(), any(), any(), any(), any(), any(), any(), any(), any(), any()))
+        GoodsInvoice original = document();
+        when(documentRepository.search(eq(company.getId()), any(), any(), any(), any(), any(), any(), any(), any(), any(), any(), any(), any(), any()))
                 .thenReturn(new PageImpl<>(List.of(rectified, original)));
         when(itemRepository.countByDocumentIds(any())).thenReturn(List.of());
         when(itemRepository.findDistinctCfopsByDocumentIds(any())).thenReturn(List.of(
@@ -120,13 +122,13 @@ class FiscalXmlQueryServiceSearchTest {
 
     @Test
     void eachRowCarriesWhatTheChecksFoundAndTheCfopFilterGoesToTheQuery() {
-        FiscalXmlQueryService service = new FiscalXmlQueryService(documentRepository, itemRepository, new FiscalXmlMetadataParser(),
+        FiscalXmlQueryService service = new FiscalXmlQueryService(documentRepository, goodsInvoiceRepository, itemRepository, new FiscalXmlMetadataParser(),
                 companyValidation, tenantAccessService, messageService, eventService, fileStorage, ruleRepository, divergenceService);
         Company company = new Company(UUID.randomUUID());
         when(companyValidation.checkExist(company.getId())).thenReturn(company);
-        FiscalXmlDocument divergent = document();
-        FiscalXmlDocument clean = document();
-        when(documentRepository.search(eq(company.getId()), any(), any(), any(), any(), any(), any(), any(), any(), any(), eq("5102"), any()))
+        GoodsInvoice divergent = document();
+        GoodsInvoice clean = document();
+        when(documentRepository.search(eq(company.getId()), any(), any(), any(), any(), any(), any(), any(), any(), any(), eq("5102"), any(), any(), any()))
                 .thenReturn(new PageImpl<>(List.of(divergent, clean)));
         DivergenceSummary summary = new DivergenceSummary(1, 0, List.of("CFOP diferente da regra"));
         when(divergenceService.summarize(eq(company.getId()), any())).thenReturn(Map.of(divergent.getId(), summary));
@@ -140,16 +142,16 @@ class FiscalXmlQueryServiceSearchTest {
 
     @Test
     void onlyDivergentKeepsTheNotesTheChecksFlaggedOrMarkedDivergentAndPagesThem() {
-        FiscalXmlQueryService service = new FiscalXmlQueryService(documentRepository, itemRepository, new FiscalXmlMetadataParser(),
+        FiscalXmlQueryService service = new FiscalXmlQueryService(documentRepository, goodsInvoiceRepository, itemRepository, new FiscalXmlMetadataParser(),
                 companyValidation, tenantAccessService, messageService, eventService, fileStorage, ruleRepository, divergenceService);
         Company company = new Company(UUID.randomUUID());
         when(companyValidation.checkExist(company.getId())).thenReturn(company);
-        FiscalXmlDocument flagged = document();
-        FiscalXmlDocument clean = document();
-        FiscalXmlDocument marked = document();
+        GoodsInvoice flagged = document();
+        GoodsInvoice clean = document();
+        GoodsInvoice marked = document();
         marked.review(ReviewStatus.DIVERGENT, "x", "nota", LocalDateTime.now());
-        FiscalXmlDocument flaggedToo = document();
-        when(documentRepository.search(eq(company.getId()), any(), any(), any(), any(), any(), any(), any(), any(), any(), any(), any()))
+        GoodsInvoice flaggedToo = document();
+        when(documentRepository.search(eq(company.getId()), any(), any(), any(), any(), any(), any(), any(), any(), any(), any(), any(), any(), any()))
                 .thenReturn(new PageImpl<>(List.of(flagged, clean, marked, flaggedToo)));
         DivergenceSummary summary = new DivergenceSummary(0, 1, List.of("Confira"));
         when(divergenceService.summarize(eq(company.getId()), any()))

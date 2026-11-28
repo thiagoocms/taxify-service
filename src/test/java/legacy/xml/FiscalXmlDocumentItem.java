@@ -1,4 +1,4 @@
-package br.com.cshub.taxify.domain.xml;
+package legacy.xml;
 
 import jakarta.persistence.*;
 import org.hibernate.annotations.JdbcTypeCode;
@@ -7,7 +7,7 @@ import org.hibernate.type.SqlTypes;
 import java.math.BigDecimal;
 import java.util.UUID;
 
-@Entity
+@Entity(name = "LegacyFiscalXmlDocumentItem")
 @Table(name = "fiscal_xml_document_items",
         indexes = @Index(name = "idx_fxdi_document_cfop_valor", columnList = "document_id, cfop, valor_total"))
 public class FiscalXmlDocumentItem {

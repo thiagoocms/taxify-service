@@ -1,4 +1,4 @@
-package br.com.cshub.taxify.domain.xml;
+package legacy.xml;
 
 import br.com.cshub.taxify.domain.AbstractAuditingEntity;
 import br.com.cshub.taxify.domain.company.Company;
@@ -16,7 +16,7 @@ import java.util.UUID;
  * national or the ABRASF layout. Kept apart from fiscal_xml_documents: different fields, no
  * items, and it feeds the retentions (M1) rather than the goods checks.
  */
-@Entity
+@Entity(name = "LegacyServiceInvoice")
 @Table(name = "service_invoices",
         uniqueConstraints = @UniqueConstraint(name = "uk_service_invoices_company_key", columnNames = {"company_id", "access_key"}),
         indexes = @Index(name = "idx_service_invoices_company_issue", columnList = "company_id, issue_date"))

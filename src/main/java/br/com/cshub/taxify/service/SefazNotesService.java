@@ -9,7 +9,8 @@ import br.com.cshub.taxify.enumerated.PlanServiceEnum;
 import br.com.cshub.taxify.exception.BadRequestException;
 import br.com.cshub.taxify.common.MessageService;
 import br.com.cshub.taxify.integration.sefaz.SefazProperties;
-import br.com.cshub.taxify.repository.FiscalXmlDocumentRepository;
+import br.com.cshub.taxify.domain.fiscaldocument.DocumentSourceKey;
+import br.com.cshub.taxify.repository.GoodsInvoiceRepository;
 import br.com.cshub.taxify.repository.SefazNoteSummaryRepository;
 import br.com.cshub.taxify.repository.SubscriptionRepository;
 import org.springframework.data.domain.PageRequest;
@@ -30,13 +31,13 @@ public class SefazNotesService {
     private static final int SEFAZ_WINDOW_DAYS = 90;
 
     private final SefazNoteSummaryRepository summaryRepository;
-    private final FiscalXmlDocumentRepository documentRepository;
+    private final GoodsInvoiceRepository documentRepository;
     private final SubscriptionRepository subscriptionRepository;
     private final SefazProperties properties;
     private final MessageService messageService;
     private final SefazManifestService manifestService;
 
-    public SefazNotesService(SefazNoteSummaryRepository summaryRepository, FiscalXmlDocumentRepository documentRepository,
+    public SefazNotesService(SefazNoteSummaryRepository summaryRepository, GoodsInvoiceRepository documentRepository,
                              SubscriptionRepository subscriptionRepository, SefazProperties properties,
                              MessageService messageService, SefazManifestService manifestService) {
         this.manifestService = manifestService;
@@ -54,8 +55,9 @@ public class SefazNotesService {
         Long onlySefaz = null;
         if (hasBothSources(companyId)) {
             LocalDateTime cutoff = LocalDateTime.now().minusHours(FiscalXmlQueryService.SOURCE_COMPARISON_HOURS);
-            onlySieg = documentRepository.countOnlySieg(companyId, cutoff, LocalDateTime.now().minusDays(SEFAZ_WINDOW_DAYS));
-            onlySefaz = documentRepository.countOnlySefaz(companyId, cutoff);
+            onlySieg = documentRepository.countOnlySieg(companyId, cutoff, LocalDateTime.now().minusDays(SEFAZ_WINDOW_DAYS),
+                    DocumentSourceKey.SIEG, DocumentSourceKey.SEFAZ_DFE);
+            onlySefaz = documentRepository.countOnlySefaz(companyId, cutoff, DocumentSourceKey.SIEG, DocumentSourceKey.SEFAZ_DFE);
         }
         return new SefazNotesDTO(
                 manifestService.manifests(companyId),

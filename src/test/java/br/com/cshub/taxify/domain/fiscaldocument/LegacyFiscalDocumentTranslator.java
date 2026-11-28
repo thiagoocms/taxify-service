@@ -1,14 +1,14 @@
 package br.com.cshub.taxify.domain.fiscaldocument;
 
-import br.com.cshub.taxify.domain.xml.FiscalIbsCbsTotals;
-import br.com.cshub.taxify.domain.xml.FiscalItemIbsCbs;
-import br.com.cshub.taxify.domain.xml.FiscalItemTaxDetail;
-import br.com.cshub.taxify.domain.xml.FiscalXmlDocument;
-import br.com.cshub.taxify.domain.xml.FiscalXmlDocumentItem;
-import br.com.cshub.taxify.domain.xml.FiscalXmlEvent;
-import br.com.cshub.taxify.domain.xml.FiscalXmlHeaderExtras;
-import br.com.cshub.taxify.domain.xml.FiscalXmlSyncControl;
-import br.com.cshub.taxify.domain.xml.ServiceInvoice;
+import legacy.xml.FiscalIbsCbsTotals;
+import legacy.xml.FiscalItemIbsCbs;
+import legacy.xml.FiscalItemTaxDetail;
+import legacy.xml.FiscalXmlDocument;
+import legacy.xml.FiscalXmlDocumentItem;
+import legacy.xml.FiscalXmlEvent;
+import legacy.xml.FiscalXmlHeaderExtras;
+import legacy.xml.FiscalXmlSyncControl;
+import legacy.xml.ServiceInvoice;
 import br.com.cshub.taxify.enumerated.CaptureSide;
 import br.com.cshub.taxify.enumerated.CompanyDocumentRole;
 import br.com.cshub.taxify.enumerated.FiscalDirection;

@@ -11,7 +11,7 @@ import br.com.cshub.taxify.enumerated.PlanServiceEnum;
 import br.com.cshub.taxify.enumerated.TaxRegime;
 import br.com.cshub.taxify.integration.sefaz.SefazProperties;
 import br.com.cshub.taxify.repository.CompanyTaxRegimeRepository;
-import br.com.cshub.taxify.repository.FiscalXmlDocumentRepository;
+import br.com.cshub.taxify.repository.GoodsInvoiceRepository;
 import br.com.cshub.taxify.repository.SefazDistControlRepository;
 import br.com.cshub.taxify.repository.SefazNoteSummaryRepository;
 import br.com.cshub.taxify.repository.SubscriptionRepository;
@@ -50,7 +50,7 @@ class PendencyFinderTest {
     @Mock
     private SefazNoteSummaryRepository summaryRepository;
     @Mock
-    private FiscalXmlDocumentRepository documentRepository;
+    private GoodsInvoiceRepository documentRepository;
     @Mock
     private CompanyTaxRegimeRepository regimeRepository;
     @Mock
@@ -165,6 +165,6 @@ class PendencyFinderTest {
         finder.find(company);
 
         verifyNoInteractions(summaryRepository);
-        org.mockito.Mockito.verify(documentRepository, org.mockito.Mockito.never()).findOnlySieg(any(), any(), any(), any());
+        org.mockito.Mockito.verify(documentRepository, org.mockito.Mockito.never()).findOnlySieg(any(), any(), any(), any(), any(), any());
     }
 }

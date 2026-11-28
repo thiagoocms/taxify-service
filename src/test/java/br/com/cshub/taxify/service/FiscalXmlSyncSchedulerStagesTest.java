@@ -24,6 +24,12 @@ import br.com.cshub.taxify.service.capture.CapturePriorityService;
 import br.com.cshub.taxify.service.capture.CaptureStageRecorder;
 import br.com.cshub.taxify.service.firmaccess.BlockedPeriodRecoveryService;
 import br.com.cshub.taxify.service.firmaccess.FirmAccessTestSupport;
+import br.com.cshub.taxify.domain.fiscaldocument.CapturePeriodCount;
+import br.com.cshub.taxify.domain.fiscaldocument.ProviderKey;
+import br.com.cshub.taxify.enumerated.CaptureSide;
+import br.com.cshub.taxify.enumerated.FiscalDocumentType;
+import br.com.cshub.taxify.support.InMemoryCaptureCounts;
+import java.time.YearMonth;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.extension.ExtendWith;
@@ -95,20 +101,29 @@ class FiscalXmlSyncSchedulerStagesTest {
         lenient().when(syncControlRepository.findAllCompanyIds()).thenReturn(List.of(company.getId()));
     }
 
+    /** The capture counts per side and month (FD-RN-32). */
+    private final InMemoryCaptureCounts counts = new InMemoryCaptureCounts();
+
     private FiscalXmlSyncScheduler scheduler(CaptureStageRecorder stageRecorder) {
         return new FiscalXmlSyncScheduler(companyRepository, syncControlRepository, subscriptionRepository, Map.of("sieg", provider),
-                properties, FirmAccessTestSupport.allowAll(), null, Clock.system(ZoneId.of("America/Recife")), stageRecorder, null);
+                properties, FirmAccessTestSupport.allowAll(), null, Clock.system(ZoneId.of("America/Recife")), stageRecorder, null,
+                counts.service());
     }
 
     private FiscalXmlSyncControl control(int receivedTotal, int receivedImported, LocalDateTime checkedAt, boolean sweptToday) {
         FiscalXmlSyncControl control = new FiscalXmlSyncControl();
         control.setCompany(company);
-        control.setTotalSieg(receivedTotal);
-        control.setTotalImported(receivedImported);
-        control.setLastCheckedAt(checkedAt);
-        control.setIssuedTotalSieg(receivedTotal);
-        control.setIssuedTotalImported(receivedImported);
-        control.setIssuedCheckedAt(checkedAt);
+        counts.rows().clear();
+        if (checkedAt != null) {
+            // both sides with the same counts, no window written (as the old row of these tests)
+            for (CaptureSide side : CaptureSide.values()) {
+                CapturePeriodCount row = new CapturePeriodCount(company, ProviderKey.SIEG, FiscalDocumentType.NFE, side,
+                        YearMonth.from(checkedAt));
+                row.recordProviderCount(receivedTotal, checkedAt);
+                row.recordImported(receivedImported, checkedAt);
+                counts.rows().add(row);
+            }
+        }
         if (sweptToday) {
             control.setReceivedEventsCheckedOn(today);
             control.setIssuedEventsCheckedOn(today);
@@ -120,7 +135,8 @@ class FiscalXmlSyncSchedulerStagesTest {
 
     private FiscalXmlSyncScheduler scheduler(BlockedPeriodRecoveryService recovery, CapturePriorityService priority) {
         return new FiscalXmlSyncScheduler(companyRepository, syncControlRepository, subscriptionRepository, Map.of("sieg", provider),
-                properties, FirmAccessTestSupport.allowAll(), recovery, Clock.system(ZoneId.of("America/Recife")), recorder, priority);
+                properties, FirmAccessTestSupport.allowAll(), recovery, Clock.system(ZoneId.of("America/Recife")), recorder, priority,
+                counts.service());
     }
 
     /**

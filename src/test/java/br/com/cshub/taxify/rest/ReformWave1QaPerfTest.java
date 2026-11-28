@@ -39,7 +39,7 @@ import static org.assertj.core.api.Assertions.assertThat;
  * itens de entrada de 2026) num banco descartável (DB_NAME=taxify_qa_perf_reform, criado antes e apagado depois pelo
  * QA). Mede a rodada inteira, o "Atualizar agora", as telas (p50/p95 por HTTP real), conta as consultas por digest
  * (performance_schema, filtrado pelo schema) e imprime o EXPLAIN das consultas da seção 8 sobre
- * fiscal_xml_document_items. Só roda com QA_PERF=1 e DB_HOST=localhost.
+ * fiscal_document_items. Só roda com QA_PERF=1 e DB_HOST=localhost.
  */
 @EnabledIfEnvironmentVariable(named = "QA_PERF", matches = "1")
 @EnabledIfEnvironmentVariable(named = "DB_NAME", matches = "taxify_qa_perf_reform")
@@ -100,11 +100,11 @@ class ReformWave1QaPerfTest {
             generate();
         }
         System.out.println("QA-PERF mass companies=" + count("SELECT COUNT(*) FROM companies")
-                + " documents=" + count("SELECT COUNT(*) FROM fiscal_xml_documents")
-                + " items=" + count("SELECT COUNT(*) FROM fiscal_xml_document_items")
-                + " inbound2026Items=" + count("SELECT COUNT(*) FROM fiscal_xml_documents d JOIN fiscal_xml_document_items i ON i.document_id = d.id"
+                + " documents=" + count("SELECT COUNT(*) FROM fiscal_documents")
+                + " items=" + count("SELECT COUNT(*) FROM fiscal_document_items")
+                + " inbound2026Items=" + count("SELECT COUNT(*) FROM fiscal_documents d JOIN fiscal_document_items i ON i.document_id = d.id"
                 + " WHERE d.direction = 'INBOUND' AND d.issue_date >= '2026-01-01' AND d.issue_date < '2027-01-01'"));
-        jdbc.execute("ANALYZE TABLE fiscal_xml_documents, fiscal_xml_document_items, companies, company_tax_regimes");
+        jdbc.execute("ANALYZE TABLE fiscal_documents, fiscal_document_items, companies, company_tax_regimes");
 
         explains();
 
@@ -206,21 +206,22 @@ class ReformWave1QaPerfTest {
         System.out.println("QA-PERF gen companies ms=" + (System.currentTimeMillis() - t0));
 
         // notas: NOTES de entrada 2026 por empresa (5% canceladas, 2% excluídas), 20 de entrada 2025 e 30 de saída 2026
-        jdbc.update("INSERT INTO fiscal_xml_documents (id, deleted, created_date, created_by, document_type, source_system, company_id,"
-                + " xml_file_path, direction, status, issue_date) SELECT UUID(), IF(s.n % 50 = 7, 1, 0), NOW(), 'qa', 'NFE', 'SIEG', c.id,"
+        jdbc.update("INSERT INTO fiscal_documents (id, deleted, created_date, created_by, document_type, source_system, company_id,"
+                + " xml_file_path, direction, status, issue_date, model, company_role, metadata_version) SELECT UUID(), IF(s.n % 50 = 7, 1, 0), NOW(), 'qa', 'NFE', 'SIEG', c.id,"
                 + " 'xml/perf.xml', 'INBOUND', IF(s.n % 20 = 3, 'CANCELED', 'AUTHORIZED'),"
-                + " TIMESTAMP('2026-01-01') + INTERVAL ((s.n * 8760 DIV " + NOTES + ") + (CRC32(c.id) % 7)) HOUR"
+                + " TIMESTAMP('2026-01-01') + INTERVAL ((s.n * 8760 DIV " + NOTES + ") + (CRC32(c.id) % 7)) HOUR, '55', 'RECIPIENT', 0"
                 + " FROM companies c JOIN qa_seq s ON s.n < " + NOTES + " WHERE c.accounting_firm_id = ?", FIRM);
-        jdbc.update("INSERT INTO fiscal_xml_documents (id, deleted, created_date, created_by, document_type, source_system, company_id,"
-                + " xml_file_path, direction, status, issue_date) SELECT UUID(), 0, NOW(), 'qa', 'NFE', 'SIEG', c.id, 'xml/perf.xml',"
+        jdbc.update("INSERT INTO fiscal_documents (id, deleted, created_date, created_by, document_type, source_system, company_id,"
+                + " xml_file_path, direction, status, issue_date, model, company_role, metadata_version) SELECT UUID(), 0, NOW(), 'qa', 'NFE', 'SIEG', c.id, 'xml/perf.xml',"
                 + " IF(s.n < 20, 'INBOUND', 'OUTBOUND'), 'AUTHORIZED',"
-                + " IF(s.n < 20, TIMESTAMP('2025-06-01') + INTERVAL s.n DAY, TIMESTAMP('2026-02-01') + INTERVAL s.n DAY)"
+                + " IF(s.n < 20, TIMESTAMP('2025-06-01') + INTERVAL s.n DAY, TIMESTAMP('2026-02-01') + INTERVAL s.n DAY), '55',"
+                + " IF(s.n < 20, 'RECIPIENT', 'ISSUER'), 0"
                 + " FROM companies c JOIN qa_seq s ON s.n < 50 WHERE c.accounting_firm_id = ?", FIRM);
         System.out.println("QA-PERF gen documents ms=" + (System.currentTimeMillis() - t0));
-        jdbc.update("INSERT INTO fiscal_xml_document_items (id, document_id, numero_item, cfop, valor_total, cst_pis, ncm)"
+        jdbc.update("INSERT INTO fiscal_document_items (id, document_id, item_number, cfop, total_amount, pis_cst, ncm)"
                 + " SELECT UUID(), d.id, s.n + 1, ELT(1 + ((s.n + CRC32(d.id)) % 6), '5102', '1102', '6102', '5949', '5405', '1556'),"
                 + " ROUND(((CRC32(CONCAT(d.id, s.n)) % 100000) / 100), 2), ELT(1 + (s.n % 4), '01', '04', '06', '50'),"
-                + " CONCAT('2203', LPAD(s.n % 13, 4, '0')) FROM fiscal_xml_documents d JOIN qa_seq s ON s.n < " + ITEMS
+                + " CONCAT('2203', LPAD(s.n % 13, 4, '0')) FROM fiscal_documents d JOIN qa_seq s ON s.n < " + ITEMS
                 + " JOIN companies c ON c.id = d.company_id WHERE c.accounting_firm_id = ?", FIRM);
         System.out.println("QA-PERF gen items ms=" + (System.currentTimeMillis() - t0));
     }
@@ -231,16 +232,16 @@ class ReformWave1QaPerfTest {
         List<String> batch = jdbc.queryForList("SELECT id FROM companies WHERE accounting_firm_id = ? ORDER BY id LIMIT 50", String.class, FIRM);
         String ids = batch.stream().map(id -> "'" + id + "'").collect(Collectors.joining(","));
         String cfops = PurchaseCfops.codes().stream().map(c -> "'" + c + "'").collect(Collectors.joining(","));
-        String base = " FROM fiscal_xml_documents d JOIN fiscal_xml_document_items i ON i.document_id = d.id"
+        String base = " FROM fiscal_documents d JOIN fiscal_document_items i ON i.document_id = d.id"
                 + " WHERE d.company_id IN (" + ids + ") AND d.direction = 'INBOUND' AND d.deleted = 0"
                 + " AND (d.status IS NULL OR d.status <> 'CANCELED') AND d.issue_date >= '2026-01-01 00:00:00'"
                 + " AND d.issue_date < '2027-01-01 00:00:00' AND i.cfop IN (" + cfops + ")";
         Map<String, String> queries = new java.util.LinkedHashMap<>();
-        queries.put("monthly", "SELECT d.company_id, MONTH(d.issue_date) AS m, SUM(i.valor_total), COUNT(i.id), COUNT(DISTINCT d.id)" + base
+        queries.put("monthly", "SELECT d.company_id, MONTH(d.issue_date) AS m, SUM(i.total_amount), COUNT(i.id), COUNT(DISTINCT d.id)" + base
                 + " GROUP BY d.company_id, MONTH(d.issue_date)");
-        queries.put("cst", "SELECT d.company_id, TRIM(i.cst_pis), SUM(i.valor_total), COUNT(i.id)" + base + " GROUP BY d.company_id, TRIM(i.cst_pis)");
-        queries.put("ncm", "SELECT d.company_id, TRIM(i.ncm), SUM(i.valor_total), COUNT(i.id)" + base + " GROUP BY d.company_id, TRIM(i.ncm)");
-        queries.put("coverage", "SELECT d.company_id, MONTH(d.issue_date), MIN(d.issue_date), MAX(d.issue_date) FROM fiscal_xml_documents d"
+        queries.put("cst", "SELECT d.company_id, TRIM(i.pis_cst), SUM(i.total_amount), COUNT(i.id)" + base + " GROUP BY d.company_id, TRIM(i.pis_cst)");
+        queries.put("ncm", "SELECT d.company_id, TRIM(i.ncm), SUM(i.total_amount), COUNT(i.id)" + base + " GROUP BY d.company_id, TRIM(i.ncm)");
+        queries.put("coverage", "SELECT d.company_id, MONTH(d.issue_date), MIN(d.issue_date), MAX(d.issue_date) FROM fiscal_documents d"
                 + " WHERE d.company_id IN (" + ids + ") AND d.direction = 'INBOUND' AND d.deleted = 0"
                 + " AND (d.status IS NULL OR d.status <> 'CANCELED') AND d.issue_date >= '2026-01-01' AND d.issue_date < '2027-01-01'"
                 + " GROUP BY d.company_id, MONTH(d.issue_date)");

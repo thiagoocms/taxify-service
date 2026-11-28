@@ -1,8 +1,9 @@
 package br.com.cshub.taxify.integration.sieg;
 
-import br.com.cshub.taxify.domain.xml.FiscalIbsCbsTotals;
-import br.com.cshub.taxify.domain.xml.FiscalItemIbsCbs;
-import br.com.cshub.taxify.domain.xml.FiscalItemTaxDetail;
+import br.com.cshub.taxify.dto.fiscalxml.FiscalIbsCbsTotalsDTO;
+import br.com.cshub.taxify.dto.fiscalxml.FiscalItemIbsCbsDTO;
+import br.com.cshub.taxify.dto.fiscalxml.FiscalItemTaxDetailDTO;
+import br.com.cshub.taxify.enumerated.CteTakerRole;
 import br.com.cshub.taxify.dto.fiscalxml.FiscalXmlDestinatarioDTO;
 import br.com.cshub.taxify.dto.fiscalxml.FiscalXmlEmitenteDTO;
 import br.com.cshub.taxify.dto.fiscalxml.FiscalXmlEnderecoDTO;
@@ -33,15 +34,16 @@ import static br.com.cshub.taxify.integration.fiscalxml.FiscalXmlDom.text;
  * response don't depend on SIEG's response envelope - only on the (public, stable)
  * NFe/CTe XML layout published by the Brazilian tax authority. For NFe this maps the
  * full header (ide/emit/dest/ICMSTot) and every line item (det/prod plus a summary of
- * its ICMS/IPI/PIS/COFINS and IBS/CBS); CTe only gets the basic identification fields for now,
- * since its layout (rem/exped/receb/infCTeNorm) is materially different from NFe's.
+ * its ICMS/IPI/PIS/COFINS and IBS/CBS); CTe only gets the basic identification fields and the document of each
+ * participant group (emit/rem/exped/receb/dest/toma - the company's roles, FD-RN-08), since its layout is
+ * materially different from NFe's.
  */
 @Component
 public class FiscalXmlMetadataParser {
 
     /**
      * Bumped whenever the parser starts extracting fields it didn't before. Saved on each
-     * note ({@code FiscalXmlDocument#metadataVersion}) so the backfill knows which stored
+     * note ({@code FiscalDocument#metadataVersion}) so the backfill knows which stored
      * notes were parsed by an older version and need re-reading.
      * <ul>
      *   <li>1 - item tax detail (origin, CSOSN, ST, IPI/PIS/COFINS base and rate, CEST,
@@ -49,9 +51,8 @@ public class FiscalXmlMetadataParser {
      *   <li>2 - IBS/CBS deferral/refund indicator (gDif/gDevTrib) on items.</li>
      *   <li>3 - IPI CST/value read from IPITrib/IPINT (before, cEnq was taken as the group
      *       and both were always empty).</li>
-     *   <li>4 - header fields only the detail screen shows ({@link
-     *       br.com.cshub.taxify.domain.xml.FiscalXmlHeaderExtras}), so opening a note no
-     *       longer reads its file.</li>
+     *   <li>4 - header fields only the detail screen shows (the {@code header_*} and country
+     *       columns), so opening a note no longer reads its file.</li>
      * </ul>
      */
     /**
@@ -74,7 +75,7 @@ public class FiscalXmlMetadataParser {
 
             Element infCte = first(doc, "infCte");
             if (infCte != null) {
-                return fromInfoElement(infCte, "CTE");
+                return fromCte(infCte);
             }
 
             return empty();
@@ -84,13 +85,62 @@ public class FiscalXmlMetadataParser {
         }
     }
 
-    private FiscalXmlMetadata fromInfoElement(Element infoElement, String documentType) {
-        String accessKey = normalizeAccessKey(infoElement.getAttribute("Id"));
-        String issuerCnpj = text(first(infoElement, "emit"), "CNPJ");
-        String recipientCnpj = text(first(infoElement, "dest"), "CNPJ");
-        LocalDateTime issueDate = extractIssueDate(infoElement);
-        return new FiscalXmlMetadata(accessKey, documentType, issuerCnpj, recipientCnpj, issueDate,
-                null, null, null, null, List.of());
+    private FiscalXmlMetadata fromCte(Element infCte) {
+        String accessKey = normalizeAccessKey(infCte.getAttribute("Id"));
+        String issuerCnpj = text(first(infCte, "emit"), "CNPJ");
+        String recipientCnpj = text(first(infCte, "dest"), "CNPJ");
+        LocalDateTime issueDate = extractIssueDate(infCte);
+        return new FiscalXmlMetadata(accessKey, FiscalXmlMetadata.CTE, issuerCnpj, recipientCnpj, issueDate,
+                null, null, null, null, List.of(), mapCteParticipants(infCte));
+    }
+
+    /**
+     * The six participant groups of a CT-e. The taker: {@code ide/toma3/toma} points at one of rem (0), exped (1),
+     * receb (2) or dest (3); {@code ide/toma4} (toma = 4) brings its own document.
+     */
+    private CteParticipants mapCteParticipants(Element infCte) {
+        CteParticipants.Party issuer = cteParty(first(infCte, "emit"), "enderEmit");
+        CteParticipants.Party sender = cteParty(first(infCte, "rem"), "enderReme");
+        CteParticipants.Party shipper = cteParty(first(infCte, "exped"), "enderExped");
+        CteParticipants.Party receiver = cteParty(first(infCte, "receb"), "enderReceb");
+        CteParticipants.Party recipient = cteParty(first(infCte, "dest"), "enderDest");
+        Element ide = first(infCte, "ide");
+        Element toma3 = ide == null ? null : first(ide, "toma3");
+        Element toma4 = ide == null ? null : first(ide, "toma4");
+        CteTakerRole takerRole = null;
+        CteParticipants.Party taker = null;
+        if (toma4 != null) {
+            takerRole = CteTakerRole.OTHER;
+            taker = cteParty(toma4, "enderToma");
+        } else if (toma3 != null) {
+            String code = text(toma3, "toma");
+            takerRole = code == null ? null : switch (code.trim()) {
+                case "0" -> CteTakerRole.SENDER;
+                case "1" -> CteTakerRole.SHIPPER;
+                case "2" -> CteTakerRole.RECEIVER;
+                case "3" -> CteTakerRole.RECIPIENT;
+                default -> null;
+            };
+            if (takerRole != null) {
+                taker = switch (takerRole) {
+                    case SENDER -> sender;
+                    case SHIPPER -> shipper;
+                    case RECEIVER -> receiver;
+                    case RECIPIENT -> recipient;
+                    case OTHER -> null;
+                };
+            }
+        }
+        return new CteParticipants(issuer, sender, shipper, receiver, recipient, taker, takerRole);
+    }
+
+    private CteParticipants.Party cteParty(Element group, String addressTag) {
+        if (group == null) {
+            return null;
+        }
+        Element address = first(group, addressTag);
+        String name = text(group, "xNome");
+        return new CteParticipants.Party(text(group, "CNPJ"), text(group, "CPF"), name, text(address, "UF"));
     }
 
     private FiscalXmlMetadata fromNfe(Element infNFe) {
@@ -106,7 +156,7 @@ public class FiscalXmlMetadataParser {
         String recipientCnpj = text(dest, "CNPJ");
         LocalDateTime issueDate = extractIssueDate(infNFe);
 
-        return new FiscalXmlMetadata(accessKey, "NFE", issuerCnpj, recipientCnpj, issueDate,
+        return new FiscalXmlMetadata(accessKey, FiscalXmlMetadata.NFE, issuerCnpj, recipientCnpj, issueDate,
                 mapIdentificacao(ide), mapEmitente(emit), mapDestinatario(dest), mapTotais(icmsTot, ibsCbsTot), mapProdutos(infNFe));
     }
 
@@ -218,13 +268,13 @@ public class FiscalXmlMetadataParser {
     }
 
     /** total/IBSCBSTot - the IBS values sit in gIBS (gIBSUF/gIBSMun), the CBS one in gCBS. */
-    private FiscalIbsCbsTotals mapIbsCbsTotais(Element ibsCbsTot) {
+    private FiscalIbsCbsTotalsDTO mapIbsCbsTotais(Element ibsCbsTot) {
         if (ibsCbsTot == null) {
             return null;
         }
         Element gIbs = first(ibsCbsTot, "gIBS");
         Element gCbs = first(ibsCbsTot, "gCBS");
-        return new FiscalIbsCbsTotals(
+        return new FiscalIbsCbsTotalsDTO(
                 decimalOf(ibsCbsTot, "vBCIBSCBS"),
                 decimalOf(gIbs, "vIBSUF"),
                 decimalOf(gIbs, "vIBSMun"),
@@ -289,8 +339,8 @@ public class FiscalXmlMetadataParser {
         );
     }
 
-    private FiscalItemTaxDetail mapTaxDetail(Element prod, Element icms, Element ipi, Element pis, Element cofins) {
-        return new FiscalItemTaxDetail(
+    private FiscalItemTaxDetailDTO mapTaxDetail(Element prod, Element icms, Element ipi, Element pis, Element cofins) {
+        return new FiscalItemTaxDetailDTO(
                 text(prod, "CEST"),
                 text(prod, "cBenef"),
                 text(icms, "orig"),
@@ -319,7 +369,7 @@ public class FiscalXmlMetadataParser {
      * subgroup per tax (gIBSUF, gIBSMun, gCBS), each with its rate, an optional reduction
      * (gRed/pRedAliq) and the value. A note with no IBSCBS group gets null.
      */
-    private FiscalItemIbsCbs mapIbsCbs(Element ibsCbs) {
+    private FiscalItemIbsCbsDTO mapIbsCbs(Element ibsCbs) {
         if (ibsCbs == null) {
             return null;
         }
@@ -327,7 +377,7 @@ public class FiscalXmlMetadataParser {
         Element ibsUf = first(values, "gIBSUF");
         Element ibsMun = first(values, "gIBSMun");
         Element cbs = first(values, "gCBS");
-        return new FiscalItemIbsCbs(
+        return new FiscalItemIbsCbsDTO(
                 text(ibsCbs, "CST"),
                 text(ibsCbs, "cClassTrib"),
                 decimalOf(values, "vBC"),
@@ -420,7 +470,7 @@ public class FiscalXmlMetadataParser {
     }
 
     private FiscalXmlMetadata empty() {
-        return new FiscalXmlMetadata(null, "UNKNOWN", null, null, null, null, null, null, null, List.of());
+        return new FiscalXmlMetadata(null, FiscalXmlMetadata.UNKNOWN, null, null, null, null, null, null, null, List.of());
     }
 
     private String normalizeAccessKey(String rawId) {

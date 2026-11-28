@@ -4,10 +4,10 @@ import br.com.cshub.taxify.domain.subscription.Subscription;
 import br.com.cshub.taxify.enumerated.PlanServiceEnum;
 import br.com.cshub.taxify.repository.SubscriptionRepository;
 import br.com.cshub.taxify.domain.company.Company;
-import br.com.cshub.taxify.domain.xml.FiscalXmlDocument;
+import br.com.cshub.taxify.domain.fiscaldocument.GoodsInvoice;
 import br.com.cshub.taxify.dto.fiscalrule.FiscalXmlRectificationResultDTO;
 import br.com.cshub.taxify.integration.fiscalxml.FiscalXmlRectificationProperties;
-import br.com.cshub.taxify.repository.FiscalXmlDocumentRepository;
+import br.com.cshub.taxify.repository.GoodsInvoiceRepository;
 import br.com.cshub.taxify.repository.ProductFiscalRuleRepository;
 import br.com.cshub.taxify.service.firmaccess.FirmAccessService;
 import br.com.cshub.taxify.service.firmaccess.RoutineGate;
@@ -26,14 +26,14 @@ public class FiscalXmlRectificationScheduler {
 
     private static final Logger log = LoggerFactory.getLogger(FiscalXmlRectificationScheduler.class);
 
-    private final FiscalXmlDocumentRepository documentRepository;
+    private final GoodsInvoiceRepository documentRepository;
     private final ProductFiscalRuleRepository ruleRepository;
     private final SubscriptionRepository subscriptionRepository;
     private final FiscalXmlRectificationService rectificationService;
     private final FiscalXmlRectificationProperties properties;
     private final FirmAccessService firmAccessService;
 
-    public FiscalXmlRectificationScheduler(FiscalXmlDocumentRepository documentRepository,
+    public FiscalXmlRectificationScheduler(GoodsInvoiceRepository documentRepository,
                                             ProductFiscalRuleRepository ruleRepository, SubscriptionRepository subscriptionRepository,
                                             FiscalXmlRectificationService rectificationService, FiscalXmlRectificationProperties properties,
                                             FirmAccessService firmAccessService) {
@@ -93,20 +93,18 @@ public class FiscalXmlRectificationScheduler {
         LocalDateTime from = LocalDateTime.now().minusDays(properties.getLookbackDays()).toLocalDate().atStartOfDay();
         LocalDateTime to = LocalDateTime.now().toLocalDate().atTime(LocalTime.MAX);
 
-        List<FiscalXmlDocument> documents = documentRepository
-                .findByCompany_IdAndIssueDateBetweenOrderByIssueDateDesc(company.getId(), from, to);
+        // only goods invoices (NF-e, NFC-e) can be rectified - a CT-e would fail on every run
+        List<GoodsInvoice> documents = documentRepository.findIssuedBetween(company.getId(), from, to);
 
         LocalDateTime rulesUpdatedAt = ruleRepository.findMaxLastModifiedDateByCompanyId(company.getId()).orElse(null);
-        List<FiscalXmlDocument> needsCheck = documents.stream()
-                .filter(document -> !document.isOwnIssue() && !document.isCanceled())
-                // Only NFes can be rectified - a CT-e would fail on every run.
-                .filter(document -> document.getDocumentType() == null || "NFE".equals(document.getDocumentType()))
+        List<GoodsInvoice> needsCheck = documents.stream()
+                .filter(GoodsInvoice::isRectifiable)
                 .filter(document -> needsRectificationCheck(document, rulesUpdatedAt))
                 .toList();
 
         int rectified = 0;
         int failed = 0;
-        for (FiscalXmlDocument document : needsCheck) {
+        for (GoodsInvoice document : needsCheck) {
             try {
                 FiscalXmlRectificationResultDTO result = rectificationService.rectify(document.getId());
                 if (!result.correcoesAplicadas().isEmpty()) {
@@ -122,7 +120,7 @@ public class FiscalXmlRectificationScheduler {
                 company.getId(), needsCheck.size(), documents.size(), documents.size() - needsCheck.size(), rectified, failed);
     }
 
-    private boolean needsRectificationCheck(FiscalXmlDocument document, LocalDateTime rulesUpdatedAt) {
+    private boolean needsRectificationCheck(GoodsInvoice document, LocalDateTime rulesUpdatedAt) {
         LocalDateTime lastChecked = document.getLastRectificationCheckedAt();
         return lastChecked == null || (rulesUpdatedAt != null && rulesUpdatedAt.isAfter(lastChecked));
     }

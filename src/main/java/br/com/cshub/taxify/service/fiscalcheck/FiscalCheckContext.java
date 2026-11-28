@@ -1,6 +1,6 @@
 package br.com.cshub.taxify.service.fiscalcheck;
 
-import br.com.cshub.taxify.domain.xml.FiscalXmlDocumentItem;
+import br.com.cshub.taxify.domain.fiscaldocument.FiscalDocumentItem;
 import br.com.cshub.taxify.domain.fiscalrule.ProductRules;
 import br.com.cshub.taxify.domain.fiscalrule.ProductFiscalRule;
 import br.com.cshub.taxify.domain.reform.IbsCbsRate;
@@ -30,7 +30,7 @@ public record FiscalCheckContext(UUID companyId, ProductRules rules, Map<Integer
     }
 
     /** The rule for the item: its supplier's, or the code's general one. */
-    public Optional<ProductFiscalRule> ruleFor(FiscalXmlDocumentItem item) {
+    public Optional<ProductFiscalRule> ruleFor(FiscalDocumentItem item) {
         return rules.forItem(item);
     }
 

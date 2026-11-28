@@ -1,15 +1,20 @@
 package br.com.cshub.taxify.service;
 
+import br.com.cshub.taxify.support.TestNotes;
 import br.com.cshub.taxify.common.MessageService;
 import br.com.cshub.taxify.common.TenantAccessService;
 import br.com.cshub.taxify.domain.company.Company;
-import br.com.cshub.taxify.domain.xml.FiscalXmlDocument;
-import br.com.cshub.taxify.domain.xml.FiscalXmlHeaderExtras;
+import br.com.cshub.taxify.domain.fiscaldocument.FiscalDocumentItem;
+import br.com.cshub.taxify.domain.fiscaldocument.GoodsInvoice;
+import br.com.cshub.taxify.domain.fiscaldocument.GoodsInvoiceHeader;
+import br.com.cshub.taxify.domain.fiscaldocument.IssuerDetails;
+import br.com.cshub.taxify.domain.fiscaldocument.PartyAddress;
+import br.com.cshub.taxify.repository.GoodsInvoiceRepository;
 import br.com.cshub.taxify.dto.fiscalxml.FiscalXmlDetailDTO;
 import br.com.cshub.taxify.integration.sieg.FiscalXmlFileStorage;
 import br.com.cshub.taxify.integration.sieg.FiscalXmlMetadataParser;
-import br.com.cshub.taxify.repository.FiscalXmlDocumentItemRepository;
-import br.com.cshub.taxify.repository.FiscalXmlDocumentRepository;
+import br.com.cshub.taxify.repository.FiscalDocumentItemRepository;
+import br.com.cshub.taxify.repository.FiscalDocumentRepository;
 import br.com.cshub.taxify.validation.CompanyValidation;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
@@ -44,9 +49,11 @@ class FiscalXmlQueryServiceDetailTest {
             """;
 
     @Mock
-    private FiscalXmlDocumentRepository documentRepository;
+    private FiscalDocumentRepository documentRepository;
     @Mock
-    private FiscalXmlDocumentItemRepository itemRepository;
+    private GoodsInvoiceRepository goodsInvoiceRepository;
+    @Mock
+    private FiscalDocumentItemRepository itemRepository;
     @Mock
     private CompanyValidation companyValidation;
     @Mock
@@ -61,24 +68,23 @@ class FiscalXmlQueryServiceDetailTest {
     private br.com.cshub.taxify.repository.ProductFiscalRuleRepository ruleRepository;
 
     private FiscalXmlQueryService service;
-    private FiscalXmlDocument document;
+    private GoodsInvoice document;
 
     @BeforeEach
     void setUp() {
-        service = new FiscalXmlQueryService(documentRepository, itemRepository, new FiscalXmlMetadataParser(), companyValidation,
-                tenantAccessService, messageService, eventService, fileStorage, ruleRepository, null);
-        document = new FiscalXmlDocument();
-        document.setId(UUID.randomUUID());
-        document.setCompany(new Company(UUID.randomUUID()));
-        document.setDocumentType("NFE");
-        document.setXmlFilePath("s3://bucket/fiscal-xml/note.xml");
-        when(documentRepository.findFirstByIdAndDeletedIsFalse(document.getId())).thenReturn(Optional.of(document));
+        service = new FiscalXmlQueryService(documentRepository, goodsInvoiceRepository, itemRepository, new FiscalXmlMetadataParser(),
+                companyValidation, tenantAccessService, messageService, eventService, fileStorage, ruleRepository, null);
+        document = TestNotes.note(TestNotes.company(TestNotes.COMPANY_CNPJ)).xml("s3://bucket/fiscal-xml/note.xml")
+                .metadataVersion(null).build();
+        when(documentRepository.findXmlDocument(document.getId())).thenReturn(Optional.of(document));
     }
 
     @Test
     void buildsTheDetailFromTheColumnsWithoutReadingTheFile() throws IOException {
         document.setMetadataVersion(4);
-        document.setHeaderExtras(new FiscalXmlHeaderExtras("1", "9", "0", "0", "ERP 2.0", "1058", "BRASIL", null, null));
+        document.setHeader(new GoodsInvoiceHeader(null, null, null, null, null, null, null, null, null, "1", "9", "0", "0", "ERP 2.0"));
+        document.setIssuerDetails(new IssuerDetails(null, null, null, null, null, null,
+                new PartyAddress(null, null, null, null, null, null, null, "1058", "BRASIL")));
 
         FiscalXmlDetailDTO detail = service.findDetail(document.getId());
 
@@ -103,13 +109,11 @@ class FiscalXmlQueryServiceDetailTest {
     void productsTabShowsTheRectifiedCfopWhileTheDanfeKeepsTheIssuedOne() {
         document.setRectifiedFilePath("s3://bucket/fiscal-xml/retificado.xml");
         document.setLastRectificationCheckedAt(java.time.LocalDateTime.now());
-        br.com.cshub.taxify.domain.xml.FiscalXmlDocumentItem withRule = new br.com.cshub.taxify.domain.xml.FiscalXmlDocumentItem();
-        withRule.setCodigo("P1");
-        withRule.setCfop("5405");
-        br.com.cshub.taxify.domain.xml.FiscalXmlDocumentItem withoutRule = new br.com.cshub.taxify.domain.xml.FiscalXmlDocumentItem();
-        withoutRule.setCodigo("P2");
-        withoutRule.setCfop("5405");
-        when(itemRepository.findByDocument_IdOrderByNumeroItemAsc(document.getId())).thenReturn(java.util.List.of(withRule, withoutRule));
+        FiscalDocumentItem withRule = TestNotes.item(1).code("P1").cfop("5405").build();
+        FiscalDocumentItem withoutRule = TestNotes.item(2).code("P2").cfop("5405").build();
+        document.addItem(withRule);
+        document.addItem(withoutRule);
+        when(itemRepository.findByDocument_IdOrderByItemNumberAsc(document.getId())).thenReturn(java.util.List.of(withRule, withoutRule));
         br.com.cshub.taxify.domain.fiscalrule.ProductFiscalRule rule = new br.com.cshub.taxify.domain.fiscalrule.ProductFiscalRule(UUID.randomUUID());
         rule.setProductCode("P1");
         rule.setCorrectCfop("5102");

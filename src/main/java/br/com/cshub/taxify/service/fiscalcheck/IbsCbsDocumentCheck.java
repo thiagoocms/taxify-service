@@ -1,9 +1,9 @@
 package br.com.cshub.taxify.service.fiscalcheck;
 
-import br.com.cshub.taxify.domain.xml.FiscalIbsCbsTotals;
-import br.com.cshub.taxify.domain.xml.FiscalItemIbsCbs;
-import br.com.cshub.taxify.domain.xml.FiscalXmlDocument;
-import br.com.cshub.taxify.domain.xml.FiscalXmlDocumentItem;
+import br.com.cshub.taxify.domain.fiscaldocument.IbsCbsTotals;
+import br.com.cshub.taxify.domain.fiscaldocument.ItemIbsCbs;
+import br.com.cshub.taxify.domain.fiscaldocument.GoodsInvoice;
+import br.com.cshub.taxify.domain.fiscaldocument.FiscalDocumentItem;
 import br.com.cshub.taxify.enumerated.DivergenceSeverity;
 import org.springframework.stereotype.Component;
 
@@ -34,8 +34,8 @@ public class IbsCbsDocumentCheck implements FiscalDocumentCheck {
     private static final Set<String> NFE_MODELS = Set.of("55", "65");
 
     @Override
-    public List<FiscalDivergence> check(FiscalXmlDocument document, List<FiscalXmlDocumentItem> items, FiscalCheckContext context) {
-        List<FiscalItemIbsCbs> groups = items.stream().map(FiscalXmlDocumentItem::getIbsCbs).filter(Objects::nonNull).toList();
+    public List<FiscalDivergence> check(GoodsInvoice document, List<FiscalDocumentItem> items, FiscalCheckContext context) {
+        List<ItemIbsCbs> groups = items.stream().map(FiscalDocumentItem::getIbsCbs).filter(Objects::nonNull).toList();
         List<FiscalDivergence> divergences = new ArrayList<>();
         if (groups.isEmpty()) {
             if (!items.isEmpty() && expectsIbsCbs(document)) {
@@ -44,33 +44,34 @@ public class IbsCbsDocumentCheck implements FiscalDocumentCheck {
             }
             return divergences;
         }
-        FiscalIbsCbsTotals totals = document.getIbsCbsTotals();
+        IbsCbsTotals totals = document.getIbsCbsTotals();
         if (totals != null) {
-            compareTotal("vBCIBSCBS", "Base de IBS/CBS", totals.baseCalculo(), groups, FiscalItemIbsCbs::baseCalculo, divergences);
-            compareTotal("vIBS", "IBS", totals.valorIbs(), groups, IbsCbsDocumentCheck::ibsOf, divergences);
-            compareTotal("vCBS", "CBS", totals.valorCbs(), groups, FiscalItemIbsCbs::valorCbs, divergences);
+            compareTotal("vBCIBSCBS", "Base de IBS/CBS", totals.base(), groups, ItemIbsCbs::base, divergences);
+            compareTotal("vIBS", "IBS", totals.ibsAmount(), groups, IbsCbsDocumentCheck::ibsOf, divergences);
+            compareTotal("vCBS", "CBS", totals.cbsAmount(), groups, ItemIbsCbs::cbsAmount, divergences);
         }
         return divergences;
     }
 
-    private static boolean expectsIbsCbs(FiscalXmlDocument document) {
-        boolean nfe = document.getModelo() != null ? NFE_MODELS.contains(document.getModelo().trim())
-                : "NFE".equals(document.getDocumentType());
-        String crt = document.getEmitenteRegimeTributario() == null ? null : document.getEmitenteRegimeTributario().trim();
+    private static boolean expectsIbsCbs(GoodsInvoice document) {
+        // a goods invoice copied without the model is an NF-e (the old document_type NFE)
+        boolean nfe = document.getModel() == null || NFE_MODELS.contains(document.getModel().trim());
+        String taxRegime = document.getIssuerDetails().taxRegimeCode();
+        String crt = taxRegime == null ? null : taxRegime.trim();
         return nfe && REGIME_NORMAL.equals(crt)
                 && document.getIssueDate() != null && document.getIssueDate().getYear() >= FIRST_YEAR;
     }
 
-    private static BigDecimal ibsOf(FiscalItemIbsCbs group) {
-        if (group.valorIbs() != null) {
-            return group.valorIbs();
+    private static BigDecimal ibsOf(ItemIbsCbs group) {
+        if (group.ibsAmount() != null) {
+            return group.ibsAmount();
         }
-        return group.valorIbsUf() == null && group.valorIbsMun() == null ? null
-                : Money.orZero(group.valorIbsUf()).add(Money.orZero(group.valorIbsMun()));
+        return group.stateAmount() == null && group.cityAmount() == null ? null
+                : Money.orZero(group.stateAmount()).add(Money.orZero(group.cityAmount()));
     }
 
-    private void compareTotal(String field, String label, BigDecimal total, List<FiscalItemIbsCbs> groups,
-                              Function<FiscalItemIbsCbs, BigDecimal> value, List<FiscalDivergence> divergences) {
+    private void compareTotal(String field, String label, BigDecimal total, List<ItemIbsCbs> groups,
+                              Function<ItemIbsCbs, BigDecimal> value, List<FiscalDivergence> divergences) {
         if (total == null) {
             return;
         }

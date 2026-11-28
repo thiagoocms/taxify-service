@@ -4,11 +4,15 @@ import br.com.cshub.taxify.common.IssuePeriod;
 import br.com.cshub.taxify.common.MessageService;
 import br.com.cshub.taxify.common.RequestIds;
 import br.com.cshub.taxify.domain.company.Company;
-import br.com.cshub.taxify.domain.xml.ServiceInvoice;
+import br.com.cshub.taxify.domain.fiscaldocument.DocumentSourceKey;
+import br.com.cshub.taxify.domain.fiscaldocument.Nfse;
+import br.com.cshub.taxify.enumerated.CompanyDocumentRole;
+import br.com.cshub.taxify.mapper.fiscaldocument.LegacyNfseDirection;
+import br.com.cshub.taxify.mapper.fiscaldocument.NfseApiMapper;
 import br.com.cshub.taxify.dto.fiscalxml.ServiceInvoiceDTOs;
 import br.com.cshub.taxify.exception.BadRequestException;
 import br.com.cshub.taxify.integration.sieg.FiscalXmlFileStorage;
-import br.com.cshub.taxify.repository.ServiceInvoiceRepository;
+import br.com.cshub.taxify.repository.NfseRepository;
 import br.com.cshub.taxify.validation.CompanyValidation;
 import org.springframework.data.domain.Page;
 import org.springframework.data.domain.PageRequest;
@@ -18,6 +22,7 @@ import org.springframework.transaction.annotation.Transactional;
 
 import java.io.IOException;
 import java.math.BigDecimal;
+import java.time.LocalDateTime;
 import java.util.List;
 import java.util.Locale;
 import java.util.UUID;
@@ -28,12 +33,12 @@ public class ServiceInvoiceQueryService {
 
     private static final int MAX_PAGE_SIZE = 200;
 
-    private final ServiceInvoiceRepository repository;
+    private final NfseRepository repository;
     private final CompanyValidation companyValidation;
     private final MessageService messageService;
     private final FiscalXmlFileStorage fileStorage;
 
-    public ServiceInvoiceQueryService(ServiceInvoiceRepository repository, CompanyValidation companyValidation,
+    public ServiceInvoiceQueryService(NfseRepository repository, CompanyValidation companyValidation,
                                       MessageService messageService, FiscalXmlFileStorage fileStorage) {
         this.repository = repository;
         this.companyValidation = companyValidation;
@@ -47,46 +52,59 @@ public class ServiceInvoiceQueryService {
         int size = filter.size() == null ? 50 : Math.min(Math.max(filter.size(), 1), MAX_PAGE_SIZE);
         PageRequest page = PageRequest.of(filter.page() == null ? 0 : Math.max(filter.page(), 0), size,
                 Sort.by(Sort.Direction.DESC, "issueDate"));
-        String direction = filter.direction() == null || filter.direction().isBlank() ? null : filter.direction().strip();
-        String numero = filter.numero() == null || filter.numero().isBlank() ? null : filter.numero().strip();
+        CompanyDocumentRole role = roleOf(filter.direction());
+        String number = filter.numero() == null || filter.numero().isBlank() ? null : filter.numero().strip();
+        if (role == null && filter.direction() != null && !filter.direction().isBlank()) {
+            return Page.empty(page); // a direction that never existed matches no note, as before
+        }
         return repository.search(company.getId(), IssuePeriod.start(filter.dataEmissaoInicio()),
-                        IssuePeriod.end(filter.dataEmissaoFim()), direction, participantPattern(filter.participant()), numero,
+                        IssuePeriod.end(filter.dataEmissaoFim()), role, participantPattern(filter.participant()), number,
                         Boolean.TRUE.equals(filter.somenteComRetencao()),
                         ServiceInvoiceDTOs.Filter.ONLY_SIEG.equals(filter.fonte()) ? comparisonCutoff() : null,
-                        ServiceInvoiceDTOs.Filter.ONLY_ADN.equals(filter.fonte()) ? comparisonCutoff() : null, page)
-                .map(ServiceInvoiceQueryService::toSummary);
+                        ServiceInvoiceDTOs.Filter.ONLY_ADN.equals(filter.fonte()) ? comparisonCutoff() : null,
+                        DocumentSourceKey.SIEG, DocumentSourceKey.NFSE_ADN, page)
+                .map(NfseApiMapper::toSummary);
+    }
+
+    /** The API's PRESTADA/TOMADA/TERCEIRO as the role of the company (null = any, or a value that never existed). */
+    private static CompanyDocumentRole roleOf(String direction) {
+        if (direction == null || direction.isBlank()) {
+            return null;
+        }
+        try {
+            return LegacyNfseDirection.of(direction.strip()).role();
+        } catch (IllegalArgumentException unknown) {
+            return null;
+        }
     }
 
     @Transactional(readOnly = true)
     public ServiceInvoiceDTOs.Totals totals(ServiceInvoiceDTOs.Filter filter) {
         Company company = companyValidation.checkExist(RequestIds.parse(filter.companyId(), messageService));
-        List<ServiceInvoice> notes = repository.findActiveInPeriod(company.getId(), IssuePeriod.start(filter.dataEmissaoInicio()),
+        List<Nfse> notes = repository.findActiveInPeriod(company.getId(), IssuePeriod.start(filter.dataEmissaoInicio()),
                 IssuePeriod.end(filter.dataEmissaoFim()));
-        java.time.LocalDateTime cutoff = comparisonCutoff();
-        long onlySieg = notes.stream().filter(s -> s.getFoundInSiegAt() != null && s.getFoundInSiegAt().isBefore(cutoff)
-                && s.getFoundInAdnAt() == null).count();
-        long onlyAdn = notes.stream().filter(s -> s.getFoundInAdnAt() != null && s.getFoundInAdnAt().isBefore(cutoff)
-                && s.getFoundInSiegAt() == null).count();
-        return new ServiceInvoiceDTOs.Totals(totalsOf(notes, ServiceInvoice.PRESTADA), totalsOf(notes, ServiceInvoice.TOMADA),
-                onlySieg, onlyAdn);
+        LocalDateTime cutoff = comparisonCutoff();
+        long onlySieg = notes.stream().filter(s -> seenBefore(s, DocumentSourceKey.SIEG, cutoff)
+                && NfseApiMapper.firstSeenIn(s, DocumentSourceKey.NFSE_ADN) == null).count();
+        long onlyAdn = notes.stream().filter(s -> seenBefore(s, DocumentSourceKey.NFSE_ADN, cutoff)
+                && NfseApiMapper.firstSeenIn(s, DocumentSourceKey.SIEG) == null).count();
+        return new ServiceInvoiceDTOs.Totals(totalsOf(notes, CompanyDocumentRole.ISSUER),
+                totalsOf(notes, CompanyDocumentRole.TAKER), onlySieg, onlyAdn);
+    }
+
+    private static boolean seenBefore(Nfse s, DocumentSourceKey source, LocalDateTime cutoff) {
+        LocalDateTime seen = NfseApiMapper.firstSeenIn(s, source);
+        return seen != null && seen.isBefore(cutoff);
     }
 
     @Transactional(readOnly = true)
     public ServiceInvoiceDTOs.Detail detail(UUID id) {
-        ServiceInvoice s = owned(id);
-        return new ServiceInvoiceDTOs.Detail(s.getId(), s.getCompany().getId(), s.getAccessKey(), s.getLayout(), s.getNumero(),
-                s.getCodigoVerificacao(), s.getIssueDate(), s.getCompetence(), s.getDirection(), s.getPrestadorDocumento(),
-                s.getPrestadorNome(), s.getPrestadorMunicipio(), s.getTomadorDocumento(), s.getTomadorNome(),
-                s.getMunicipioIncidencia(), s.getCodigoServico(), s.getCodigoTributacaoMunicipal(), s.getDescricaoServico(),
-                s.getValorServico(), s.getValorDeducoes(), s.getBaseCalculo(), s.getAliquotaIss(), s.getValorIss(),
-                s.isIssRetido(), s.getValorIssRetido(), s.getValorIrrf(), s.getValorPis(), s.getValorCofins(),
-                s.isPisCofinsRetidos(), s.getValorCsll(), s.getValorInss(), s.getValorLiquido(), totalRetido(s),
-                s.isCanceled(), s.getSourceSystem());
+        return NfseApiMapper.toDetail(owned(id));
     }
 
     @Transactional(readOnly = true)
     public byte[] xml(UUID id) {
-        ServiceInvoice invoice = owned(id);
+        Nfse invoice = owned(id);
         try {
             return fileStorage.read(invoice.getXmlFilePath());
         } catch (IOException e) {
@@ -95,65 +113,37 @@ public class ServiceInvoiceQueryService {
     }
 
     /** A note in one source and not in the other for this long counts as a difference. */
-    private static java.time.LocalDateTime comparisonCutoff() {
-        return java.time.LocalDateTime.now().minusHours(FiscalXmlQueryService.SOURCE_COMPARISON_HOURS);
+    private static LocalDateTime comparisonCutoff() {
+        return LocalDateTime.now().minusHours(FiscalXmlQueryService.SOURCE_COMPARISON_HOURS);
     }
 
-    /** ISS retained + IRRF + CSLL + INSS + PIS/COFINS when retained. */
-    public static BigDecimal totalRetido(ServiceInvoice s) {
-        BigDecimal total = BigDecimal.ZERO;
-        if (s.isIssRetido()) {
-            total = total.add(orZero(s.getValorIssRetido()));
-        }
-        return total.add(federal(s));
-    }
-
-    /** IRRF + CSLL + INSS + PIS/COFINS when retained. */
-    public static BigDecimal federal(ServiceInvoice s) {
-        BigDecimal total = orZero(s.getValorIrrf()).add(orZero(s.getValorCsll())).add(orZero(s.getValorInss()));
-        if (s.isPisCofinsRetidos()) {
-            total = total.add(orZero(s.getValorPis())).add(orZero(s.getValorCofins()));
-        }
-        return total;
-    }
-
-    private ServiceInvoice owned(UUID id) {
-        ServiceInvoice invoice = repository.findById(id).filter(found -> !found.isDeleted())
+    /** An NFS-e by id - any other type, or a deleted note, answers as before (bad request). */
+    private Nfse owned(UUID id) {
+        Nfse invoice = repository.findFirstByIdAndDeletedIsFalse(id)
                 .orElseThrow(() -> new BadRequestException("error.generic.bad.request", messageService.getMessage("error.generic.bad.request")));
         companyValidation.checkExist(invoice.getCompany().getId());
         return invoice;
     }
 
-    private static ServiceInvoiceDTOs.DirectionTotals totalsOf(List<ServiceInvoice> notes, String direction) {
+    private static ServiceInvoiceDTOs.DirectionTotals totalsOf(List<Nfse> notes, CompanyDocumentRole role) {
         long count = 0;
         BigDecimal valor = BigDecimal.ZERO;
         BigDecimal iss = BigDecimal.ZERO;
         BigDecimal issRetido = BigDecimal.ZERO;
         BigDecimal federal = BigDecimal.ZERO;
-        for (ServiceInvoice s : notes) {
-            if (!direction.equals(s.getDirection())) {
+        for (Nfse s : notes) {
+            if (s.getCompanyRole() != role) {
                 continue;
             }
             count++;
-            valor = valor.add(orZero(s.getValorServico()));
-            iss = iss.add(orZero(s.getValorIss()));
-            if (s.isIssRetido()) {
-                issRetido = issRetido.add(orZero(s.getValorIssRetido()));
+            valor = valor.add(orZero(s.getTotalAmount()));
+            iss = iss.add(orZero(s.getIss().amount()));
+            if (s.getIss().isWithheld()) {
+                issRetido = issRetido.add(orZero(s.getIss().withheldAmount()));
             }
-            federal = federal.add(federal(s));
+            federal = federal.add(NfseApiMapper.federalWithheld(s));
         }
         return new ServiceInvoiceDTOs.DirectionTotals(count, valor, iss, issRetido, federal, issRetido.add(federal));
-    }
-
-    private static ServiceInvoiceDTOs.Summary toSummary(ServiceInvoice s) {
-        String description = s.getDescricaoServico();
-        if (description != null && description.length() > 140) {
-            description = description.substring(0, 140) + "…";
-        }
-        return new ServiceInvoiceDTOs.Summary(s.getId(), s.getNumero(), s.getLayout(), s.getIssueDate(), s.getCompetence(),
-                s.getDirection(), s.getPrestadorNome(), s.getPrestadorDocumento(), s.getTomadorNome(), s.getTomadorDocumento(),
-                description, s.getValorServico(), s.getValorIss(), s.isIssRetido(), totalRetido(s), s.isCanceled(),
-                s.getSourceSystem());
     }
 
     private static String participantPattern(String participant) {

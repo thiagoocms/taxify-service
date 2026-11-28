@@ -1,7 +1,8 @@
 package br.com.cshub.taxify.service.fiscalcheck;
 
-import br.com.cshub.taxify.domain.xml.FiscalItemTaxDetail;
-import br.com.cshub.taxify.domain.xml.FiscalXmlDocumentItem;
+import br.com.cshub.taxify.domain.fiscaldocument.ItemIcms;
+import br.com.cshub.taxify.domain.fiscaldocument.ItemIcmsSt;
+import br.com.cshub.taxify.domain.fiscaldocument.FiscalDocumentItem;
 import br.com.cshub.taxify.enumerated.DivergenceSeverity;
 import org.springframework.stereotype.Component;
 
@@ -35,28 +36,30 @@ public class TaxCalculationCheck implements FiscalCheck {
     private static final Set<String> PIS_COFINS_NO_TAX = Set.of("04", "05", "06", "07", "08", "09");
 
     @Override
-    public List<FiscalDivergence> check(FiscalXmlDocumentItem item, FiscalCheckContext context) {
+    public List<FiscalDivergence> check(FiscalDocumentItem item, FiscalCheckContext context) {
         List<FiscalDivergence> divergences = new ArrayList<>();
-        String cstIcms = trim(item.getSituacaoTributariaIcms());
-        FiscalItemTaxDetail detail = item.getTaxDetail();
+        ItemIcms icms = item.getIcms();
+        String cstIcms = trim(icms.cst());
+        boolean withDetail = item.hasTaxDetail();
 
-        noTax(divergences, "vICMS", "ICMS", cstIcms, ICMS_NO_TAX, item.getValorIcms());
-        noTax(divergences, "vIPI", "IPI", trim(item.getSituacaoTributariaIpi()), IPI_NO_TAX, item.getValorIpi());
-        noTax(divergences, "vPIS", "PIS", trim(item.getSituacaoTributariaPis()), PIS_COFINS_NO_TAX, item.getValorPis());
-        noTax(divergences, "vCOFINS", "COFINS", trim(item.getSituacaoTributariaCofins()), PIS_COFINS_NO_TAX, item.getValorCofins());
+        noTax(divergences, "vICMS", "ICMS", cstIcms, ICMS_NO_TAX, icms.amount());
+        noTax(divergences, "vIPI", "IPI", trim(item.getIpi().cst()), IPI_NO_TAX, item.getIpi().amount());
+        noTax(divergences, "vPIS", "PIS", trim(item.getPis().cst()), PIS_COFINS_NO_TAX, item.getPis().amount());
+        noTax(divergences, "vCOFINS", "COFINS", trim(item.getCofins().cst()), PIS_COFINS_NO_TAX, item.getCofins().amount());
 
-        boolean regimeNormalCst = detail == null || detail.csosn() == null;
+        boolean regimeNormalCst = !withDetail || icms.csosn() == null;
         if (regimeNormalCst && cstIcms != null && ICMS_CALCULATED.contains(cstIcms)) {
-            calculated(divergences, "vICMS", "ICMS", item.getBaseCalculoIcms(), item.getAliquotaIcms(), item.getValorIcms(),
-                    DivergenceSeverity.ERROR);
+            calculated(divergences, "vICMS", "ICMS", icms.base(), icms.rate(), icms.amount(), DivergenceSeverity.ERROR);
         }
-        if (detail != null) {
-            calculated(divergences, "vIPI", "IPI", detail.baseCalculoIpi(), detail.aliquotaIpi(), item.getValorIpi(), DivergenceSeverity.ERROR);
-            calculated(divergences, "vPIS", "PIS", detail.baseCalculoPis(), detail.aliquotaPis(), item.getValorPis(), DivergenceSeverity.ERROR);
-            calculated(divergences, "vCOFINS", "COFINS", detail.baseCalculoCofins(), detail.aliquotaCofins(), item.getValorCofins(),
+        if (withDetail) {
+            calculated(divergences, "vIPI", "IPI", item.getIpi().base(), item.getIpi().rate(), item.getIpi().amount(),
                     DivergenceSeverity.ERROR);
+            calculated(divergences, "vPIS", "PIS", item.getPis().base(), item.getPis().rate(), item.getPis().amount(),
+                    DivergenceSeverity.ERROR);
+            calculated(divergences, "vCOFINS", "COFINS", item.getCofins().base(), item.getCofins().rate(),
+                    item.getCofins().amount(), DivergenceSeverity.ERROR);
             if (regimeNormalCst && cstIcms != null && ICMS_ST_CALCULATED.contains(cstIcms)) {
-                icmsSt(divergences, detail, item.getValorIcms());
+                icmsSt(divergences, item.getIcmsSt(), icms.amount());
             }
         }
         return divergences;
@@ -83,16 +86,16 @@ public class TaxCalculationCheck implements FiscalCheck {
         }
     }
 
-    private static void icmsSt(List<FiscalDivergence> divergences, FiscalItemTaxDetail detail, BigDecimal ownIcms) {
-        if (detail.baseCalculoIcmsSt() == null || detail.aliquotaIcmsSt() == null || detail.valorIcmsSt() == null) {
+    private static void icmsSt(List<FiscalDivergence> divergences, ItemIcmsSt st, BigDecimal ownIcms) {
+        if (st.base() == null || st.rate() == null || st.amount() == null) {
             return;
         }
-        BigDecimal expected = Money.tax(detail.baseCalculoIcmsSt(), detail.aliquotaIcmsSt(), null).subtract(Money.orZero(ownIcms));
-        if (Money.differs(detail.valorIcmsSt(), expected)) {
-            divergences.add(new FiscalDivergence(CALCULATION, "vICMSST", Money.show(detail.valorIcmsSt()), Money.show(expected),
+        BigDecimal expected = Money.tax(st.base(), st.rate(), null).subtract(Money.orZero(ownIcms));
+        if (Money.differs(st.amount(), expected)) {
+            divergences.add(new FiscalDivergence(CALCULATION, "vICMSST", Money.show(st.amount()), Money.show(expected),
                     DivergenceSeverity.WARNING,
                     "ICMS-ST %s diferente de base ST x alíquota ST - ICMS próprio (%s)"
-                            .formatted(Money.show(detail.valorIcmsSt()), Money.show(expected))));
+                            .formatted(Money.show(st.amount()), Money.show(expected))));
         }
     }
 
