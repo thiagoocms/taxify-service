@@ -41,9 +41,13 @@ class SharedHelpersTest {
         LocalDate day = LocalDate.of(2026, 11, 23);
 
         assertThat(IssuePeriod.start(day)).isEqualTo(LocalDateTime.of(2026, 11, 23, 0, 0));
-        assertThat(IssuePeriod.end(day)).isAfter(LocalDateTime.of(2026, 11, 23, 23, 59, 59));
-        assertThat(IssuePeriod.start(null)).isEqualTo(LocalDateTime.MIN);
-        assertThat(IssuePeriod.end(null)).isEqualTo(LocalDateTime.MAX);
+        // half-open: the next day's 00:00 is the exclusive end (never a last instant the driver rounds up)
+        assertThat(IssuePeriod.endExclusive(day)).isEqualTo(LocalDateTime.of(2026, 11, 24, 0, 0));
+        assertThat(IssuePeriod.start((LocalDate) null)).isEqualTo(IssuePeriod.OPEN_START);
+        assertThat(IssuePeriod.endExclusive((LocalDate) null)).isEqualTo(IssuePeriod.OPEN_END);
+        assertThat(IssuePeriod.monthEndExclusive(java.time.YearMonth.of(2026, 11))).isEqualTo(LocalDateTime.of(2026, 12, 1, 0, 0));
+        assertThat(IssuePeriod.siegStart(day)).isEqualTo(LocalDateTime.of(2026, 11, 22, 21, 0));
+        assertThat(IssuePeriod.siegEndExclusive(day)).isEqualTo(LocalDateTime.of(2026, 11, 23, 21, 0));
     }
 
     @Test

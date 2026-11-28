@@ -46,7 +46,7 @@ public interface SefazNoteSummaryRepository extends AbstractJpaRepository<SefazN
                                                                                Pageable pageable);
 
     /** Summaries of notes issued in the period still without the full XML - the audit. */
-    List<SefazNoteSummary> findByCompany_IdAndCompletedAtIsNullAndIssueDateBetween(UUID companyId, LocalDateTime from,
+    List<SefazNoteSummary> findByCompany_IdAndCompletedAtIsNullAndIssueDateGreaterThanEqualAndIssueDateLessThan(UUID companyId, LocalDateTime from,
                                                                                    LocalDateTime to);
 
     /** Summaries (no XML yet) of authorized notes issued since {@code since} without a conclusive manifestation. */

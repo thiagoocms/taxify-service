@@ -30,7 +30,7 @@ public interface NfseRepository extends AbstractJpaRepository<Nfse, UUID>, Fisca
      * The company's NFS-e of a window that a provider itself delivered in the period mode, any direction - compared
      * with SIEG's count before downloading the window (A1). Index idx_fd_company_type_issue.
      */
-    @Query("select count(n) from Nfse n where n.company.id = :companyId and n.issueDate between :from and :to"
+    @Query("select count(n) from Nfse n where n.company.id = :companyId and n.issueDate >= :from and n.issueDate < :to"
             + " and exists (select s.id from FiscalDocumentSource s where s.document = n and s.source = :source"
             + "             and s.retrievalMode = :mode)")
     long countDeliveredBy(@Param("companyId") UUID companyId, @Param("from") LocalDateTime from, @Param("to") LocalDateTime to,
@@ -42,7 +42,7 @@ public interface NfseRepository extends AbstractJpaRepository<Nfse, UUID>, Fisca
      * ADN; {@code onlyAdnBefore}: the other way round ({@code fiscal_document_sources}).
      */
     @Query("select n from Nfse n where n.company.id = :companyId and n.deleted = false"
-            + " and n.issueDate between :from and :to"
+            + " and n.issueDate >= :from and n.issueDate < :to"
             + " and (:role is null or n.companyRole = :role)"
             + " and (:participant is null or lower(n.issuer.name) like :participant or lower(n.recipient.name) like :participant"
             + "      or n.issuer.document like :participant or n.recipient.document like :participant)"
@@ -76,7 +76,7 @@ public interface NfseRepository extends AbstractJpaRepository<Nfse, UUID>, Fisca
      * totals read where each note was seen: one query for the screen, never one per note).
      */
     @Query("select distinct n from Nfse n left join fetch n.sources where n.company.id = :companyId and n.deleted = false"
-            + " and n.status <> " + CANCELED + " and n.issueDate between :from and :to")
+            + " and n.status <> " + CANCELED + " and n.issueDate >= :from and n.issueDate < :to")
     List<Nfse> findActiveInPeriod(@Param("companyId") UUID companyId, @Param("from") LocalDateTime from,
                                   @Param("to") LocalDateTime to);
 }

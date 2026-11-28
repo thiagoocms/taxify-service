@@ -1,9 +1,10 @@
 package br.com.cshub.taxify.service;
 
-import br.com.cshub.taxify.domain.fiscaldocument.DocumentSourceKey;
+import br.com.cshub.taxify.domain.fiscaldocument.CfopFilter;
 import br.com.cshub.taxify.domain.fiscaldocument.FiscalDocument;
 import br.com.cshub.taxify.repository.FiscalDocumentItemRepository;
 import br.com.cshub.taxify.repository.FiscalDocumentRepository;
+import br.com.cshub.taxify.repository.FiscalDocumentSearchFilter;
 import org.junit.jupiter.api.AfterEach;
 import org.junit.jupiter.api.Assumptions;
 import org.junit.jupiter.api.BeforeEach;
@@ -98,8 +99,8 @@ class FiscalXmlEffectiveCfopIntegrationTest {
     }
 
     private List<FiscalDocument> searchByCfop(String cfop) {
-        return documents.search(UUID.fromString(companyId), ISSUED.minusDays(1), ISSUED.plusDays(1), null, null, null, null, null,
-                null, null, cfop, DocumentSourceKey.SIEG, DocumentSourceKey.SEFAZ_DFE, PageRequest.of(0, 10)).getContent();
+        return documents.search(new FiscalDocumentSearchFilter(UUID.fromString(companyId), ISSUED.minusDays(1), ISSUED.plusDays(1),
+                null, null, null, null, null, null, null, CfopFilter.of(List.of(cfop))), PageRequest.of(0, 10)).getContent();
     }
 
     @Test

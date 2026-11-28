@@ -1,9 +1,10 @@
 package br.com.cshub.taxify.service;
 
 import br.com.cshub.taxify.common.SortProperties;
-import br.com.cshub.taxify.domain.fiscaldocument.DocumentSourceKey;
+import br.com.cshub.taxify.domain.fiscaldocument.CfopFilter;
 import br.com.cshub.taxify.domain.fiscaldocument.GoodsInvoice;
 import br.com.cshub.taxify.repository.FiscalDocumentRepository;
+import br.com.cshub.taxify.repository.FiscalDocumentSearchFilter;
 import org.junit.jupiter.api.Assumptions;
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.condition.EnabledIfEnvironmentVariable;
@@ -16,6 +17,7 @@ import org.springframework.jdbc.core.JdbcTemplate;
 
 import java.sql.Connection;
 import java.time.LocalDateTime;
+import java.util.List;
 import java.util.UUID;
 
 import static org.assertj.core.api.Assertions.assertThat;
@@ -49,9 +51,9 @@ class FiscalXmlSearchSortIntegrationTest {
         for (String old : FiscalXmlQueryService.LEGACY_SORT.keySet()) {
             Pageable sorted = SortProperties.resolve(PageRequest.of(0, 5, Sort.by(Sort.Direction.DESC, old)), GoodsInvoice.class,
                     FiscalXmlQueryService.LEGACY_SORT).orElseThrow();
-            assertThatNoException().as(old).isThrownBy(() -> repository.search(UUID.randomUUID(), LocalDateTime.of(2026, 1, 1, 0, 0),
-                    LocalDateTime.of(2026, 12, 31, 23, 59), null, null, null, null, null, null, null, "5102",
-                    DocumentSourceKey.SIEG, DocumentSourceKey.SEFAZ_DFE, sorted));
+            assertThatNoException().as(old).isThrownBy(() -> repository.search(new FiscalDocumentSearchFilter(UUID.randomUUID(),
+                    LocalDateTime.of(2026, 1, 1, 0, 0), LocalDateTime.of(2026, 12, 31, 23, 59), null, null, null, null, null,
+                    null, null, CfopFilter.of(List.of("5102"))), sorted));
         }
     }
 

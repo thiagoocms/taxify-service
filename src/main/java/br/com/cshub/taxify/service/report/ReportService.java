@@ -84,7 +84,7 @@ public class ReportService {
 
         ReportDTOs.DirectionTotals entries = emptyTotals();
         ReportDTOs.DirectionTotals exits = emptyTotals();
-        for (Object[] row : documentRepository.totalsByDirection(company.getId(), from, to.minusNanos(1))) {
+        for (Object[] row : documentRepository.totalsByDirection(company.getId(), from, to)) {
             ReportDTOs.DirectionTotals totals = new ReportDTOs.DirectionTotals(number(row[1]), decimal(row[2]), decimal(row[3]),
                     decimal(row[4]), decimal(row[5]), decimal(row[6]), decimal(row[7]), number(row[8]));
             if (row[0] == FiscalDirection.INBOUND) {
@@ -267,7 +267,7 @@ public class ReportService {
         BigDecimal exits = BigDecimal.ZERO;
         BigDecimal entries = BigDecimal.ZERO;
         for (Object[] row : documentRepository.totalsByDirection(companyId, start.atDay(1).atStartOfDay(),
-                end.plusMonths(1).atDay(1).atStartOfDay().minusNanos(1))) {
+                end.plusMonths(1).atDay(1).atStartOfDay())) {
             if (row[0] == FiscalDirection.OUTBOUND) {
                 exits = exits.add(decimal(row[3]));
             } else if (row[0] == FiscalDirection.INBOUND) {

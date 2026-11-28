@@ -299,7 +299,7 @@ class FiscalXmlIntegrationServiceSyncTest {
         LocalDate from = LocalDate.of(2026, 11, 25);
         LocalDate to = LocalDate.of(2026, 11, 27);
         when(goodsInvoiceRepository.existsIssuedBetween(companyId, true, from.minusDays(1).atStartOfDay(),
-                to.atTime(java.time.LocalTime.MAX))).thenReturn(false);
+                to.plusDays(1).atStartOfDay())).thenReturn(false); // half-open period
 
         assertThat(service.refreshRecentEvents(companyId, FiscalXmlSide.ISSUED, from, to)).isZero();
 

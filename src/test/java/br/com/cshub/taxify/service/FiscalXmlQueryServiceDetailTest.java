@@ -71,7 +71,7 @@ class FiscalXmlQueryServiceDetailTest {
     @BeforeEach
     void setUp() {
         service = new FiscalXmlQueryService(documentRepository, goodsInvoiceRepository, itemRepository, new FiscalXmlMetadataParser(),
-                companyValidation, tenantAccessService, messageService, eventService, fileStorage, null);
+                companyValidation, tenantAccessService, messageService, eventService, fileStorage, null, null, null);
         document = TestNotes.note(TestNotes.company(TestNotes.COMPANY_CNPJ)).xml("s3://bucket/fiscal-xml/note.xml")
                 .metadataVersion(null).build();
         when(documentRepository.findXmlDocument(document.getId())).thenReturn(Optional.of(document));

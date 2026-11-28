@@ -16,9 +16,11 @@ import org.springframework.web.bind.annotation.*;
 import org.springframework.web.multipart.MultipartFile;
 
 import java.io.IOException;
+import java.util.Arrays;
 import java.util.List;
 import java.util.Map;
 import java.util.UUID;
+import java.util.stream.Stream;
 
 /**
  * Fronteira PE: the e-Fisco extract of the ICMS antecipado, imported by hand, next to Taxify's own
@@ -77,10 +79,26 @@ public class FronteiraResource {
         return ResponseEntity.ok(new EfiscoSync(result, service.report(companyId, period.toString())));
     }
 
-    /** The comparison of a period ("2026-11"); blank = the latest imported. */
+    /**
+     * The comparison of a period ("2026-11"); blank = the latest imported. {@code cfops} (optional, {@code cfops=6102,6403}
+     * or repeated): the CFOP cut in {@code cfopFilter}, the rest of the report unchanged.
+     */
     @GetMapping
-    public ResponseEntity<FronteiraDTOs.Report> report(@RequestParam String companyId, @RequestParam(name = "periodo", required = false) String period) {
-        return ResponseEntity.ok(service.report(companyId, period));
+    public ResponseEntity<FronteiraDTOs.Report> report(@RequestParam String companyId, @RequestParam(name = "periodo", required = false) String period,
+                                                       @RequestParam(name = "cfops", required = false) List<String> cfops) {
+        return ResponseEntity.ok(service.report(companyId, period, splitByComma(cfops)));
+    }
+
+    /**
+     * {@code cfops=6102,6403&cfops=6949}: with one value Spring splits it by comma, with several it does not - every value
+     * is split here, so the mixed form means the same as the other two.
+     */
+    private static List<String> splitByComma(List<String> values) {
+        if (values == null) {
+            return null;
+        }
+        return values.stream().flatMap(value -> value == null ? Stream.of((String) null)
+                : Arrays.stream(value.split(",", -1))).toList();
     }
 
     /** The month's report (PDF): summary with the guide after the adjustments, the notes to revise and the rules used. */

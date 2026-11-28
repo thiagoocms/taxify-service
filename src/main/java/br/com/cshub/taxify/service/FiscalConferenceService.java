@@ -49,10 +49,10 @@ public class FiscalConferenceService {
         companyValidation.checkExist(id);
 
         LocalDateTime from = IssuePeriod.start(dataEmissaoInicio);
-        LocalDateTime to = IssuePeriod.end(dataEmissaoFim);
+        LocalDateTime to = IssuePeriod.endExclusive(dataEmissaoFim);
 
         Map<GoodsInvoice, List<FiscalDocumentItem>> itemsByDocument = new LinkedHashMap<>();
-        for (FiscalDocumentItem item : itemRepository.findByDocument_Company_IdAndDocument_IssueDateBetween(id, from, to)) {
+        for (FiscalDocumentItem item : itemRepository.findIssuedInPeriodOrdered(id, from, to)) {
             GoodsInvoice document = item.getDocument();
             if (FiscalCheckEngine.isCheckable(document)) {
                 itemsByDocument.computeIfAbsent(document, key -> new ArrayList<>()).add(item);

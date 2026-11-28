@@ -416,13 +416,13 @@ public class FiscalXmlIntegrationService {
      */
     private int siegDelivered(UUID companyId, FiscalXmlSide side, LocalDate from, LocalDate to) {
         return (int) goodsInvoiceRepository.countDeliveredBy(companyId, side.ownIssue(), IssuePeriod.siegStart(from),
-                IssuePeriod.siegEnd(to), DocumentSourceKey.SIEG, RetrievalMode.PERIOD);
+                IssuePeriod.siegEndExclusive(to), DocumentSourceKey.SIEG, RetrievalMode.PERIOD);
     }
 
     /** The side's notes of the window in Taxify from any source - shown next to SIEG's numbers on the panel. */
     private int storedAnySource(UUID companyId, FiscalXmlSide side, LocalDate from, LocalDate to) {
         return (int) goodsInvoiceRepository.countStored(companyId, side.ownIssue(), IssuePeriod.siegStart(from),
-                IssuePeriod.siegEnd(to));
+                IssuePeriod.siegEndExclusive(to));
     }
 
     private static XmlDownloadResultDTO merge(XmlDownloadResultDTO a, XmlDownloadResultDTO b) {
@@ -746,7 +746,7 @@ public class FiscalXmlIntegrationService {
     public int refreshRecentEvents(UUID companyId, FiscalXmlSide side, LocalDate from, LocalDate to) {
         Company company = findCompanyWithCnpj(companyId.toString());
         if (properties.isEventsOnlyWithRecentNotes() && !goodsInvoiceRepository.existsIssuedBetween(
-                company.getId(), side.ownIssue(), IssuePeriod.start(from.minusDays(1)), IssuePeriod.end(to))) {
+                company.getId(), side.ownIssue(), IssuePeriod.start(from.minusDays(1)), IssuePeriod.endExclusive(to))) {
             log.info("Event sweep for company {} ({}): no note issued from {} to {} - no request spent", company.getId(), side, from, to);
             return 0;
         }
@@ -805,7 +805,7 @@ public class FiscalXmlIntegrationService {
         Company company = findCompanyWithCnpj(filter.companyId());
 
         LocalDateTime from = IssuePeriod.start(filter.dataEmissaoInicio());
-        LocalDateTime to = IssuePeriod.end(filter.dataEmissaoFim());
+        LocalDateTime to = IssuePeriod.endExclusive(filter.dataEmissaoFim());
 
         List<FiscalDocument> documents = documentRepository.findXmlDocumentsIssuedBetween(company.getId(), from, to);
 
@@ -835,7 +835,7 @@ public class FiscalXmlIntegrationService {
         Company company = findCompanyWithCnpj(filter.companyId());
 
         LocalDateTime from = IssuePeriod.start(filter.dataEmissaoInicio());
-        LocalDateTime to = IssuePeriod.end(filter.dataEmissaoFim());
+        LocalDateTime to = IssuePeriod.endExclusive(filter.dataEmissaoFim());
 
         List<FiscalDocument> documents = documentRepository.findXmlDocumentsIssuedBetween(company.getId(), from, to);
 

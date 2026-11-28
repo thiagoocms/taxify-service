@@ -70,7 +70,7 @@ class AuditEngineTest {
         company = TestNotes.company(TestNotes.COMPANY_CNPJ);
         when(documentRepository.findIssuedBetween(eq(company.getId()), any(), any()))
                 .thenReturn(notes);
-        when(summaryRepository.findByCompany_IdAndCompletedAtIsNullAndIssueDateBetween(any(), any(), any())).thenReturn(List.of());
+        when(summaryRepository.findByCompany_IdAndCompletedAtIsNullAndIssueDateGreaterThanEqualAndIssueDateLessThan(any(), any(), any())).thenReturn(List.of());
         when(checkEngine.check(any(), any())).thenReturn(List.of());
         when(checkEngine.checkDocument(any(), any(), any())).thenReturn(List.of());
         when(assessmentService.assess(any(), anyString())).thenReturn(assessment(BigDecimal.TEN, List.of(), List.of()));
@@ -150,7 +150,7 @@ class AuditEngineTest {
         org.springframework.test.util.ReflectionTestUtils.setField(old, "createdDate", LocalDateTime.now().minusDays(30));
         SefazNoteSummary recent = new SefazNoteSummary();
         org.springframework.test.util.ReflectionTestUtils.setField(recent, "createdDate", LocalDateTime.now().minusDays(2));
-        when(summaryRepository.findByCompany_IdAndCompletedAtIsNullAndIssueDateBetween(eq(company.getId()), any(), any()))
+        when(summaryRepository.findByCompany_IdAndCompletedAtIsNullAndIssueDateGreaterThanEqualAndIssueDateLessThan(eq(company.getId()), any(), any()))
                 .thenReturn(List.of(old, recent));
 
         List<AuditEngine.Finding> findings = engine.audit(company, MONTH).findings();

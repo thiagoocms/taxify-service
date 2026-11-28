@@ -58,7 +58,7 @@ public class ServiceInvoiceQueryService {
             return Page.empty(page); // a direction that never existed matches no note, as before
         }
         return repository.search(company.getId(), IssuePeriod.start(filter.dataEmissaoInicio()),
-                        IssuePeriod.end(filter.dataEmissaoFim()), role, participantPattern(filter.participant()), number,
+                        IssuePeriod.endExclusive(filter.dataEmissaoFim()), role, participantPattern(filter.participant()), number,
                         Boolean.TRUE.equals(filter.somenteComRetencao()),
                         ServiceInvoiceDTOs.Filter.ONLY_SIEG.equals(filter.fonte()) ? comparisonCutoff() : null,
                         ServiceInvoiceDTOs.Filter.ONLY_ADN.equals(filter.fonte()) ? comparisonCutoff() : null,
@@ -82,7 +82,7 @@ public class ServiceInvoiceQueryService {
     public ServiceInvoiceDTOs.Totals totals(ServiceInvoiceDTOs.Filter filter) {
         Company company = companyValidation.checkExist(RequestIds.parse(filter.companyId(), messageService));
         List<Nfse> notes = repository.findActiveInPeriod(company.getId(), IssuePeriod.start(filter.dataEmissaoInicio()),
-                IssuePeriod.end(filter.dataEmissaoFim()));
+                IssuePeriod.endExclusive(filter.dataEmissaoFim()));
         LocalDateTime cutoff = comparisonCutoff();
         long onlySieg = notes.stream().filter(s -> seenBefore(s, DocumentSourceKey.SIEG, cutoff)
                 && NfseApiMapper.firstSeenIn(s, DocumentSourceKey.NFSE_ADN) == null).count();

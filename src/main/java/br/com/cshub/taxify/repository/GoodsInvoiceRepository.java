@@ -36,7 +36,7 @@ public interface GoodsInvoiceRepository extends AbstractJpaRepository<GoodsInvoi
      * "importado", B1): the note has the origin {@code source} with {@code retrieval_mode = PERIOD} (spec 3.10).
      */
     @Query("select count(d) from GoodsInvoice d where d.company.id = :companyId"
-            + " and d.issueDate between :from and :to" + SIDE
+            + " and d.issueDate >= :from and d.issueDate < :to" + SIDE
             + " and exists (select s.id from FiscalDocumentSource s where s.document = d and s.source = :source"
             + "             and s.retrievalMode = :mode)")
     long countDeliveredBy(@Param("companyId") UUID companyId, @Param("issued") boolean issued,
@@ -44,12 +44,12 @@ public interface GoodsInvoiceRepository extends AbstractJpaRepository<GoodsInvoi
                           @Param("source") DocumentSourceKey source, @Param("mode") RetrievalMode mode);
 
     /** What a sync side holds in a window from any source - shown on the capture panel next to the provider's numbers. */
-    @Query("select count(d) from GoodsInvoice d where d.company.id = :companyId and d.issueDate between :from and :to" + SIDE)
+    @Query("select count(d) from GoodsInvoice d where d.company.id = :companyId and d.issueDate >= :from and d.issueDate < :to" + SIDE)
     long countStored(@Param("companyId") UUID companyId, @Param("issued") boolean issued,
                      @Param("from") LocalDateTime from, @Param("to") LocalDateTime to);
 
     /** Whether a side has a note issued in the window - the daily event sweep asks SIEG only then (A2). */
-    @Query("select count(d) > 0 from GoodsInvoice d where d.company.id = :companyId and d.issueDate between :from and :to" + SIDE)
+    @Query("select count(d) > 0 from GoodsInvoice d where d.company.id = :companyId and d.issueDate >= :from and d.issueDate < :to" + SIDE)
     boolean existsIssuedBetween(@Param("companyId") UUID companyId, @Param("issued") boolean issued,
                                 @Param("from") LocalDateTime from, @Param("to") LocalDateTime to);
 
@@ -66,7 +66,7 @@ public interface GoodsInvoiceRepository extends AbstractJpaRepository<GoodsInvoi
      * (retTrib), or purchases with ICMS-ST (informative).
      */
     @Query("select d from GoodsInvoice d join fetch d.company where d.company.id in :companyIds and d.deleted = false"
-            + " and d.status <> " + CANCELED + " and d.issueDate between :from and :to"
+            + " and d.status <> " + CANCELED + " and d.issueDate >= :from and d.issueDate < :to"
             + " and (d.withholdings.pis > 0 or d.withholdings.cofins > 0 or d.withholdings.csll > 0"
             + "      or d.withholdings.irrf > 0 or d.withholdings.inss > 0"
             + "      or (d.companyRole <> " + ISSUER + " and d.goodsTotals.icmsStAmount > 0))")
@@ -121,10 +121,10 @@ public interface GoodsInvoiceRepository extends AbstractJpaRepository<GoodsInvoi
                                      Pageable pageable);
 
     /**
-     * Period totals per direction - canceled notes don't count in the sums, only in their own count. Row: direction,
-     * count, total, ICMS, ICMS-ST, IPI, PIS, COFINS, canceled count.
+     * The sums of the cards per direction - canceled notes don't count in the sums, only in their own count. Row:
+     * direction, count, total, ICMS, ICMS-ST, IPI, PIS, COFINS, canceled count.
      */
-    @Query("select d.direction,"
+    String TOTALS_BY_DIRECTION = "select d.direction,"
             + " sum(case when d.status = " + CANCELED + " then 0 else 1 end),"
             + " coalesce(sum(case when d.status = " + CANCELED + " then 0 else d.totalAmount end), 0),"
             + " coalesce(sum(case when d.status = " + CANCELED + " then 0 else d.goodsTotals.icmsAmount end), 0),"
@@ -133,12 +133,23 @@ public interface GoodsInvoiceRepository extends AbstractJpaRepository<GoodsInvoi
             + " coalesce(sum(case when d.status = " + CANCELED + " then 0 else d.goodsTotals.pisAmount end), 0),"
             + " coalesce(sum(case when d.status = " + CANCELED + " then 0 else d.goodsTotals.cofinsAmount end), 0),"
             + " sum(case when d.status = " + CANCELED + " then 1 else 0 end)"
-            + " from GoodsInvoice d where d.company.id = :companyId and d.deleted = false"
-            + " and d.issueDate between :issueDateFrom and :issueDateTo"
+            + " from GoodsInvoice d where";
+
+    /** Period totals per direction, every note of the company and period ({@link #TOTALS_BY_DIRECTION}) - the reports. */
+    @Query(TOTALS_BY_DIRECTION + " d.company.id = :companyId and d.deleted = false"
+            + " and d.issueDate >= :issueDateFrom and d.issueDate < :issueDateTo"
             + " group by d.direction")
     List<Object[]> totalsByDirection(@Param("companyId") UUID companyId,
                                      @Param("issueDateFrom") LocalDateTime issueDateFrom,
                                      @Param("issueDateTo") LocalDateTime issueDateTo);
+
+    /**
+     * The cards of the notes screen ({@link #TOTALS_BY_DIRECTION}): the NF-e and NFC-e matching the list's predicate
+     * ({@link FiscalDocumentSearchFilter#WHERE}, CF-RN-10) - the whole note of each one (CF-RN-12). The caller passes
+     * the filter without the tab (CF-RN-11).
+     */
+    @Query(TOTALS_BY_DIRECTION + FiscalDocumentSearchFilter.WHERE + " group by d.direction")
+    List<Object[]> totalsByDirectionFiltered(@Param(FiscalDocumentSearchFilter.PARAM) FiscalDocumentSearchFilter filter);
 
     /** Outbound (non-canceled) notes per company in [from, to). Row: company id, count. */
     @Query("select d.company.id, count(d) from GoodsInvoice d where d.company.id in :companyIds and d.deleted = false"
@@ -176,7 +187,7 @@ public interface GoodsInvoiceRepository extends AbstractJpaRepository<GoodsInvoi
                                          @Param("since") LocalDateTime since, Pageable pageable);
 
     /** The company's NF-e and NFC-e issued in [from, to], latest first - the rectification job. */
-    @Query("select d from GoodsInvoice d where d.company.id = :companyId and d.issueDate between :from and :to"
+    @Query("select d from GoodsInvoice d where d.company.id = :companyId and d.issueDate >= :from and d.issueDate < :to"
             + " order by d.issueDate desc")
     List<GoodsInvoice> findIssuedBetween(@Param("companyId") UUID companyId, @Param("from") LocalDateTime from,
                                          @Param("to") LocalDateTime to);

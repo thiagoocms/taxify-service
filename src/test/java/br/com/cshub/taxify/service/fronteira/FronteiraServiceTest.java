@@ -82,7 +82,9 @@ class FronteiraServiceTest {
     void setUp() {
         service = new FronteiraService(parser, extractRepository, documentRepository, itemRepository, divergenceService,
                 ruleService, summaryRepository, productRuleRepository, companyValidation, messageService, auditorAware,
-                org.mockito.Mockito.mock(br.com.cshub.taxify.integration.sieg.FiscalXmlFileStorage.class));
+                org.mockito.Mockito.mock(br.com.cshub.taxify.integration.sieg.FiscalXmlFileStorage.class),
+                new br.com.cshub.taxify.validation.CfopFilterValidation(messageService),
+                java.time.Clock.system(java.time.ZoneId.of("America/Recife")));
         company = new Company(UUID.randomUUID());
         company.setName("Confecções Exemplo");
         company.setUf("PE");
@@ -257,5 +259,69 @@ class FronteiraServiceTest {
         assertThat(report.semCobranca()).hasSize(1);
         assertThat(report.previaIcms()).isEqualByComparingTo("85.00");
         assertThat(report.semCobranca().get(0).calculo().conferido()).isFalse(); // the modal rate is still "a conferir"
+    }
+
+    /**
+     * CF-RN-24/25 through the service: with {@code cfops} the report stays of the whole extract and {@code cfopFilter}
+     * applies the summary's accounts to the matching lines only; without it, {@code cfopFilter} is null.
+     */
+    @Test
+    void theCfopCutKeepsTheReportOfTheWholeExtractAndAddsTheTotalsOfTheMatchingLines() {
+        FronteiraRule interna = new FronteiraRule();
+        interna.setId(UUID.randomUUID());
+        interna.setKind(FronteiraRuleKind.ALIQUOTA_INTERNA);
+        interna.setRate(new BigDecimal("20.5"));
+        interna.setEnabled(true);
+        interna.setReviewedAt(LocalDateTime.now());
+        when(ruleService.rulesFor(company.getId())).thenReturn(List.of(interna));
+        extract.replaceNotes(new ArrayList<>(List.of(
+                note(1, "111", "1", "1000.00", "85.02"),    // confere, 6102
+                note(2, "111", "2", "1000.00", "150.00"),   // a mais 65,00, 6102
+                note(3, "111", "3", "1000.00", "50.00"),    // a menos 35,00, 6403
+                note(4, "111", "4", "1000.00", "0.00"),     // não calculou 85,00, 6403
+                note(5, "555", "5", "200.00", "10.00"))));  // no XML
+        List<GoodsInvoice> documents = new ArrayList<>();
+        List<FiscalDocumentItem> items = new ArrayList<>();
+        List<Object[]> cfops = new ArrayList<>();
+        for (String numero : List.of("1", "2", "3", "4")) {
+            GoodsInvoice document = document("111", numero, "1000.00");
+            TestNotes.withIssuerUf(document, "CE");
+            TestNotes.withProductsAmount(document, "1000.00");
+            documents.add(document);
+            items.add(itemOf(document, "1000.00", "120.00"));
+            cfops.add(new Object[]{document.getId(), "P1", Integer.parseInt(numero) <= 2 ? "6102" : " 6403 "});
+        }
+        when(documentRepository.findByIssuerCnpjsAndNumbers(eq(company.getId()), any(), any())).thenReturn(documents);
+        when(itemRepository.findByDocument_IdIn(any())).thenReturn(items);
+        when(itemRepository.findDistinctCfopsByDocumentIds(any())).thenReturn(cfops);
+
+        FronteiraDTOs.Report whole = service.report(company.getId().toString(), "2026-11", null);
+        FronteiraDTOs.Report cut = service.report(company.getId().toString(), "2026-11", List.of("6.403"));
+
+        assertThat(whole.cfopFilter()).isNull();
+        assertThat(cut.summary()).isEqualTo(whole.summary());
+        assertThat(cut.lines()).isEqualTo(whole.lines());
+        assertThat(cut.cfopFilter().cfops()).containsExactly("6403");
+        assertThat(cut.cfopFilter().matchingLines()).containsExactly(3, 4);
+        assertThat(cut.cfopFilter().linesWithoutXml()).isEqualTo(1);
+        assertThat(cut.cfopFilter().totals().notes()).isEqualTo(2);
+        assertThat(cut.cfopFilter().totals().icmsCharged()).isEqualByComparingTo("50.00");
+        assertThat(cut.cfopFilter().totals().icmsCalculated()).isEqualByComparingTo("170.00");
+        assertThat(cut.cfopFilter().totals().chargedAbove()).isEqualByComparingTo("0.00");
+        assertThat(cut.cfopFilter().totals().chargedBelow()).isEqualByComparingTo("120.00"); // 35,00 + 85,00
+        FronteiraDTOs.Report both = service.report(company.getId().toString(), "2026-11", List.of("6102", "6403"));
+        assertThat(both.cfopFilter().totals().icmsCalculated()).isEqualByComparingTo(whole.summary().icmsCalculado());
+        assertThat(both.cfopFilter().totals().chargedAbove()).isEqualByComparingTo(whole.summary().cobradoAMais());
+        assertThat(both.cfopFilter().totals().chargedBelow()).isEqualByComparingTo(whole.summary().cobradoAMenos());
+    }
+
+    /** CT-36: a CFOP without 4 digits is a 400, with the value at the top of the body. */
+    @Test
+    void anInvalidCfopIsRefused() {
+        assertThatThrownBy(() -> service.report(company.getId().toString(), "2026-11", List.of("61")))
+                .isInstanceOfSatisfying(BadRequestException.class, error -> {
+                    assertThat(error.getCode()).isEqualTo("error.cfopFilter.invalid");
+                    assertThat(error.getExtras()).containsEntry("invalidValues", List.of("61"));
+                });
     }
 }
