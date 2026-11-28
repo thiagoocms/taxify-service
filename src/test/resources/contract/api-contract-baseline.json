@@ -3331,7 +3331,21 @@
         "documentoFornecedor" : "String",
         "nomeFornecedor" : "String",
         "ocorrencias" : "long",
-        "possuiRegra" : "boolean"
+        "possuiRegra" : "boolean",
+        "unitPrice" : {
+          "average" : "BigDecimal",
+          "itemsConsidered" : "long",
+          "max" : "BigDecimal",
+          "min" : "BigDecimal",
+          "otherUnits" : {
+            "array" : {
+              "itemsConsidered" : "long",
+              "unit" : "String"
+            }
+          },
+          "totalQuantity" : "BigDecimal",
+          "unit" : "String"
+        }
       }
     }
   },
