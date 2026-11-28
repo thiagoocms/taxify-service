@@ -26,8 +26,11 @@ import java.util.Map;
  * </ul>
  * A unique key or foreign key the data doesn't allow yet (duplicates, orphans) is logged and
  * skipped instead of failing the deploy - the next run tries again.
+ *
+ * <p>Public so the fiscal documents cutover ({@code db.fiscaldocuments}, a separate Flyway location until the new
+ * entities land) declares its tables the same way.
  */
-abstract class TableMigration extends BaseJavaMigration {
+public abstract class TableMigration extends BaseJavaMigration {
 
     private record Column(String name, String definition) {
     }
@@ -38,6 +41,9 @@ abstract class TableMigration extends BaseJavaMigration {
     private record ForeignKey(String name, String column, String referencedTable) {
     }
 
+    private record Check(String name, String expression) {
+    }
+
     private static final List<String> NUMERIC_TYPES = List.of("tinyint", "smallint", "mediumint", "int", "integer", "bigint");
 
     protected final Logger log = LoggerFactory.getLogger(getClass());
@@ -46,7 +52,10 @@ abstract class TableMigration extends BaseJavaMigration {
     private final Map<String, List<String>> ordinalEnums = new LinkedHashMap<>();
     private final List<Index> indexes = new ArrayList<>();
     private final List<ForeignKey> foreignKeys = new ArrayList<>();
+    private final List<Check> checks = new ArrayList<>();
     private List<String> primaryKey = List.of("id");
+    private String tableOptions = "";
+    private Integer lockWaitSeconds;
     protected JdbcTemplate jdbc;
 
     protected TableMigration(String table) {
@@ -75,6 +84,27 @@ abstract class TableMigration extends BaseJavaMigration {
         foreignKeys.add(new ForeignKey(name, column, referencedTable));
     }
 
+    /**
+     * A short {@code lock_wait_timeout} for this migration's DDL (given back at the end): a table still in use makes it
+     * fail after that many seconds instead of hanging the deploy. Unset = the session's value, as before.
+     */
+    protected final void lockWaitSeconds(int seconds) {
+        this.lockWaitSeconds = seconds;
+    }
+
+    /** Extra table options of the CREATE (e.g. {@code ROW_FORMAT=DYNAMIC}); an existing table is left as it is. */
+    protected final void tableOptions(String options) {
+        this.tableOptions = options;
+    }
+
+    /**
+     * A CHECK constraint: part of the CREATE, or added to an existing table that lacks it. Servers that don't keep
+     * CHECK constraints (MySQL before 8.0.16 parses and ignores them) only get the CREATE clause.
+     */
+    protected final void check(String name, String expression) {
+        checks.add(new Check(name, expression));
+    }
+
     /** A column once stored as @Enumerated(ORDINAL): the constants in declaration order. */
     protected final void ordinalEnum(String column, String... constants) {
         ordinalEnums.put(column, List.of(constants));
@@ -89,14 +119,26 @@ abstract class TableMigration extends BaseJavaMigration {
     @Override
     public final void migrate(Context context) {
         jdbc = new JdbcTemplate(new SingleConnectionDataSource(context.getConnection(), true));
-        if (tableExists(table)) {
-            completeColumns();
-        } else {
-            createTable();
+        Integer previousLockWait = lockWaitSeconds == null ? null
+                : jdbc.queryForObject("SELECT @@SESSION.lock_wait_timeout", Integer.class);
+        try {
+            if (lockWaitSeconds != null) {
+                jdbc.execute("SET SESSION lock_wait_timeout = " + lockWaitSeconds);
+            }
+            if (tableExists(table)) {
+                completeColumns();
+            } else {
+                createTable();
+            }
+            beforeKeys();
+            indexes.forEach(this::ensureIndex);
+            foreignKeys.forEach(this::ensureForeignKey);
+            checks.forEach(this::ensureCheck);
+        } finally {
+            if (previousLockWait != null) {
+                jdbc.execute("SET SESSION lock_wait_timeout = " + previousLockWait);
+            }
         }
-        beforeKeys();
-        indexes.forEach(this::ensureIndex);
-        foreignKeys.forEach(this::ensureForeignKey);
     }
 
     private void createTable() {
@@ -104,7 +146,13 @@ abstract class TableMigration extends BaseJavaMigration {
         for (Column column : columns) {
             sql.append("    ").append(column.name()).append(' ').append(column.definition()).append(",\n");
         }
+        for (Check check : checks) {
+            sql.append("    CONSTRAINT ").append(check.name()).append(" CHECK (").append(check.expression()).append("),\n");
+        }
         sql.append("    PRIMARY KEY (").append(String.join(", ", primaryKey)).append(")\n) ENGINE=InnoDB");
+        if (!tableOptions.isBlank()) {
+            sql.append(' ').append(tableOptions);
+        }
         jdbc.execute(sql.toString());
         log.info("Created table {}", table);
     }
@@ -209,6 +257,20 @@ abstract class TableMigration extends BaseJavaMigration {
         } catch (DataAccessException e) {
             log.warn("Foreign key {} not created: {}", fk.name(), e.getMostSpecificCause().getMessage());
         }
+    }
+
+    private void ensureCheck(Check check) {
+        if (count("SELECT COUNT(*) FROM information_schema.tables WHERE table_schema = 'information_schema'"
+                + " AND table_name = 'CHECK_CONSTRAINTS'") == 0) {
+            return;
+        }
+        int existing = count("SELECT COUNT(*) FROM information_schema.table_constraints WHERE table_schema = DATABASE()"
+                + " AND table_name = ? AND constraint_name = ? AND constraint_type = 'CHECK'", table, check.name());
+        if (existing > 0) {
+            return;
+        }
+        jdbc.execute("ALTER TABLE " + table + " ADD CONSTRAINT " + check.name() + " CHECK (" + check.expression() + ")");
+        log.info("Created check constraint {}", check.name());
     }
 
     // ------------------------------------------------------------------ information_schema
