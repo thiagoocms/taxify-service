@@ -83,7 +83,8 @@ class FronteiraServiceTest {
         service = new FronteiraService(parser, extractRepository, documentRepository, itemRepository, divergenceService,
                 ruleService, summaryRepository, productRuleRepository, companyValidation, messageService, auditorAware,
                 org.mockito.Mockito.mock(br.com.cshub.taxify.integration.sieg.FiscalXmlFileStorage.class),
-                new br.com.cshub.taxify.validation.CfopFilterValidation(messageService));
+                new br.com.cshub.taxify.validation.CfopFilterValidation(messageService),
+                java.time.Clock.system(java.time.ZoneId.of("America/Recife")));
         company = new Company(UUID.randomUUID());
         company.setName("Confecções Exemplo");
         company.setUf("PE");

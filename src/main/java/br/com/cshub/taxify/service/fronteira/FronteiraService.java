@@ -32,6 +32,7 @@ import org.springframework.transaction.annotation.Transactional;
 
 import java.math.BigDecimal;
 import java.math.RoundingMode;
+import java.time.Clock;
 import java.time.LocalDate;
 import java.time.LocalDateTime;
 import java.time.YearMonth;
@@ -86,6 +87,8 @@ public class FronteiraService {
     private final AuditorAware<String> auditorAware;
     private final br.com.cshub.taxify.integration.sieg.FiscalXmlFileStorage storage;
     private final CfopFilterValidation cfopFilterValidation;
+    /** America/Recife (ClockConfig): the current month when no period comes. */
+    private final Clock clock;
     private static final org.slf4j.Logger log = org.slf4j.LoggerFactory.getLogger(FronteiraService.class);
 
     public FronteiraService(EfiscoExtractParser parser, EfiscoExtractRepository extractRepository,
@@ -95,8 +98,9 @@ public class FronteiraService {
                             br.com.cshub.taxify.repository.ProductFiscalRuleRepository productRuleRepository,
                             CompanyValidation companyValidation, MessageService messageService, AuditorAware<String> auditorAware,
                             br.com.cshub.taxify.integration.sieg.FiscalXmlFileStorage storage,
-                            CfopFilterValidation cfopFilterValidation) {
+                            CfopFilterValidation cfopFilterValidation, Clock clock) {
         this.storage = storage;
+        this.clock = clock;
         this.cfopFilterValidation = cfopFilterValidation;
         this.productRuleRepository = productRuleRepository;
         this.ruleService = ruleService;
@@ -277,7 +281,7 @@ public class FronteiraService {
         CfopFilter cfopFilter = cfopFilterValidation.check(cfops);
         List<EfiscoExtract> extracts = extractRepository.findByCompany_IdAndDeletedIsFalseOrderByPeriodDesc(company.getId());
         YearMonth month = requestedPeriod == null || requestedPeriod.isBlank()
-                ? (extracts.isEmpty() ? YearMonth.now() : YearMonth.parse(extracts.get(0).getPeriod()))
+                ? (extracts.isEmpty() ? YearMonth.now(clock) : YearMonth.parse(extracts.get(0).getPeriod()))
                 : month(requestedPeriod);
         FronteiraDTOs.Report report = report(company, month);
         if (cfopFilter.isEmpty()) {
@@ -752,7 +756,7 @@ public class FronteiraService {
 
     /** "2026-11", or the current month. */
     public YearMonth periodOrCurrent(String requestedPeriod) {
-        return requestedPeriod == null || requestedPeriod.isBlank() ? YearMonth.now() : month(requestedPeriod);
+        return requestedPeriod == null || requestedPeriod.isBlank() ? YearMonth.now(clock) : month(requestedPeriod);
     }
 
     private Company company(String companyId) {
