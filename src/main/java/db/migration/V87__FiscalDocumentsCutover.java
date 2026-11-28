@@ -283,14 +283,17 @@ public class V87__FiscalDocumentsCutover extends BaseJavaMigration {
             return;
         }
         long started = System.currentTimeMillis();
+        // masks are taken off as Java does (CopyMappings.supplierDigits); anything else must be 0 by the eve's pre-check
         long masked = db.count(CopyMappings.RULES_WITH_MASKED_SUPPLIER);
+        long otherCharacters = db.count(CopyMappings.RULES_WITH_OTHER_SUPPLIER_CHARACTERS);
         int updated = db.jdbc.update("UPDATE " + FiscalDocumentTables.ITEMS + " i JOIN " + FiscalDocumentTables.DOCUMENTS
                 + " d ON d.id = i.document_id SET i.effective_cfop = " + CopyMappings.rectifiedEffectiveCfop("i.cfop", "i.product_code",
                 "d.company_id", "d.issuer_document", "d.header_destination_type", "d.last_rectification_checked_at")
                 + " WHERE d.document_type IN ('NFE', 'NFCE') AND d.rectified_file_path IS NOT NULL");
         long changed = db.count("SELECT COUNT(*) FROM " + FiscalDocumentTables.ITEMS + " WHERE NOT (effective_cfop <=> cfop)");
-        log.info("fiscal.documents.cutover.effective.cfop itemsOfRectifiedNotes={} differentFromCfop={} rulesWithMaskedSupplier={} ms={}",
-                updated, changed, masked, System.currentTimeMillis() - started);
+        log.info("fiscal.documents.cutover.effective.cfop itemsOfRectifiedNotes={} differentFromCfop={} rulesWithMaskedSupplier={}"
+                + " rulesWithOtherSupplierCharacters={} ms={}", updated, changed, masked, otherCharacters,
+                System.currentTimeMillis() - started);
     }
 
     // ------------------------------------------------------------------ 4. sources

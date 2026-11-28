@@ -57,13 +57,31 @@ final class CopyMappings {
     static String rectifiedEffectiveCfop(String cfop, String productCode, String companyId, String supplier, String destination,
                                          String checkedAt) {
         String changedAt = "COALESCE(r.last_modified_date, r.created_date)";
+        String ruleSupplier = supplierDigits("r.documento_fornecedor");
         return "CASE WHEN " + cfop + " IS NULL THEN NULL ELSE COALESCE((SELECT CASE WHEN " + checkedAt + " IS NOT NULL AND ("
                 + changedAt + " IS NULL OR " + changedAt + " <= " + checkedAt + ") THEN NULLIF(TRIM("
                 + forOperation("TRIM(r.cfop_correto)", "TRIM(" + destination + ")") + "), '') END"
                 + " FROM product_fiscal_rules r WHERE r.company_id = " + companyId + " AND r.deleted = 0"
-                + " AND r.codigo_produto = " + productCode
-                + " AND (r.documento_fornecedor = " + supplier + " OR NULLIF(r.documento_fornecedor, '') IS NULL)"
-                + " ORDER BY NULLIF(r.documento_fornecedor, '') IS NULL, r.id LIMIT 1), " + cfop + ") END";
+                + " AND " + exact("r.codigo_produto", productCode)
+                + " AND (" + exact(ruleSupplier, supplier) + " OR NULLIF(" + ruleSupplier + ", '') IS NULL)"
+                + " ORDER BY NULLIF(" + ruleSupplier + ", '') IS NULL, r.id LIMIT 1), " + cfop + ") END";
+    }
+
+    /**
+     * Byte by byte, like the HashMap of {@code ProductRules}: no case folding ("abc10" is not "ABC10") and no padding
+     * (a trailing space counts). {@code CAST(... AS BINARY)} works on 5.7 and 8.4 and across the tables' charsets.
+     */
+    static String exact(String left, String right) {
+        return "CAST(" + left + " AS BINARY) = CAST(" + right + " AS BINARY)";
+    }
+
+    /**
+     * {@code DocumentNumbers.onlyDigits} of a rule's supplier document for the masks the screen may have stored
+     * ({@code 12.345.678/0001-95}, spaces): REPLACE of '.', '/', '-' and ' ' - on 5.7 and 8.4 (no REGEXP_REPLACE on
+     * 5.7). Anything else left that is not a digit is counted by {@link #RULES_WITH_OTHER_SUPPLIER_CHARACTERS}.
+     */
+    static String supplierDigits(String column) {
+        return "REPLACE(REPLACE(REPLACE(REPLACE(" + column + ", '.', ''), '/', ''), '-', ''), ' ', '')";
     }
 
     /**
@@ -77,9 +95,18 @@ final class CopyMappings {
                 + cfop + ", 2)) ELSE " + cfop + " END ELSE " + cfop + " END";
     }
 
-    /** Active rules whose supplier document is not only digits: Java strips the mask, the SQL compares as stored. */
+    /** Active rules whose supplier document has a mask ({@link #supplierDigits} takes it off): informative. */
     static final String RULES_WITH_MASKED_SUPPLIER = "SELECT COUNT(*) FROM product_fiscal_rules WHERE deleted = 0"
             + " AND NULLIF(documento_fornecedor, '') IS NOT NULL AND NOT (documento_fornecedor REGEXP '^[0-9]+$')";
+
+    /**
+     * Active rules whose supplier document still has something other than digits without the mask: Java would strip it
+     * and the SQL would not - the eve's pre-check ({@code scripts/fiscal-documents/precheck.sql}) must give 0.
+     */
+    static final String RULES_WITH_OTHER_SUPPLIER_CHARACTERS = "SELECT COUNT(*) FROM product_fiscal_rules WHERE deleted = 0"
+            + " AND NULLIF(" + "REPLACE(REPLACE(REPLACE(REPLACE(documento_fornecedor, '.', ''), '/', ''), '-', ''), ' ', '')"
+            + ", '') IS NOT NULL AND NOT (" + "REPLACE(REPLACE(REPLACE(REPLACE(documento_fornecedor, '.', ''), '/', ''), '-', ''), ' ', '')"
+            + " REGEXP '^[0-9]+$')";
 
     /**
      * "Has text" and every TRIM of this copy (party documents, model, CFOP, previous month) strip only the ordinary

@@ -132,7 +132,7 @@ class TranslatorAndCutoverParityTest {
         Map<Table, Map<List<Object>, Map<String, Object>>> expected = translateWithJava();
 
         flyway("87").migrate();
-        assertThat(jdbc.queryForObject("SELECT COUNT(*) FROM legacy_fiscal_xml_documents", Integer.class)).isEqualTo(19);
+        assertThat(jdbc.queryForObject("SELECT COUNT(*) FROM legacy_fiscal_xml_documents", Integer.class)).isEqualTo(20);
 
         List<String> divergences = new ArrayList<>();
         Map<Table, Integer> compared = new LinkedHashMap<>();
@@ -145,11 +145,12 @@ class TranslatorAndCutoverParityTest {
                 .map(e -> e.getKey().name() + ":" + e.getValue()).toList() + " divergences=" + divergences.size());
         divergences.forEach(d -> System.out.println("  " + d));
 
-        assertThat(compared).containsEntry(DOCUMENTS, 19 + 7).containsEntry(ITEMS, 12).containsEntry(EVENTS, 2);
+        assertThat(compared).containsEntry(DOCUMENTS, 20 + 7).containsEntry(ITEMS, 15).containsEntry(EVENTS, 2);
         // FD-RN-57 on both sides: K1 by the supplier's rule, x6 by the general rules and the interstate destination
         assertThat(jdbc.queryForList("SELECT i.effective_cfop FROM fiscal_document_items i JOIN legacy_fiscal_xml_documents d"
-                + " ON d.id = i.document_id WHERE d.access_key IN (?, ?) ORDER BY d.access_key, i.item_number", String.class,
-                key(1), key(206))).containsExactly("1556", "1102", "2949", "6102", "2102", "2102", "6405", null);
+                + " ON d.id = i.document_id WHERE d.access_key IN (?, ?, ?) ORDER BY d.access_key, i.item_number", String.class,
+                key(1), key(206), key(207))).containsExactly("1556", "1102", "2949", "6102", "2102", "2102", "6405", null,
+                "2102", "2910", "2403");
         assertThat(compared.get(SOURCES)).isGreaterThanOrEqualTo(10);
         assertThat(compared.get(COUNTS)).isEqualTo(7);
         assertThat(divergences).as("SQL of V87 x LegacyFiscalDocumentTranslator, column by column").isEmpty();
@@ -223,6 +224,16 @@ class TranslatorAndCutoverParityTest {
                 "last_modified_date", "2026-11-25 08:00:00"));
         insert(jdbc, rules, LegacyFixtures.audited("id", "a1000000-0000-4000-8000-000000000006", "company_id", E1,
                 "codigo_produto", "P-7", "documento_fornecedor", "", "cfop_correto", " 5405 "));
+        // review cycle 2: the code compared exactly (ABC10 is not abc10), the supplier's mask taken off as Java does,
+        // two general rules of the same code (old data): the lowest id wins on both sides
+        insert(jdbc, rules, LegacyFixtures.audited("id", "a1000000-0000-4000-8000-000000000009", "company_id", E1,
+                "codigo_produto", "ABC10", "documento_fornecedor", null, "cfop_correto", "1407"));
+        insert(jdbc, rules, LegacyFixtures.audited("id", "a1000000-0000-4000-8000-000000000010", "company_id", E1,
+                "codigo_produto", "P-5", "documento_fornecedor", "390.533.447-05", "cfop_correto", "1403"));
+        insert(jdbc, rules, LegacyFixtures.audited("id", "a1000000-0000-4000-8000-000000000012", "company_id", E1,
+                "codigo_produto", "P-6", "documento_fornecedor", null, "cfop_correto", "1911"));
+        insert(jdbc, rules, LegacyFixtures.audited("id", "a1000000-0000-4000-8000-000000000011", "company_id", E1,
+                "codigo_produto", "P-6", "documento_fornecedor", null, "cfop_correto", "1910"));
         insert(jdbc, rules, LegacyFixtures.audited("id", "a1000000-0000-4000-8000-000000000004", "company_id", E1,
                 "codigo_produto", "P-8", "documento_fornecedor", null, "cfop_correto", "1403", "deleted", 1));
         insert(jdbc, rules, LegacyFixtures.audited("id", "a1000000-0000-4000-8000-000000000005", "company_id", E2,
@@ -245,6 +256,17 @@ class TranslatorAndCutoverParityTest {
                 "codigo", "P-7", "cfop", "6102", "valor_total", "5.00"));
         insert(jdbc, "fiscal_xml_document_items", item("i1000000-0000-4000-8000-000000000109", doc("x6"), "numero_item", 6,
                 "codigo", "P-7", "cfop", null, "valor_total", "5.00"));
+        insert(jdbc, "fiscal_xml_document_items", item("i1000000-0000-4000-8000-000000000110", doc("x6"), "numero_item", 7,
+                "codigo", "abc10", "cfop", "2102", "valor_total", "1.00"));
+        insert(jdbc, "fiscal_xml_document_items", item("i1000000-0000-4000-8000-000000000112", doc("x6"), "numero_item", 8,
+                "codigo", "P-6", "cfop", "2102", "valor_total", "1.00"));
+        // a rectified note of a rural producer (CPF), whose rule was saved with the CPF's mask (column of 14 characters)
+        insert(jdbc, fxd, nfe(doc("x7"), E1, "access_key", key(207), "direction", "INBOUND", "own_issue", 0,
+                "issue_date", "2026-10-29 10:00:00", "issuer_cnpj", null, "emit_cpf", "39053344705", "ide_destino_operacao", "2",
+                "total_valor_total_nota", "1.00", "rectified_file_path", "rect/x7.xml",
+                "last_rectification_checked_at", "2026-11-20 10:00:00"));
+        insert(jdbc, "fiscal_xml_document_items", item("i1000000-0000-4000-8000-000000000111", doc("x7"), "numero_item", 1,
+                "codigo", "P-5", "cfop", "2102", "valor_total", "1.00"));
         // NFS-e issued by the company with a blank provider document and nothing else of the provider
         insert(jdbc, "service_invoices", nfse(doc("y2"), E1, "access_key", "2611606" + "7".repeat(43), "direction", "PRESTADA",
                 "issue_date", "2026-10-27 11:00:00", "prestador_documento", "  ", "tomador_documento", LegacyFixtures.E1_CNPJ,
