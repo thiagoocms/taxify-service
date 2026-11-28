@@ -33,9 +33,12 @@
 | **Provedor de XML plugável** (decisão do Tony, 2026-11-27): trocar o SIEG por outro serviço, ou usar mais de um, sem reescrever o núcleo | **Em duas partes.** Na troca única entra só o **modelo de dados neutro** (origem e canal como valor, nenhuma coluna `*_sieg`, FD-RN-40). O **contrato por capacidades**, o agendador por estratégia, a seleção por escritório, o limitador e os orçamentos por provedor, o painel genérico e o T1/T5 formam a **fase P**, uma release logo depois (seção 7B). Pronta para implementar; P-FP-01 a P-FP-04 têm recomendação |
 | Bugs e desperdício da captura (B1, C1, E1, E2, D1/D2, H2, A1-A5) e as tabelas T1/T5 | **Spec irmã** [Capturas e controles](2026-11-27-capturas-e-controles.md). O B1 é recomendado como **correção antes** desta release (P-FD-07) |
 
+| **Importação não perde nota** (decisão do Tony, 2026-11-28): decimal com mais casas e CNPJ/CPF curto | **Decidido.** I-17 arredonda `HALF_UP` e registra; I-06 completa com zeros à esquerda pelo tipo da tag e registra; o resto segue recusado com log (3.3, seção 11). Vale só para a importação nova: a V87 continua copiando o que as tabelas antigas têm |
+| **CFOP efetivo no item** (decisão do Tony, 2026-11-28): o filtro de CFOP usa o CFOP retificado | **Decidido.** Coluna `effective_cfop` (3.6, FD-RN-57). O filtro de CFOP **múltiplo** fica para depois |
+
 **Bloqueiam:** nada bloqueia a implementação. **P-FD-02 respondida pelo Tony (2026-11-27): janela em dia útil às 21h
-(Recife).** O **go-live** depende da remedição de leitura na EC2 na véspera (seção 8, pré-requisito 1), do backup
-conferido (FD-RN-52) e da aprovação do Tony no dia.
+(Recife); em 2026-11-28 o Tony autorizou subir assim que QA aprovasse.** O **go-live** depende da remedição de leitura
+na EC2 (pré-check, seção 8, pré-requisito 1), do backup conferido (FD-RN-52) e da aprovação do Tony.
 
 ---
 
@@ -316,7 +319,7 @@ Duas intensidades (`InvariantScope`):
 | I-04 | `direction` nulo ⇔ `companyRole` ∈ {`THIRD_PARTY`, `SENDER`, `SHIPPER`, `RECEIVER`} | `Nfe`, `Nfce`, `Nfse` | sempre |
 | I-04-T | No `Cte`, a direção é **derivada** do papel (FD-RN-08): `ISSUER` → `OUTBOUND`, `TAKER` → `INBOUND`, os demais (inclusive `RECIPIENT`) → nulo. Na atualização de CT-e copiado (`metadataVersion = 0`), `RECIPIENT` aceita também a direção que veio da linha antiga (`INBOUND`), por paridade | `Cte` | CREATE estrito; UPDATE com a exceção |
 | I-05 | `companyRole = ISSUER` ⇔ documento do emitente igual ao CNPJ da empresa (14 dígitos), quando os dois existem | todos | CREATE |
-| I-06 | `documentType` do participante coerente com o tamanho: `CNPJ` = 14 dígitos, `CPF` = 11 dígitos, `FOREIGN` = até 20 caracteres. Documento sem tipo e tipo sem documento são incoerentes | todos | sempre |
+| I-06 | `documentType` do participante coerente com o tamanho: `CNPJ` = 14 dígitos, `CPF` = 11 dígitos, `FOREIGN` = até 20 caracteres. Documento sem tipo e tipo sem documento são incoerentes. "Tem texto" é o `FiscalText.hasText` (só o espaço comum é branco, como o `TRIM` da V87). **Na importação nova (2026-11-28):** o tipo vem da tag (`CNPJ`/`CPF`); só dígitos e curto demais é completado com zeros à esquerda até 14/11 (log `fiscal.document.party.padded`); mais longo que a tag, com algo além de dígitos ou com as duas tags preenchidas (ambíguo) fica como veio e a nota é recusada (log `fiscal.document.party.refused` e `fiscal.document.invariant.violated`) | todos | sempre |
 | I-07 | `accessKey` preenchida | todos, exceto `GoodsInvoice` com `sourceSystem = UPLOAD` (o "arquivo estranho" de hoje, `accessKeyOrId()`) | CREATE |
 | I-08 | `issueDate` preenchida | todos | CREATE |
 | I-09 | `xmlFilePath` preenchido enquanto `xmlPurgedAt` é nulo, exceto `Cte` copiado sem arquivo (`metadataVersion = 0`) | todos | CREATE |
@@ -327,7 +330,7 @@ Duas intensidades (`InvariantScope`):
 | I-14 | `iss.withheld` e `pisCofinsWithheld` não nulos (falso por padrão) | `Nfse` | sempre |
 | I-15 | `participation` coerente com `companyRole`: pelo menos um booleano verdadeiro, **exceto** com `companyRole = THIRD_PARTY` (CT-e de upload em que o CNPJ da empresa não aparece em nenhum grupo; hoje o upload aceita, e a recusa é da captura fase 3, CX-RN-31) | `Cte` | CREATE |
 | I-16 | Item só existe em `GoodsInvoice`. `items` não existe em `Nfse` e `Cte` | `GoodsInvoice` | sempre (pelo tipo) |
-| I-17 | **Dinheiro** com escala 2 e **alíquota/percentual** com escala 4, gravados como vieram, sem arredondar; valor com mais casas é recusado, como hoje. **Não vale** para quantidade e preço unitário (`commercial_*`/`taxable_*`, `decimal(19,4)`): o leiaute permite até 10 casas em `vUnCom`/`qCom`, hoje o upload aceita e o MySQL arredonda na gravação. O domínio faz esse arredondamento explícito (`setScale(4, HALF_UP)`, o mesmo resultado do MySQL para valores positivos), para não depender do banco | todos | sempre |
+| I-17 | **Dinheiro** com escala 2 e **alíquota/percentual** com escala 4, gravados como vieram quando cabem. **Valor com mais casas (decisão de 2026-11-28): arredondado `HALF_UP` para a escala da coluna, como o MySQL fazia, e registrado** (log `fiscal.document.decimal.rounded` com empresa, tipo, campo e casas originais, nunca o valor; métrica `fiscal.document.import.adjustments`, tag `kind`). Nenhuma nota é perdida por isso. **Não vale** para quantidade e preço unitário (`commercial_*`/`taxable_*`, `decimal(19,4)`): o leiaute permite até 10 casas em `vUnCom`/`qCom`, hoje o upload aceita e o MySQL arredonda na gravação. O domínio faz esse arredondamento explícito (`setScale(4, HALF_UP)`, o mesmo resultado do MySQL para valores positivos), para não depender do banco | todos | sempre |
 
 `legacyKeyLabel()` devolve `"NFE"` para `Nfe` e `Nfce`, `"NFSE"` para `Nfse` e `"CTE"` para `Cte`. É o texto que
 entra nas chaves naturais (FD-RN-21). **Não** é o discriminador: a NFC-e já é `"NFE"` nas chaves gravadas hoje.
@@ -519,6 +522,7 @@ auditoria, como hoje: o item é parte do agregado da nota (`cascade = ALL`, `orp
 | `description` | varchar(500) | `descricao` |
 | `ncm`, `cest`, `benefit_code` | varchar(10) | `ncm`, `cest`, `codigo_beneficio` |
 | `cfop` | varchar(10) | `trim(cfop)`: **gravado sem espaço** (as consultas deixam de usar `trim()` e passam a usar o índice) |
+| `effective_cfop` | varchar(10) | **FD-RN-57**: o CFOP da versão da nota em vigor. Nota sem XML retificado (e toda nota nova) = `cfop`. Nota retificada = o CFOP que a tela de notas já mostrava como retificado: a regra do produto (a do fornecedor, senão a geral), conferida depois da última mudança da regra, com o primeiro dígito pelo `idDest`; item sem CFOP fica sem. Índice `idx_fdi_document_effective_cfop (document_id, effective_cfop)` para o filtro |
 | `commercial_unit`, `taxable_unit` | varchar(10) | `unidade_comercial`, `unidade_tributavel` |
 | `commercial_quantity`, `commercial_unit_price`, `taxable_quantity`, `taxable_unit_price` | decimal(19,4) | `quantidade_comercial`, `valor_unitario_comercial`, `quantidade_tributavel`, `valor_unitario_tributavel` |
 | `total_amount` | decimal(19,2) | `valor_total` |
@@ -764,6 +768,7 @@ regra** para o dev das migrations (V86 a V89) e para a integração.
 | **FD-RN-32 Contagens por período (T2)** | O SIEG grava o que conta e o que tem em `capture_period_counts` (canal `SIEG`, tipo `NFE`, lado, mês), com o **mesmo cálculo do master na data da troca** (já com a `fix/sieg-call-savings`: `updateSyncControl`, `closePreviousMonth`, `SiegReconciliationService`): mesma janela, mesmo `imported_total` (entregues pelo SIEG), mesmo `stored_any_source_total`, mesmo `known_gap`, mesma reconciliação e mesmo encerramento do mês anterior. **Painel:** o campo `storedAnySource` do contrato atual (o "qualquer origem" ao lado do "vindas do SIEG") continua com o mesmo nome e valor, lido de `stored_any_source_total`. Leitores: o agendador do SIEG (`SideState`), o painel da captura (`CaptureSituationRules`) e a tela de situação. Upsert pela chave única, seguro com duas instâncias. Mudança de comportamento (mês anterior aberto por alguns dias, contagem por fonte) é da spec irmã |
 | **FD-RN-40 Modelo de dados neutro quanto ao provedor** | Nenhuma tabela ou coluna nova desta spec leva nome de provedor: nada de `found_in_sieg_at`, `total_sieg` ou `*_sieg`. Origem (`fiscal_document_sources.source`, `fiscal_documents.source_system`) e canal (`capture_period_counts.channel`) são **valores abertos** `varchar(30)`, validados no Java contra os provedores registrados mais as origens internas (`UPLOAD`). No Java, são objetos de valor (`DocumentSourceKey`, `ProviderKey`) e não enums: um provedor novo não exige migration nem mudar enum. Os valores gravados hoje que entram em chave natural (`PendencyType.SOURCE_ONLY_SIEG`, FD-RN-21) **não mudam** |
 | **FD-RN-55 O SQL da cópia repete o tradutor** | A V87 aplica, em SQL, exatamente as regras do tradutor Java usado nos testes (um teste compara as duas saídas na mesma massa): (1) a escolha do documento do participante ignora texto vazio (`COALESCE(NULLIF(TRIM(issuer_cnpj), ''), NULLIF(TRIM(emit_cpf), ''))`, e o mesmo para destinatário e id estrangeiro); (2) `status` `AUTHORIZED` (ou nulo) grava `canceled_at` nulo (I-02), contando no log os casos descartados; (3) CT-e antigo leva do bloco G só `icms_base` e `icms_amount`; (4) lado emitido com a mesma janela do recebido (3.11); (5) mês anterior igual ao corrente não é copiado (3.11) |
+| **FD-RN-57 CFOP efetivo** (decisão de 2026-11-28) | O filtro de CFOP da tela de notas procura o `effective_cfop` dos itens (3.6). A importação grava `effective_cfop = cfop`; o `FiscalXmlRectificationService` atualiza os itens quando aplica uma retificação (o CFOP do XML retificado) e quando a desfaz (o próprio `cfop`). A V87 preenche os itens das notas com `rectified_file_path` pela mesma regra, em SQL (`CopyMappings.rectifiedEffectiveCfop`), e a V88 compara contagem por empresa × CFOP efetivo; o teste FD-RN-55 compara Java × SQL coluna a coluna. As somas da apuração e do levantamento continuam pelo `cfop` emitido. O índice é separado do `idx_fdi_document_cfop_amount` porque este cobre as somas por CFOP emitido (com `total_amount`) e trocar a coluna dele faria as somas perderem o índice de cobertura |
 | **FD-RN-56 Direção nula das linhas antigas** | A remedição da véspera (seção 8) conta as linhas de `fiscal_xml_documents` com `direction` nula. **Se houver alguma**, o `FiscalDirectionBackfill` (que já roda na subida da versão atual) precisa terminar antes da janela: reiniciar a imagem atual e conferir a contagem zerada. Como rede, a V87 preenche a direção que ainda faltar pela mesma regra do backfill (`FiscalDirection`: recebida → `INBOUND`; própria com `ide_tipo_operacao` 0 → `INBOUND`, 1 → `OUTBOUND`) e loga a contagem; nesse caso a paridade (FD-RN-25) compara o lado antigo com a direção derivada. Linha que nem a regra resolve (sem `ide_tipo_operacao`) faz a V87 falhar com a contagem, para o Tony decidir. Com isso, o `FiscalDirectionBackfill` é removido nesta release (FD-RN-28) |
 | **FD-RN-30 Limite do big-bang** | O plano principal vale enquanto a remedição da véspera mostrar até **1 milhão de itens** e até **200 mil documentos** e a cópia local com esse volume levar até **5 minutos**. Passando disso, vale o plano alternativo da seção 7 |
 
@@ -811,7 +816,7 @@ Tudo no horário de Recife. **Janela: dia útil às 21h** (P-FD-02, decidida pel
 
 | Passo | O quê | Quem | Volta, se falhar aqui |
 |---|---|---|---|
-| 0 | Véspera: remedição de leitura na EC2 (seção 8), com aprovação do Tony. Confirma o FD-RN-30 e as contagens de nulos | Tony + dev | Não segue |
+| 0 | Véspera: remedição de leitura na EC2 (seção 8), com aprovação do Tony. Confirma o FD-RN-30 e as contagens de nulos. Rodar também `scripts/fiscal-documents/precheck.sql` (só leitura): `regras_fornecedor_com_caractere_fora_da_mascara` **tem de dar 0** (corrigir as regras na tela antes); as demais linhas (regras com máscara, regras duplicadas, notas sem `own_issue` e sem direção, notas retificadas) vão para o registro da release | Tony + dev | Não segue |
 | 1 | **Backup obrigatório (FD-RN-52)**, feito depois do passo 2 (rotinas paradas, nada mais entra) e antes do passo 3: dump das 4 tabelas + `fiscal_xml_sync_control`, gravado fora do container, SHA-256 anotado, restauração conferida num schema descartável. É a **única** forma de volta | dev, com aprovação | Não segue |
 | 2 | Pausar as rotinas no compose: `FISCAL_XML_SYNC_ENABLED`, `SEFAZ_DIST_ENABLED`, `NFSE_ADN_ENABLED`, `FISCAL_XML_RECTIFICATION_ENABLED`, `FISCAL_XML_PURGE_ENABLED`, `AUDIT_ENABLED`, `PENDENCIES_ENABLED`, `TAXIFY_CAPTURE_PRIORITY_ENABLED` e `TAXIFY_PENDENCY_ALERTS_ENABLED` em `false`; `TAXIFY_STOCK_SURVEY_ENABLED` continua `false` | dev | Religar as flags |
 | 3 | **Parar** a versão atual (todas as instâncias) antes de subir a nova. Nunca as duas juntas | dev | Subir a imagem anterior |
@@ -819,7 +824,22 @@ Tudo no horário de Recife. **Janela: dia útil às 21h** (P-FD-02, decidida pel
 | 5 | Smoke com as rotinas paradas: login, lista e detalhe de NF-e, NFS-e, retenções do mês, apuração de uma empresa, um mês fechado, pendências, painel. Conferir o log `fiscal.documents.cutover.parity.ok` da V88 e comparar as contagens das tabelas novas com as do backup (passo 1) | QA + dev | Seção 6.5, item 1 (sem perda) |
 | 6 | Religar as flags do passo 2 e recriar o container. Acompanhar o primeiro tick do SIEG, da SEFAZ e do ADN e a primeira rodada do `PendencyFinder` (nenhuma pendência nova por troca de chave). **Daqui em diante, voltar custa perder o que entrou** (6.5) | dev | Seção 6.5, item 2 |
 | 7 | Voltar à quantidade normal de instâncias, se houver mais de uma | dev | |
-| 8 | Apagar o arquivo de backup no prazo da P-FD-08 | Tony | — |
+| 8 | Apagar o arquivo de backup no prazo da P-FD-08 e tirar o `FD_BACKUP_SHA256` do compose da EC2 | Tony | — |
+
+**Detalhes do passo 1 para o 4 (2026-11-28):**
+- O `backup.sh` termina com a linha `FD_BACKUP_SHA256=<64 hex>`. Esse valor vai no **env inline** do serviço da aplicação
+  no compose **da EC2** (`/home/ec2-user/docker-compose.yml`, bloco `environment`), nunca no `docker-compose.yml` do
+  repositório (lá o padrão fica vazio) nem num `.env`. Conferir com `docker compose config | grep FD_BACKUP_SHA256`.
+- Permissões: o usuário do `backup.sh` precisa de `SELECT` nas cinco tabelas do dump, `CREATE` + `INSERT` em
+  `fiscal_documents_backup_checks` (criada pelo `backup-checks.sql` na primeira vez) e `CREATE`/`DROP` nos schemas
+  `fd_*` da conferência; o usuário da aplicação só lê `fiscal_documents_backup_checks` na V89. Na EC2, os dois são o
+  root do `taxify-mysql`.
+- **Se a V89 recusar** (a aplicação não sobe com `V89 refused: ...`; V86 a V88 já aplicadas e as `legacy_*` intactas):
+  com o SHA-256 ausente ou errado, corrigir o valor no compose da EC2, apagar a linha da V89 que falhou
+  (`flyway repair`, ou `DELETE FROM flyway_schema_history WHERE version = '89' AND success = 0`) e subir de novo -
+  nada foi apagado. Com as contagens das `legacy_*` diferentes das registradas (algo gravou depois do backup) ou sem
+  backup registrado, o backup não serve e não dá para refazê-lo depois do rename: voltar pelo `rollback.sql`
+  (estado B), subir a imagem anterior e refazer a release desde o passo 1.
 
 Captura parada: do passo 2 ao 6, meta de 30 minutos. **SIEG:** nenhuma chamada extra. O `Skip` da paginação usa a
 contagem do que já foi importado na janela (`countByCompany_IdAndOwnIssueAndIssueDateBetween`), e a nova contagem tem
@@ -1176,7 +1196,11 @@ rename das tabelas antigas e do plano de volta. **Ligar** a release na EC2 = apr
 | `fiscal.documents.cutover.parity.ok` | quantidade de grupos comparados por bloco |
 | `fiscal.documents.cutover.parity.mismatch` | bloco, quantidade de grupos divergentes e até 20 pares (`company_id`, mês, tipo); nunca os valores |
 | `fiscal.documents.cutover.id.collision` | quantidade de ids repetidos |
-| `fiscal.document.invariant.violated` | `id` (se houver), tipo, código do invariante, origem (`SIEG`, `SEFAZ_DIST`, `ADN`, `UPLOAD`) |
+| `fiscal.document.invariant.violated` | `companyId`, tipo, código do invariante, origem (`SIEG`, `SEFAZ_DFE`, `NFSE_ADN`, `UPLOAD`), posição no lote (no upload, a ordem do arquivo) e os 10 primeiros hex do SHA-256 da chave (`keyHash`); nunca a chave nem o CNPJ |
+| `fiscal.document.decimal.rounded` | I-17: `companyId`, tipo, campo (`Tipo.campo`), casas originais, origem, posição no lote |
+| `fiscal.document.party.padded` / `fiscal.document.party.refused` | I-06: `companyId`, tipo, participante e tag, quantidade de dígitos (ou caracteres), origem, posição no lote |
+| `fiscal.documents.cutover.effective.cfop` | V87: itens de notas retificadas, itens com CFOP efetivo diferente do emitido, regras com documento de fornecedor fora do padrão (só dígitos) |
+| `fiscal.xml.purge.page.failed` / `fiscal.xml.purge.document.refused` | expurgo: página cuja transação falhou (a rotina segue depois dela) e documento recusado pelas invariantes (fica com os arquivos) |
 | expurgo | o log atual, mais a quantidade de `xml_purged_at` gravados |
 
 ---

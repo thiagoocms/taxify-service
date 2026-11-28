@@ -1,5 +1,6 @@
 package br.com.cshub.taxify.service;
 
+import br.com.cshub.taxify.support.TestNotes;
 import br.com.cshub.taxify.integration.fiscalxml.FiscalEventParser;
 import br.com.cshub.taxify.integration.fiscalxml.FiscalXmlSide;
 import br.com.cshub.taxify.enumerated.IntegrationType;
@@ -19,7 +20,12 @@ import br.com.cshub.taxify.integration.sieg.SiegDownloadXmlsRequest;
 import br.com.cshub.taxify.integration.sieg.SiegClient;
 import br.com.cshub.taxify.integration.sieg.SiegDocumentCounts;
 import br.com.cshub.taxify.integration.sieg.SiegProperties;
-import br.com.cshub.taxify.repository.FiscalXmlDocumentRepository;
+import br.com.cshub.taxify.domain.fiscaldocument.CapturePeriodCount;
+import br.com.cshub.taxify.enumerated.CaptureSide;
+import br.com.cshub.taxify.repository.FiscalDocumentRepository;
+import br.com.cshub.taxify.repository.GoodsInvoiceRepository;
+import br.com.cshub.taxify.support.InMemoryCaptureCounts;
+import java.time.YearMonth;
 import br.com.cshub.taxify.repository.FiscalXmlSyncControlRepository;
 import br.com.cshub.taxify.validation.CompanyValidation;
 import org.junit.jupiter.api.BeforeEach;
@@ -38,6 +44,7 @@ import java.util.UUID;
 
 import static org.assertj.core.api.Assertions.assertThat;
 import static org.mockito.ArgumentMatchers.any;
+import static org.mockito.ArgumentMatchers.anyBoolean;
 import static org.mockito.ArgumentMatchers.eq;
 import static org.mockito.Mockito.lenient;
 import static org.mockito.Mockito.never;
@@ -50,7 +57,9 @@ class FiscalXmlIntegrationServiceSyncTest {
     @Mock
     private SiegClient siegClient;
     @Mock
-    private FiscalXmlDocumentRepository xmlDocumentRepository;
+    private FiscalDocumentRepository documentRepository;
+    @Mock
+    private GoodsInvoiceRepository goodsInvoiceRepository;
     @Mock
     private FiscalXmlSyncControlRepository syncControlRepository;
     @Mock
@@ -64,6 +73,9 @@ class FiscalXmlIntegrationServiceSyncTest {
 
     private FiscalXmlIntegrationService service;
     private UUID companyId;
+    private Company company;
+    private final InMemoryCaptureCounts counts = new InMemoryCaptureCounts();
+    private static final YearMonth NOVEMBER = YearMonth.of(2026, 11);
 
     @TempDir
     Path tempDir;
@@ -71,7 +83,7 @@ class FiscalXmlIntegrationServiceSyncTest {
     @BeforeEach
     void setUp() {
         companyId = UUID.randomUUID();
-        Company company = new Company(companyId);
+        company = new Company(companyId);
         company.setDocument(new Document("11594485000105", DocumentTypeEnum.CNPJ));
         AccountingFirm firm = new AccountingFirm(UUID.randomUUID());
         lenient().when(firmIntegrationService.getApiKey(firm.getId(), IntegrationType.SIEG)).thenReturn("test-api-key");
@@ -87,7 +99,8 @@ class FiscalXmlIntegrationServiceSyncTest {
 
         service = new FiscalXmlIntegrationService(siegClient, new FiscalXmlMetadataParser(),
                 new FiscalXmlFileStorage(syncProperties, messageService), new FiscalXmlPackageExtractor(),
-                xmlDocumentRepository, syncControlRepository, companyValidation, messageService, properties, firmIntegrationService,
+                documentRepository, goodsInvoiceRepository, counts.service(), syncControlRepository, companyValidation, messageService,
+                properties, firmIntegrationService,
                 new FiscalEventParser(), eventService,
                 org.mockito.Mockito.mock(br.com.cshub.taxify.repository.SefazNoteSummaryRepository.class),
                 org.mockito.Mockito.mock(ServiceInvoiceService.class));
@@ -97,21 +110,20 @@ class FiscalXmlIntegrationServiceSyncTest {
     void issuedSideAsksSiegByIssuerAndKeepsItsOwnBookkeeping() {
         when(siegClient.countXmls(any(SiegDownloadXmlsRequest.class), any())).thenReturn(new SiegDocumentCounts(7, 0));
         when(siegClient.downloadXmls(any(), any())).thenReturn(List.of());
-        when(xmlDocumentRepository.countByCompany_IdAndOwnIssueAndIssueDateBetweenAndFoundInSiegAtIsNotNull(eq(companyId), eq(true), any(), any())).thenReturn(4L);
+        when(goodsInvoiceRepository.countDeliveredBy(eq(companyId), eq(true), any(), any(), any(), any())).thenReturn(4L);
 
-        service.syncFromSieg(filter(null, null, FiscalXmlSide.ISSUED));
+        service.syncFromSieg(filter(NOVEMBER.atDay(1), NOVEMBER.atDay(27), FiscalXmlSide.ISSUED));
 
         ArgumentCaptor<SiegDownloadXmlsRequest> request = ArgumentCaptor.forClass(SiegDownloadXmlsRequest.class);
         verify(siegClient).countXmls(request.capture(), any());
         assertThat(request.getValue().cnpjEmit()).isEqualTo("11594485000105");
         assertThat(request.getValue().cnpjDest()).isNull();
 
-        ArgumentCaptor<FiscalXmlSyncControl> control = ArgumentCaptor.forClass(FiscalXmlSyncControl.class);
-        verify(syncControlRepository).save(control.capture());
-        assertThat(control.getValue().getIssuedTotalSieg()).isEqualTo(7);
-        assertThat(control.getValue().getIssuedTotalImported()).isEqualTo(4);
-        assertThat(control.getValue().getIssuedCheckedAt()).isNotNull();
-        assertThat(control.getValue().getTotalSieg()).as("received side untouched").isZero();
+        CapturePeriodCount issued = counts.require(companyId, CaptureSide.ISSUED, NOVEMBER);
+        assertThat(issued.getProviderTotal()).isEqualTo(7);
+        assertThat(issued.getImportedTotal()).isEqualTo(4);
+        assertThat(issued.getImportedCountedAt()).isNotNull();
+        assertThat(counts.row(companyId, CaptureSide.RECEIVED, NOVEMBER)).as("received side untouched").isEmpty();
     }
 
     @Test
@@ -155,51 +167,47 @@ class FiscalXmlIntegrationServiceSyncTest {
         service.syncFromSieg(filter());
 
         verify(siegClient).downloadXmls(any(), any());
-        verify(syncControlRepository, never()).save(any());
+        assertThat(counts.rows()).as("no count recorded").isEmpty();
     }
 
     @Test
     void updatesSyncControlWithSiegTotalAndActualPersistedCountWhenCountSucceeds() {
         when(siegClient.countXmls(any(SiegDownloadXmlsRequest.class), any())).thenReturn(new SiegDocumentCounts(200, 0));
         when(siegClient.downloadXmls(any(), any())).thenReturn(List.of());
-        when(xmlDocumentRepository.countByCompany_IdAndOwnIssueAndIssueDateBetweenAndFoundInSiegAtIsNotNull(eq(companyId), eq(false), any(), any())).thenReturn(100L);
+        when(goodsInvoiceRepository.countDeliveredBy(eq(companyId), eq(false), any(), any(), any(), any())).thenReturn(100L);
 
         LocalDate inicio = LocalDate.of(2026, 9, 10);
         LocalDate fim = LocalDate.of(2026, 9, 11);
         service.syncFromSieg(filter(inicio, fim));
 
-        ArgumentCaptor<FiscalXmlSyncControl> captor = ArgumentCaptor.forClass(FiscalXmlSyncControl.class);
-        verify(syncControlRepository).save(captor.capture());
-        FiscalXmlSyncControl control = captor.getValue();
+        CapturePeriodCount control = counts.require(companyId, CaptureSide.RECEIVED, YearMonth.of(2026, 9));
         assertThat(control.getCompany().getId()).isEqualTo(companyId);
-        assertThat(control.getIssueDateFrom()).isEqualTo(inicio);
-        assertThat(control.getIssueDateTo()).isEqualTo(fim);
-        assertThat(control.getTotalSieg()).isEqualTo(200);
-        assertThat(control.getTotalImported()).isEqualTo(100);
-        assertThat(control.getLastCheckedAt()).isNotNull();
+        assertThat(control.getWindowStart()).isEqualTo(inicio);
+        assertThat(control.getWindowEnd()).isEqualTo(fim);
+        assertThat(control.getProviderTotal()).isEqualTo(200);
+        assertThat(control.getImportedTotal()).isEqualTo(100);
+        assertThat(control.getImportedCountedAt()).isNotNull();
     }
 
     @Test
     void totalImportadoIsScopedToTheSyncWindowNotTheCompanysLifetimeTotal() {
         when(siegClient.countXmls(any(SiegDownloadXmlsRequest.class), any())).thenReturn(new SiegDocumentCounts(30, 0));
         when(siegClient.downloadXmls(any(), any())).thenReturn(List.of());
-        when(xmlDocumentRepository.countByCompany_IdAndOwnIssueAndIssueDateBetweenAndFoundInSiegAtIsNotNull(eq(companyId), eq(false), any(), any())).thenReturn(30L);
+        when(goodsInvoiceRepository.countDeliveredBy(eq(companyId), eq(false), any(), any(), any(), any())).thenReturn(30L);
         // Lifetime total across every month ever imported, deliberately much bigger than
         // the window-scoped count above - if updateSyncControl ever regresses back to
         // countByCompany_Id, this makes it obvious via a wrong totalImportado.
-        lenient().when(xmlDocumentRepository.countByCompany_Id(companyId)).thenReturn(9999L);
+
 
         service.syncFromSieg(filter(LocalDate.of(2026, 9, 1), LocalDate.of(2026, 9, 30)));
 
-        ArgumentCaptor<FiscalXmlSyncControl> captor = ArgumentCaptor.forClass(FiscalXmlSyncControl.class);
-        verify(syncControlRepository).save(captor.capture());
-        assertThat(captor.getValue().getTotalImported()).isEqualTo(30);
+        assertThat(counts.require(companyId, CaptureSide.RECEIVED, YearMonth.of(2026, 9)).getImportedTotal()).isEqualTo(30);
     }
 
     @Test
     void skipsTheCountCheckAndGoesStraightToDownloadWhenSkipCountCheckIsTrue() {
         when(siegClient.downloadXmls(any(), any())).thenReturn(List.of());
-        when(xmlDocumentRepository.countByCompany_IdAndOwnIssueAndIssueDateBetweenAndFoundInSiegAtIsNotNull(eq(companyId), eq(false), any(), any())).thenReturn(50L);
+        when(goodsInvoiceRepository.countDeliveredBy(eq(companyId), eq(false), any(), any(), any(), any())).thenReturn(50L);
 
         service.syncFromSieg(filter(), true);
 
@@ -213,35 +221,27 @@ class FiscalXmlIntegrationServiceSyncTest {
      */
     @Test
     void aCompletePassThatEndsShortKeepsTheDifferenceNotATotalOfItsOwn() {
-        FiscalXmlSyncControl existing = new FiscalXmlSyncControl();
-        existing.setId(UUID.randomUUID());
-        existing.setTotalSieg(200);
-        when(syncControlRepository.findByCompany_Id(companyId)).thenReturn(Optional.of(existing));
+        counts.seed(company, CaptureSide.RECEIVED, NOVEMBER, 200, 0, NOVEMBER.atDay(26).atTime(9, 0));
         when(siegClient.downloadXmls(any(), any())).thenReturn(List.of());
-        when(xmlDocumentRepository.countByCompany_IdAndOwnIssueAndIssueDateBetweenAndFoundInSiegAtIsNotNull(eq(companyId), eq(false), any(), any())).thenReturn(120L);
-        when(xmlDocumentRepository.countByCompany_IdAndOwnIssueAndIssueDateBetween(eq(companyId), eq(false), any(), any())).thenReturn(130L);
+        when(goodsInvoiceRepository.countDeliveredBy(eq(companyId), eq(false), any(), any(), any(), any())).thenReturn(120L);
+        when(goodsInvoiceRepository.countStored(eq(companyId), eq(false), any(), any())).thenReturn(130L);
 
         service.syncFromSieg(filter(LocalDate.of(2026, 11, 1), LocalDate.of(2026, 11, 27)), true);
 
-        ArgumentCaptor<FiscalXmlSyncControl> captor = ArgumentCaptor.forClass(FiscalXmlSyncControl.class);
-        verify(syncControlRepository).save(captor.capture());
-        FiscalXmlSyncControl control = captor.getValue();
-        assertThat(control.getTotalSieg()).isEqualTo(200);
-        assertThat(control.getTotalImported()).isEqualTo(120);
-        assertThat(control.knownGap(false, "2026-11")).isEqualTo(80);
-        assertThat(control.getReceivedStoredAnySource()).as("the panel's 'no Taxify (qualquer origem)'").isEqualTo(130);
-        assertThat(control.getLastCheckedAt()).isNotNull();
+        CapturePeriodCount control = counts.require(companyId, CaptureSide.RECEIVED, NOVEMBER);
+        assertThat(control.getProviderTotal()).isEqualTo(200);
+        assertThat(control.getImportedTotal()).isEqualTo(120);
+        assertThat(counts.of(company).knownGap(CaptureSide.RECEIVED, NOVEMBER)).isEqualTo(80);
+        assertThat(control.getStoredAnySourceTotal()).as("the panel's 'no Taxify (qualquer origem)'").isEqualTo(130);
+        assertThat(control.getImportedCountedAt()).isNotNull();
     }
 
     /** B1: the paging ended short after skip 120 - a reconciliation is asked for, to run outside this transaction. */
     @Test
     void aShortEndAfterTheFirstPageAsksForAReconciliation() {
-        FiscalXmlSyncControl existing = new FiscalXmlSyncControl();
-        existing.setId(UUID.randomUUID());
-        existing.setTotalSieg(200);
-        when(syncControlRepository.findByCompany_Id(companyId)).thenReturn(Optional.of(existing));
+        counts.seed(company, CaptureSide.RECEIVED, NOVEMBER, 200, 0, NOVEMBER.atDay(26).atTime(9, 0));
         when(siegClient.downloadXmls(any(), any())).thenReturn(List.of());
-        when(xmlDocumentRepository.countByCompany_IdAndOwnIssueAndIssueDateBetweenAndFoundInSiegAtIsNotNull(eq(companyId), eq(false), any(), any())).thenReturn(120L);
+        when(goodsInvoiceRepository.countDeliveredBy(eq(companyId), eq(false), any(), any(), any(), any())).thenReturn(120L);
 
         FiscalXmlIntegrationService.SiegSideOutcome outcome = service.syncSideFromSieg(
                 filter(LocalDate.of(2026, 11, 1), LocalDate.of(2026, 11, 27)), true);
@@ -255,13 +255,10 @@ class FiscalXmlIntegrationServiceSyncTest {
     /** B1: the same difference the month's last complete pass left (80) - no reconciliation again. */
     @Test
     void theSameDifferenceAsTheLastPassIsNotReconciledAgain() {
-        FiscalXmlSyncControl existing = new FiscalXmlSyncControl();
-        existing.setId(UUID.randomUUID());
-        existing.setTotalSieg(200);
-        existing.recordKnownGap(false, "2026-11", 80);
-        when(syncControlRepository.findByCompany_Id(companyId)).thenReturn(Optional.of(existing));
+        counts.seed(company, CaptureSide.RECEIVED, NOVEMBER, 200, 0, NOVEMBER.atDay(26).atTime(9, 0));
+        counts.gap(company, CaptureSide.RECEIVED, NOVEMBER, 80);
         when(siegClient.downloadXmls(any(), any())).thenReturn(List.of());
-        when(xmlDocumentRepository.countByCompany_IdAndOwnIssueAndIssueDateBetweenAndFoundInSiegAtIsNotNull(eq(companyId), eq(false), any(), any())).thenReturn(120L);
+        when(goodsInvoiceRepository.countDeliveredBy(eq(companyId), eq(false), any(), any(), any(), any())).thenReturn(120L);
 
         FiscalXmlIntegrationService.SiegSideOutcome outcome = service.syncSideFromSieg(
                 filter(LocalDate.of(2026, 11, 1), LocalDate.of(2026, 11, 27)), true);
@@ -272,7 +269,7 @@ class FiscalXmlIntegrationServiceSyncTest {
     /** The count never inherits the page's skip: always the whole window from 0. */
     @Test
     void theCountIsAlwaysFromSkipZero() {
-        when(xmlDocumentRepository.countByCompany_IdAndOwnIssueAndIssueDateBetweenAndFoundInSiegAtIsNotNull(eq(companyId), eq(false), any(), any())).thenReturn(20L);
+        when(goodsInvoiceRepository.countDeliveredBy(eq(companyId), eq(false), any(), any(), any(), any())).thenReturn(20L);
         when(siegClient.countXmls(any(SiegDownloadXmlsRequest.class), any())).thenReturn(new SiegDocumentCounts(20, 0));
 
         service.syncSideFromSieg(filter(LocalDate.of(2026, 11, 1), LocalDate.of(2026, 11, 27)), false);
@@ -292,9 +289,8 @@ class FiscalXmlIntegrationServiceSyncTest {
 
         service.syncFromSieg(filter());
 
-        ArgumentCaptor<FiscalXmlSyncControl> captor = ArgumentCaptor.forClass(FiscalXmlSyncControl.class);
-        verify(syncControlRepository).save(captor.capture());
-        assertThat(captor.getValue().getId()).isEqualTo(existing.getId());
+        // the queue row is not recreated (the counts go to capture_period_counts)
+        verify(syncControlRepository, never()).save(any());
     }
 
     /** A2: no note of the side issued in the sweep window (one day earlier locally: SIEG days are UTC) - SIEG is not asked. */
@@ -302,7 +298,7 @@ class FiscalXmlIntegrationServiceSyncTest {
     void theEventSweepOfASideWithoutRecentNotesCostsNoRequest() {
         LocalDate from = LocalDate.of(2026, 11, 25);
         LocalDate to = LocalDate.of(2026, 11, 27);
-        when(xmlDocumentRepository.existsByCompany_IdAndOwnIssueAndIssueDateBetween(companyId, true, from.minusDays(1).atStartOfDay(),
+        when(goodsInvoiceRepository.existsIssuedBetween(companyId, true, from.minusDays(1).atStartOfDay(),
                 to.atTime(java.time.LocalTime.MAX))).thenReturn(false);
 
         assertThat(service.refreshRecentEvents(companyId, FiscalXmlSide.ISSUED, from, to)).isZero();
@@ -315,7 +311,7 @@ class FiscalXmlIntegrationServiceSyncTest {
     void theEventSweepOfASideWithRecentNotesAsksSieg() {
         LocalDate from = LocalDate.of(2026, 11, 25);
         LocalDate to = LocalDate.of(2026, 11, 27);
-        when(xmlDocumentRepository.existsByCompany_IdAndOwnIssueAndIssueDateBetween(eq(companyId), eq(false), any(), any())).thenReturn(true);
+        when(goodsInvoiceRepository.existsIssuedBetween(eq(companyId), eq(false), any(), any())).thenReturn(true);
         when(siegClient.downloadXmls(any(), any())).thenReturn(List.of());
 
         service.refreshRecentEvents(companyId, FiscalXmlSide.RECEIVED, from, to);
@@ -336,7 +332,8 @@ class FiscalXmlIntegrationServiceSyncTest {
         syncProperties.setStoragePath(tempDir.toString());
         FiscalXmlIntegrationService everySide = new FiscalXmlIntegrationService(siegClient, new FiscalXmlMetadataParser(),
                 new FiscalXmlFileStorage(syncProperties, messageService), new FiscalXmlPackageExtractor(),
-                xmlDocumentRepository, syncControlRepository, companyValidation, messageService, ungated, firmIntegrationService,
+                documentRepository, goodsInvoiceRepository, counts.service(), syncControlRepository, companyValidation, messageService,
+                ungated, firmIntegrationService,
                 new FiscalEventParser(), eventService,
                 org.mockito.Mockito.mock(br.com.cshub.taxify.repository.SefazNoteSummaryRepository.class),
                 org.mockito.Mockito.mock(ServiceInvoiceService.class));
@@ -345,7 +342,7 @@ class FiscalXmlIntegrationServiceSyncTest {
         everySide.refreshRecentEvents(companyId, FiscalXmlSide.ISSUED, LocalDate.of(2026, 11, 25), LocalDate.of(2026, 11, 27));
 
         verify(siegClient).downloadXmls(any(), any());
-        verify(xmlDocumentRepository, never()).existsByCompany_IdAndOwnIssueAndIssueDateBetween(any(), any(), any(), any());
+        verify(goodsInvoiceRepository, never()).existsIssuedBetween(any(), anyBoolean(), any(), any());
     }
 
     /** A1: the side's count also brings the NFS-e count of the same filter - handed to the NFS-e check, no request more. */
@@ -364,7 +361,7 @@ class FiscalXmlIntegrationServiceSyncTest {
     /** B1: the scheduler's skip is what SIEG itself delivered of the side's window, never the filter's (any source). */
     @Test
     void theSchedulersSkipIsWhatSiegDelivered() {
-        when(xmlDocumentRepository.countByCompany_IdAndOwnIssueAndIssueDateBetweenAndFoundInSiegAtIsNotNull(eq(companyId), eq(false), any(), any()))
+        when(goodsInvoiceRepository.countDeliveredBy(eq(companyId), eq(false), any(), any(), any(), any()))
                 .thenReturn(20L);
         when(siegClient.countXmls(any(SiegDownloadXmlsRequest.class), any())).thenReturn(new SiegDocumentCounts(100, 0));
         when(siegClient.downloadXmls(any(), any())).thenReturn(List.of());

@@ -1,10 +1,11 @@
 package br.com.cshub.taxify.service.fronteira;
 
+import br.com.cshub.taxify.support.TestNotes;
 import br.com.cshub.taxify.common.MessageService;
 import br.com.cshub.taxify.domain.company.Company;
 import br.com.cshub.taxify.domain.fronteira.EfiscoExtract;
 import br.com.cshub.taxify.domain.fronteira.EfiscoExtractNote;
-import br.com.cshub.taxify.domain.xml.FiscalXmlDocument;
+import br.com.cshub.taxify.domain.fiscaldocument.GoodsInvoice;
 import br.com.cshub.taxify.dto.fiscalxml.FiscalXmlSummaryDTO.DivergenceSummary;
 import br.com.cshub.taxify.dto.fronteira.FronteiraDTOs;
 import br.com.cshub.taxify.dto.fronteira.FronteiraDTOs.Flag;
@@ -12,12 +13,12 @@ import br.com.cshub.taxify.enumerated.FiscalDirection;
 import br.com.cshub.taxify.enumerated.FiscalDocumentStatus;
 import br.com.cshub.taxify.exception.BadRequestException;
 import br.com.cshub.taxify.repository.EfiscoExtractRepository;
-import br.com.cshub.taxify.repository.FiscalXmlDocumentItemRepository;
-import br.com.cshub.taxify.repository.FiscalXmlDocumentRepository;
+import br.com.cshub.taxify.repository.FiscalDocumentItemRepository;
+import br.com.cshub.taxify.repository.GoodsInvoiceRepository;
 import br.com.cshub.taxify.repository.SefazNoteSummaryRepository;
 import br.com.cshub.taxify.domain.fronteira.FronteiraRule;
-import br.com.cshub.taxify.domain.xml.FiscalXmlDocumentItem;
-import br.com.cshub.taxify.domain.xml.FiscalItemTaxDetail;
+import br.com.cshub.taxify.domain.fiscaldocument.FiscalDocumentItem;
+
 import br.com.cshub.taxify.dto.fronteira.FronteiraDTOs.Result;
 import br.com.cshub.taxify.enumerated.FronteiraRuleKind;
 import br.com.cshub.taxify.service.fiscalcheck.DocumentDivergenceService;
@@ -55,9 +56,9 @@ class FronteiraServiceTest {
     @Mock
     private EfiscoExtractRepository extractRepository;
     @Mock
-    private FiscalXmlDocumentRepository documentRepository;
+    private GoodsInvoiceRepository documentRepository;
     @Mock
-    private FiscalXmlDocumentItemRepository itemRepository;
+    private FiscalDocumentItemRepository itemRepository;
     @Mock
     private DocumentDivergenceService divergenceService;
     @Mock
@@ -108,17 +109,9 @@ class FronteiraServiceTest {
         return note;
     }
 
-    private FiscalXmlDocument document(String cnpj, String numero, String valor) {
-        FiscalXmlDocument document = new FiscalXmlDocument();
-        document.setId(UUID.randomUUID());
-        document.setCompany(company);
-        document.setIssuerCnpj(cnpj);
-        document.setNumero(numero);
-        document.setValorTotalNota(new BigDecimal(valor));
-        document.setDirection(FiscalDirection.INBOUND);
-        document.setEmitenteUf("SP");
-        document.setIssueDate(LocalDateTime.of(2026, 11, 5, 10, 0));
-        return document;
+    private GoodsInvoice document(String cnpj, String numero, String valor) {
+        return TestNotes.note(company).issuer(cnpj, null).number(numero).total(valor).direction(FiscalDirection.INBOUND)
+                .issuerUf("SP").issuedAt(LocalDateTime.of(2026, 11, 5, 10, 0)).build();
     }
 
     @Test
@@ -131,18 +124,18 @@ class FronteiraServiceTest {
                 note(5, "444", "40", "2.00", "0.11"),         // 5,50% after rounding a tiny note
                 note(6, "555", "50", "100.00", "5.50")));     // no XML in Taxify
         extract.replaceNotes(notes);
-        FiscalXmlDocument offRate = document("333", "30", "4261.61");
-        FiscalXmlDocument canceled = document("222", "20", "2400.00");
-        canceled.setStatus(FiscalDocumentStatus.CANCELED);
-        FiscalXmlDocument otherValue = document("222", "21", "13000.00");
-        when(documentRepository.findByCompany_IdAndIssuerCnpjInAndNumeroInAndDeletedIsFalse(eq(company.getId()), any(), any()))
+        GoodsInvoice offRate = document("333", "30", "4261.61");
+        GoodsInvoice canceled = document("222", "20", "2400.00");
+        canceled.cancel(null);
+        GoodsInvoice otherValue = document("222", "21", "13000.00");
+        when(documentRepository.findByIssuerCnpjsAndNumbers(eq(company.getId()), any(), any()))
                 .thenReturn(List.of(document("111", "10", "887.00"), canceled, otherValue, offRate, document("444", "40", "2.00")));
         when(divergenceService.summarize(eq(company.getId()), any()))
                 .thenReturn(Map.of(offRate.getId(), new DivergenceSummary(1, 0, List.of("CFOP diferente da regra"))));
-        FiscalXmlDocument notCharged = document("999", "77", "500.00");
-        FiscalXmlDocument local = document("888", "88", "300.00");
-        local.setEmitenteUf("PE");
-        when(documentRepository.findByCompany_IdAndIssueDateBetweenOrderByIssueDateDesc(eq(company.getId()), any(), any()))
+        GoodsInvoice notCharged = document("999", "77", "500.00");
+        GoodsInvoice local = document("888", "88", "300.00");
+        TestNotes.withIssuerUf(local, "PE");
+        when(documentRepository.findIssuedBetween(eq(company.getId()), any(), any()))
                 .thenReturn(List.of(notCharged, local, offRate));
 
         FronteiraDTOs.Report report = service.report(company.getId().toString(), "2026-11");
@@ -194,18 +187,11 @@ class FronteiraServiceTest {
                 .hasMessage("error.fronteira.company.not.pe");
     }
 
-    private FiscalXmlDocumentItem itemOf(FiscalXmlDocument document, String valor, String icms) {
-        FiscalXmlDocumentItem item = new FiscalXmlDocumentItem();
-        item.setId(UUID.randomUUID());
-        item.setDocument(document);
-        item.setNumeroItem(1);
-        item.setNcm("61091000");
-        item.setCfop("6102");
-        item.setValorTotal(new BigDecimal(valor));
-        item.setAliquotaIcms(new BigDecimal("12"));
-        item.setValorIcms(new BigDecimal(icms));
-        item.setTaxDetail(new FiscalItemTaxDetail(null, null, "0", null, null, null, null, null, null, null, null, null,
-                null, null, null, null, null, null));
+    private FiscalDocumentItem itemOf(GoodsInvoice document, String valor, String icms) {
+        FiscalDocumentItem item = TestNotes.item(1).ncm("61091000").cfop("6102").total(valor).icms(null, null, "12", icms).build();
+        document.addItem(item);
+        TestNotes.taxDetail(item, null, null, "0", null, null, null, null, null, null, null, null, null,
+                null, null, null, null, null, null);
         return item;
     }
 
@@ -225,16 +211,16 @@ class FronteiraServiceTest {
                 note(2, "111", "2", "1000.00", "150.00"),   // a mais
                 note(3, "111", "3", "1000.00", "50.00"),    // a menos
                 note(4, "111", "4", "1000.00", "0.00"))));  // e-Fisco didn't calculate
-        List<FiscalXmlDocument> documents = new ArrayList<>();
-        List<FiscalXmlDocumentItem> items = new ArrayList<>();
+        List<GoodsInvoice> documents = new ArrayList<>();
+        List<FiscalDocumentItem> items = new ArrayList<>();
         for (String numero : List.of("1", "2", "3", "4")) {
-            FiscalXmlDocument document = document("111", numero, "1000.00");
-            document.setEmitenteUf("CE");
-            document.setValorProdutos(new BigDecimal("1000.00"));
+            GoodsInvoice document = document("111", numero, "1000.00");
+            TestNotes.withIssuerUf(document, "CE");
+            TestNotes.withProductsAmount(document, "1000.00");
             documents.add(document);
             items.add(itemOf(document, "1000.00", "120.00"));
         }
-        when(documentRepository.findByCompany_IdAndIssuerCnpjInAndNumeroInAndDeletedIsFalse(eq(company.getId()), any(), any()))
+        when(documentRepository.findByIssuerCnpjsAndNumbers(eq(company.getId()), any(), any()))
                 .thenReturn(documents);
         when(itemRepository.findByDocument_IdIn(any())).thenReturn(items);
 
@@ -258,10 +244,10 @@ class FronteiraServiceTest {
         interna.setRate(new BigDecimal("20.5"));
         interna.setEnabled(true);
         when(ruleService.rulesFor(company.getId())).thenReturn(List.of(interna));
-        FiscalXmlDocument entry = document("111", "9", "1000.00");
-        entry.setEmitenteUf("CE");
-        entry.setValorProdutos(new BigDecimal("1000.00"));
-        when(documentRepository.findByCompany_IdAndIssueDateBetweenOrderByIssueDateDesc(eq(company.getId()), any(), any()))
+        GoodsInvoice entry = document("111", "9", "1000.00");
+        TestNotes.withIssuerUf(entry, "CE");
+        TestNotes.withProductsAmount(entry, "1000.00");
+        when(documentRepository.findIssuedBetween(eq(company.getId()), any(), any()))
                 .thenReturn(List.of(entry));
         when(itemRepository.findByDocument_IdIn(any())).thenReturn(List.of(itemOf(entry, "1000.00", "120.00")));
 

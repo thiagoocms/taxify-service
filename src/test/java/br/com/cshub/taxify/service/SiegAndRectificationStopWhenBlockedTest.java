@@ -14,7 +14,7 @@ import br.com.cshub.taxify.integration.fiscalxml.FiscalXmlProvider;
 import br.com.cshub.taxify.integration.fiscalxml.FiscalXmlSyncProperties;
 import br.com.cshub.taxify.integration.fiscalxml.FiscalXmlSyncRequest;
 import br.com.cshub.taxify.integration.fiscalxml.FiscalXmlSyncResult;
-import br.com.cshub.taxify.repository.FiscalXmlDocumentRepository;
+import br.com.cshub.taxify.repository.GoodsInvoiceRepository;
 import br.com.cshub.taxify.repository.FiscalXmlSyncControlRepository;
 import br.com.cshub.taxify.repository.CompanyRepository;
 import br.com.cshub.taxify.repository.ProductFiscalRuleRepository;
@@ -91,7 +91,6 @@ class SiegAndRectificationStopWhenBlockedTest {
     private static FiscalXmlSyncControl control(Company company) {
         FiscalXmlSyncControl control = new FiscalXmlSyncControl();
         control.setCompany(company);
-        control.setLastCheckedAt(LocalDateTime.now());
         return control;
     }
 
@@ -130,7 +129,7 @@ class SiegAndRectificationStopWhenBlockedTest {
         when(rules.findCompaniesWithRules()).thenReturn(List.of(companyA, companyB));
         when(subscriptions.findFirstByCompanyIdAndDeletedIsFalseAndStartDateLessThanEqualAndEndDateGreaterThanEqualOrderByStartDateDesc(
                 any(), any(), any())).thenReturn(Optional.of(entitled(PlanServiceEnum.FISCAL_XML_IMPORT)));
-        FiscalXmlRectificationScheduler scheduler = new FiscalXmlRectificationScheduler(mock(FiscalXmlDocumentRepository.class), rules,
+        FiscalXmlRectificationScheduler scheduler = new FiscalXmlRectificationScheduler(mock(GoodsInvoiceRepository.class), rules,
                 subscriptions, mock(FiscalXmlRectificationService.class), new br.com.cshub.taxify.integration.fiscalxml.FiscalXmlRectificationProperties(),
                 access);
 

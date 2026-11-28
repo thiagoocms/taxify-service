@@ -1,6 +1,6 @@
 package br.com.cshub.taxify.service.fiscalcheck;
 
-import br.com.cshub.taxify.domain.xml.FiscalXmlDocumentItem;
+import br.com.cshub.taxify.domain.fiscaldocument.FiscalDocumentItem;
 import br.com.cshub.taxify.enumerated.DivergenceSeverity;
 import org.springframework.stereotype.Component;
 
@@ -33,14 +33,14 @@ public class SubstitutionCheck implements FiscalCheck {
     private static final Set<String> CEST_CSOSNS = Set.of("201", "202", "203", "500");
 
     @Override
-    public List<FiscalDivergence> check(FiscalXmlDocumentItem item, FiscalCheckContext context) {
-        if (item.getTaxDetail() == null || item.getSituacaoTributariaIcms() == null) {
+    public List<FiscalDivergence> check(FiscalDocumentItem item, FiscalCheckContext context) {
+        if (!item.hasTaxDetail() || item.getIcms().cst() == null) {
             return List.of();
         }
-        String csosn = digits(item.getTaxDetail().csosn());
-        String cst = csosn == null ? lastTwo(item.getSituacaoTributariaIcms()) : null;
+        String csosn = digits(item.getIcms().csosn());
+        String cst = csosn == null ? lastTwo(item.getIcms().cst()) : null;
         String code = csosn != null ? csosn : cst;
-        String cfop = item.getCfop() == null ? "" : item.getCfop().strip();
+        String cfop = item.cfop() == null ? "" : item.cfop().strip();
         List<FiscalDivergence> divergences = new ArrayList<>();
 
         boolean stCode = csosn != null ? ST_CSOSNS.contains(csosn) : ST_CSTS.contains(cst);
@@ -51,7 +51,7 @@ public class SubstitutionCheck implements FiscalCheck {
                             cfop, csosn != null ? "CSOSN" : "CST", code)));
         }
         boolean needsCest = csosn != null ? CEST_CSOSNS.contains(csosn) : CEST_CSTS.contains(cst);
-        String cest = item.getTaxDetail().cest();
+        String cest = item.getProduct().cest();
         if (needsCest && (cest == null || cest.isBlank())) {
             divergences.add(new FiscalDivergence(CODE_CEST, "CEST", null, "CEST do item", DivergenceSeverity.WARNING,
                     "Item com ICMS-ST (%s %s) sem CEST - obrigatório nas mercadorias sujeitas a ST (Conv. ICMS 142/2018)"

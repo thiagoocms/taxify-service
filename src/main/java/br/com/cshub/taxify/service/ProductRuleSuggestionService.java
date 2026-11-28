@@ -7,7 +7,7 @@ import br.com.cshub.taxify.common.RequestIds;
 import br.com.cshub.taxify.common.MessageService;
 import br.com.cshub.taxify.dto.fiscalrule.ProductRuleSuggestionDTO;
 import br.com.cshub.taxify.dto.fiscalrule.ProductRuleSuggestionDTO.SuggestedValue;
-import br.com.cshub.taxify.repository.FiscalXmlDocumentItemRepository;
+import br.com.cshub.taxify.repository.FiscalDocumentItemRepository;
 import br.com.cshub.taxify.repository.ProductFiscalRuleRepository;
 import br.com.cshub.taxify.validation.CompanyValidation;
 import org.springframework.stereotype.Service;
@@ -34,7 +34,7 @@ import java.util.UUID;
 @Service
 public class ProductRuleSuggestionService {
 
-    /** Columns of FiscalXmlDocumentItemRepository#findReceivedClassificationsByProduct, in order, as rule field names. */
+    /** Columns of FiscalDocumentItemRepository#findReceivedClassificationsByProduct, in order, as rule field names. */
     private static final String[] FIELDS = {
             "ncmCorreto", "cfopCorreto", "origemMercadoria", "cstIcms", "csosn", "aliquotaIcms", "cest",
             "cstIpi", "aliquotaIpi", "cstPis", "aliquotaPis", "cstCofins", "aliquotaCofins",
@@ -47,12 +47,12 @@ public class ProductRuleSuggestionService {
     private static final int MAX_PRODUCTS = 500;
     private static final BigDecimal HUNDRED = new BigDecimal("100");
 
-    private final FiscalXmlDocumentItemRepository itemRepository;
+    private final FiscalDocumentItemRepository itemRepository;
     private final ProductFiscalRuleRepository ruleRepository;
     private final CompanyValidation companyValidation;
     private final MessageService messageService;
 
-    public ProductRuleSuggestionService(FiscalXmlDocumentItemRepository itemRepository, ProductFiscalRuleRepository ruleRepository,
+    public ProductRuleSuggestionService(FiscalDocumentItemRepository itemRepository, ProductFiscalRuleRepository ruleRepository,
                                         CompanyValidation companyValidation, MessageService messageService) {
         this.itemRepository = itemRepository;
         this.ruleRepository = ruleRepository;
@@ -126,7 +126,8 @@ public class ProductRuleSuggestionService {
 
         void add(String descricao, String supplierName, Object[] row, long count) {
             total += count;
-            if (supplierName != null) {
+            // QA of 2026-11-28: one name whatever the order of the rows (the groups bring each its max) - the greatest
+            if (supplierName != null && (this.supplierName == null || supplierName.compareTo(this.supplierName) > 0)) {
                 this.supplierName = supplierName;
             }
             if (descricao != null && count > descricaoCount) {

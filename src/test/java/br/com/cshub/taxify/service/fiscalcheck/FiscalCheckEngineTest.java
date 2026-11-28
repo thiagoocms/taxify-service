@@ -1,7 +1,8 @@
 package br.com.cshub.taxify.service.fiscalcheck;
 
+import br.com.cshub.taxify.support.TestNotes;
 import br.com.cshub.taxify.domain.fiscalrule.ProductFiscalRule;
-import br.com.cshub.taxify.domain.xml.FiscalXmlDocumentItem;
+import br.com.cshub.taxify.domain.fiscaldocument.FiscalDocumentItem;
 import br.com.cshub.taxify.enumerated.DivergenceSeverity;
 import br.com.cshub.taxify.repository.ProductFiscalRuleRepository;
 import org.junit.jupiter.api.Test;
@@ -52,12 +53,8 @@ class FiscalCheckEngineTest {
         assertThat(check.check(item(null, "5405", "1"), context)).isEmpty();
     }
 
-    private static FiscalXmlDocumentItem item(String codigo, String cfop, String ncm) {
-        FiscalXmlDocumentItem item = new FiscalXmlDocumentItem();
-        item.setCodigo(codigo);
-        item.setCfop(cfop);
-        item.setNcm(ncm);
-        return item;
+    private static FiscalDocumentItem item(String codigo, String cfop, String ncm) {
+        return TestNotes.item(1).code(codigo).cfop(cfop).ncm(ncm).build();
     }
 
     private static ProductFiscalRule rule(String codigo, String cfop, String ncm) {

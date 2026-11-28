@@ -310,7 +310,7 @@ class CapturePanelIntegrationTest {
         JsonNode unknownStored = yRow.at("/channels/SIEG/received/storedAnySource");
         assertThat(unknownStored.isNull() || unknownStored.isMissingNode()).as("not known before the next check").isTrue();
         // decision of 2026-11-27: next to "vindas do SIEG / total do SIEG", the notes in Taxify from any source
-        jdbc.update("UPDATE fiscal_xml_sync_control SET received_stored_any_source = 195 WHERE company_id = ?", y);
+        jdbc.update("UPDATE capture_period_counts SET stored_any_source_total = 195 WHERE company_id = ? AND side = 'RECEIVED'", y);
         JsonNode yStored = row(ok(get(BASE + "/capture-panel"), carlaToken), y);
         assertThat(yStored.get("status").asText()).as("the situation still comes from SIEG's numbers").isEqualTo("PENDENTE");
         assertThat(yStored.at("/channels/SIEG/received/storedAnySource").asInt()).isEqualTo(195);
@@ -480,7 +480,7 @@ class CapturePanelIntegrationTest {
     void detailLastDocumentsAndRecovery() throws Exception {
         invoice(x, "SIEG", LocalDateTime.of(2026, 11, 27, 8, 11));
         invoice(x, "SIEG", LocalDateTime.of(2026, 11, 20, 8, 0));
-        invoice(x, "SEFAZ_DIST", LocalDateTime.of(2026, 11, 26, 15, 15));
+        invoice(x, "SEFAZ_DFE", LocalDateTime.of(2026, 11, 26, 15, 15)); // stored as the new key, shown with the legacy name
         recovery(x, LocalDate.of(2026, 10, 1));
         recovery(x, LocalDate.of(2026, 11, 1));
 
@@ -1004,15 +1004,26 @@ class CapturePanelIntegrationTest {
 
     private void control(String company, LocalDateTime lastAttempt, int receivedTotal, int receivedImported, int issuedTotal,
                          int issuedImported, LocalDateTime checkedAt, LocalDate sweptOn) {
+        jdbc.update("DELETE FROM capture_period_counts WHERE company_id = ?", company);
         jdbc.update("DELETE FROM fiscal_xml_sync_control WHERE company_id = ?", company);
-        jdbc.update("INSERT INTO fiscal_xml_sync_control (id, company_id, deleted, created_by, created_date, data_emissao_inicio,"
-                        + " data_emissao_fim, total_sieg, total_importado, ultima_verificacao_em, issued_total_sieg, issued_total_imported,"
-                        + " issued_checked_at, last_attempt_at, received_events_checked_on, issued_events_checked_on,"
-                        + " service_invoices_checked_on) VALUES (?, ?, 0, 'it', ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)",
-                UUID.randomUUID().toString(), company, Timestamp.valueOf(NOW), java.sql.Date.valueOf(LocalDate.of(2026, 11, 1)),
-                java.sql.Date.valueOf(LocalDate.of(2026, 11, 27)), receivedTotal, receivedImported, Timestamp.valueOf(checkedAt),
-                issuedTotal, issuedImported, Timestamp.valueOf(checkedAt), lastAttempt == null ? null : Timestamp.valueOf(lastAttempt),
+        jdbc.update("INSERT INTO fiscal_xml_sync_control (id, company_id, deleted, created_by, created_date, last_attempt_at,"
+                        + " received_events_checked_on, issued_events_checked_on, service_invoices_checked_on)"
+                        + " VALUES (?, ?, 0, 'it', ?, ?, ?, ?, ?)",
+                UUID.randomUUID().toString(), company, Timestamp.valueOf(NOW), lastAttempt == null ? null : Timestamp.valueOf(lastAttempt),
                 java.sql.Date.valueOf(sweptOn), java.sql.Date.valueOf(sweptOn), java.sql.Date.valueOf(sweptOn));
+        // the SIEG counters live in capture_period_counts (FD-RN-32): November's rows, the window of the month on both sides
+        counts(company, "RECEIVED", LocalDate.of(2026, 11, 1), LocalDate.of(2026, 11, 27), receivedTotal, receivedImported, checkedAt);
+        counts(company, "ISSUED", LocalDate.of(2026, 11, 1), LocalDate.of(2026, 11, 27), issuedTotal, issuedImported, checkedAt);
+    }
+
+    private void counts(String company, String side, LocalDate windowStart, LocalDate windowEnd, int providerTotal, int imported,
+                        LocalDateTime checkedAt) {
+        jdbc.update("INSERT INTO capture_period_counts (id, company_id, channel, document_type, side, period_month, window_start,"
+                        + " window_end, provider_total, provider_counted_at, imported_total, imported_counted_at, created_by,"
+                        + " created_date, deleted) VALUES (?, ?, 'SIEG', 'NFE', ?, '2026-11', ?, ?, ?, ?, ?, ?, 'it', ?, 0)",
+                UUID.randomUUID().toString(), company, side, windowStart == null ? null : java.sql.Date.valueOf(windowStart),
+                windowEnd == null ? null : java.sql.Date.valueOf(windowEnd), providerTotal, Timestamp.valueOf(checkedAt), imported,
+                Timestamp.valueOf(checkedAt), Timestamp.valueOf(NOW));
     }
 
     private void certificate(String company, LocalDateTime validUntil) {
@@ -1030,9 +1041,15 @@ class CapturePanelIntegrationTest {
     }
 
     private void invoice(String company, String source, LocalDateTime createdDate) {
-        jdbc.update("INSERT INTO fiscal_xml_documents (id, deleted, created_date, created_by, document_type, source_system, company_id,"
-                        + " xml_file_path) VALUES (?, 0, ?, 'it', 'NFE', ?, ?, 'xml/ficticio.xml')", UUID.randomUUID().toString(),
+        String id = UUID.randomUUID().toString();
+        jdbc.update("INSERT INTO fiscal_documents (id, deleted, created_date, created_by, document_type, model, source_system, company_id,"
+                        + " xml_file_path, direction, company_role, status, metadata_version)"
+                        + " VALUES (?, 0, ?, 'it', 'NFE', '55', ?, ?, 'xml/ficticio.xml', 'INBOUND', 'RECIPIENT', 'AUTHORIZED', 0)", id,
                 Timestamp.valueOf(createdDate), source, company);
+        jdbc.update("INSERT INTO fiscal_document_sources (id, document_id, company_id, source, retrieval_mode, first_seen_at, last_seen_at)"
+                + " VALUES (?, ?, ?, ?, ?, ?, ?)", UUID.randomUUID().toString(), id, company, source,
+                "SIEG".equals(source) ? "PERIOD" : "UPLOAD".equals(source) ? "NONE" : "CURSOR", Timestamp.valueOf(createdDate),
+                Timestamp.valueOf(createdDate));
     }
 
     private void recovery(String company, LocalDate start) {
@@ -1046,7 +1063,7 @@ class CapturePanelIntegrationTest {
         List<String> companies = jdbc.queryForList("SELECT id FROM companies WHERE accounting_firm_id = ?", String.class, firm);
         for (String company : companies) {
             for (String table : List.of("capture_priority_requests", "capture_stage_status", "fiscal_xml_sync_control",
-                    "sefaz_dist_control", "nfse_adn_control", "company_certificates", "fiscal_xml_documents", "service_invoices",
+                    "sefaz_dist_control", "nfse_adn_control", "company_certificates", "fiscal_document_sources", "fiscal_documents", "capture_period_counts",
                     "recovery_tasks", "subscriptions", "users_companies")) {
                 jdbc.update("DELETE FROM " + table + " WHERE company_id = ?", company);
             }

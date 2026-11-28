@@ -1,7 +1,7 @@
 package br.com.cshub.taxify.service.fiscalcheck;
 
-import br.com.cshub.taxify.domain.xml.FiscalXmlDocument;
-import br.com.cshub.taxify.domain.xml.FiscalXmlDocumentItem;
+import br.com.cshub.taxify.domain.fiscaldocument.GoodsInvoice;
+import br.com.cshub.taxify.domain.fiscaldocument.FiscalDocumentItem;
 
 import java.util.List;
 
@@ -12,5 +12,5 @@ import java.util.List;
  */
 public interface FiscalDocumentCheck {
 
-    List<FiscalDivergence> check(FiscalXmlDocument document, List<FiscalXmlDocumentItem> items, FiscalCheckContext context);
+    List<FiscalDivergence> check(GoodsInvoice document, List<FiscalDocumentItem> items, FiscalCheckContext context);
 }

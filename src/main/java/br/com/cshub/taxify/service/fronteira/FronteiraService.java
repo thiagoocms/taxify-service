@@ -5,14 +5,14 @@ import br.com.cshub.taxify.domain.company.Company;
 import br.com.cshub.taxify.domain.company.StateRegistration;
 import br.com.cshub.taxify.domain.fronteira.EfiscoExtract;
 import br.com.cshub.taxify.domain.fronteira.EfiscoExtractNote;
-import br.com.cshub.taxify.domain.xml.FiscalXmlDocument;
+import br.com.cshub.taxify.domain.fiscaldocument.GoodsInvoice;
 import br.com.cshub.taxify.dto.fiscalxml.FiscalXmlSummaryDTO.DivergenceSummary;
 import br.com.cshub.taxify.dto.fronteira.FronteiraDTOs;
 import br.com.cshub.taxify.dto.fronteira.FronteiraDTOs.Flag;
 import br.com.cshub.taxify.dto.fronteira.FronteiraDTOs.Result;
 import br.com.cshub.taxify.dto.fronteira.FronteiraRuleDTOs;
 import br.com.cshub.taxify.domain.xml.SefazNoteSummary;
-import br.com.cshub.taxify.domain.xml.FiscalXmlDocumentItem;
+import br.com.cshub.taxify.domain.fiscaldocument.FiscalDocumentItem;
 import br.com.cshub.taxify.enumerated.TaxRegime;
 import br.com.cshub.taxify.repository.SefazNoteSummaryRepository;
 import org.springframework.data.domain.Pageable;
@@ -20,8 +20,8 @@ import br.com.cshub.taxify.enumerated.FiscalDirection;
 import br.com.cshub.taxify.exception.BadRequestException;
 import br.com.cshub.taxify.exception.ConflictException;
 import br.com.cshub.taxify.repository.EfiscoExtractRepository;
-import br.com.cshub.taxify.repository.FiscalXmlDocumentItemRepository;
-import br.com.cshub.taxify.repository.FiscalXmlDocumentRepository;
+import br.com.cshub.taxify.repository.FiscalDocumentItemRepository;
+import br.com.cshub.taxify.repository.GoodsInvoiceRepository;
 import br.com.cshub.taxify.service.fiscalcheck.DocumentDivergenceService;
 import br.com.cshub.taxify.validation.CompanyValidation;
 import org.springframework.data.domain.AuditorAware;
@@ -73,8 +73,8 @@ public class FronteiraService {
 
     private final EfiscoExtractParser parser;
     private final EfiscoExtractRepository extractRepository;
-    private final FiscalXmlDocumentRepository documentRepository;
-    private final FiscalXmlDocumentItemRepository itemRepository;
+    private final GoodsInvoiceRepository documentRepository;
+    private final FiscalDocumentItemRepository itemRepository;
     private final DocumentDivergenceService divergenceService;
     private final FronteiraRuleService ruleService;
     private final SefazNoteSummaryRepository summaryRepository;
@@ -86,7 +86,7 @@ public class FronteiraService {
     private static final org.slf4j.Logger log = org.slf4j.LoggerFactory.getLogger(FronteiraService.class);
 
     public FronteiraService(EfiscoExtractParser parser, EfiscoExtractRepository extractRepository,
-                            FiscalXmlDocumentRepository documentRepository, FiscalXmlDocumentItemRepository itemRepository,
+                            GoodsInvoiceRepository documentRepository, FiscalDocumentItemRepository itemRepository,
                             DocumentDivergenceService divergenceService, FronteiraRuleService ruleService,
                             SefazNoteSummaryRepository summaryRepository,
                             br.com.cshub.taxify.repository.ProductFiscalRuleRepository productRuleRepository,
@@ -280,9 +280,9 @@ public class FronteiraService {
             ruleService.ensureCargaLiquida(company, extract.getCredenciamentoInterno(), predominantRate(notes), extract.getExtractNumber());
         }
 
-        Map<String, FiscalXmlDocument> documents = documentsOf(company.getId(), notes);
-        List<FiscalXmlDocument> entries = interstateEntries(company.getId(), month, new HashSet<>(documents.keySet()));
-        List<FiscalXmlDocument> all = new ArrayList<>(documents.values());
+        Map<String, GoodsInvoice> documents = documentsOf(company.getId(), notes);
+        List<GoodsInvoice> entries = interstateEntries(company.getId(), month, new HashSet<>(documents.keySet()));
+        List<GoodsInvoice> all = new ArrayList<>(documents.values());
         all.addAll(entries);
 
         // the month's credenciamento, or - for the prévia - the latest one the company had
@@ -292,19 +292,19 @@ public class FronteiraService {
         FronteiraCalculator.Context context = new FronteiraCalculator.Context(ruleService.rulesFor(company.getId()),
                 company.getTaxRegimeType() == TaxRegime.SIMPLES_NACIONAL, credenciamento,
                 br.com.cshub.taxify.domain.fiscalrule.ProductRules.of(productRuleRepository.findByCompany_IdAndDeletedIsFalse(company.getId())));
-        Map<UUID, List<FiscalXmlDocumentItem>> itemsByDocument = itemsOf(all);
+        Map<UUID, List<FiscalDocumentItem>> itemsByDocument = itemsOf(all);
         Map<UUID, FronteiraRuleDTOs.NoteCalc> calcs = new HashMap<>();
-        for (FiscalXmlDocument document : all) {
+        for (GoodsInvoice document : all) {
             if (!document.isCanceled()) {
                 calcs.put(document.getId(), toDto(FronteiraCalculator.calculate(document,
                         itemsByDocument.getOrDefault(document.getId(), List.of()), context)));
             }
         }
-        Map<UUID, List<String>> cfops = cfopsOf(all.stream().map(FiscalXmlDocument::getId).toList());
+        Map<UUID, List<String>> cfops = cfopsOf(all.stream().map(GoodsInvoice::getId).toList());
 
         List<FronteiraDTOs.Uncharged> uncharged = entries.stream()
-                .map(document -> new FronteiraDTOs.Uncharged(document.getId(), document.getNumero(), document.getEmitenteNome(),
-                        document.getIssuerCnpj(), document.getEmitenteUf(), document.getIssueDate(), document.getValorTotalNota(),
+                .map(document -> new FronteiraDTOs.Uncharged(document.getId(), document.getNumber(), document.getIssuer().name(),
+                        document.getIssuer().cnpj(), document.getIssuer().uf(), document.getIssueDate(), document.getTotalAmount(),
                         cfops.getOrDefault(document.getId(), List.of()), calcs.get(document.getId())))
                 .toList();
         BigDecimal previa = uncharged.stream().map(FronteiraDTOs.Uncharged::calculo)
@@ -335,7 +335,7 @@ public class FronteiraService {
                 tally.differenceOutsideRate = tally.differenceOutsideRate.add(differenceToRate);
             }
             String key = key(note.getIssuerCnpj(), note.getInvoiceNumber());
-            FiscalXmlDocument document = documents.get(key);
+            GoodsInvoice document = documents.get(key);
             FronteiraDTOs.NoteRef ref = null;
             FronteiraRuleDTOs.NoteCalc calc = null;
             if (document == null) {
@@ -346,8 +346,8 @@ public class FronteiraService {
                     flags.add(Flag.NOTA_CANCELADA);
                     tally.canceled++;
                 }
-                if (document.getValorTotalNota() != null
-                        && document.getValorTotalNota().subtract(note.getInvoiceAmount()).abs().compareTo(new BigDecimal("0.01")) > 0) {
+                if (document.getTotalAmount() != null
+                        && document.getTotalAmount().subtract(note.getInvoiceAmount()).abs().compareTo(new BigDecimal("0.01")) > 0) {
                     flags.add(Flag.VALOR_DIFERENTE);
                     tally.differentAmount++;
                 }
@@ -356,8 +356,8 @@ public class FronteiraService {
                     flags.add(Flag.DIVERGENCIA_FISCAL);
                     tally.withDivergence++;
                 }
-                ref = new FronteiraDTOs.NoteRef(document.getId(), document.getEmitenteNome(), document.getIssueDate(),
-                        document.getValorTotalNota(), document.getNaturezaOperacao(),
+                ref = new FronteiraDTOs.NoteRef(document.getId(), document.getIssuer().name(), document.getIssueDate(),
+                        document.getTotalAmount(), document.getOperationNature(),
                         cfops.getOrDefault(document.getId(), List.of()), document.isCanceled(), divergence,
                         document.getAccessKey());
                 calc = calcs.get(document.getId());
@@ -382,7 +382,7 @@ public class FronteiraService {
     }
 
     /** The charge against the calculation's range: rounding differences up to {@link #CALC_TOLERANCE} confer. */
-    static Result resultado(BigDecimal charged, FiscalXmlDocument document, FronteiraRuleDTOs.NoteCalc calc) {
+    static Result resultado(BigDecimal charged, GoodsInvoice document, FronteiraRuleDTOs.NoteCalc calc) {
         if (document == null) {
             return Result.PENDENTE;
         }
@@ -448,30 +448,30 @@ public class FronteiraService {
     }
 
     /** issuer CNPJ + number → the company's note (one query for the whole extract). */
-    private Map<String, FiscalXmlDocument> documentsOf(UUID companyId, Collection<EfiscoExtractNote> notes) {
+    private Map<String, GoodsInvoice> documentsOf(UUID companyId, Collection<EfiscoExtractNote> notes) {
         Set<String> cnpjs = new HashSet<>();
         Set<String> numbers = new HashSet<>();
         for (EfiscoExtractNote note : notes) {
             cnpjs.add(note.getIssuerCnpj());
             numbers.add(note.getInvoiceNumber());
         }
-        Map<String, FiscalXmlDocument> byKey = new HashMap<>();
+        Map<String, GoodsInvoice> byKey = new HashMap<>();
         if (cnpjs.isEmpty()) {
             return byKey;
         }
-        for (FiscalXmlDocument document : documentRepository.findByCompany_IdAndIssuerCnpjInAndNumeroInAndDeletedIsFalse(companyId, cnpjs, numbers)) {
+        for (GoodsInvoice document : documentRepository.findByIssuerCnpjsAndNumbers(companyId, cnpjs, numbers)) {
             // the company's own copy of the entry wins over anything else with the same key
-            byKey.merge(key(document.getIssuerCnpj(), document.getNumero()), document,
+            byKey.merge(key(document.getIssuer().cnpj(), document.getNumber()), document,
                     (current, other) -> current.getDirection() == FiscalDirection.INBOUND ? current : other);
         }
         return byKey;
     }
 
-    private Map<UUID, List<FiscalXmlDocumentItem>> itemsOf(List<FiscalXmlDocument> documents) {
-        Map<UUID, List<FiscalXmlDocumentItem>> items = new HashMap<>();
-        List<UUID> ids = documents.stream().map(FiscalXmlDocument::getId).distinct().toList();
+    private Map<UUID, List<FiscalDocumentItem>> itemsOf(List<GoodsInvoice> documents) {
+        Map<UUID, List<FiscalDocumentItem>> items = new HashMap<>();
+        List<UUID> ids = documents.stream().map(GoodsInvoice::getId).distinct().toList();
         for (int start = 0; start < ids.size(); start += 500) {
-            for (FiscalXmlDocumentItem item : itemRepository.findByDocument_IdIn(ids.subList(start, Math.min(ids.size(), start + 500)))) {
+            for (FiscalDocumentItem item : itemRepository.findByDocument_IdIn(ids.subList(start, Math.min(ids.size(), start + 500)))) {
                 items.computeIfAbsent(item.getDocument().getId(), id -> new ArrayList<>()).add(item);
             }
         }
@@ -494,15 +494,15 @@ public class FronteiraService {
     }
 
     /** Entries from another UF issued in the month, not canceled, that the extract doesn't list. */
-    private List<FiscalXmlDocument> interstateEntries(UUID companyId, YearMonth month, Set<String> charged) {
-        return documentRepository.findByCompany_IdAndIssueDateBetweenOrderByIssueDateDesc(
+    private List<GoodsInvoice> interstateEntries(UUID companyId, YearMonth month, Set<String> charged) {
+        return documentRepository.findIssuedBetween(
                         companyId, month.atDay(1).atStartOfDay(), month.atEndOfMonth().atTime(23, 59, 59, 999_999_999))
                 .stream()
                 .filter(document -> !document.isDeleted() && !document.isCanceled())
                 .filter(document -> document.getDirection() == FiscalDirection.INBOUND)
-                .filter(document -> document.getEmitenteUf() != null && !UF.equalsIgnoreCase(document.getEmitenteUf().strip()))
-                .filter(document -> !charged.contains(key(document.getIssuerCnpj(), document.getNumero())))
-                .sorted(Comparator.comparing(FiscalXmlDocument::getIssueDate, Comparator.nullsLast(Comparator.naturalOrder())))
+                .filter(document -> document.getIssuer().uf() != null && !UF.equalsIgnoreCase(document.getIssuer().uf().strip()))
+                .filter(document -> !charged.contains(key(document.getIssuer().cnpj(), document.getNumber())))
+                .sorted(Comparator.comparing(GoodsInvoice::getIssueDate, Comparator.nullsLast(Comparator.naturalOrder())))
                 .toList();
     }
 

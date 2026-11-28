@@ -118,9 +118,9 @@ final class ReformItSupport {
             jdbc.update("DELETE e FROM stock_credit_survey_events e JOIN stock_credit_surveys s ON s.id = e.survey_id"
                     + " WHERE s.company_id = ?", company);
             jdbc.update("DELETE FROM stock_credit_surveys WHERE company_id = ?", company);
-            jdbc.update("DELETE i FROM fiscal_xml_document_items i JOIN fiscal_xml_documents d ON d.id = i.document_id"
+            jdbc.update("DELETE i FROM fiscal_document_items i JOIN fiscal_documents d ON d.id = i.document_id"
                     + " WHERE d.company_id = ?", company);
-            for (String table : List.of("fiscal_xml_documents", "company_tax_regimes", "users_companies")) {
+            for (String table : List.of("fiscal_document_sources", "fiscal_documents", "company_tax_regimes", "users_companies")) {
                 jdbc.update("DELETE FROM " + table + " WHERE company_id = ?", company);
             }
         }

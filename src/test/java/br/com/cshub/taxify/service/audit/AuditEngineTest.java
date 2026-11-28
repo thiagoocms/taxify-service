@@ -1,8 +1,9 @@
 package br.com.cshub.taxify.service.audit;
 
+import br.com.cshub.taxify.support.TestNotes;
 import br.com.cshub.taxify.domain.company.Company;
-import br.com.cshub.taxify.domain.xml.FiscalXmlDocument;
-import br.com.cshub.taxify.domain.xml.FiscalXmlDocumentItem;
+import br.com.cshub.taxify.domain.fiscaldocument.GoodsInvoice;
+import br.com.cshub.taxify.domain.fiscaldocument.FiscalDocumentItem;
 import br.com.cshub.taxify.domain.xml.SefazNoteSummary;
 import br.com.cshub.taxify.dto.assessment.AssessmentAlertDTO;
 import br.com.cshub.taxify.dto.assessment.MonthRevenueDTO;
@@ -10,7 +11,8 @@ import br.com.cshub.taxify.dto.assessment.TaxAssessmentDTO;
 import br.com.cshub.taxify.enumerated.DivergenceSeverity;
 import br.com.cshub.taxify.enumerated.FiscalDocumentStatus;
 import br.com.cshub.taxify.integration.sieg.FiscalXmlFileStorage;
-import br.com.cshub.taxify.repository.FiscalXmlDocumentRepository;
+import br.com.cshub.taxify.repository.FiscalDocumentRepository;
+import br.com.cshub.taxify.repository.GoodsInvoiceRepository;
 import br.com.cshub.taxify.repository.SefazNoteSummaryRepository;
 import br.com.cshub.taxify.service.assessment.TaxAssessmentService;
 import br.com.cshub.taxify.service.fiscalcheck.FiscalCheckEngine;
@@ -45,7 +47,9 @@ class AuditEngineTest {
     private static final YearMonth MONTH = YearMonth.of(2026, 10);
 
     @Mock
-    private FiscalXmlDocumentRepository documentRepository;
+    private GoodsInvoiceRepository documentRepository;
+    @Mock
+    private FiscalDocumentRepository anyDocumentRepository;
     @Mock
     private SefazNoteSummaryRepository summaryRepository;
     @Mock
@@ -57,13 +61,14 @@ class AuditEngineTest {
 
     private AuditEngine engine;
     private Company company;
-    private final List<FiscalXmlDocument> notes = new ArrayList<>();
+    private final List<GoodsInvoice> notes = new ArrayList<>();
 
     @BeforeEach
     void setUp() {
-        engine = new AuditEngine(documentRepository, summaryRepository, checkEngine, assessmentService, fileStorage);
-        company = new Company(UUID.randomUUID());
-        when(documentRepository.findByCompany_IdAndIssueDateBetweenOrderByIssueDateDesc(eq(company.getId()), any(), any()))
+        engine = new AuditEngine(documentRepository, anyDocumentRepository, summaryRepository, checkEngine, assessmentService,
+                fileStorage);
+        company = TestNotes.company(TestNotes.COMPANY_CNPJ);
+        when(documentRepository.findIssuedBetween(eq(company.getId()), any(), any()))
                 .thenReturn(notes);
         when(summaryRepository.findByCompany_IdAndCompletedAtIsNullAndIssueDateBetween(any(), any(), any())).thenReturn(List.of());
         when(checkEngine.check(any(), any())).thenReturn(List.of());
@@ -71,16 +76,8 @@ class AuditEngineTest {
         when(assessmentService.assess(any(), anyString())).thenReturn(assessment(BigDecimal.TEN, List.of(), List.of()));
     }
 
-    private FiscalXmlDocument issued(String model, String serie, String numero, String key) {
-        FiscalXmlDocument note = new FiscalXmlDocument();
-        note.setId(UUID.randomUUID());
-        note.setCompany(company);
-        note.setOwnIssue(true);
-        note.setModelo(model);
-        note.setSerie(serie);
-        note.setNumero(numero);
-        note.setAccessKey(key);
-        note.setDeleted(false);
+    private GoodsInvoice issued(String model, String serie, String numero, String key) {
+        GoodsInvoice note = TestNotes.note(company).ownIssue().model(model).series(serie).number(numero).key(key).build();
         notes.add(note);
         return note;
     }
@@ -125,19 +122,19 @@ class AuditEngineTest {
 
     @Test
     void aReturnWithoutTheOriginalNote() throws Exception {
-        FiscalXmlDocument withoutRef = issued("55", "1", "20", "K20");
-        withoutRef.setFinalidadeEmissao("4");
+        GoodsInvoice withoutRef = issued("55", "1", "20", "K20");
+        TestNotes.withPurpose(withoutRef, "4");
         withoutRef.setXmlFilePath("a.xml");
-        FiscalXmlDocument unknownRef = issued("55", "1", "21", "K21");
-        unknownRef.setFinalidadeEmissao("4");
+        GoodsInvoice unknownRef = issued("55", "1", "21", "K21");
+        TestNotes.withPurpose(unknownRef, "4");
         unknownRef.setXmlFilePath("b.xml");
-        FiscalXmlDocument knownRef = issued("55", "1", "22", "K22");
-        knownRef.setFinalidadeEmissao("4");
+        GoodsInvoice knownRef = issued("55", "1", "22", "K22");
+        TestNotes.withPurpose(knownRef, "4");
         knownRef.setXmlFilePath("c.xml");
         when(fileStorage.read("a.xml")).thenReturn("<NFe><infNFe><ide><finNFe>4</finNFe></ide></infNFe></NFe>".getBytes(StandardCharsets.UTF_8));
         when(fileStorage.read("b.xml")).thenReturn("<NFe><ide><NFref><refNFe>UNKNOWN</refNFe></NFref></ide></NFe>".getBytes(StandardCharsets.UTF_8));
         when(fileStorage.read("c.xml")).thenReturn("<NFe><ide><NFref><refNFe>KNOWN</refNFe></NFref></ide></NFe>".getBytes(StandardCharsets.UTF_8));
-        when(documentRepository.existsByCompany_IdAndAccessKey(company.getId(), "KNOWN")).thenReturn(true);
+        when(anyDocumentRepository.existsByCompany_IdAndAccessKey(company.getId(), "KNOWN")).thenReturn(true);
 
         List<AuditEngine.Finding> findings = engine.audit(company, MONTH).findings();
 
@@ -164,11 +161,11 @@ class AuditEngineTest {
 
     @Test
     void itemChecksOfTheIssuedNotesBecomeOneFindingPerRule() {
-        FiscalXmlDocument first = issued("55", "1", "30", "K30");
-        FiscalXmlDocument second = issued("55", "1", "31", "K31");
-        FiscalXmlDocumentItem item = mock(FiscalXmlDocumentItem.class);
-        first.getItens().add(item);
-        second.getItens().add(item);
+        GoodsInvoice first = issued("55", "1", "30", "K30");
+        GoodsInvoice second = issued("55", "1", "31", "K31");
+        FiscalDocumentItem item = mock(FiscalDocumentItem.class);
+        first.addItem(item);
+        second.addItem(item);
         FiscalDivergence cfop = new FiscalDivergence("CFOP_DESTINATION", "CFOP", "5102", "6102", DivergenceSeverity.WARNING, "CFOP interno numa venda interestadual");
         FiscalDivergence unrelated = new FiscalDivergence("TAX_CALCULATION", "ICMS", "1", "2", DivergenceSeverity.ERROR, "cálculo");
         when(checkEngine.check(eq(item), any())).thenReturn(List.of(cfop, unrelated));
@@ -182,10 +179,10 @@ class AuditEngineTest {
 
     @Test
     void canceledNotesAreNotChecked() {
-        FiscalXmlDocument canceled = issued("55", "1", "40", "K40");
-        canceled.setStatus(FiscalDocumentStatus.CANCELED);
-        FiscalXmlDocumentItem item = mock(FiscalXmlDocumentItem.class);
-        canceled.getItens().add(item);
+        GoodsInvoice canceled = issued("55", "1", "40", "K40");
+        canceled.cancel(null);
+        FiscalDocumentItem item = mock(FiscalDocumentItem.class);
+        canceled.addItem(item);
         when(checkEngine.check(eq(item), any())).thenReturn(List.of(
                 new FiscalDivergence("CRT_CST", "CST_ICMS", "00", "CSOSN", DivergenceSeverity.ERROR, "x")));
 
@@ -202,9 +199,9 @@ class AuditEngineTest {
         when(assessmentService.assess(company.getId(), "2026-10")).thenReturn(assessment(new BigDecimal("5000"), history,
                 List.of(new AssessmentAlertDTO(AssessmentAlertDTO.Level.WARNING, "SIMPLES_SUBLIMIT", "RBT12 acima do sublimite"))));
         for (int number = 1; number <= 20; number++) {
-            FiscalXmlDocument nfce = issued("65", "1", String.valueOf(number), "C" + number);
+            GoodsInvoice nfce = issued("65", "1", String.valueOf(number), "C" + number);
             if (number <= 2) {
-                nfce.setStatus(FiscalDocumentStatus.CANCELED);
+                nfce.cancel(null);
             }
         }
 

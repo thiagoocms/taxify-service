@@ -1,6 +1,5 @@
 package br.com.cshub.taxify.dto.fiscalxml;
 
-import br.com.cshub.taxify.domain.xml.FiscalIbsCbsTotals;
 
 import java.math.BigDecimal;
 
@@ -24,6 +23,6 @@ public record FiscalXmlTotaisDTO(
         BigDecimal valorTotalNota,
         BigDecimal valorAproximadoTributos,
         /** IBSCBSTot - null when the note has none. */
-        FiscalIbsCbsTotals ibsCbs
+        FiscalIbsCbsTotalsDTO ibsCbs
 ) {
 }

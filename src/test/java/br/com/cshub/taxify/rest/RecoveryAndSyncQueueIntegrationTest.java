@@ -134,6 +134,10 @@ class RecoveryAndSyncQueueIntegrationTest {
     @Autowired
     private FiscalXmlSyncControlRepository controlRepository;
     @Autowired
+    private br.com.cshub.taxify.service.capture.CaptureCountsService countsService;
+    @Autowired
+    private br.com.cshub.taxify.repository.CapturePeriodCountRepository countRepository;
+    @Autowired
     private SubscriptionRepository subscriptionRepository;
     @Autowired
     private Map<String, FiscalXmlProvider> providers;
@@ -520,9 +524,6 @@ class RecoveryAndSyncQueueIntegrationTest {
         FiscalXmlSyncControl control = new FiscalXmlSyncControl();
         control.setCompany(companyRepository.findById(companyId).orElseThrow());
         control.setDeleted(false);
-        control.setTotalSieg(0);
-        control.setTotalImported(0);
-        control.setLastCheckedAt(LocalDateTime.now());
         control = controlRepository.save(control);
 
         LocalDateTime t1 = LocalDateTime.now(Clock.system(RECIFE)).truncatedTo(ChronoUnit.MICROS).withNano(123_456_000);
@@ -567,7 +568,7 @@ class RecoveryAndSyncQueueIntegrationTest {
         properties.setBatchSize(batch);
         properties.setReferenceDate(reference);
         return new FiscalXmlSyncScheduler(companyRepository, controlRepository, subscriptionRepository, providers, properties,
-                firmAccessService, recoveryService, clock);
+                firmAccessService, recoveryService, clock, null, null, countsService);
     }
 
     private FiscalXmlSyncScheduler queueScheduler(FiscalXmlProvider provider, int batch, Clock clock) {
@@ -576,7 +577,7 @@ class RecoveryAndSyncQueueIntegrationTest {
         properties.setProvider("sieg");
         properties.setBatchSize(batch);
         return new FiscalXmlSyncScheduler(companyRepository, controlRepository, subscriptionRepository, Map.of("sieg", provider),
-                properties, firmAccessService, recoveryService, clock);
+                properties, firmAccessService, recoveryService, clock, null, null, countsService);
     }
 
     /** Records the received-side sync of each company (one visit per company per round). */
@@ -622,15 +623,31 @@ class RecoveryAndSyncQueueIntegrationTest {
         }
     }
 
+    /** The queue row and when each side was last checked (capture_period_counts, FD-RN-32; null = never). */
     private void seedControl(String companyId, LocalDateTime received, LocalDateTime issued) {
         FiscalXmlSyncControl control = new FiscalXmlSyncControl();
-        control.setCompany(companyRepository.findById(UUID.fromString(companyId)).orElseThrow());
+        br.com.cshub.taxify.domain.company.Company company = companyRepository.findById(UUID.fromString(companyId)).orElseThrow();
+        control.setCompany(company);
         control.setDeleted(false);
-        control.setTotalSieg(0);
-        control.setTotalImported(0);
-        control.setLastCheckedAt(received);
-        control.setIssuedCheckedAt(issued);
         controlRepository.save(control);
+        seedCount(company, br.com.cshub.taxify.enumerated.CaptureSide.RECEIVED, received);
+        seedCount(company, br.com.cshub.taxify.enumerated.CaptureSide.ISSUED, issued);
+    }
+
+    private void seedCount(br.com.cshub.taxify.domain.company.Company company, br.com.cshub.taxify.enumerated.CaptureSide side,
+                           LocalDateTime checkedAt) {
+        if (checkedAt == null) {
+            return;
+        }
+        java.time.YearMonth month = java.time.YearMonth.from(checkedAt);
+        br.com.cshub.taxify.domain.fiscaldocument.CapturePeriodCount row = new br.com.cshub.taxify.domain.fiscaldocument.CapturePeriodCount(
+                company, br.com.cshub.taxify.domain.fiscaldocument.ProviderKey.SIEG,
+                br.com.cshub.taxify.enumerated.FiscalDocumentType.NFE, side, month);
+        row.askedWindow(month.atDay(1), checkedAt.toLocalDate());
+        row.recordProviderCount(0, checkedAt);
+        row.recordImported(0, checkedAt);
+        row.setDeleted(false);
+        countRepository.save(row);
     }
 
     // ================================================================== helpers: SIEG mock and data
@@ -666,7 +683,7 @@ class RecoveryAndSyncQueueIntegrationTest {
                 <nfeProc xmlns="http://www.portalfiscal.inf.br/nfe">
                   <NFe>
                     <infNFe Id="NFe%s" versao="4.00">
-                      <ide><dhEmi>%s</dhEmi></ide>
+                      <ide><mod>55</mod><dhEmi>%s</dhEmi></ide>
                       <emit><CNPJ>%s</CNPJ></emit>
                       <dest><CNPJ>%s</CNPJ></dest>
                     </infNFe>
@@ -680,7 +697,7 @@ class RecoveryAndSyncQueueIntegrationTest {
     }
 
     private int documents(String companyId, String key) {
-        return jdbc.queryForObject("SELECT COUNT(*) FROM fiscal_xml_documents WHERE company_id = ? AND access_key = ?", Integer.class, companyId, key);
+        return jdbc.queryForObject("SELECT COUNT(*) FROM fiscal_documents WHERE company_id = ? AND access_key = ?", Integer.class, companyId, key);
     }
 
     private String cnpjOf(String companyId) {
@@ -811,7 +828,7 @@ class RecoveryAndSyncQueueIntegrationTest {
             List<String> companies = jdbc.queryForList("SELECT id FROM companies WHERE accounting_firm_id = ?", String.class, firm);
             jdbc.update("DELETE FROM recovery_tasks WHERE accounting_firm_id = ?", firm);
             for (String company : companies) {
-                jdbc.update("DELETE i FROM fiscal_xml_document_items i JOIN fiscal_xml_documents d ON d.id = i.document_id WHERE d.company_id = ?", company);
+                jdbc.update("DELETE i FROM fiscal_document_items i JOIN fiscal_documents d ON d.id = i.document_id WHERE d.company_id = ?", company);
                 for (int pass = 0; pass < 3; pass++) {
                     for (String table : jdbc.queryForList("SELECT DISTINCT table_name FROM information_schema.columns WHERE table_schema = DATABASE()"
                             + " AND column_name = 'company_id' AND table_name NOT IN ('companies')", String.class)) {

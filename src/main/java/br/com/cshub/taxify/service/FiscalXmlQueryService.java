@@ -1,12 +1,9 @@
 package br.com.cshub.taxify.service;
 
-import br.com.cshub.taxify.service.fiscalcheck.OperationCfops;
-import br.com.cshub.taxify.domain.fiscalrule.ProductRules;
 import br.com.cshub.taxify.common.IssuePeriod;
 import br.com.cshub.taxify.common.RequestIds;
-import br.com.cshub.taxify.domain.fiscalrule.ProductFiscalRule;
-import br.com.cshub.taxify.repository.ProductFiscalRuleRepository;
-import br.com.cshub.taxify.service.fiscalcheck.ProductRuleCheck;
+import br.com.cshub.taxify.common.SortProperties;
+import br.com.cshub.taxify.exception.BadRequestException;
 
 import br.com.cshub.taxify.integration.sieg.FiscalXmlFileStorage;
 import br.com.cshub.taxify.dto.fiscalxml.FiscalXmlEventDTO;
@@ -17,25 +14,27 @@ import br.com.cshub.taxify.dto.fiscalxml.FiscalXmlTotalsDTO;
 import br.com.cshub.taxify.common.MessageService;
 import br.com.cshub.taxify.common.TenantAccessService;
 import br.com.cshub.taxify.domain.company.Company;
-import br.com.cshub.taxify.domain.xml.FiscalXmlDocument;
-import br.com.cshub.taxify.domain.xml.FiscalXmlDocumentItem;
-import br.com.cshub.taxify.domain.xml.FiscalXmlHeaderExtras;
+import br.com.cshub.taxify.domain.fiscaldocument.DocumentSourceKey;
+import br.com.cshub.taxify.domain.fiscaldocument.FiscalDocument;
+import br.com.cshub.taxify.domain.fiscaldocument.GoodsInvoice;
+import br.com.cshub.taxify.mapper.fiscaldocument.FiscalXmlApiMapper;
+import br.com.cshub.taxify.mapper.fiscaldocument.LegacySourceNames;
+import br.com.cshub.taxify.repository.FiscalDocumentItemRepository;
+import br.com.cshub.taxify.repository.FiscalDocumentRepository;
+import br.com.cshub.taxify.repository.GoodsInvoiceRepository;
+import org.springframework.data.domain.PageRequest;
+import java.util.SortedSet;
+import java.util.TreeSet;
+import java.util.function.Function;
+import java.util.stream.Collectors;
 import br.com.cshub.taxify.dto.PageRequestDTO;
-import br.com.cshub.taxify.dto.fiscalxml.FiscalXmlDestinatarioDTO;
 import br.com.cshub.taxify.dto.fiscalxml.FiscalXmlDetailDTO;
-import br.com.cshub.taxify.dto.fiscalxml.FiscalXmlEmitenteDTO;
-import br.com.cshub.taxify.dto.fiscalxml.FiscalXmlEnderecoDTO;
-import br.com.cshub.taxify.dto.fiscalxml.FiscalXmlIdentificacaoDTO;
-import br.com.cshub.taxify.dto.fiscalxml.FiscalXmlImpostoItemDTO;
 import br.com.cshub.taxify.dto.fiscalxml.FiscalXmlProdutoDTO;
 import br.com.cshub.taxify.dto.fiscalxml.FiscalXmlSummaryDTO;
-import br.com.cshub.taxify.dto.fiscalxml.FiscalXmlTotaisDTO;
 import br.com.cshub.taxify.dto.fiscalxml.XmlSearchFilterDTO;
 import br.com.cshub.taxify.exception.ResourceNotFoundException;
 import br.com.cshub.taxify.integration.sieg.FiscalXmlMetadata;
 import br.com.cshub.taxify.integration.sieg.FiscalXmlMetadataParser;
-import br.com.cshub.taxify.repository.FiscalXmlDocumentItemRepository;
-import br.com.cshub.taxify.repository.FiscalXmlDocumentRepository;
 import br.com.cshub.taxify.validation.CompanyValidation;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
@@ -68,26 +67,27 @@ public class FiscalXmlQueryService {
 
     private final FiscalXmlEventService eventService;
     private final FiscalXmlFileStorage fileStorage;
-    private final ProductFiscalRuleRepository ruleRepository;
     private final DocumentDivergenceService divergenceService;
 
-    private final FiscalXmlDocumentRepository documentRepository;
-    private final FiscalXmlDocumentItemRepository itemRepository;
+    private final FiscalDocumentRepository documentRepository;
+    private final GoodsInvoiceRepository goodsInvoiceRepository;
+    private final FiscalDocumentItemRepository itemRepository;
     private final FiscalXmlMetadataParser metadataParser;
     private final CompanyValidation companyValidation;
     private final TenantAccessService tenantAccessService;
     private final MessageService messageService;
 
-    public FiscalXmlQueryService(FiscalXmlDocumentRepository documentRepository, FiscalXmlDocumentItemRepository itemRepository,
+    public FiscalXmlQueryService(FiscalDocumentRepository documentRepository, GoodsInvoiceRepository goodsInvoiceRepository,
+                                 FiscalDocumentItemRepository itemRepository,
                                  FiscalXmlMetadataParser metadataParser, CompanyValidation companyValidation,
                                  TenantAccessService tenantAccessService, MessageService messageService,
                                  FiscalXmlEventService eventService, FiscalXmlFileStorage fileStorage,
-                                 ProductFiscalRuleRepository ruleRepository, DocumentDivergenceService divergenceService) {
-        this.ruleRepository = ruleRepository;
+                                 DocumentDivergenceService divergenceService) {
         this.divergenceService = divergenceService;
         this.fileStorage = fileStorage;
         this.eventService = eventService;
         this.documentRepository = documentRepository;
+        this.goodsInvoiceRepository = goodsInvoiceRepository;
         this.itemRepository = itemRepository;
         this.metadataParser = metadataParser;
         this.companyValidation = companyValidation;
@@ -104,14 +104,14 @@ public class FiscalXmlQueryService {
 
         FiscalXmlTotalsDTO.DirectionTotals inbound = FiscalXmlTotalsDTO.DirectionTotals.empty();
         FiscalXmlTotalsDTO.DirectionTotals outbound = FiscalXmlTotalsDTO.DirectionTotals.empty();
-        for (Object[] row : documentRepository.totalsByDirection(company.getId(), from, to)) {
+        for (Object[] row : goodsInvoiceRepository.totalsByDirection(company.getId(), from, to)) {
             FiscalXmlTotalsDTO.DirectionTotals totals = new FiscalXmlTotalsDTO.DirectionTotals(((Number) row[1]).longValue(),
                     decimal(row[2]), decimal(row[3]), decimal(row[4]), decimal(row[5]), decimal(row[6]), decimal(row[7]),
                     ((Number) row[8]).longValue());
             if (row[0] == FiscalDirection.OUTBOUND) {
                 outbound = totals;
             } else {
-                inbound = totals; // INBOUND, or a legacy row the backfill hasn't reached yet
+                inbound = totals; // INBOUND, or a legacy row without direction
             }
         }
         return new FiscalXmlTotalsDTO(inbound, outbound);
@@ -144,10 +144,24 @@ public class FiscalXmlQueryService {
     /** A note in one source and not in the other for this long counts as a difference (SIEG x SEFAZ). */
     public static final long SOURCE_COMPARISON_HOURS = 48;
 
+    /** The sort of the list by the old property names too (the entity of the screen was renamed, FD-RN-23). */
+    /**
+     * {@code sort=} names of the old entity (and of the API) -> properties of the model. {@code documentType} sorts by
+     * the model (55 NF-e, 57 CT-e, 65 NFC-e - the discriminator is no property) and {@code ownIssue} by the company's
+     * role; anything else unknown is a 400, as in the CRUD base ({@link SortProperties}).
+     */
+    static final Map<String, String> LEGACY_SORT = Map.ofEntries(
+            Map.entry("numero", "number"), Map.entry("modelo", "model"), Map.entry("serie", "series"),
+            Map.entry("valorTotalNota", "totalAmount"), Map.entry("emitenteNome", "issuer.name"),
+            Map.entry("destinatarioNome", "recipient.name"), Map.entry("naturezaOperacao", "operationNature"),
+            Map.entry("documentType", "model"), Map.entry("reviewStatus", "review.status"),
+            Map.entry("issuerCnpj", "issuer.document"), Map.entry("recipientCnpj", "recipient.document"),
+            Map.entry("ownIssue", "companyRole"), Map.entry("tipoOperacao", "header.operationType"));
+
     @Transactional(readOnly = true)
     public Page<FiscalXmlSummaryDTO> search(XmlSearchFilterDTO filter) {
         Company company = companyValidation.checkExist(RequestIds.parse(filter.companyId(), messageService));
-        Pageable pageable = PageRequestDTO.toPageable(filter.pagination(), "issueDate", Sort.Direction.DESC);
+        Pageable pageable = withCurrentSortNames(PageRequestDTO.toPageable(filter.pagination(), "issueDate", Sort.Direction.DESC));
 
         LocalDateTime from = IssuePeriod.start(filter.dataEmissaoInicio());
         LocalDateTime to = IssuePeriod.end(filter.dataEmissaoFim());
@@ -156,24 +170,28 @@ public class FiscalXmlQueryService {
         String numero = filter.numero() == null ? "" : filter.numero().replaceAll("\\D", "").replaceFirst("^0+(?=\\d)", "");
 
         LocalDateTime comparisonCutoff = LocalDateTime.now().minusHours(SOURCE_COMPARISON_HOURS);
-        String origem = filter.origem() == null || filter.origem().isBlank() ? null : filter.origem().strip();
+        DocumentSourceKey origem = filter.origem() == null || filter.origem().isBlank() ? null : sourceOf(filter.origem().strip());
+        if (filter.origem() != null && !filter.origem().isBlank() && origem == null) {
+            return Page.empty(pageable); // an origin that never existed matches no note, as before
+        }
         String cfopFilter = filter.cfop() == null ? "" : filter.cfop().replaceAll("\\D", "");
-        java.util.function.Function<Pageable, Page<FiscalXmlDocument>> query = page -> documentRepository.search(company.getId(), from, to,
+        Function<Pageable, Page<FiscalDocument>> query = page -> documentRepository.search(company.getId(), from, to,
                 numero.isEmpty() ? null : numero, filter.direction(), participantPattern(filter.participant()),
                 filter.reviewStatus(), origem,
                 XmlSearchFilterDTO.ONLY_SIEG.equals(filter.fonte()) ? comparisonCutoff : null,
                 XmlSearchFilterDTO.ONLY_SEFAZ.equals(filter.fonte()) ? comparisonCutoff : null,
                 cfopFilter.isEmpty() ? null : cfopFilter,
+                DocumentSourceKey.SIEG, DocumentSourceKey.SEFAZ_DFE,
                 page);
 
-        Page<FiscalXmlDocument> documents;
+        Page<FiscalDocument> documents;
         Map<UUID, FiscalXmlSummaryDTO.DivergenceSummary> divergences;
         if (filter.onlyDivergent()) {
             // The checks run in memory, so the filter does too: every note matching the other
             // filters is checked, the divergent ones are kept and paged here.
-            List<FiscalXmlDocument> all = query.apply(Pageable.unpaged(pageable.getSort())).getContent();
+            List<FiscalDocument> all = query.apply(Pageable.unpaged(pageable.getSort())).getContent();
             divergences = divergenceService.summarize(company.getId(), all);
-            List<FiscalXmlDocument> divergent = all.stream()
+            List<FiscalDocument> divergent = all.stream()
                     .filter(document -> divergences.containsKey(document.getId()) || document.getReviewStatus() == ReviewStatus.DIVERGENT)
                     .toList();
             int start = (int) Math.min(pageable.getOffset(), divergent.size());
@@ -185,53 +203,48 @@ public class FiscalXmlQueryService {
         }
 
         Map<UUID, Long> itemCounts = new HashMap<>();
-        Map<UUID, java.util.SortedSet<String>> cfops = new HashMap<>();
+        Map<UUID, SortedSet<String>> cfops = new HashMap<>();
         if (documents.hasContent()) {
-            List<UUID> ids = documents.getContent().stream().map(FiscalXmlDocument::getId).toList();
+            List<UUID> ids = documents.getContent().stream().map(FiscalDocument::getId).toList();
             for (Object[] row : itemRepository.countByDocumentIds(ids)) {
                 itemCounts.put((UUID) row[0], (Long) row[1]);
             }
-            Map<UUID, FiscalXmlDocument> byId = documents.getContent().stream()
-                    .collect(java.util.stream.Collectors.toMap(FiscalXmlDocument::getId, d -> d));
-            ProductRules rules = rulesIfAnyRectified(company.getId(), documents.getContent());
-            for (Object[] row : itemRepository.findDistinctCfopsByDocumentIds(ids)) {
+            // FD-RN-57: the CFOP of the version in effect, as stored - the one the filter finds and the exported
+            // rectified file has
+            for (Object[] row : itemRepository.findDistinctEffectiveCfopsByDocumentIds(ids)) {
                 UUID documentId = (UUID) row[0];
-                ProductFiscalRule rule = rules.find((String) row[1], ProductRules.supplierOf(byId.get(documentId))).orElse(null);
-                String cfop = effectiveCfop(byId.get(documentId), rule, (String) row[2]);
+                String cfop = ((String) row[1]).strip();
                 if (!cfop.isEmpty()) {
-                    cfops.computeIfAbsent(documentId, id -> new java.util.TreeSet<>()).add(cfop);
+                    cfops.computeIfAbsent(documentId, id -> new TreeSet<>()).add(cfop);
                 }
             }
         }
 
-        return documents.map(document -> toSummary(document, itemCounts.getOrDefault(document.getId(), 0L),
-                List.copyOf(cfops.getOrDefault(document.getId(), new java.util.TreeSet<>())), divergences.get(document.getId())));
+        return documents.map(document -> FiscalXmlApiMapper.toSummary(document, itemCounts.getOrDefault(document.getId(), 0L),
+                List.copyOf(cfops.getOrDefault(document.getId(), new TreeSet<>())), divergences.get(document.getId())));
     }
 
-    /** The company's rules by product code - only read when some note of the page has a rectified version. */
-    private ProductRules rulesIfAnyRectified(UUID companyId, List<FiscalXmlDocument> documents) {
-        if (documents.stream().noneMatch(document -> document.getRectifiedFilePath() != null)) {
-            return ProductRules.none();
+    /** {@code origem} of the API (SIEG, SEFAZ_DIST, UPLOAD) as the source of the model; null when it is no valid source. */
+    private static DocumentSourceKey sourceOf(String origem) {
+        try {
+            return LegacySourceNames.toSource(origem);
+        } catch (IllegalArgumentException invalid) {
+            return null;
         }
-        return ProductRules.of(ruleRepository.findByCompany_IdAndDeletedIsFalse(companyId));
     }
 
-    /**
-     * The item's CFOP as the note stands now: a rectified version built with the current rule
-     * rewrote it to the rule's CFOP (the item column keeps what was issued).
-     */
-    private static String effectiveCfop(FiscalXmlDocument document, ProductFiscalRule rule, String issued) {
-        if (rule != null && rule.getCorrectCfop() != null && ProductRuleCheck.rectifiedUnder(document, rule)) {
-            return OperationCfops.forOperation(rule.getCorrectCfop(), document.getDestinoOperacao()).strip();
-        }
-        return issued.strip();
+    /** The sort with the old names translated and checked on the goods invoice (its properties include the common ones). */
+    private Pageable withCurrentSortNames(Pageable pageable) {
+        return SortProperties.resolve(pageable, GoodsInvoice.class, LEGACY_SORT)
+                .orElseThrow(() -> new BadRequestException(BadRequestException.DEFAULT_CODE,
+                        messageService.getMessage(BadRequestException.DEFAULT_CODE)));
     }
 
-    /** First parser version that stores every header field the detail shows ({@link FiscalXmlHeaderExtras}). */
+    /** First parser version that stores every header field the detail shows (the header and country columns). */
     private static final int HEADER_EXTRAS_VERSION = 4;
 
     /**
-     * Built from the stored columns - no file read - for NFes saved (or backfilled) by
+     * Built from the stored columns - no file read - for NF-e and NFC-e saved (or backfilled) by
      * parser version 4 on, which keeps every header field shown on screen. Older notes and
      * other document types parse the original file; when it is gone (purged by
      * FiscalXmlPurgeScheduler), they fall back to the columns too, just without the few
@@ -239,9 +252,10 @@ public class FiscalXmlQueryService {
      */
     @Transactional(readOnly = true)
     public FiscalXmlDetailDTO findDetail(UUID documentId) {
-        FiscalXmlDocument document = findDocument(documentId);
+        FiscalDocument document = findDocument(documentId);
+        long itemCount = itemRepository.countByDocument_Id(document.getId());
         if (hasAllHeaderColumns(document)) {
-            return detailFromColumns(document);
+            return FiscalXmlApiMapper.detailFromColumns(document, itemCount);
         }
 
         byte[] xmlBytes;
@@ -249,42 +263,18 @@ public class FiscalXmlQueryService {
             xmlBytes = fileStorage.read(document.getXmlFilePath());
         } catch (IOException e) {
             log.info("XML file '{}' for document {} not readable, building detail from stored columns", document.getXmlFilePath(), document.getId());
-            return detailFromColumns(document);
+            return FiscalXmlApiMapper.detailFromColumns(document, itemCount);
         }
         FiscalXmlMetadata metadata = metadataParser.parse(xmlBytes);
-
-        return new FiscalXmlDetailDTO(
-                document.getId(),
-                document.getCompany().getId(),
-                metadata.accessKey(),
-                metadata.documentType(),
-                metadata.issuerCnpj(),
-                metadata.recipientCnpj(),
-                metadata.issueDate(),
-                document.getRectifiedFilePath() != null,
-                itemRepository.countByDocument_Id(document.getId()),
-                metadata.identificacao(),
-                metadata.emitente(),
-                metadata.destinatario(),
-                metadata.totais(),
-                document.getDirection(),
-                document.isOwnIssue(),
-                document.getStatus(),
-                document.getCanceledAt(),
-                document.getReviewStatus(),
-                document.getReviewedAt(),
-                document.getReviewedBy(),
-                document.getReviewNote()
-        ,
-                document.getSourceSystem(), document.getFoundInSiegAt(), document.getFoundInSefazAt());
+        return FiscalXmlApiMapper.detailFromFile(document, metadata, itemCount);
     }
 
     /** The items as issued (the DANFE prints these). */
     @Transactional(readOnly = true)
     public List<FiscalXmlProdutoDTO> findProdutos(UUID documentId) {
-        FiscalXmlDocument document = findDocument(documentId);
-        return itemRepository.findByDocument_IdOrderByNumeroItemAsc(document.getId()).stream()
-                .map(this::toProduto)
+        FiscalDocument document = findDocument(documentId);
+        return itemRepository.findByDocument_IdOrderByItemNumberAsc(document.getId()).stream()
+                .map(FiscalXmlApiMapper::toProduto)
                 .toList();
     }
 
@@ -294,14 +284,13 @@ public class FiscalXmlQueryService {
      */
     @Transactional(readOnly = true)
     public List<FiscalXmlProdutoDTO> findProdutosAsRectified(UUID documentId) {
-        FiscalXmlDocument document = findDocument(documentId);
-        ProductRules rules = rulesIfAnyRectified(document.getCompany().getId(), List.of(document));
-        return itemRepository.findByDocument_IdOrderByNumeroItemAsc(document.getId()).stream()
+        FiscalDocument document = findDocument(documentId);
+        // FD-RN-57: the stored effective CFOP - the rectified file's, the same the list shows and the filter finds
+        return itemRepository.findByDocument_IdOrderByItemNumberAsc(document.getId()).stream()
                 .map(item -> {
-                    FiscalXmlProdutoDTO produto = toProduto(item);
-                    ProductFiscalRule rule = rules.forItem(item).orElse(null);
-                    return item.getCfop() == null ? produto
-                            : produto.withRectifiedCfop(effectiveCfop(document, rule, item.getCfop()));
+                    FiscalXmlProdutoDTO produto = FiscalXmlApiMapper.toProduto(item);
+                    String effective = item.getEffectiveCfop() == null ? item.cfop() : item.getEffectiveCfop();
+                    return item.cfop() == null ? produto : produto.withRectifiedCfop(effective.strip());
                 })
                 .toList();
     }
@@ -312,21 +301,22 @@ public class FiscalXmlQueryService {
     /** {@code rectified}: serves the corrected file when one exists, falling back to the original. */
     @Transactional(readOnly = true)
     public StoredXml findXml(UUID documentId, boolean rectified) {
-        FiscalXmlDocument document = findDocument(documentId);
-        String path = rectified && document.getRectifiedFilePath() != null
-                ? document.getRectifiedFilePath() : document.getXmlFilePath();
+        FiscalDocument document = findDocument(documentId);
+        String path = rectified && document instanceof GoodsInvoice goods && goods.getRectifiedFilePath() != null
+                ? goods.getRectifiedFilePath() : document.getXmlFilePath();
         String baseName = document.accessKeyOrId();
         return new StoredXml(baseName + ".xml", readFile(document, path));
     }
 
-    private FiscalXmlDocument findDocument(UUID documentId) {
-        FiscalXmlDocument document = documentRepository.findFirstByIdAndDeletedIsFalse(documentId)
+    /** An NF-e, NFC-e or CT-e the user can see - an NFS-e id, or another company's note, is "not found" (FD-RN-17). */
+    private FiscalDocument findDocument(UUID documentId) {
+        FiscalDocument document = documentRepository.findXmlDocument(documentId)
                 .orElseThrow(() -> new ResourceNotFoundException("error.entity.not.found", messageService.getMessage("error.entity.not.found")));
         tenantAccessService.assertCompanyAccess(document.getCompany());
         return document;
     }
 
-    private byte[] readFile(FiscalXmlDocument document, String path) {
+    private byte[] readFile(FiscalDocument document, String path) {
         try {
             return fileStorage.read(path);
         } catch (IOException e) {
@@ -335,112 +325,9 @@ public class FiscalXmlQueryService {
         }
     }
 
-    private boolean hasAllHeaderColumns(FiscalXmlDocument document) {
-        return "NFE".equals(document.getDocumentType())
+    private boolean hasAllHeaderColumns(FiscalDocument document) {
+        return document instanceof GoodsInvoice
                 && document.getMetadataVersion() != null
                 && document.getMetadataVersion() >= HEADER_EXTRAS_VERSION;
-    }
-
-    private FiscalXmlDetailDTO detailFromColumns(FiscalXmlDocument d) {
-        FiscalXmlHeaderExtras x = d.getHeaderExtras() != null ? d.getHeaderExtras()
-                : new FiscalXmlHeaderExtras(null, null, null, null, null, null, null, null, null);
-        FiscalXmlIdentificacaoDTO identificacao = new FiscalXmlIdentificacaoDTO(
-                d.getCodigoUf(), d.getNaturezaOperacao(), d.getModelo(), d.getSerie(), d.getNumero(),
-                d.getIssueDate(), d.getDataSaidaEntrada(), d.getTipoOperacao(), d.getDestinoOperacao(),
-                d.getCodigoMunicipioFatoGerador(), x.tipoImpressao(), x.tipoEmissao(), x.digitoVerificador(),
-                d.getAmbiente(), d.getFinalidadeEmissao(), d.getConsumidorFinal(), d.getIndicadorPresenca(),
-                x.processoEmissao(), x.versaoProcessoEmissao());
-
-        FiscalXmlEmitenteDTO emitente = new FiscalXmlEmitenteDTO(
-                d.getIssuerCnpj(), d.getEmitenteCpf(), d.getEmitenteNome(), d.getEmitenteNomeFantasia(),
-                d.getEmitenteInscricaoEstadual(), d.getEmitenteInscricaoEstadualSubstitutoTributario(),
-                d.getEmitenteInscricaoMunicipal(), d.getEmitenteCnae(), d.getEmitenteRegimeTributario(),
-                new FiscalXmlEnderecoDTO(d.getEmitenteLogradouro(), d.getEmitenteEnderecoNumero(), d.getEmitenteComplemento(),
-                        d.getEmitenteBairro(), d.getEmitenteCodigoMunicipio(), d.getEmitenteMunicipio(), d.getEmitenteUf(),
-                        d.getEmitenteCep(), x.emitenteCodigoPais(), x.emitentePais(), d.getEmitenteTelefone()));
-
-        FiscalXmlDestinatarioDTO destinatario = new FiscalXmlDestinatarioDTO(
-                d.getRecipientCnpj(), d.getDestinatarioCpf(), d.getDestinatarioIdEstrangeiro(), d.getDestinatarioNome(),
-                d.getDestinatarioInscricaoEstadual(), d.getDestinatarioIndicadorIe(), d.getDestinatarioEmail(),
-                new FiscalXmlEnderecoDTO(d.getDestinatarioLogradouro(), d.getDestinatarioEnderecoNumero(), d.getDestinatarioComplemento(),
-                        d.getDestinatarioBairro(), d.getDestinatarioCodigoMunicipio(), d.getDestinatarioMunicipio(), d.getDestinatarioUf(),
-                        d.getDestinatarioCep(), x.destinatarioCodigoPais(), x.destinatarioPais(), d.getDestinatarioTelefone()));
-
-        FiscalXmlTotaisDTO totais = new FiscalXmlTotaisDTO(
-                d.getBaseCalculoIcms(), d.getValorIcms(), d.getValorIcmsDesonerado(), d.getValorFcp(),
-                d.getBaseCalculoIcmsSt(), d.getValorIcmsSt(), d.getValorFcpSt(), d.getValorProdutos(),
-                d.getValorFrete(), d.getValorSeguro(), d.getValorDesconto(), d.getValorImportacao(),
-                d.getValorIpi(), d.getValorPis(), d.getValorCofins(), d.getValorOutrasDespesas(),
-                d.getValorTotalNota(), d.getValorAproximadoTributos(), d.getIbsCbsTotals());
-
-        return new FiscalXmlDetailDTO(d.getId(), d.getCompany().getId(), d.getAccessKey(), d.getDocumentType(),
-                d.getIssuerCnpj(), d.getRecipientCnpj(), d.getIssueDate(), d.getRectifiedFilePath() != null,
-                itemRepository.countByDocument_Id(d.getId()), identificacao, emitente, destinatario, totais,
-                d.getDirection(), d.isOwnIssue(), d.getStatus(), d.getCanceledAt(),
-                d.getReviewStatus(), d.getReviewedAt(), d.getReviewedBy(), d.getReviewNote(),
-                d.getSourceSystem(), d.getFoundInSiegAt(), d.getFoundInSefazAt());
-    }
-
-    private FiscalXmlSummaryDTO toSummary(FiscalXmlDocument document, long quantidadeItens, List<String> cfops,
-                                          FiscalXmlSummaryDTO.DivergenceSummary divergencias) {
-        return new FiscalXmlSummaryDTO(
-                document.getId(),
-                document.getAccessKey(),
-                document.getDocumentType(),
-                document.getIssueDate(),
-                document.getModelo(),
-                document.getSerie(),
-                document.getNumero(),
-                document.getTipoOperacao(),
-                document.getNaturezaOperacao(),
-                document.getEmitenteNome(),
-                document.getIssuerCnpj(),
-                document.getEmitenteCpf(),
-                document.getDestinatarioNome(),
-                document.getRecipientCnpj(),
-                document.getDestinatarioCpf(),
-                document.getValorTotalNota(),
-                quantidadeItens,
-                document.getRectifiedFilePath() != null,
-                document.getDirection(),
-                document.isOwnIssue(),
-                document.getStatus(),
-                document.getReviewStatus(),
-                cfops,
-                document.getSourceSystem(),
-                divergencias
-        );
-    }
-
-    private FiscalXmlProdutoDTO toProduto(FiscalXmlDocumentItem item) {
-        return new FiscalXmlProdutoDTO(
-                item.getNumeroItem(),
-                item.getCodigo(),
-                item.getCodigoBarras(),
-                item.getDescricao(),
-                item.getNcm(),
-                item.getCfop(),
-                item.getUnidadeComercial(),
-                item.getQuantidadeComercial(),
-                item.getValorUnitarioComercial(),
-                item.getValorTotal(),
-                item.getUnidadeTributavel(),
-                item.getQuantidadeTributavel(),
-                item.getValorUnitarioTributavel(),
-                new FiscalXmlImpostoItemDTO(
-                        item.getSituacaoTributariaIcms(),
-                        item.getBaseCalculoIcms(),
-                        item.getAliquotaIcms(),
-                        item.getValorIcms(),
-                        item.getSituacaoTributariaIpi(),
-                        item.getValorIpi(),
-                        item.getSituacaoTributariaPis(),
-                        item.getValorPis(),
-                        item.getSituacaoTributariaCofins(),
-                        item.getValorCofins(),
-                        item.getTaxDetail(),
-                        item.getIbsCbs()
-                )
-        );
     }
 }

@@ -3,7 +3,7 @@ package br.com.cshub.taxify.service;
 import br.com.cshub.taxify.common.RequestIds;
 import br.com.cshub.taxify.common.MessageService;
 import br.com.cshub.taxify.dto.fiscalrule.CompanyProductDTO;
-import br.com.cshub.taxify.repository.FiscalXmlDocumentItemRepository;
+import br.com.cshub.taxify.repository.FiscalDocumentItemRepository;
 import br.com.cshub.taxify.repository.ProductFiscalRuleRepository;
 import br.com.cshub.taxify.validation.CompanyValidation;
 import org.springframework.data.domain.PageRequest;
@@ -26,12 +26,12 @@ public class CompanyProductService {
 
     private static final int MAX_RESULTS = 20;
 
-    private final FiscalXmlDocumentItemRepository itemRepository;
+    private final FiscalDocumentItemRepository itemRepository;
     private final ProductFiscalRuleRepository ruleRepository;
     private final CompanyValidation companyValidation;
     private final MessageService messageService;
 
-    public CompanyProductService(FiscalXmlDocumentItemRepository itemRepository, ProductFiscalRuleRepository ruleRepository,
+    public CompanyProductService(FiscalDocumentItemRepository itemRepository, ProductFiscalRuleRepository ruleRepository,
                                  CompanyValidation companyValidation, MessageService messageService) {
         this.itemRepository = itemRepository;
         this.ruleRepository = ruleRepository;

@@ -6,6 +6,9 @@ import br.com.cshub.taxify.domain.document.Document;
 import br.com.cshub.taxify.domain.plan.Plan;
 import br.com.cshub.taxify.domain.subscription.Subscription;
 import br.com.cshub.taxify.domain.xml.FiscalXmlSyncControl;
+import br.com.cshub.taxify.enumerated.CaptureSide;
+import br.com.cshub.taxify.support.InMemoryCaptureCounts;
+import java.time.YearMonth;
 import br.com.cshub.taxify.enumerated.DocumentTypeEnum;
 import br.com.cshub.taxify.enumerated.PlanServiceEnum;
 import br.com.cshub.taxify.integration.fiscalxml.FiscalXmlProvider;
@@ -56,6 +59,8 @@ class FiscalXmlSyncSchedulerTest {
 
     private FiscalXmlSyncProperties properties;
     private FiscalXmlSyncScheduler scheduler;
+    /** The capture counts per side and month (FD-RN-32) - the counter columns the old control row had. */
+    private final InMemoryCaptureCounts counts = new InMemoryCaptureCounts();
 
     private Company companyA;
     private Company companyB;
@@ -68,7 +73,7 @@ class FiscalXmlSyncSchedulerTest {
         properties = new FiscalXmlSyncProperties();
         properties.setBatchSize(2);
         scheduler = new FiscalXmlSyncScheduler(companyRepository, syncControlRepository, subscriptionRepository,
-                Map.of("sieg", provider), properties, br.com.cshub.taxify.service.firmaccess.FirmAccessTestSupport.allowAll());
+                Map.of("sieg", provider), properties, br.com.cshub.taxify.service.firmaccess.FirmAccessTestSupport.allowAll(), counts.service());
 
         companyA = companyWithId("00000000-0000-0000-0000-00000000000a");
         companyB = companyWithId("00000000-0000-0000-0000-00000000000b");
@@ -115,8 +120,7 @@ class FiscalXmlSyncSchedulerTest {
         verify(syncControlRepository).save(captor.capture());
         FiscalXmlSyncControl saved = captor.getValue();
         assertThat(saved.getCompany().getId()).isEqualTo(companyA.getId());
-        assertThat(saved.getTotalSieg()).isZero();
-        assertThat(saved.getTotalImported()).isZero();
+        assertThat(counts.rows()).as("the counts start empty (capture_period_counts)").isEmpty();
         verifyNoInteractions(provider);
     }
 
@@ -128,7 +132,7 @@ class FiscalXmlSyncSchedulerTest {
         companyA.setAccountingFirm(firm);
         java.util.Set<UUID> blocked = new java.util.HashSet<>(java.util.Set.of(firm.getId()));
         FiscalXmlSyncScheduler gated = new FiscalXmlSyncScheduler(companyRepository, syncControlRepository, subscriptionRepository,
-                Map.of("sieg", provider), properties, br.com.cshub.taxify.service.firmaccess.FirmAccessTestSupport.blocking(blocked));
+                Map.of("sieg", provider), properties, br.com.cshub.taxify.service.firmaccess.FirmAccessTestSupport.blocking(blocked), counts.service());
         when(companyRepository.findAll()).thenReturn(List.of(companyA));
         when(syncControlRepository.findAllCompanyIds()).thenReturn(List.of());
         when(syncControlRepository.findAllWithCompany()).thenReturn(List.of());
@@ -190,11 +194,8 @@ class FiscalXmlSyncSchedulerTest {
     void issuedSideUsesItsOwnCountersAndIsSyncedEvenWhenReceivedIsCaughtUp() {
         properties.setReferenceDate(LocalDate.of(2026, 8, 15));
         FiscalXmlSyncControl control = controlFor(companyA, 200);
-        control.setTotalSieg(200);
-        control.setLastCheckedAt(LocalDate.of(2026, 8, 15).atTime(9, 0));
-        control.setIssuedTotalSieg(30);
-        control.setIssuedTotalImported(12);
-        control.setIssuedCheckedAt(LocalDate.of(2026, 8, 14).atTime(9, 0));
+        received(companyA, 200, 200, LocalDate.of(2026, 8, 15).atTime(9, 0));
+        issued(companyA, 30, 12, LocalDate.of(2026, 8, 14).atTime(9, 0));
         when(companyRepository.findAll()).thenReturn(List.of(companyA));
         when(syncControlRepository.findAllCompanyIds()).thenReturn(List.of(companyA.getId()));
         when(syncControlRepository.findAllWithCompany()).thenReturn(List.of(control));
@@ -232,11 +233,8 @@ class FiscalXmlSyncSchedulerTest {
     void skipsTheProviderCallWhenAlreadyFullyImportedForToday() {
         properties.setReferenceDate(LocalDate.of(2026, 8, 15));
         FiscalXmlSyncControl caughtUp = controlFor(companyA, 200);
-        caughtUp.setTotalSieg(200);
-        caughtUp.setLastCheckedAt(LocalDate.of(2026, 8, 15).atTime(9, 0));
-        caughtUp.setIssuedTotalSieg(40);
-        caughtUp.setIssuedTotalImported(40);
-        caughtUp.setIssuedCheckedAt(LocalDate.of(2026, 8, 15).atTime(9, 0));
+        received(companyA, 200, 200, LocalDate.of(2026, 8, 15).atTime(9, 0));
+        issued(companyA, 40, 40, LocalDate.of(2026, 8, 15).atTime(9, 0));
         caughtUp.setReceivedEventsCheckedOn(LocalDate.of(2026, 8, 15));
         caughtUp.setIssuedEventsCheckedOn(LocalDate.of(2026, 8, 15));
         caughtUp.setServiceInvoicesCheckedOn(LocalDate.of(2026, 8, 15));
@@ -276,8 +274,7 @@ class FiscalXmlSyncSchedulerTest {
     void checksAgainOnceTheCalendarDayChangesEvenIfAlreadyCaughtUp() {
         properties.setReferenceDate(LocalDate.of(2026, 8, 15));
         FiscalXmlSyncControl caughtUpYesterday = controlFor(companyA, 200);
-        caughtUpYesterday.setTotalSieg(200);
-        caughtUpYesterday.setLastCheckedAt(LocalDate.of(2026, 8, 14).atTime(23, 0));
+        received(companyA, 200, 200, LocalDate.of(2026, 8, 14).atTime(23, 0));
         when(companyRepository.findAll()).thenReturn(List.of(companyA));
         when(syncControlRepository.findAllCompanyIds()).thenReturn(List.of(companyA.getId()));
         when(syncControlRepository.findAllWithCompany()).thenReturn(List.of(caughtUpYesterday));
@@ -293,8 +290,7 @@ class FiscalXmlSyncSchedulerTest {
     void aZeroTotalNeverVerifiedIsCountedEvenWhenItsTimeIsToday() {
         properties.setReferenceDate(LocalDate.of(2026, 8, 15));
         FiscalXmlSyncControl neverPending = controlFor(companyA, 0);
-        neverPending.setTotalSieg(0);
-        neverPending.setLastCheckedAt(LocalDate.of(2026, 8, 15).atTime(9, 0));
+        received(companyA, 0, 0, LocalDate.of(2026, 8, 15).atTime(9, 0));
         when(companyRepository.findAll()).thenReturn(List.of(companyA));
         when(syncControlRepository.findAllCompanyIds()).thenReturn(List.of(companyA.getId()));
         when(syncControlRepository.findAllWithCompany()).thenReturn(List.of(neverPending));
@@ -308,7 +304,7 @@ class FiscalXmlSyncSchedulerTest {
     @Test
     void marksTheRequestAsKnownPendingWhenTotalImportadoIsAlreadyBelowTotalSieg() {
         FiscalXmlSyncControl pending = controlFor(companyA, 100);
-        pending.setTotalSieg(200);
+        received(companyA, 200, 100, LocalDateTime.now());
         when(companyRepository.findAll()).thenReturn(List.of(companyA));
         when(syncControlRepository.findAllCompanyIds()).thenReturn(List.of(companyA.getId()));
         when(syncControlRepository.findAllWithCompany()).thenReturn(List.of(pending));
@@ -445,7 +441,7 @@ class FiscalXmlSyncSchedulerTest {
 
         scheduler.syncAllCompanies(); // A, B
         FiscalXmlSyncScheduler restarted = new FiscalXmlSyncScheduler(companyRepository, syncControlRepository, subscriptionRepository,
-                Map.of("sieg", provider), properties, br.com.cshub.taxify.service.firmaccess.FirmAccessTestSupport.allowAll());
+                Map.of("sieg", provider), properties, br.com.cshub.taxify.service.firmaccess.FirmAccessTestSupport.allowAll(), counts.service());
         restarted.syncAllCompanies(); // C, D - not A, B again
 
         verify(provider, times(1)).sync(argThatCompanyId(companyA.getId()));
@@ -557,7 +553,7 @@ class FiscalXmlSyncSchedulerTest {
             }
         });
         FiscalXmlSyncScheduler second = new FiscalXmlSyncScheduler(companyRepository, syncControlRepository, subscriptionRepository,
-                Map.of("sieg", provider), properties, br.com.cshub.taxify.service.firmaccess.FirmAccessTestSupport.allowAll());
+                Map.of("sieg", provider), properties, br.com.cshub.taxify.service.firmaccess.FirmAccessTestSupport.allowAll(), counts.service());
         java.util.concurrent.atomic.AtomicBoolean interleaved = new java.util.concurrent.atomic.AtomicBoolean(false);
         when(syncControlRepository.findAllWithCompany()).thenAnswer(invocation -> {
             List<FiscalXmlSyncControl> snapshot = table.stream().map(this::copyOf).toList();
@@ -584,9 +580,6 @@ class FiscalXmlSyncSchedulerTest {
         FiscalXmlSyncControl copy = new FiscalXmlSyncControl();
         copy.setId(row.getId());
         copy.setCompany(row.getCompany());
-        copy.setTotalImported(row.getTotalImported());
-        copy.setLastCheckedAt(row.getLastCheckedAt());
-        copy.setIssuedCheckedAt(row.getIssuedCheckedAt());
         copy.setLastAttemptAt(row.getLastAttemptAt());
         return copy;
     }
@@ -599,7 +592,8 @@ class FiscalXmlSyncSchedulerTest {
     void aControlRowCreatedByAnotherInstanceDoesNotStopTheTick() {
         java.time.Clock fixed = java.time.Clock.fixed(java.time.Instant.parse("2026-12-01T12:00:00Z"), java.time.ZoneId.of("America/Recife"));
         FiscalXmlSyncScheduler clocked = new FiscalXmlSyncScheduler(companyRepository, syncControlRepository, subscriptionRepository,
-                Map.of("sieg", provider), properties, br.com.cshub.taxify.service.firmaccess.FirmAccessTestSupport.allowAll(), null, fixed);
+                Map.of("sieg", provider), properties, br.com.cshub.taxify.service.firmaccess.FirmAccessTestSupport.allowAll(), null, fixed, null, null,
+                counts.service());
         when(companyRepository.findAll()).thenReturn(List.of(companyA, companyB));
         when(syncControlRepository.findAllCompanyIds()).thenReturn(List.of());
         when(syncControlRepository.save(org.mockito.ArgumentMatchers.argThat(row -> row != null && row.getCompany() == companyA)))
@@ -612,7 +606,8 @@ class FiscalXmlSyncSchedulerTest {
         ArgumentCaptor<FiscalXmlSyncControl> saved = ArgumentCaptor.forClass(FiscalXmlSyncControl.class);
         verify(syncControlRepository, times(2)).save(saved.capture());
         assertThat(saved.getAllValues()).extracting(row -> row.getCompany().getId()).containsExactly(companyA.getId(), companyB.getId());
-        assertThat(saved.getAllValues().getLast().getLastCheckedAt()).isEqualTo(LocalDateTime.of(2026, 12, 1, 9, 0));
+        // the row no longer keeps a check time of its own: the counts go to capture_period_counts (FD-RN-32)
+        assertThat(counts.rows()).isEmpty();
         // the tick went on past the seeding
         verify(syncControlRepository).findAllWithCompany();
     }
@@ -623,7 +618,8 @@ class FiscalXmlSyncSchedulerTest {
         java.time.Clock fixed = java.time.Clock.fixed(java.time.Instant.parse("2026-12-01T12:00:00.123456789Z"),
                 java.time.ZoneId.of("America/Recife"));
         FiscalXmlSyncScheduler clocked = new FiscalXmlSyncScheduler(companyRepository, syncControlRepository, subscriptionRepository,
-                Map.of("sieg", provider), properties, br.com.cshub.taxify.service.firmaccess.FirmAccessTestSupport.allowAll(), null, fixed);
+                Map.of("sieg", provider), properties, br.com.cshub.taxify.service.firmaccess.FirmAccessTestSupport.allowAll(), null, fixed, null, null,
+                counts.service());
         when(companyRepository.findAll()).thenReturn(List.of(companyA));
         when(syncControlRepository.findAllCompanyIds()).thenReturn(List.of(companyA.getId()));
         FiscalXmlSyncControl row = controlFor(companyA, 0);
@@ -644,7 +640,7 @@ class FiscalXmlSyncSchedulerTest {
     void aNewCompanyGoesBeforeTheCheckedOnes() {
         properties.setBatchSize(1);
         FiscalXmlSyncControl checked = controlFor(companyA, 0);
-        checked.setIssuedCheckedAt(LocalDateTime.now().minusDays(3));
+        issued(companyA, null, null, LocalDateTime.now().minusDays(3));
         checked.setLastAttemptAt(LocalDateTime.now().minusDays(3));
         FiscalXmlSyncControl brandNew = controlFor(companyB, 0); // only the creation's ultimaVerificacaoEm
         when(companyRepository.findAll()).thenReturn(List.of(companyA, companyB));
@@ -656,20 +652,20 @@ class FiscalXmlSyncSchedulerTest {
 
         verify(provider, never()).sync(argThatCompanyId(companyA.getId()));
         verify(provider).sync(argThatCompanyId(companyB.getId()));
-        assertThat(brandNew.getVerifiedAt()).isNull();
+        assertThat(FiscalXmlSyncScheduler.verifiedAt(counts.service().siegLastChecks().get(companyB.getId()))).isNull();
     }
 
     /** Among rows never attempted (the ones that existed before V67), the oldest real verification goes first. */
     @Test
     void amongNeverAttemptedTheOldestVerificationGoesFirst() {
         FiscalXmlSyncControl recent = controlFor(companyA, 0);
-        recent.setIssuedCheckedAt(LocalDateTime.now().minusHours(1));
+        issued(companyA, null, null, LocalDateTime.now().minusHours(1));
         FiscalXmlSyncControl old = controlFor(companyB, 0);
-        old.setIssuedCheckedAt(LocalDateTime.now().minusDays(5));
+        issued(companyB, null, null, LocalDateTime.now().minusDays(5));
         FiscalXmlSyncControl never = controlFor(companyC, 0);
 
         List<FiscalXmlSyncControl> ordered = java.util.stream.Stream.of(recent, old, never)
-                .sorted(FiscalXmlSyncScheduler.queueOrder()).toList();
+                .sorted(FiscalXmlSyncScheduler.queueOrder(counts.service().siegLastChecks())).toList();
 
         assertThat(ordered).containsExactly(never, old, recent);
     }
@@ -696,16 +692,39 @@ class FiscalXmlSyncSchedulerTest {
                 controlFor(companyD, 0), controlFor(companyE, 0));
     }
 
+    /**
+     * The company's queue row and its received counts: {@code totalImportado} delivered, checked "now" (same month as
+     * LocalDate.now(), the default `today` when a test doesn't override referenceDate) so alreadyImportedCount/knownPending
+     * flow through unchanged by default - tests about month-rollover behavior set their own check time explicitly.
+     */
     private FiscalXmlSyncControl controlFor(Company company, int totalImportado) {
         FiscalXmlSyncControl control = new FiscalXmlSyncControl();
         control.setCompany(company);
-        control.setTotalImported(totalImportado);
-        // Last checked "now" (same month as LocalDate.now(), the default `today` when a
-        // test doesn't override referenceDate) so alreadyImportedCount/knownPending flow
-        // through unchanged by default - tests about month-rollover behavior set their
-        // own ultimaVerificacaoEm explicitly.
-        control.setLastCheckedAt(LocalDateTime.now());
+        received(company, null, totalImportado, LocalDateTime.now());
         return control;
+    }
+
+    /**
+     * The received side's counts as the old row had them (one set, no window written): SIEG's total ({@code null} =
+     * never counted), what SIEG delivered and when - in the row of the month of {@code checkedAt}.
+     */
+    private void received(Company company, Integer total, int imported, LocalDateTime checkedAt) {
+        side(company, CaptureSide.RECEIVED, total, imported, checkedAt);
+    }
+
+    /** The issued side's counts (see {@link #received}). */
+    private void issued(Company company, Integer total, Integer imported, LocalDateTime checkedAt) {
+        side(company, CaptureSide.ISSUED, total, imported == null ? 0 : imported, checkedAt);
+    }
+
+    private void side(Company company, CaptureSide side, Integer total, int imported, LocalDateTime checkedAt) {
+        counts.rows().removeIf(row -> row.getCompany() == company && row.getSide() == side);
+        br.com.cshub.taxify.domain.fiscaldocument.CapturePeriodCount row = new br.com.cshub.taxify.domain.fiscaldocument.CapturePeriodCount(
+                company, br.com.cshub.taxify.domain.fiscaldocument.ProviderKey.SIEG,
+                br.com.cshub.taxify.enumerated.FiscalDocumentType.NFE, side, YearMonth.from(checkedAt));
+        row.recordProviderCount(total, checkedAt);
+        row.recordImported(imported, checkedAt);
+        counts.rows().add(row);
     }
 
     private Subscription entitledSubscription() {

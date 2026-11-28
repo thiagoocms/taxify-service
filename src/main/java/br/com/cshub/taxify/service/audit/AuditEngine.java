@@ -2,8 +2,8 @@ package br.com.cshub.taxify.service.audit;
 
 import br.com.cshub.taxify.domain.company.Company;
 import br.com.cshub.taxify.domain.pendency.Pendency;
-import br.com.cshub.taxify.domain.xml.FiscalXmlDocument;
-import br.com.cshub.taxify.domain.xml.FiscalXmlDocumentItem;
+import br.com.cshub.taxify.domain.fiscaldocument.GoodsInvoice;
+import br.com.cshub.taxify.domain.fiscaldocument.FiscalDocumentItem;
 import br.com.cshub.taxify.domain.xml.SefazNoteSummary;
 import br.com.cshub.taxify.dto.assessment.AssessmentAlertDTO;
 import br.com.cshub.taxify.dto.assessment.MonthRevenueDTO;
@@ -11,7 +11,8 @@ import br.com.cshub.taxify.dto.assessment.TaxAssessmentDTO;
 import br.com.cshub.taxify.integration.fiscalxml.FiscalXmlDom;
 import br.com.cshub.taxify.integration.fiscalxml.FiscalXmlDomParser;
 import br.com.cshub.taxify.integration.sieg.FiscalXmlFileStorage;
-import br.com.cshub.taxify.repository.FiscalXmlDocumentRepository;
+import br.com.cshub.taxify.repository.FiscalDocumentRepository;
+import br.com.cshub.taxify.repository.GoodsInvoiceRepository;
 import br.com.cshub.taxify.repository.SefazNoteSummaryRepository;
 import br.com.cshub.taxify.service.assessment.TaxAssessmentService;
 import br.com.cshub.taxify.service.fiscalcheck.FiscalCheckContext;
@@ -93,15 +94,18 @@ public class AuditEngine {
     public record Result(List<Finding> findings, int notesChecked) {
     }
 
-    private final FiscalXmlDocumentRepository documentRepository;
+    private final GoodsInvoiceRepository documentRepository;
+    private final FiscalDocumentRepository anyDocumentRepository;
     private final SefazNoteSummaryRepository summaryRepository;
     private final FiscalCheckEngine checkEngine;
     private final TaxAssessmentService assessmentService;
     private final FiscalXmlFileStorage fileStorage;
 
-    public AuditEngine(FiscalXmlDocumentRepository documentRepository, SefazNoteSummaryRepository summaryRepository,
-                       FiscalCheckEngine checkEngine, TaxAssessmentService assessmentService, FiscalXmlFileStorage fileStorage) {
+    public AuditEngine(GoodsInvoiceRepository documentRepository, FiscalDocumentRepository anyDocumentRepository,
+                       SefazNoteSummaryRepository summaryRepository, FiscalCheckEngine checkEngine,
+                       TaxAssessmentService assessmentService, FiscalXmlFileStorage fileStorage) {
         this.documentRepository = documentRepository;
+        this.anyDocumentRepository = anyDocumentRepository;
         this.summaryRepository = summaryRepository;
         this.checkEngine = checkEngine;
         this.assessmentService = assessmentService;
@@ -110,9 +114,9 @@ public class AuditEngine {
 
     @Transactional(readOnly = true)
     public Result audit(Company company, YearMonth month) {
-        List<FiscalXmlDocument> notes = documentRepository.findByCompany_IdAndIssueDateBetweenOrderByIssueDateDesc(
+        List<GoodsInvoice> notes = documentRepository.findIssuedBetween(
                 company.getId(), month.atDay(1).atStartOfDay(), month.atEndOfMonth().atTime(23, 59, 59, 999_999_999));
-        List<FiscalXmlDocument> issued = notes.stream().filter(note -> !note.isDeleted() && note.isOwnIssue()).toList();
+        List<GoodsInvoice> issued = notes.stream().filter(note -> !note.isDeleted() && note.isOwnIssue()).toList();
         List<Finding> findings = new ArrayList<>();
         numbering(issued, findings);
         returns(company, issued, findings);
@@ -125,18 +129,18 @@ public class AuditEngine {
     // ---------------------------------------------------------------- integrity
 
     /** Per model and series of the company's own notes: repeated numbers and gaps between the month's numbers. */
-    void numbering(List<FiscalXmlDocument> issued, List<Finding> findings) {
-        Map<String, List<FiscalXmlDocument>> bySeries = issued.stream()
+    void numbering(List<GoodsInvoice> issued, List<Finding> findings) {
+        Map<String, List<GoodsInvoice>> bySeries = issued.stream()
                 .filter(note -> number(note) != null)
-                .collect(Collectors.groupingBy(note -> modelOf(note) + "|" + (note.getSerie() == null ? "0" : note.getSerie().strip()),
+                .collect(Collectors.groupingBy(note -> modelOf(note) + "|" + (note.getSeries() == null ? "0" : note.getSeries().strip()),
                         TreeMap::new, Collectors.toList()));
-        for (Map.Entry<String, List<FiscalXmlDocument>> entry : bySeries.entrySet()) {
+        for (Map.Entry<String, List<GoodsInvoice>> entry : bySeries.entrySet()) {
             String[] parts = entry.getKey().split("\\|");
             String label = ("65".equals(parts[0]) ? "NFC-e" : "NF-e") + " série " + parts[1];
-            Map<Long, List<FiscalXmlDocument>> byNumber = entry.getValue().stream()
+            Map<Long, List<GoodsInvoice>> byNumber = entry.getValue().stream()
                     .collect(Collectors.groupingBy(AuditEngine::number, TreeMap::new, Collectors.toList()));
-            for (Map.Entry<Long, List<FiscalXmlDocument>> same : byNumber.entrySet()) {
-                Set<String> keys = same.getValue().stream().map(FiscalXmlDocument::getAccessKey)
+            for (Map.Entry<Long, List<GoodsInvoice>> same : byNumber.entrySet()) {
+                Set<String> keys = same.getValue().stream().map(GoodsInvoice::getAccessKey)
                         .filter(key -> key != null).collect(Collectors.toCollection(LinkedHashSet::new));
                 if (keys.size() > 1) {
                     findings.add(new Finding(AuditRuleDefinition.NUMERO_DUPLICADO, entry.getKey() + ":" + same.getKey(),
@@ -169,10 +173,10 @@ public class AuditEngine {
     }
 
     /** Returns (finNFe 4) the company issued: without a referenced note, or referencing one Taxify doesn't have. */
-    void returns(Company company, List<FiscalXmlDocument> issued, List<Finding> findings) {
+    void returns(Company company, List<GoodsInvoice> issued, List<Finding> findings) {
         int read = 0;
-        for (FiscalXmlDocument note : issued) {
-            if (!"4".equals(note.getFinalidadeEmissao()) || note.isCanceled() || read >= MAX_RETURNS_READ) {
+        for (GoodsInvoice note : issued) {
+            if (!"4".equals(note.getHeader().purpose()) || note.isCanceled() || read >= MAX_RETURNS_READ) {
                 continue;
             }
             read++;
@@ -180,7 +184,7 @@ public class AuditEngine {
             if (referenced == null) {
                 continue; // file unreadable - nothing to say
             }
-            String label = "Devolução nº " + note.getNumero();
+            String label = "Devolução nº " + note.getNumber();
             if (referenced.isEmpty()) {
                 findings.add(new Finding(AuditRuleDefinition.DEVOLUCAO_SEM_ORIGINAL, note.getId().toString(), Pendency.OBJECT_NOTE,
                         note.getId().toString(), label + " sem nota referenciada",
@@ -188,7 +192,7 @@ public class AuditEngine {
                 continue;
             }
             List<String> unknown = referenced.stream()
-                    .filter(key -> !documentRepository.existsByCompany_IdAndAccessKey(company.getId(), key)).toList();
+                    .filter(key -> !anyDocumentRepository.existsByCompany_IdAndAccessKey(company.getId(), key)).toList();
             if (unknown.size() == referenced.size()) {
                 findings.add(new Finding(AuditRuleDefinition.DEVOLUCAO_SEM_ORIGINAL, note.getId().toString(), Pendency.OBJECT_NOTE,
                         note.getId().toString(), label + ": nota original não está no Taxify",
@@ -198,7 +202,7 @@ public class AuditEngine {
     }
 
     /** refNFe of the note's XML; null when the file can't be read. */
-    List<String> referencedKeys(FiscalXmlDocument note) {
+    List<String> referencedKeys(GoodsInvoice note) {
         try {
             Document doc = FiscalXmlDomParser.parse(fileStorage.read(note.getXmlFilePath()));
             NodeList refs = doc.getElementsByTagNameNS(NFE_NS, "refNFe");
@@ -236,19 +240,19 @@ public class AuditEngine {
     // ---------------------------------------------------------------- coherence
 
     /** The item checks over the notes the company issued, one finding per rule with the notes as evidence. */
-    void coherence(Company company, List<FiscalXmlDocument> issued, List<Finding> findings) {
+    void coherence(Company company, List<GoodsInvoice> issued, List<Finding> findings) {
         if (issued.isEmpty()) {
             return;
         }
         FiscalCheckContext context = checkEngine.contextFor(company.getId());
-        Map<AuditRuleDefinition, Map<FiscalXmlDocument, String>> byRule = new LinkedHashMap<>();
-        for (FiscalXmlDocument note : issued) {
+        Map<AuditRuleDefinition, Map<GoodsInvoice, String>> byRule = new LinkedHashMap<>();
+        for (GoodsInvoice note : issued) {
             if (!FiscalCheckEngine.isCheckable(note)) {
                 continue;
             }
-            List<FiscalXmlDocumentItem> items = note.getItens();
+            List<FiscalDocumentItem> items = note.getItems();
             List<FiscalDivergence> divergences = new ArrayList<>(checkEngine.checkDocument(note, items, context));
-            for (FiscalXmlDocumentItem item : items) {
+            for (FiscalDocumentItem item : items) {
                 divergences.addAll(checkEngine.check(item, context));
             }
             for (FiscalDivergence divergence : divergences) {
@@ -258,10 +262,10 @@ public class AuditEngine {
                 }
             }
         }
-        for (Map.Entry<AuditRuleDefinition, Map<FiscalXmlDocument, String>> entry : byRule.entrySet()) {
-            Map<FiscalXmlDocument, String> notes = entry.getValue();
-            FiscalXmlDocument first = notes.keySet().iterator().next();
-            String evidence = notes.keySet().stream().limit(MAX_EVIDENCE).map(note -> "nº " + note.getNumero())
+        for (Map.Entry<AuditRuleDefinition, Map<GoodsInvoice, String>> entry : byRule.entrySet()) {
+            Map<GoodsInvoice, String> notes = entry.getValue();
+            GoodsInvoice first = notes.keySet().iterator().next();
+            String evidence = notes.keySet().stream().limit(MAX_EVIDENCE).map(note -> "nº " + note.getNumber())
                     .collect(Collectors.joining(", "));
             findings.add(new Finding(entry.getKey(), "", notes.size() == 1 ? Pendency.OBJECT_NOTE : Pendency.OBJECT_COMPANY,
                     notes.size() == 1 ? first.getId().toString() : null,
@@ -273,7 +277,7 @@ public class AuditEngine {
 
     // ---------------------------------------------------------------- anomalies
 
-    void anomalies(Company company, YearMonth month, List<FiscalXmlDocument> issued, List<Finding> findings) {
+    void anomalies(Company company, YearMonth month, List<GoodsInvoice> issued, List<Finding> findings) {
         nfceCancellations(issued, findings);
         TaxAssessmentDTO assessment;
         try {
@@ -293,9 +297,9 @@ public class AuditEngine {
         }
     }
 
-    private void nfceCancellations(List<FiscalXmlDocument> issued, List<Finding> findings) {
-        List<FiscalXmlDocument> nfce = issued.stream().filter(note -> "65".equals(modelOf(note))).toList();
-        long canceled = nfce.stream().filter(FiscalXmlDocument::isCanceled).count();
+    private void nfceCancellations(List<GoodsInvoice> issued, List<Finding> findings) {
+        List<GoodsInvoice> nfce = issued.stream().filter(note -> "65".equals(modelOf(note))).toList();
+        long canceled = nfce.stream().filter(GoodsInvoice::isCanceled).count();
         if (nfce.size() < NFCE_MIN_NOTES || canceled == 0) {
             return;
         }
@@ -331,16 +335,16 @@ public class AuditEngine {
 
     // ---------------------------------------------------------------- helpers
 
-    private static Long number(FiscalXmlDocument note) {
+    private static Long number(GoodsInvoice note) {
         try {
-            return note.getNumero() == null ? null : Long.valueOf(note.getNumero().strip());
+            return note.getNumber() == null ? null : Long.valueOf(note.getNumber().strip());
         } catch (NumberFormatException e) {
             return null;
         }
     }
 
-    private static String modelOf(FiscalXmlDocument note) {
-        return note.getModelo() == null ? "55" : note.getModelo().strip();
+    private static String modelOf(GoodsInvoice note) {
+        return note.getModel() == null ? "55" : note.getModel().strip();
     }
 
     private static String nameOr(String name) {

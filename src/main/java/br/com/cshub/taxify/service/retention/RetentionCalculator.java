@@ -1,11 +1,13 @@
 package br.com.cshub.taxify.service.retention;
 
 import br.com.cshub.taxify.domain.company.Company;
-import br.com.cshub.taxify.domain.xml.FiscalXmlDocument;
-import br.com.cshub.taxify.domain.xml.ServiceInvoice;
+import br.com.cshub.taxify.domain.fiscaldocument.GoodsInvoice;
+import br.com.cshub.taxify.domain.fiscaldocument.Party;
+import br.com.cshub.taxify.domain.fiscaldocument.Nfse;
+import br.com.cshub.taxify.enumerated.CompanyDocumentRole;
 import br.com.cshub.taxify.enumerated.TaxRegime;
-import br.com.cshub.taxify.repository.FiscalXmlDocumentRepository;
-import br.com.cshub.taxify.repository.ServiceInvoiceRepository;
+import br.com.cshub.taxify.repository.GoodsInvoiceRepository;
+import br.com.cshub.taxify.repository.NfseRepository;
 import br.com.cshub.taxify.service.CompanyTaxRegimeService;
 import org.springframework.stereotype.Component;
 import org.springframework.transaction.annotation.Transactional;
@@ -59,11 +61,11 @@ public class RetentionCalculator {
     public record Result(List<Retention> retentions, List<Issue> issues) {
     }
 
-    private final ServiceInvoiceRepository serviceInvoiceRepository;
-    private final FiscalXmlDocumentRepository documentRepository;
+    private final NfseRepository serviceInvoiceRepository;
+    private final GoodsInvoiceRepository documentRepository;
     private final CompanyTaxRegimeService regimeService;
 
-    public RetentionCalculator(ServiceInvoiceRepository serviceInvoiceRepository, FiscalXmlDocumentRepository documentRepository,
+    public RetentionCalculator(NfseRepository serviceInvoiceRepository, GoodsInvoiceRepository documentRepository,
                                CompanyTaxRegimeService regimeService) {
         this.serviceInvoiceRepository = serviceInvoiceRepository;
         this.documentRepository = documentRepository;
@@ -80,11 +82,11 @@ public class RetentionCalculator {
         Map<UUID, Company> byId = companies.stream().collect(Collectors.toMap(Company::getId, Function.identity(), (a, b) -> a));
         Map<UUID, CompanyTaxRegimeService.RegimeAt> regimes = regimeService.regimesAt(companies, month);
 
-        for (ServiceInvoice s : serviceInvoiceRepository.findForRetentions(byId.keySet(), month.atDay(1), month.atEndOfMonth())) {
+        for (Nfse s : serviceInvoiceRepository.findForRetentions(byId.keySet(), month.atDay(1), month.atEndOfMonth())) {
             Company company = byId.get(s.getCompany().getId());
             fromServiceInvoice(company, s, month, regime(regimes, company), retentions, issues);
         }
-        for (FiscalXmlDocument d : documentRepository.findForRetentions(byId.keySet(), month.atDay(1).atStartOfDay(),
+        for (GoodsInvoice d : documentRepository.findForRetentions(byId.keySet(), month.atDay(1).atStartOfDay(),
                 month.atEndOfMonth().atTime(23, 59, 59))) {
             Company company = byId.get(d.getCompany().getId());
             fromGoodsNote(company, d, month, regime(regimes, company), retentions, issues);
@@ -92,56 +94,56 @@ public class RetentionCalculator {
         return new Result(retentions, issues);
     }
 
-    private void fromServiceInvoice(Company company, ServiceInvoice s, YearMonth month, TaxRegime regime,
+    private void fromServiceInvoice(Company company, Nfse s, YearMonth month, TaxRegime regime,
                                     List<Retention> out, List<Issue> issues) {
-        boolean took = ServiceInvoice.TOMADA.equals(s.getDirection());
-        boolean provided = ServiceInvoice.PRESTADA.equals(s.getDirection());
+        boolean took = s.getCompanyRole() == CompanyDocumentRole.TAKER;
+        boolean provided = s.getCompanyRole() == CompanyDocumentRole.ISSUER;
         if (!took && !provided) {
             return;
         }
         Nature nature = took ? Nature.A_RECOLHER : Nature.A_COMPENSAR;
-        String counterpartName = took ? s.getPrestadorNome() : s.getTomadorNome();
-        String counterpartDocument = took ? s.getPrestadorDocumento() : s.getTomadorDocumento();
-        Source source = new Source(company, "NFSE", s.getId(), s.getNumero(), s.getIssueDate(), month, counterpartName,
-                counterpartDocument, s.getValorServico());
+        Party counterpart = took ? s.getIssuer() : s.getRecipient();
+        Source source = new Source(company, s.legacyKeyLabel(), s.getId(), s.getNumber(), s.getIssueDate(), month,
+                counterpart.name(), counterpart.document(), s.getTotalAmount());
 
-        if (s.isIssRetido()) {
-            if (positive(s.getValorIssRetido())) {
-                String city = s.getMunicipioIncidencia() == null ? "" : " (IBGE " + s.getMunicipioIncidencia() + ")";
-                out.add(source.retention(nature, Tax.ISS, s.getValorIssRetido(), null,
+        if (s.getIss().isWithheld()) {
+            if (positive(s.getIss().withheldAmount())) {
+                String city = s.getIncidenceCityCode() == null ? "" : " (IBGE " + s.getIncidenceCityCode() + ")";
+                out.add(source.retention(nature, Tax.ISS, s.getIss().withheldAmount(), null,
                         took ? "Guia de ISS do município de incidência" + city + " - vencimento conforme o município."
                                 : compensationAction(Tax.ISS, regime), false));
             } else {
-                issues.add(new Issue(Issue.ISS_WITHOUT_VALUE, company, "NFSE", s.getId(), s.getNumero(), month, counterpartName,
+                issues.add(new Issue(Issue.ISS_WITHOUT_VALUE, company, s.legacyKeyLabel(), s.getId(), s.getNumber(), month,
+                        counterpart.name(),
                         "NFS-e com ISS marcado como retido, mas sem valor de ISS retido."));
             }
         }
-        add(source, nature, Tax.IRRF, s.getValorIrrf(), took, regime, out, issues);
-        if (s.isPisCofinsRetidos()) {
-            add(source, nature, Tax.PIS, s.getValorPis(), took, regime, out, issues);
-            add(source, nature, Tax.COFINS, s.getValorCofins(), took, regime, out, issues);
-        }
-        add(source, nature, Tax.CSLL, s.getValorCsll(), took, regime, out, issues);
-        add(source, nature, Tax.INSS, s.getValorInss(), took, regime, out, issues);
+        add(source, nature, Tax.IRRF, s.getWithholdings().irrf(), took, regime, out, issues);
+        // PIS/COFINS only when the note says they were withheld (Nfse#withheldPis/withheldCofins)
+        add(source, nature, Tax.PIS, s.withheldPis(), took, regime, out, issues);
+        add(source, nature, Tax.COFINS, s.withheldCofins(), took, regime, out, issues);
+        add(source, nature, Tax.CSLL, s.getWithholdings().csll(), took, regime, out, issues);
+        add(source, nature, Tax.INSS, s.getWithholdings().inss(), took, regime, out, issues);
     }
 
-    private void fromGoodsNote(Company company, FiscalXmlDocument d, YearMonth month, TaxRegime regime,
+    private void fromGoodsNote(Company company, GoodsInvoice d, YearMonth month, TaxRegime regime,
                                List<Retention> out, List<Issue> issues) {
         boolean bought = !d.isOwnIssue();
         Nature nature = bought ? Nature.A_RECOLHER : Nature.A_COMPENSAR;
-        String counterpartName = bought ? d.getEmitenteNome() : d.getDestinatarioNome();
-        String counterpartDocument = bought
-                ? (d.getIssuerCnpj() != null ? d.getIssuerCnpj() : d.getEmitenteCpf())
-                : (d.getRecipientCnpj() != null ? d.getRecipientCnpj() : d.getDestinatarioCpf());
-        Source source = new Source(company, "NFE", d.getId(), d.getNumero(), d.getIssueDate(), month, counterpartName,
-                counterpartDocument, d.getValorTotalNota());
-        add(source, nature, Tax.IRRF, d.getRetIrrf(), bought, regime, out, issues);
-        add(source, nature, Tax.PIS, d.getRetPis(), bought, regime, out, issues);
-        add(source, nature, Tax.COFINS, d.getRetCofins(), bought, regime, out, issues);
-        add(source, nature, Tax.CSLL, d.getRetCsll(), bought, regime, out, issues);
-        add(source, nature, Tax.INSS, d.getRetInss(), bought, regime, out, issues);
-        if (bought && positive(d.getValorIcmsSt())) {
-            out.add(source.retention(Nature.INFORMATIVO, Tax.ICMS_ST, d.getValorIcmsSt(), null,
+        Party counterpart = bought ? d.getIssuer() : d.getRecipient();
+        // CNPJ or CPF of the counterpart (a foreign id never names one here)
+        String counterpartDocument = counterpart.cnpj() != null ? counterpart.cnpj() : counterpart.cpf();
+        // legacyKeyLabel: "NFE" also for an NFC-e - the key of the reviews stored today (FD-RN-21)
+        Source source = new Source(company, d.legacyKeyLabel(), d.getId(), d.getNumber(), d.getIssueDate(), month,
+                counterpart.name(), counterpartDocument, d.getTotalAmount());
+        add(source, nature, Tax.IRRF, d.getWithholdings().irrf(), bought, regime, out, issues);
+        add(source, nature, Tax.PIS, d.getWithholdings().pis(), bought, regime, out, issues);
+        add(source, nature, Tax.COFINS, d.getWithholdings().cofins(), bought, regime, out, issues);
+        add(source, nature, Tax.CSLL, d.getWithholdings().csll(), bought, regime, out, issues);
+        add(source, nature, Tax.INSS, d.getWithholdings().inss(), bought, regime, out, issues);
+        BigDecimal icmsSt = d.getGoodsTotals().icmsStAmount();
+        if (bought && positive(icmsSt)) {
+            out.add(source.retention(Nature.INFORMATIVO, Tax.ICMS_ST, icmsSt, null,
                     "ICMS-ST da compra - entra na conferência da fronteira.", false));
         }
     }

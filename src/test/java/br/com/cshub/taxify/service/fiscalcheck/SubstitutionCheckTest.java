@@ -1,7 +1,7 @@
 package br.com.cshub.taxify.service.fiscalcheck;
 
-import br.com.cshub.taxify.domain.xml.FiscalItemTaxDetail;
-import br.com.cshub.taxify.domain.xml.FiscalXmlDocumentItem;
+import br.com.cshub.taxify.domain.fiscaldocument.FiscalDocumentItem;
+import br.com.cshub.taxify.support.TestNotes;
 import org.junit.jupiter.api.Test;
 
 import java.util.List;
@@ -12,16 +12,12 @@ class SubstitutionCheckTest {
 
     private final SubstitutionCheck check = new SubstitutionCheck();
 
-    private static FiscalXmlDocumentItem item(String cfop, String cst, String csosn, String cest) {
-        FiscalXmlDocumentItem item = new FiscalXmlDocumentItem();
-        item.setCfop(cfop);
-        item.setSituacaoTributariaIcms(csosn != null ? csosn : cst);
-        item.setTaxDetail(new FiscalItemTaxDetail(cest, null, "0", csosn, null, null, null, null, null, null, null, null,
-                null, null, null, null, null, null));
-        return item;
+    private static FiscalDocumentItem item(String cfop, String cst, String csosn, String cest) {
+        return TestNotes.item(1).cfop(cfop).cest(cest).icms(csosn != null ? csosn : cst, null, null, null)
+                .icmsDetail("0", csosn).build();
     }
 
-    private List<String> codes(FiscalXmlDocumentItem item) {
+    private List<String> codes(FiscalDocumentItem item) {
         return check.check(item, null).stream().map(FiscalDivergence::code).toList();
     }
 
@@ -42,9 +38,7 @@ class SubstitutionCheckTest {
 
     @Test
     void itemsWithoutTheTaxDetailAreSkipped() {
-        FiscalXmlDocumentItem item = new FiscalXmlDocumentItem();
-        item.setCfop("5405");
-        item.setSituacaoTributariaIcms("00");
+        FiscalDocumentItem item = TestNotes.item(1).cfop("5405").icms("00", null, null, null).build();
 
         assertThat(check.check(item, null)).isEmpty();
     }

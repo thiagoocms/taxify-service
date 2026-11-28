@@ -5,6 +5,9 @@ import br.com.cshub.taxify.domain.company.Company;
 import br.com.cshub.taxify.domain.xml.FiscalXmlSyncControl;
 import br.com.cshub.taxify.dto.fiscalxml.FiscalXmlSyncControlDTO;
 import br.com.cshub.taxify.repository.FiscalXmlSyncControlRepository;
+import br.com.cshub.taxify.enumerated.CaptureSide;
+import br.com.cshub.taxify.support.InMemoryCaptureCounts;
+import java.time.YearMonth;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.extension.ExtendWith;
@@ -30,13 +33,14 @@ class FiscalXmlSyncControlServiceTest {
     private TenantAccessService tenantAccessService;
 
     private FiscalXmlSyncControlService service;
+    private final InMemoryCaptureCounts counts = new InMemoryCaptureCounts();
 
     @BeforeEach
     void setUp() {
         lenient().when(tenantAccessService.getCurrentAccountingFirmId()).thenReturn(Optional.empty());
         lenient().when(tenantAccessService.filterAccessible(org.mockito.ArgumentMatchers.anyList(), org.mockito.ArgumentMatchers.any()))
                 .thenAnswer(invocation -> invocation.getArgument(0));
-        service = new FiscalXmlSyncControlService(repository, tenantAccessService);
+        service = new FiscalXmlSyncControlService(repository, tenantAccessService, counts.service());
     }
 
     @Test
@@ -49,12 +53,9 @@ class FiscalXmlSyncControlServiceTest {
         control.setCompany(company);
         LocalDate inicio = LocalDate.of(2026, 9, 10);
         LocalDate fim = LocalDate.of(2026, 9, 11);
-        control.setIssueDateFrom(inicio);
-        control.setIssueDateTo(fim);
-        control.setTotalSieg(200);
-        control.setTotalImported(100);
         LocalDateTime checkedAt = LocalDateTime.now();
-        control.setLastCheckedAt(checkedAt);
+        // the received side's counts of the window last checked (capture_period_counts, FD-RN-32)
+        counts.seed(company, CaptureSide.RECEIVED, YearMonth.from(inicio), 200, 100, checkedAt).askedWindow(inicio, fim);
 
         when(repository.findAll()).thenReturn(List.of(control));
 

@@ -1,17 +1,22 @@
 package br.com.cshub.taxify.service.retention;
 
+import br.com.cshub.taxify.support.TestNotes;
 import br.com.cshub.taxify.domain.company.Company;
 import br.com.cshub.taxify.domain.document.Document;
-import br.com.cshub.taxify.domain.xml.FiscalXmlDocument;
-import br.com.cshub.taxify.domain.xml.ServiceInvoice;
+import br.com.cshub.taxify.domain.fiscaldocument.GoodsInvoice;
+import br.com.cshub.taxify.domain.fiscaldocument.Nfse;
 import br.com.cshub.taxify.enumerated.DocumentTypeEnum;
 import br.com.cshub.taxify.enumerated.TaxRegime;
 import br.com.cshub.taxify.integration.nfse.NfseXml;
 import br.com.cshub.taxify.integration.nfse.NfseXmlTest;
-import br.com.cshub.taxify.repository.FiscalXmlDocumentRepository;
-import br.com.cshub.taxify.repository.ServiceInvoiceRepository;
+import br.com.cshub.taxify.repository.GoodsInvoiceRepository;
+import br.com.cshub.taxify.domain.fiscaldocument.DocumentSourceKey;
+import br.com.cshub.taxify.domain.fiscaldocument.IssTax;
+import br.com.cshub.taxify.domain.fiscaldocument.Withholdings;
+import br.com.cshub.taxify.domain.fiscaldocument.GoodsTotals;
+import br.com.cshub.taxify.mapper.fiscaldocument.FiscalDocumentFactory;
+import br.com.cshub.taxify.repository.NfseRepository;
 import br.com.cshub.taxify.service.CompanyTaxRegimeService;
-import br.com.cshub.taxify.service.ServiceInvoiceService;
 import br.com.cshub.taxify.service.retention.RetentionCalculator.Nature;
 import br.com.cshub.taxify.service.retention.RetentionCalculator.Retention;
 import br.com.cshub.taxify.service.retention.RetentionCalculator.Tax;
@@ -42,9 +47,9 @@ class RetentionCalculatorTest {
     private static final YearMonth NOVEMBER = YearMonth.of(2026, 11);
 
     @Mock
-    private ServiceInvoiceRepository serviceInvoiceRepository;
+    private NfseRepository serviceInvoiceRepository;
     @Mock
-    private FiscalXmlDocumentRepository documentRepository;
+    private GoodsInvoiceRepository documentRepository;
     @Mock
     private CompanyTaxRegimeService regimeService;
 
@@ -72,9 +77,9 @@ class RetentionCalculatorTest {
         return company;
     }
 
-    private static ServiceInvoice invoice(Company company, String xml) {
+    private static Nfse invoice(Company company, String xml) {
         NfseXml nfse = NfseXml.parse(xml.getBytes(StandardCharsets.UTF_8)).orElseThrow();
-        ServiceInvoice invoice = ServiceInvoiceService.toEntity(company, nfse, "p.xml", "SIEG");
+        Nfse invoice = FiscalDocumentFactory.fromParsed(nfse, company, DocumentSourceKey.SIEG, "p.xml");
         invoice.setId(UUID.randomUUID());
         invoice.setCompetence(NOVEMBER.atDay(1));
         return invoice;
@@ -87,15 +92,11 @@ class RetentionCalculatorTest {
     /** The roadmap's acceptance case: R$ 221,50 to pay, R$ 70,00 to offset, R$ 120,00 informative, 1 undue retention. */
     @Test
     void theRoadmapAcceptanceCase() {
-        ServiceInvoice taken = invoice(taker, NfseXmlTest.national("2", "1"));
-        ServiceInvoice provided = invoice(provider, NfseXmlTest.ABRASF);
-        FiscalXmlDocument purchase = new FiscalXmlDocument();
-        purchase.setId(UUID.randomUUID());
-        purchase.setCompany(taker);
-        purchase.setOwnIssue(false);
-        purchase.setNumero("900");
-        purchase.setEmitenteNome("DISTRIBUIDORA");
-        purchase.setValorIcmsSt(new BigDecimal("120.00"));
+        Nfse taken = invoice(taker, NfseXmlTest.national("2", "1"));
+        Nfse provided = invoice(provider, NfseXmlTest.ABRASF);
+        GoodsInvoice purchase = TestNotes.note(taker).number("900").issuer(TestNotes.SUPPLIER_CNPJ, "DISTRIBUIDORA").build();
+        purchase.setGoodsTotals(new GoodsTotals(null, null, null, null, null, new BigDecimal("120.00"), null, null, null, null, null,
+                null, null, null, null, null, null));
         when(serviceInvoiceRepository.findForRetentions(any(), any(), any())).thenReturn(List.of(taken, provided));
         when(documentRepository.findForRetentions(any(), any(), any())).thenReturn(List.of(purchase));
 
@@ -151,8 +152,9 @@ class RetentionCalculatorTest {
 
     @Test
     void issRetainedWithoutValueIsAnIssue() {
-        ServiceInvoice invoice = invoice(taker, NfseXmlTest.national("2", "1"));
-        invoice.setValorIssRetido(null);
+        Nfse invoice = invoice(taker, NfseXmlTest.national("2", "1"));
+        IssTax iss = invoice.getIss();
+        invoice.setIss(new IssTax(iss.base(), iss.rate(), iss.amount(), iss.withheld(), null));
         when(serviceInvoiceRepository.findForRetentions(any(), any(), any())).thenReturn(List.of(invoice));
 
         RetentionCalculator.Result result = calculator.compute(List.of(taker), NOVEMBER);
@@ -163,12 +165,8 @@ class RetentionCalculatorTest {
 
     @Test
     void retentionsOfAGoodsNote() {
-        FiscalXmlDocument sale = new FiscalXmlDocument();
-        sale.setId(UUID.randomUUID());
-        sale.setCompany(taker);
-        sale.setOwnIssue(true);
-        sale.setRetIrrf(new BigDecimal("15.00"));
-        sale.setRetPis(new BigDecimal("6.50"));
+        GoodsInvoice sale = TestNotes.note(taker).ownIssue().build();
+        sale.setWithholdings(new Withholdings(new BigDecimal("6.50"), null, null, new BigDecimal("15.00"), null));
         when(documentRepository.findForRetentions(any(), any(), any())).thenReturn(List.of(sale));
 
         List<Retention> retentions = calculator.compute(List.of(taker), NOVEMBER).retentions();

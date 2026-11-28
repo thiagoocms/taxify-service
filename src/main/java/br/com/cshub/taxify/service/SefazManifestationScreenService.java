@@ -4,8 +4,8 @@ import br.com.cshub.taxify.common.MessageService;
 import br.com.cshub.taxify.common.RequestIds;
 import br.com.cshub.taxify.domain.certificate.CompanyCertificate;
 import br.com.cshub.taxify.domain.company.Company;
-import br.com.cshub.taxify.domain.xml.FiscalXmlDocument;
-import br.com.cshub.taxify.domain.xml.FiscalXmlEvent;
+import br.com.cshub.taxify.domain.fiscaldocument.Nfe;
+import br.com.cshub.taxify.domain.fiscaldocument.FiscalDocumentEvent;
 import br.com.cshub.taxify.domain.xml.SefazNoteSummary;
 import br.com.cshub.taxify.domain.xml.SefazNoteSummary.CienciaStatus;
 import br.com.cshub.taxify.dto.fiscalxml.ManifestationDTOs;
@@ -16,8 +16,8 @@ import br.com.cshub.taxify.integration.sefaz.SefazEventClient;
 import br.com.cshub.taxify.integration.sefaz.SefazEventClient.EventRequest;
 import br.com.cshub.taxify.integration.sefaz.SefazEventClient.Manifestation;
 import br.com.cshub.taxify.integration.sefaz.SefazEventResponse;
-import br.com.cshub.taxify.repository.FiscalXmlDocumentRepository;
-import br.com.cshub.taxify.repository.FiscalXmlEventRepository;
+import br.com.cshub.taxify.repository.NfeRepository;
+import br.com.cshub.taxify.repository.FiscalDocumentEventRepository;
 import br.com.cshub.taxify.repository.SefazNoteSummaryRepository;
 import br.com.cshub.taxify.validation.CompanyValidation;
 import org.slf4j.Logger;
@@ -63,9 +63,9 @@ public class SefazManifestationScreenService {
     private static final Set<String> CONCLUSIVE = Arrays.stream(Manifestation.values())
             .filter(type -> type.conclusive).map(type -> type.code).collect(Collectors.toUnmodifiableSet());
 
-    private final FiscalXmlDocumentRepository documentRepository;
+    private final NfeRepository documentRepository;
     private final SefazNoteSummaryRepository summaryRepository;
-    private final FiscalXmlEventRepository eventRepository;
+    private final FiscalDocumentEventRepository eventRepository;
     private final FiscalXmlEventService eventService;
     private final CompanyCertificateService certificateService;
     private final SefazManifestService manifestService;
@@ -73,9 +73,9 @@ public class SefazManifestationScreenService {
     private final CompanyValidation companyValidation;
     private final MessageService messageService;
 
-    public SefazManifestationScreenService(FiscalXmlDocumentRepository documentRepository,
+    public SefazManifestationScreenService(NfeRepository documentRepository,
                                            SefazNoteSummaryRepository summaryRepository,
-                                           FiscalXmlEventRepository eventRepository, FiscalXmlEventService eventService,
+                                           FiscalDocumentEventRepository eventRepository, FiscalXmlEventService eventService,
                                            CompanyCertificateService certificateService, SefazManifestService manifestService,
                                            SefazEventClient eventClient, CompanyValidation companyValidation,
                                            MessageService messageService) {
@@ -107,7 +107,7 @@ public class SefazManifestationScreenService {
         LocalDateTime since = LocalDate.now().minusDays(DEADLINE_DAYS).atStartOfDay();
         PageRequest page = PageRequest.of(0, MAX_LISTED);
         Map<String, ManifestationDTOs.Note> byKey = new LinkedHashMap<>();
-        List<FiscalXmlDocument> documents = documentRepository.findAwaitingManifestation(company.getId(), cnpj, since, CONCLUSIVE, page);
+        List<Nfe> documents = documentRepository.findAwaitingManifestation(company.getId(), cnpj, since, CONCLUSIVE, page);
         List<SefazNoteSummary> summaries = summaryRepository.findAwaitingManifestation(company.getId(), since, CONCLUSIVE, page);
 
         Set<String> keys = new HashSet<>();
@@ -116,15 +116,14 @@ public class SefazManifestationScreenService {
         Set<String> withCiencia = keys.isEmpty() ? Set.of() : eventRepository
                 .findByCompany_IdAndAccessKeyInAndRegisteredIsTrue(company.getId(), keys).stream()
                 .filter(event -> Manifestation.CIENCIA.code.equals(event.getEventType()))
-                .map(FiscalXmlEvent::getAccessKey)
+                .map(FiscalDocumentEvent::getAccessKey)
                 .collect(Collectors.toSet());
 
         LocalDate today = LocalDate.now();
-        for (FiscalXmlDocument document : documents) {
-            byKey.put(document.getAccessKey(), note(document.getAccessKey(), document.getId(), document.getNumero(),
-                    document.getSerie(), document.getEmitenteNome(),
-                    document.getIssuerCnpj() != null ? document.getIssuerCnpj() : document.getEmitenteCpf(),
-                    document.getIssueDate(), document.getValorTotalNota(), true,
+        for (Nfe document : documents) {
+            byKey.put(document.getAccessKey(), note(document.getAccessKey(), document.getId(), document.getNumber(),
+                    document.getSeries(), document.getIssuer().name(), document.getIssuer().document(),
+                    document.getIssueDate(), document.getTotalAmount(), true,
                     withCiencia.contains(document.getAccessKey()), document.getIssueDate(), today));
         }
         for (SefazNoteSummary summary : summaries) {

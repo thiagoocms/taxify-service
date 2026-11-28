@@ -2,7 +2,7 @@ package br.com.cshub.taxify.service;
 
 import br.com.cshub.taxify.dto.fiscalrule.FiscalXmlRectificationResultDTO;
 import br.com.cshub.taxify.integration.fiscalxml.FiscalXmlRectificationProperties;
-import br.com.cshub.taxify.repository.FiscalXmlDocumentItemRepository;
+import br.com.cshub.taxify.repository.FiscalDocumentItemRepository;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 import org.springframework.stereotype.Component;
@@ -24,11 +24,11 @@ public class ProductFiscalRuleRectificationListener {
 
     private static final Logger log = LoggerFactory.getLogger(ProductFiscalRuleRectificationListener.class);
 
-    private final FiscalXmlDocumentItemRepository itemRepository;
+    private final FiscalDocumentItemRepository itemRepository;
     private final FiscalXmlRectificationService rectificationService;
     private final FiscalXmlRectificationProperties properties;
 
-    public ProductFiscalRuleRectificationListener(FiscalXmlDocumentItemRepository itemRepository,
+    public ProductFiscalRuleRectificationListener(FiscalDocumentItemRepository itemRepository,
                                                   FiscalXmlRectificationService rectificationService,
                                                   FiscalXmlRectificationProperties properties) {
         this.itemRepository = itemRepository;

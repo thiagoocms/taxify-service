@@ -1,10 +1,12 @@
 package br.com.cshub.taxify.config;
 
-import br.com.cshub.taxify.domain.xml.FiscalXmlDocument;
-import br.com.cshub.taxify.domain.xml.FiscalXmlDocumentItem;
+import br.com.cshub.taxify.domain.fiscaldocument.FiscalDocumentItem;
+import br.com.cshub.taxify.domain.fiscaldocument.GoodsInvoice;
+import br.com.cshub.taxify.domain.fiscaldocument.ItemIcms;
+import br.com.cshub.taxify.support.TestNotes;
 import br.com.cshub.taxify.integration.sieg.FiscalXmlFileStorage;
 import br.com.cshub.taxify.integration.sieg.FiscalXmlMetadataParser;
-import br.com.cshub.taxify.repository.FiscalXmlDocumentRepository;
+import br.com.cshub.taxify.repository.GoodsInvoiceRepository;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
 import org.springframework.transaction.support.TransactionCallback;
@@ -45,7 +47,7 @@ class FiscalXmlTaxDetailBackfillTest {
               </infNFe></NFe></nfeProc>
             """;
 
-    private final FiscalXmlDocumentRepository repository = mock(FiscalXmlDocumentRepository.class);
+    private final GoodsInvoiceRepository repository = mock(GoodsInvoiceRepository.class);
     private final FiscalXmlFileStorage storage = mock(FiscalXmlFileStorage.class);
     private final TransactionTemplate transactionTemplate = mock(TransactionTemplate.class);
     private FiscalXmlTaxDetailBackfill backfill;
@@ -59,35 +61,35 @@ class FiscalXmlTaxDetailBackfillTest {
 
     @Test
     void fillsOnlyTheNewFieldsOfTheExistingItemsAndMarksTheNote() throws IOException {
-        FiscalXmlDocument document = document("s3://bucket/a.xml");
-        FiscalXmlDocumentItem second = item(document, 2, "P2");
-        second.setAliquotaIcms(new java.math.BigDecimal("12"));
-        FiscalXmlDocumentItem first = item(document, 1, "P1");
+        GoodsInvoice document = document("s3://bucket/a.xml");
+        FiscalDocumentItem second = item(document, 2, "P2");
+        second.setIcms(new ItemIcms(null, null, null, null, null, new java.math.BigDecimal("12"), null, null, null));
+        FiscalDocumentItem first = item(document, 1, "P1");
         when(repository.findById(document.getId())).thenReturn(Optional.of(document));
         when(storage.read("s3://bucket/a.xml")).thenReturn(XML.getBytes(StandardCharsets.UTF_8));
 
         assertThat(backfill.backfill(document.getId())).isEqualTo(FiscalXmlTaxDetailBackfill.Outcome.UPDATED);
 
-        assertThat(first.getTaxDetail().csosn()).isEqualTo("102");
-        assertThat(first.getTaxDetail().origemMercadoria()).isEqualTo("1");
-        assertThat(first.getTaxDetail().cest()).isEqualTo("0300700");
-        assertThat(first.getIbsCbs().valorCbs()).isEqualByComparingTo("0.09");
-        assertThat(second.getTaxDetail().origemMercadoria()).isEqualTo("0");
+        assertThat(first.getIcms().csosn()).isEqualTo("102");
+        assertThat(first.getIcms().origin()).isEqualTo("1");
+        assertThat(first.getProduct().cest()).isEqualTo("0300700");
+        assertThat(first.getIbsCbs().cbsAmount()).isEqualByComparingTo("0.09");
+        assertThat(second.getIcms().origin()).isEqualTo("0");
         assertThat(second.getIbsCbs()).isNull();
         // IPI CST/value, always empty before parser version 3, are rewritten
-        assertThat(second.getSituacaoTributariaIpi()).isEqualTo("50");
-        assertThat(second.getValorIpi()).isEqualByComparingTo("1.00");
+        assertThat(second.getIpi().cst()).isEqualTo("50");
+        assertThat(second.getIpi().amount()).isEqualByComparingTo("1.00");
         // fields the old parser already had are not rewritten
-        assertThat(second.getAliquotaIcms()).isEqualByComparingTo("12");
-        assertThat(document.getIbsCbsTotals().valorCbs()).isEqualByComparingTo("0.09");
+        assertThat(second.getIcms().rate()).isEqualByComparingTo("12");
+        assertThat(document.getIbsCbsTotals().cbsAmount()).isEqualByComparingTo("0.09");
         assertThat(document.getMetadataVersion()).isEqualTo(FiscalXmlMetadataParser.CURRENT_VERSION);
         verify(repository).save(document);
     }
 
     @Test
     void purgedFileIsMarkedDoneAndStorageFailureIsLeftForNextRun() throws IOException {
-        FiscalXmlDocument purged = document("s3://bucket/purged.xml");
-        FiscalXmlDocument unreachable = document("s3://bucket/down.xml");
+        GoodsInvoice purged = document("s3://bucket/purged.xml");
+        GoodsInvoice unreachable = document("s3://bucket/down.xml");
         when(repository.findById(purged.getId())).thenReturn(Optional.of(purged));
         when(repository.findById(unreachable.getId())).thenReturn(Optional.of(unreachable));
         when(storage.read("s3://bucket/purged.xml")).thenThrow(new NoSuchFileException("purged"));
@@ -103,7 +105,7 @@ class FiscalXmlTaxDetailBackfillTest {
 
     @Test
     void pagesThroughTheNotesById() throws IOException {
-        FiscalXmlDocument document = document("s3://bucket/a.xml");
+        GoodsInvoice document = document("s3://bucket/a.xml");
         item(document, 1, "P1");
         when(repository.findIdsParsedBefore(anyInt(), eq(""), any())).thenReturn(List.of(document.getId()));
         when(repository.findIdsParsedBefore(anyInt(), eq(document.getId().toString()), any())).thenReturn(List.of());
@@ -115,20 +117,13 @@ class FiscalXmlTaxDetailBackfillTest {
         assertThat(document.getMetadataVersion()).isEqualTo(FiscalXmlMetadataParser.CURRENT_VERSION);
     }
 
-    private static FiscalXmlDocument document(String path) {
-        FiscalXmlDocument document = new FiscalXmlDocument();
-        document.setId(UUID.randomUUID());
-        document.setDocumentType("NFE");
-        document.setXmlFilePath(path);
-        return document;
+    private static GoodsInvoice document(String path) {
+        return TestNotes.note(TestNotes.company(TestNotes.COMPANY_CNPJ)).xml(path).metadataVersion(null).build();
     }
 
-    private static FiscalXmlDocumentItem item(FiscalXmlDocument document, int number, String codigo) {
-        FiscalXmlDocumentItem item = new FiscalXmlDocumentItem();
-        item.setDocument(document);
-        item.setNumeroItem(number);
-        item.setCodigo(codigo);
-        document.getItens().add(item);
+    private static FiscalDocumentItem item(GoodsInvoice document, int number, String code) {
+        FiscalDocumentItem item = TestNotes.item(number).code(code).build();
+        document.addItem(item);
         return item;
     }
 }

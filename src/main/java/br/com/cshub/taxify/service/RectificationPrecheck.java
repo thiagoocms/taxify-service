@@ -3,9 +3,8 @@ package br.com.cshub.taxify.service;
 import br.com.cshub.taxify.service.fiscalcheck.ProductRuleCheck;
 import br.com.cshub.taxify.domain.fiscalrule.ProductFiscalRule;
 import br.com.cshub.taxify.domain.fiscalrule.ProductTaxRule;
-import br.com.cshub.taxify.domain.xml.FiscalItemIbsCbs;
-import br.com.cshub.taxify.domain.xml.FiscalItemTaxDetail;
-import br.com.cshub.taxify.domain.xml.FiscalXmlDocumentItem;
+import br.com.cshub.taxify.domain.fiscaldocument.ItemIbsCbs;
+import br.com.cshub.taxify.domain.fiscaldocument.FiscalDocumentItem;
 
 import java.util.Objects;
 
@@ -22,30 +21,30 @@ final class RectificationPrecheck {
     private RectificationPrecheck() {
     }
 
-    static boolean mayChange(FiscalXmlDocumentItem item, ProductFiscalRule rule) {
-        if (differs(item.getCfop(), ProductRuleCheck.expectedCfop(item, rule))) {
+    static boolean mayChange(FiscalDocumentItem item, ProductFiscalRule rule) {
+        if (differs(item.cfop(), ProductRuleCheck.expectedCfop(item, rule))) {
             return true;
         }
-        if (rule.getCorrectNcm() != null && differs(item.getNcm(), rule.getCorrectNcm())) {
+        if (rule.getCorrectNcm() != null && differs(item.getProduct().ncm(), rule.getCorrectNcm())) {
             return true;
         }
         ProductTaxRule tax = rule.getTaxRule();
         if (tax == null) {
             return false;
         }
-        FiscalItemTaxDetail detail = item.getTaxDetail();
-        String csosn = detail == null ? null : detail.csosn();
-        FiscalItemIbsCbs ibsCbs = item.getIbsCbs();
-        return pinnedAndDiffers(detail == null ? null : detail.cest(), tax.cest())
-                || pinnedAndDiffers(detail == null ? null : detail.origemMercadoria(), tax.goodsOrigin())
+        boolean withDetail = item.hasTaxDetail();
+        String csosn = withDetail ? item.getIcms().csosn() : null;
+        ItemIbsCbs ibsCbs = item.getIbsCbs();
+        return pinnedAndDiffers(withDetail ? item.getProduct().cest() : null, tax.cest())
+                || pinnedAndDiffers(withDetail ? item.getIcms().origin() : null, tax.goodsOrigin())
                 // The ICMS group holds either a CSOSN (Simples) or a CST - the column has whichever it is.
                 || (csosn != null
                         ? pinnedAndDiffers(csosn, tax.csosn())
-                        : pinnedAndDiffers(item.getSituacaoTributariaIcms(), tax.cstIcms()))
-                || pinnedAndDiffers(item.getSituacaoTributariaIpi(), tax.cstIpi())
-                || pinnedAndDiffers(item.getSituacaoTributariaPis(), tax.cstPis())
-                || pinnedAndDiffers(item.getSituacaoTributariaCofins(), tax.cstCofins())
-                || pinnedAndDiffers(ibsCbs == null ? null : ibsCbs.classificacaoTributaria(), tax.taxClassification());
+                        : pinnedAndDiffers(item.getIcms().cst(), tax.cstIcms()))
+                || pinnedAndDiffers(item.getIpi().cst(), tax.cstIpi())
+                || pinnedAndDiffers(item.getPis().cst(), tax.cstPis())
+                || pinnedAndDiffers(item.getCofins().cst(), tax.cstCofins())
+                || pinnedAndDiffers(ibsCbs == null ? null : ibsCbs.classCode(), tax.taxClassification());
     }
 
     /** CFOP/NCM: rewritten whenever the tag exists and differs. */

@@ -8,8 +8,8 @@ import br.com.cshub.taxify.dto.assessment.TaxEstimateDTO;
 import br.com.cshub.taxify.dto.report.ReportDTOs;
 import br.com.cshub.taxify.enumerated.FiscalDirection;
 import br.com.cshub.taxify.enumerated.TaxRegime;
-import br.com.cshub.taxify.repository.FiscalXmlDocumentItemRepository;
-import br.com.cshub.taxify.repository.FiscalXmlDocumentRepository;
+import br.com.cshub.taxify.repository.FiscalDocumentItemRepository;
+import br.com.cshub.taxify.repository.GoodsInvoiceRepository;
 import br.com.cshub.taxify.repository.PendencyRepository;
 import br.com.cshub.taxify.service.assessment.TaxAssessmentService;
 import br.com.cshub.taxify.service.retention.RetentionCalculator;
@@ -43,9 +43,9 @@ class ReportServiceTest {
     @Mock
     private TaxAssessmentService assessmentService;
     @Mock
-    private FiscalXmlDocumentRepository documentRepository;
+    private GoodsInvoiceRepository documentRepository;
     @Mock
-    private FiscalXmlDocumentItemRepository itemRepository;
+    private FiscalDocumentItemRepository itemRepository;
     @Mock
     private PendencyRepository pendencyRepository;
     @Mock

@@ -10,7 +10,11 @@ import br.com.cshub.taxify.service.capture.CaptureStageRecorder;
 import br.com.cshub.taxify.integration.fiscalxml.FiscalXmlSide;
 import br.com.cshub.taxify.domain.company.Company;
 import br.com.cshub.taxify.domain.subscription.Subscription;
+import br.com.cshub.taxify.domain.fiscaldocument.CaptureCounts;
+import br.com.cshub.taxify.domain.fiscaldocument.CapturePeriodCount;
 import br.com.cshub.taxify.domain.xml.FiscalXmlSyncControl;
+import br.com.cshub.taxify.enumerated.CaptureSide;
+import br.com.cshub.taxify.service.capture.CaptureCountsService;
 import br.com.cshub.taxify.enumerated.PlanServiceEnum;
 import br.com.cshub.taxify.integration.fiscalxml.FiscalXmlProvider;
 import br.com.cshub.taxify.integration.fiscalxml.FiscalXmlSyncProperties;
@@ -55,8 +59,8 @@ import java.util.stream.Collectors;
  * {@link FiscalXmlSyncProperties#getProvider()} (default "sieg") - this class never
  * references SIEG (or any other provider) directly.
  *
- * <p>Batches over {@link FiscalXmlSyncControl} rather than {@link Company} directly:
- * that row already carries {@link FiscalXmlSyncControl#getTotalImportado()}, which feeds
+ * <p>Batches over {@link FiscalXmlSyncControl} (the queue) rather than {@link Company} directly;
+ * the month's counts of each side ({@code capture_period_counts}, FD-RN-32) feed
  * {@link FiscalXmlSyncRequest#alreadyImportedCount()} so a paginating provider (SIEG's
  * {@code skip}) resumes after what's already persisted instead of re-requesting the same
  * page every tick. {@link #ensureControlRowsExist} keeps that table complete by
@@ -65,8 +69,8 @@ import java.util.stream.Collectors;
  *
  * <p>{@link #syncCompany} always asks for the whole current month (day 1 through today),
  * not a rolling lookback window - so "quantas notas tem" and "quantas já importei" stay
- * comparable to the same period every tick. When the control row already shows pending
- * notes ({@code totalImportado < totalSieg}), {@link FiscalXmlSyncRequest#knownPending()}
+ * comparable to the same period every tick. When the month's counts already show pending
+ * notes (imported below the provider's total), {@link FiscalXmlSyncRequest#knownPending()}
  * tells the provider to skip its own count check and go straight to downloading - saves a
  * rate-limited request for something already established from an earlier tick.
  *
@@ -116,6 +120,8 @@ public class FiscalXmlSyncScheduler {
     private final CaptureStageRecorder stageRecorder;
     /** "Sincronizar agora" (CP-RN-15); null = no priority (tests built without it). */
     private final CapturePriorityService priorityService;
+    /** The capture counts per side and month (FD-RN-32); null = no counts (tests built without it: every side unchecked). */
+    private final CaptureCountsService countsService;
 
     public FiscalXmlSyncScheduler(CompanyRepository companyRepository, FiscalXmlSyncControlRepository syncControlRepository,
                                    SubscriptionRepository subscriptionRepository, Map<String, FiscalXmlProvider> providers,
@@ -127,9 +133,26 @@ public class FiscalXmlSyncScheduler {
     public FiscalXmlSyncScheduler(CompanyRepository companyRepository, FiscalXmlSyncControlRepository syncControlRepository,
                                    SubscriptionRepository subscriptionRepository, Map<String, FiscalXmlProvider> providers,
                                    FiscalXmlSyncProperties properties, FirmAccessService firmAccessService,
+                                   CaptureCountsService countsService) {
+        this(companyRepository, syncControlRepository, subscriptionRepository, providers, properties, firmAccessService, null,
+                Clock.system(ZoneId.of("America/Recife")), null, null, countsService);
+    }
+
+    public FiscalXmlSyncScheduler(CompanyRepository companyRepository, FiscalXmlSyncControlRepository syncControlRepository,
+                                   SubscriptionRepository subscriptionRepository, Map<String, FiscalXmlProvider> providers,
+                                   FiscalXmlSyncProperties properties, FirmAccessService firmAccessService,
                                    BlockedPeriodRecoveryService recoveryService, Clock clock) {
         this(companyRepository, syncControlRepository, subscriptionRepository, providers, properties, firmAccessService,
                 recoveryService, clock, null, null);
+    }
+
+    public FiscalXmlSyncScheduler(CompanyRepository companyRepository, FiscalXmlSyncControlRepository syncControlRepository,
+                                   SubscriptionRepository subscriptionRepository, Map<String, FiscalXmlProvider> providers,
+                                   FiscalXmlSyncProperties properties, FirmAccessService firmAccessService,
+                                   BlockedPeriodRecoveryService recoveryService, Clock clock,
+                                   CaptureStageRecorder stageRecorder, CapturePriorityService priorityService) {
+        this(companyRepository, syncControlRepository, subscriptionRepository, providers, properties, firmAccessService,
+                recoveryService, clock, stageRecorder, priorityService, null);
     }
 
     @Autowired
@@ -137,7 +160,9 @@ public class FiscalXmlSyncScheduler {
                                    SubscriptionRepository subscriptionRepository, Map<String, FiscalXmlProvider> providers,
                                    FiscalXmlSyncProperties properties, FirmAccessService firmAccessService,
                                    BlockedPeriodRecoveryService recoveryService, Clock clock,
-                                   CaptureStageRecorder stageRecorder, CapturePriorityService priorityService) {
+                                   CaptureStageRecorder stageRecorder, CapturePriorityService priorityService,
+                                   CaptureCountsService countsService) {
+        this.countsService = countsService;
         this.stageRecorder = stageRecorder == null ? CaptureStageRecorder.noop() : stageRecorder;
         this.priorityService = priorityService;
         this.clock = clock;
@@ -186,7 +211,8 @@ public class FiscalXmlSyncScheduler {
             return;
         }
 
-        List<FiscalXmlSyncControl> queue = controls.stream().sorted(queueOrder()).toList();
+        Map<UUID, Map<CaptureSide, LocalDateTime>> lastChecks = countsService == null ? Map.of() : countsService.siegLastChecks();
+        List<FiscalXmlSyncControl> queue = controls.stream().sorted(queueOrder(lastChecks)).toList();
         LocalDateTime head = queue.getFirst().getLastAttemptAt();
         List<Slot> batch = nextBatch(queue, properties.getBatchSize(), open);
         log.info("Starting scheduled fiscal XML sync (provider={}): {} of {} entitled companies this tick ({} priority), first in queue last attempted at {}",
@@ -268,10 +294,6 @@ public class FiscalXmlSyncScheduler {
                 FiscalXmlSyncControl control = new FiscalXmlSyncControl();
                 control.setCompany(company);
                 control.setDeleted(false);
-                control.setTotalSieg(0);
-                control.setTotalImported(0);
-                // filled because the column is NOT NULL - not a verification (see FiscalXmlSyncControl#getVerifiedAt)
-                control.setLastCheckedAt(LocalDateTime.now(clock));
                 seed(control);
             }
         }
@@ -351,12 +373,14 @@ public class FiscalXmlSyncScheduler {
     }
 
     /**
-     * The queue: last attempt (never first), then the real verification (never first - see
-     * {@link FiscalXmlSyncControl#getVerifiedAt()}), then the row id and the company id - stable between ticks.
+     * The queue: last attempt (never first), then the real verification (never first - {@link #verifiedAt}), then the
+     * row id and the company id - stable between ticks. {@code lastChecks}: when each side of each company was last
+     * checked ({@code capture_period_counts}).
      */
-    static Comparator<FiscalXmlSyncControl> queueOrder() {
+    static Comparator<FiscalXmlSyncControl> queueOrder(Map<UUID, Map<CaptureSide, LocalDateTime>> lastChecks) {
         return Comparator.comparing(FiscalXmlSyncControl::getLastAttemptAt, Comparator.nullsFirst(Comparator.naturalOrder()))
-                .thenComparing(FiscalXmlSyncControl::getVerifiedAt, Comparator.nullsFirst(Comparator.naturalOrder()))
+                .thenComparing((FiscalXmlSyncControl control) -> verifiedAt(lastChecks.get(control.getCompany().getId())),
+                        Comparator.nullsFirst(Comparator.naturalOrder()))
                 .thenComparing(control -> control.getId() == null ? "" : control.getId().toString())
                 .thenComparing(control -> control.getCompany() == null ? "" : control.getCompany().getId().toString());
     }
@@ -397,12 +421,14 @@ public class FiscalXmlSyncScheduler {
      * @param forced a "Sincronizar agora": both sides are counted on the provider again, even the ones up to date today
      */
     private void syncCompany(FiscalXmlProvider provider, FiscalXmlSyncControl control, LocalDate today, boolean forced) {
+        // the counts as they were when the attempt started - each side is judged by what was known then
+        CaptureCounts counts = countsOf(control);
         ProviderCallContext.priority(forced, () -> {
             Map<FiscalXmlSide, Integer> serviceInvoiceCounts = new EnumMap<>(FiscalXmlSide.class);
             for (FiscalXmlSide side : FiscalXmlSide.values()) {
-                boolean firstToday = !today.equals(checkedDay(control, side));
+                boolean firstToday = !today.equals(checkedDay(control, counts, side));
                 Integer count = ProviderCallContext.call(ProviderCallPurpose.PAGE,
-                        () -> syncSide(provider, control, side, today, forced));
+                        () -> syncSide(provider, control, counts, side, today, forced));
                 if (count != null) {
                     serviceInvoiceCounts.put(side, count);
                 }
@@ -418,10 +444,34 @@ public class FiscalXmlSyncScheduler {
         });
     }
 
-    /** The day the side was last checked (null = never) - read before this attempt changes it. */
-    private static LocalDate checkedDay(FiscalXmlSyncControl control, FiscalXmlSide side) {
-        LocalDateTime checkedAt = side == FiscalXmlSide.ISSUED ? control.getIssuedCheckedAt() : control.getLastCheckedAt();
+    /**
+     * The day the side was last checked (null = never) - read before this attempt changes it. A received side never
+     * checked counts the day the company entered the queue (the old row kept its creation time as the check time).
+     */
+    private static LocalDate checkedDay(FiscalXmlSyncControl control, CaptureCounts counts, FiscalXmlSide side) {
+        LocalDateTime checkedAt = counts.lastCheckedAt(side.captureSide());
+        if (checkedAt == null && side == FiscalXmlSide.RECEIVED) {
+            checkedAt = control.getCreatedDate();
+        }
         return checkedAt == null ? null : checkedAt.toLocalDate();
+    }
+
+    /** When both sides were really checked: the older of the two; null while one of them was never checked. */
+    static LocalDateTime verifiedAt(Map<CaptureSide, LocalDateTime> lastChecks) {
+        if (lastChecks == null) {
+            return null;
+        }
+        LocalDateTime received = lastChecks.get(CaptureSide.RECEIVED);
+        LocalDateTime issued = lastChecks.get(CaptureSide.ISSUED);
+        if (issued == null || received == null) {
+            return null;
+        }
+        return issued.isBefore(received) ? issued : received;
+    }
+
+    private CaptureCounts countsOf(FiscalXmlSyncControl control) {
+        return countsService == null ? CaptureCounts.siegNfe(control.getCompany(), List.of())
+                : countsService.siegNfe(control.getCompany());
     }
 
     /**
@@ -592,10 +642,10 @@ public class FiscalXmlSyncScheduler {
     }
 
     /** @return the provider's NFS-e count for the side's window when this sync counted; null otherwise */
-    private Integer syncSide(FiscalXmlProvider provider, FiscalXmlSyncControl control, FiscalXmlSide side, LocalDate today,
-                             boolean forced) {
+    private Integer syncSide(FiscalXmlProvider provider, FiscalXmlSyncControl control, CaptureCounts counts, FiscalXmlSide side,
+                             LocalDate today, boolean forced) {
         Company company = control.getCompany();
-        SideState state = SideState.of(control, side, YearMonth.from(today).toString());
+        SideState state = SideState.of(counts, side, YearMonth.from(today));
         CaptureStage stage = CaptureStage.siegSide(side == FiscalXmlSide.ISSUED);
 
         if (state.isUpToDate(today, LocalDateTime.now(clock), properties.getZeroTotalRecountHours()) && !forced) {
@@ -638,22 +688,23 @@ public class FiscalXmlSyncScheduler {
     }
 
     /**
-     * One side's bookkeeping, read from its own columns on the control row (null = never checked). {@code verified}: the
-     * side was really checked once - the received side's time is filled on the row's creation, so it only counts once the
-     * window was written ({@code data_emissao_inicio}). {@code knownGap}: the difference the month's last complete pass
-     * left (B1) - the side is up to date when imported + knownGap reaches SIEG's total.
+     * One side's bookkeeping for the month, read from its row of {@code capture_period_counts} (FD-RN-32; no row = never
+     * checked this month). {@code verified}: the side was really checked in the month (a sync wrote its window).
+     * {@code knownGap}: the difference the month's last complete pass left (B1) - the side is up to date when
+     * imported + knownGap reaches SIEG's total.
      */
     record SideState(int totalSieg, int imported, LocalDateTime checkedAt, boolean verified, int knownGap) {
 
-        static SideState of(FiscalXmlSyncControl control, FiscalXmlSide side, String month) {
-            boolean issued = side == FiscalXmlSide.ISSUED;
-            int gap = control.knownGap(issued, month);
-            if (issued) {
-                return new SideState(valueOf(control.getIssuedTotalSieg()), valueOf(control.getIssuedTotalImported()),
-                        control.getIssuedCheckedAt(), control.getIssuedCheckedAt() != null, gap);
+        static SideState of(CaptureCounts counts, FiscalXmlSide side, YearMonth month) {
+            CaptureSide captureSide = side.captureSide();
+            int gap = counts.knownGap(captureSide, month);
+            CapturePeriodCount row = counts.row(captureSide, month).orElse(null);
+            if (row == null) {
+                return new SideState(0, 0, null, false, gap);
             }
-            return new SideState(control.getTotalSieg(), control.getTotalImported(), control.getLastCheckedAt(),
-                    control.getLastCheckedAt() != null && control.getIssueDateFrom() != null, gap);
+            // the received side only counts as checked once a sync wrote its window (the old row was created with a time)
+            boolean verified = row.getImportedCountedAt() != null && (side == FiscalXmlSide.ISSUED || row.getWindowStart() != null);
+            return new SideState(valueOf(row.getProviderTotal()), row.getImportedTotal(), row.getImportedCountedAt(), verified, gap);
         }
 
         /**

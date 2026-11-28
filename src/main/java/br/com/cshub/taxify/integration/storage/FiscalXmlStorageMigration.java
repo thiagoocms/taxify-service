@@ -1,8 +1,9 @@
 package br.com.cshub.taxify.integration.storage;
 
-import br.com.cshub.taxify.domain.xml.FiscalXmlDocument;
+import br.com.cshub.taxify.domain.fiscaldocument.FiscalDocument;
+import br.com.cshub.taxify.domain.fiscaldocument.GoodsInvoice;
 import br.com.cshub.taxify.integration.sieg.FiscalXmlFileStorage;
-import br.com.cshub.taxify.repository.FiscalXmlDocumentRepository;
+import br.com.cshub.taxify.repository.FiscalDocumentRepository;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 import org.springframework.boot.context.event.ApplicationReadyEvent;
@@ -28,10 +29,10 @@ public class FiscalXmlStorageMigration {
     private static final int BATCH = 200;
 
     private final FiscalXmlStorageProperties properties;
-    private final FiscalXmlDocumentRepository repository;
+    private final FiscalDocumentRepository repository;
     private final FiscalXmlFileStorage storage;
 
-    public FiscalXmlStorageMigration(FiscalXmlStorageProperties properties, FiscalXmlDocumentRepository repository,
+    public FiscalXmlStorageMigration(FiscalXmlStorageProperties properties, FiscalDocumentRepository repository,
                                      FiscalXmlFileStorage storage) {
         this.properties = properties;
         this.repository = repository;
@@ -53,11 +54,11 @@ public class FiscalXmlStorageMigration {
         int failed = 0;
         String after = "";
         while (true) {
-            List<FiscalXmlDocument> batch = repository.findWithFileOutsideS3(after, PageRequest.of(0, BATCH));
+            List<FiscalDocument> batch = repository.findWithFileOutsideS3(after, PageRequest.of(0, BATCH));
             if (batch.isEmpty()) {
                 break;
             }
-            for (FiscalXmlDocument document : batch) {
+            for (FiscalDocument document : batch) {
                 Result result = migrate(document);
                 copied += result.copied();
                 missing += result.missing();
@@ -73,20 +74,21 @@ public class FiscalXmlStorageMigration {
     private record Result(int copied, int missing, int failed) {
     }
 
-    private Result migrate(FiscalXmlDocument document) {
+    private Result migrate(FiscalDocument document) {
         int copied = 0;
         int missing = 0;
         int failed = 0;
         boolean changed = false;
+        GoodsInvoice goods = document instanceof GoodsInvoice invoice ? invoice : null;
         for (boolean rectified : new boolean[]{false, true}) {
-            String location = rectified ? document.getRectifiedFilePath() : document.getXmlFilePath();
+            String location = rectified ? (goods == null ? null : goods.getRectifiedFilePath()) : document.getXmlFilePath();
             if (location == null || storage.isOnCurrentStorage(location)) {
                 continue;
             }
             try {
                 String moved = storage.copyToCurrentStorage(location);
                 if (rectified) {
-                    document.setRectifiedFilePath(moved);
+                    goods.setRectifiedFilePath(moved);
                 } else {
                     document.setXmlFilePath(moved);
                 }

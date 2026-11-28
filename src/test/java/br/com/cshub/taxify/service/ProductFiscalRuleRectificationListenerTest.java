@@ -2,7 +2,7 @@ package br.com.cshub.taxify.service;
 
 import br.com.cshub.taxify.dto.fiscalrule.FiscalXmlRectificationResultDTO;
 import br.com.cshub.taxify.integration.fiscalxml.FiscalXmlRectificationProperties;
-import br.com.cshub.taxify.repository.FiscalXmlDocumentItemRepository;
+import br.com.cshub.taxify.repository.FiscalDocumentItemRepository;
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.extension.ExtendWith;
 import org.mockito.Mock;
@@ -28,7 +28,7 @@ import static org.mockito.Mockito.when;
 class ProductFiscalRuleRectificationListenerTest {
 
     @Mock
-    private FiscalXmlDocumentItemRepository itemRepository;
+    private FiscalDocumentItemRepository itemRepository;
     @Mock
     private FiscalXmlRectificationService rectificationService;
 

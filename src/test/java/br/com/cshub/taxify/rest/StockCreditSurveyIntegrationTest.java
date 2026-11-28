@@ -497,14 +497,16 @@ class StockCreditSurveyIntegrationTest {
 
     private String note(String company, String direction, String status, LocalDateTime issuedAt, boolean deleted) {
         String id = UUID.randomUUID().toString();
-        jdbc.update("INSERT INTO fiscal_xml_documents (id, deleted, created_date, created_by, document_type, source_system, company_id,"
-                        + " xml_file_path, direction, status, issue_date) VALUES (?, ?, ?, 'it', 'NFE', 'SIEG', ?, 'xml/ficticio.xml', ?, ?, ?)",
-                id, deleted, Timestamp.valueOf(NOW), company, direction, status, Timestamp.valueOf(issuedAt));
+        jdbc.update("INSERT INTO fiscal_documents (id, deleted, created_date, created_by, document_type, model, source_system, company_id,"
+                        + " xml_file_path, direction, company_role, status, issue_date, metadata_version)"
+                        + " VALUES (?, ?, ?, 'it', 'NFE', '55', 'SIEG', ?, 'xml/ficticio.xml', ?, ?, ?, ?, 0)",
+                id, deleted, Timestamp.valueOf(NOW), company, direction, "OUTBOUND".equals(direction) ? "ISSUER" : "RECIPIENT",
+                status == null ? "AUTHORIZED" : status, Timestamp.valueOf(issuedAt));
         return id;
     }
 
     private void item(String document, String cfop, String value, String cstPis, String ncm) {
-        jdbc.update("INSERT INTO fiscal_xml_document_items (id, document_id, cfop, valor_total, cst_pis, ncm) VALUES (?, ?, ?, ?, ?, ?)",
+        jdbc.update("INSERT INTO fiscal_document_items (id, document_id, cfop, total_amount, pis_cst, ncm) VALUES (?, ?, ?, ?, ?, ?)",
                 UUID.randomUUID().toString(), document, cfop, value == null ? null : new java.math.BigDecimal(value), cstPis, ncm);
     }
 

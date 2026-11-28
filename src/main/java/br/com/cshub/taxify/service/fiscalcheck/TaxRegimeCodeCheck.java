@@ -1,7 +1,7 @@
 package br.com.cshub.taxify.service.fiscalcheck;
 
-import br.com.cshub.taxify.domain.xml.FiscalXmlDocument;
-import br.com.cshub.taxify.domain.xml.FiscalXmlDocumentItem;
+import br.com.cshub.taxify.domain.fiscaldocument.GoodsInvoice;
+import br.com.cshub.taxify.domain.fiscaldocument.FiscalDocumentItem;
 import br.com.cshub.taxify.enumerated.DivergenceSeverity;
 import org.springframework.stereotype.Component;
 
@@ -22,15 +22,15 @@ public class TaxRegimeCodeCheck implements FiscalCheck {
     private static final Set<String> CST_REGIMES = Set.of("2", "3");
 
     @Override
-    public List<FiscalDivergence> check(FiscalXmlDocumentItem item, FiscalCheckContext context) {
-        FiscalXmlDocument document = item.getDocument();
-        if (document == null || document.getEmitenteRegimeTributario() == null
-                || item.getTaxDetail() == null || item.getSituacaoTributariaIcms() == null) {
+    public List<FiscalDivergence> check(FiscalDocumentItem item, FiscalCheckContext context) {
+        GoodsInvoice document = item.getDocument();
+        if (document == null || document.getIssuerDetails().taxRegimeCode() == null
+                || !item.hasTaxDetail() || item.getIcms().cst() == null) {
             return List.of();
         }
-        String crt = document.getEmitenteRegimeTributario().trim();
-        boolean usesCsosn = item.getTaxDetail().csosn() != null;
-        String code = item.getSituacaoTributariaIcms();
+        String crt = document.getIssuerDetails().taxRegimeCode().trim();
+        boolean usesCsosn = item.getIcms().csosn() != null;
+        String code = item.getIcms().cst();
         if (CSOSN_REGIMES.contains(crt) && !usesCsosn) {
             return List.of(new FiscalDivergence(CODE, "CST_ICMS", code, "CSOSN", DivergenceSeverity.ERROR,
                     "Emitente do Simples Nacional (CRT %s) informou CST %s de ICMS - deveria usar CSOSN".formatted(crt, code)));

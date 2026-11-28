@@ -4,7 +4,7 @@ import java.io.IOException;
 
 /**
  * Where XML bytes physically live. A stored file is identified by its <em>location</em>
- * string (kept in FiscalXmlDocument.xmlFilePath): a filesystem path for the disk, an
+ * string (kept in FiscalDocument.xmlFilePath): a filesystem path for the disk, an
  * {@code s3://bucket/key} URI for S3 - so each location says which backend reads it.
  */
 public interface XmlStorageBackend {

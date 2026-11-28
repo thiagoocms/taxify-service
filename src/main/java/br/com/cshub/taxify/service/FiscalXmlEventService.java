@@ -1,14 +1,13 @@
 package br.com.cshub.taxify.service;
 
-import br.com.cshub.taxify.enumerated.InvoiceAuditStatus;
 import br.com.cshub.taxify.domain.company.Company;
-import br.com.cshub.taxify.domain.xml.FiscalXmlDocument;
-import br.com.cshub.taxify.domain.xml.FiscalXmlEvent;
+import br.com.cshub.taxify.domain.fiscaldocument.FiscalDocument;
+import br.com.cshub.taxify.domain.fiscaldocument.FiscalDocumentEvent;
 import br.com.cshub.taxify.dto.fiscalxml.FiscalXmlEventDTO;
-import br.com.cshub.taxify.enumerated.FiscalDocumentStatus;
+import br.com.cshub.taxify.enumerated.InvoiceAuditStatus;
 import br.com.cshub.taxify.integration.fiscalxml.FiscalEventData;
-import br.com.cshub.taxify.repository.FiscalXmlDocumentRepository;
-import br.com.cshub.taxify.repository.FiscalXmlEventRepository;
+import br.com.cshub.taxify.repository.FiscalDocumentEventRepository;
+import br.com.cshub.taxify.repository.FiscalDocumentRepository;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 
@@ -16,20 +15,18 @@ import java.util.List;
 import java.util.UUID;
 
 /**
- * Stores the SEFAZ events of a company's notes and applies what they mean: a registered
- * cancellation marks the note CANCELED. Works in any order - an event that arrives before
- * its note is kept unlinked and applied by {@link #linkPendingEvents} when the note arrives.
+ * Stores the SEFAZ events of a company's documents and applies what they mean (FD-RN-07): a registered
+ * cancellation marks the document CANCELED. Works in any order - an event that arrives before
+ * its document is kept unlinked and applied by {@link #linkPendingEvents} when the document arrives.
  */
 @Service
 public class FiscalXmlEventService {
 
-    private static final int MAX_DESCRIPTION = 120;
-
-    private final FiscalXmlEventRepository eventRepository;
-    private final FiscalXmlDocumentRepository documentRepository;
+    private final FiscalDocumentEventRepository eventRepository;
+    private final FiscalDocumentRepository documentRepository;
     private final InvoiceAuditTrail auditTrail;
 
-    public FiscalXmlEventService(FiscalXmlEventRepository eventRepository, FiscalXmlDocumentRepository documentRepository,
+    public FiscalXmlEventService(FiscalDocumentEventRepository eventRepository, FiscalDocumentRepository documentRepository,
                                  InvoiceAuditTrail auditTrail) {
         this.auditTrail = auditTrail;
         this.eventRepository = eventRepository;
@@ -44,36 +41,25 @@ public class FiscalXmlEventService {
                 || eventRepository.existsByCompany_IdAndAccessKeyAndEventTypeAndSequenceNumber(company.getId(), data.accessKey(), data.type(), sequence)) {
             return false;
         }
-        FiscalXmlEvent event = new FiscalXmlEvent();
-        event.setCompany(company);
-        event.setAccessKey(data.accessKey());
-        event.setEventType(data.type());
-        event.setDescription(truncate(data.description()));
-        event.setSequenceNumber(sequence);
-        event.setEventAt(data.eventAt());
-        event.setProtocol(data.protocol());
-        event.setText(data.text());
-        event.setRegistered(data.registered());
+        FiscalDocumentEvent event = new FiscalDocumentEvent(company, data.accessKey(), data.type(), sequence,
+                data.description(), data.eventAt(), data.protocol(), data.text(), data.registered());
         event.setDeleted(false);
 
-        documentRepository.findFirstByCompany_IdAndAccessKey(company.getId(), data.accessKey()).ifPresent(document -> {
-            event.setDocument(document);
-            apply(document, event);
-        });
+        documentRepository.findFirstByCompany_IdAndAccessKey(company.getId(), data.accessKey())
+                .ifPresent(document -> link(document, event));
         eventRepository.save(event);
         return true;
     }
 
-    /** A note just imported takes over the events that arrived before it. */
+    /** A document just imported takes over the events that arrived before it. */
     @Transactional
-    public void linkPendingEvents(FiscalXmlDocument document) {
+    public void linkPendingEvents(FiscalDocument document) {
         if (document.getAccessKey() == null) {
             return;
         }
-        for (FiscalXmlEvent event : eventRepository.findByCompany_IdAndAccessKeyAndDocumentIsNull(
+        for (FiscalDocumentEvent event : eventRepository.findByCompany_IdAndAccessKeyAndDocumentIsNull(
                 document.getCompany().getId(), document.getAccessKey())) {
-            event.setDocument(document);
-            apply(document, event);
+            link(document, event);
             eventRepository.save(event);
         }
     }
@@ -86,19 +72,12 @@ public class FiscalXmlEventService {
                 .toList();
     }
 
-    private void apply(FiscalXmlDocument document, FiscalXmlEvent event) {
-        FiscalEventData data = new FiscalEventData(event.getAccessKey(), event.getEventType(), event.getDescription(),
-                event.getSequenceNumber(), event.getEventAt(), event.getProtocol(), event.getText(), event.isRegistered());
-        if (data.isCancellation() && !document.isCanceled()) {
-            document.setStatus(FiscalDocumentStatus.CANCELED);
-            document.setCanceledAt(event.getEventAt());
+    /** Links the event and applies it: a registered cancellation cancels the document at the event time. */
+    private void link(FiscalDocument document, FiscalDocumentEvent event) {
+        if (event.linkTo(document)) {
             documentRepository.save(document);
             auditTrail.record(document.getCompany(), event.getAccessKey(), InvoiceAuditStatus.CANCELED,
                     "Cancelada na SEFAZ" + (event.getText() == null ? "" : ": " + event.getText()));
         }
-    }
-
-    private static String truncate(String value) {
-        return value == null || value.length() <= MAX_DESCRIPTION ? value : value.substring(0, MAX_DESCRIPTION);
     }
 }

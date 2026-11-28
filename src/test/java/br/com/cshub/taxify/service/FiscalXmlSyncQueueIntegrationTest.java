@@ -18,6 +18,14 @@ import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.condition.EnabledIfEnvironmentVariable;
 import org.springframework.beans.factory.annotation.Autowired;
+import br.com.cshub.taxify.domain.company.Company;
+import br.com.cshub.taxify.domain.fiscaldocument.CapturePeriodCount;
+import br.com.cshub.taxify.domain.fiscaldocument.ProviderKey;
+import br.com.cshub.taxify.enumerated.CaptureSide;
+import br.com.cshub.taxify.enumerated.FiscalDocumentType;
+import br.com.cshub.taxify.repository.CapturePeriodCountRepository;
+import br.com.cshub.taxify.service.capture.CaptureCountsService;
+import java.time.YearMonth;
 import org.springframework.boot.test.context.SpringBootTest;
 import org.springframework.jdbc.core.JdbcTemplate;
 
@@ -75,6 +83,10 @@ class FiscalXmlSyncQueueIntegrationTest {
     private FiscalXmlSyncControlRepository controlRepository;
     @Autowired
     private SubscriptionRepository subscriptionRepository;
+    @Autowired
+    private CaptureCountsService countsService;
+    @Autowired
+    private CapturePeriodCountRepository countRepository;
 
     private final Set<String> firms = new LinkedHashSet<>();
     private Set<String> baselineControls = Set.of();
@@ -229,9 +241,6 @@ class FiscalXmlSyncQueueIntegrationTest {
         FiscalXmlSyncControl control = new FiscalXmlSyncControl();
         control.setCompany(companyRepository.findById(companyId).orElseThrow());
         control.setDeleted(false);
-        control.setTotalSieg(0);
-        control.setTotalImported(0);
-        control.setLastCheckedAt(LocalDateTime.now());
         control = controlRepository.save(control);
 
         LocalDateTime t1 = LocalDateTime.now(Clock.system(RECIFE)).truncatedTo(ChronoUnit.MICROS).withNano(123_456_000);
@@ -278,7 +287,7 @@ class FiscalXmlSyncQueueIntegrationTest {
         FirmAccessService access = Mockito.mock(FirmAccessService.class);
         Mockito.when(access.routineGate(Mockito.anyString())).thenAnswer(invocation -> RoutineGate.allowAll("sieg"));
         return new FiscalXmlSyncScheduler(companyRepository, controlRepository, subscriptionRepository, Map.of("sieg", provider),
-                properties, access, null, clock);
+                properties, access, null, clock, null, null, countsService);
     }
 
     /** Records the received-side sync of each company (one visit per company per round). */
@@ -318,15 +327,28 @@ class FiscalXmlSyncQueueIntegrationTest {
         }
     }
 
+    /** The queue row and when each side was last checked (capture_period_counts, FD-RN-32; null = never). */
     private void seedControl(String companyId, LocalDateTime received, LocalDateTime issued) {
         FiscalXmlSyncControl control = new FiscalXmlSyncControl();
-        control.setCompany(companyRepository.findById(UUID.fromString(companyId)).orElseThrow());
+        Company company = companyRepository.findById(UUID.fromString(companyId)).orElseThrow();
+        control.setCompany(company);
         control.setDeleted(false);
-        control.setTotalSieg(0);
-        control.setTotalImported(0);
-        control.setLastCheckedAt(received);
-        control.setIssuedCheckedAt(issued);
         controlRepository.save(control);
+        seedCount(company, CaptureSide.RECEIVED, received);
+        seedCount(company, CaptureSide.ISSUED, issued);
+    }
+
+    private void seedCount(Company company, CaptureSide side, LocalDateTime checkedAt) {
+        if (checkedAt == null) {
+            return;
+        }
+        YearMonth month = YearMonth.from(checkedAt);
+        CapturePeriodCount row = new CapturePeriodCount(company, ProviderKey.SIEG, FiscalDocumentType.NFE, side, month);
+        row.askedWindow(month.atDay(1), checkedAt.toLocalDate());
+        row.recordProviderCount(0, checkedAt);
+        row.recordImported(0, checkedAt);
+        row.setDeleted(false);
+        countRepository.save(row);
     }
 
     private record Fixture(String firmId, List<String> companies) {
@@ -371,6 +393,7 @@ class FiscalXmlSyncQueueIntegrationTest {
 
     private void cleanUp() {
         for (String firm : firms) {
+            jdbc.update("DELETE c FROM capture_period_counts c JOIN companies p ON p.id = c.company_id WHERE p.accounting_firm_id = ?", firm);
             jdbc.update("DELETE c FROM fiscal_xml_sync_control c JOIN companies p ON p.id = c.company_id WHERE p.accounting_firm_id = ?", firm);
             for (String planId : jdbc.queryForList("SELECT id FROM plans WHERE accounting_firm_id = ?", String.class, firm)) {
                 jdbc.update("DELETE FROM subscriptions WHERE plan_id = ?", planId);

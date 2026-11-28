@@ -1,10 +1,12 @@
 package br.com.cshub.taxify.service.fronteira;
 
+import br.com.cshub.taxify.support.TestNotes;
 import br.com.cshub.taxify.domain.company.Company;
 import br.com.cshub.taxify.domain.fronteira.FronteiraRule;
-import br.com.cshub.taxify.domain.xml.FiscalItemTaxDetail;
-import br.com.cshub.taxify.domain.xml.FiscalXmlDocument;
-import br.com.cshub.taxify.domain.xml.FiscalXmlDocumentItem;
+
+import br.com.cshub.taxify.domain.fiscaldocument.GoodsInvoice;
+import br.com.cshub.taxify.domain.fiscaldocument.GoodsTotals;
+import br.com.cshub.taxify.domain.fiscaldocument.FiscalDocumentItem;
 import br.com.cshub.taxify.enumerated.FronteiraRuleKind;
 import br.com.cshub.taxify.service.fronteira.FronteiraCalculator.Context;
 import br.com.cshub.taxify.service.fronteira.FronteiraCalculator.ItemResult;
@@ -42,30 +44,32 @@ class FronteiraCalculatorTest {
         return rule;
     }
 
-    private static FiscalXmlDocument note(String uf, String valorProdutos) {
-        FiscalXmlDocument document = new FiscalXmlDocument();
-        document.setId(UUID.randomUUID());
-        document.setIssuerCnpj("11111111000111");
-        document.setEmitenteUf(uf);
-        document.setDestinatarioUf("PE");
-        document.setIssueDate(LocalDateTime.of(2026, 10, 10, 10, 0));
-        document.setValorProdutos(new BigDecimal(valorProdutos));
+    private static GoodsInvoice note(String uf, String valorProdutos) {
+        GoodsInvoice document = TestNotes.note(TestNotes.company(TestNotes.COMPANY_CNPJ)).issuer("11111111000111", null)
+                .issuerUf(uf).recipientUf("PE").issuedAt(LocalDateTime.of(2026, 10, 10, 10, 0)).build();
+        document.setGoodsTotals(totals(new BigDecimal(valorProdutos), null, null, null));
         return document;
     }
 
-    private static FiscalXmlDocumentItem item(FiscalXmlDocument document, String codigo, String ncm, String cfop, String valor,
-                                              String aliquota, String icms, String origem, String stRetido) {
-        FiscalXmlDocumentItem item = new FiscalXmlDocumentItem();
-        item.setDocument(document);
-        item.setNumeroItem(1);
-        item.setCodigo(codigo);
-        item.setNcm(ncm);
-        item.setCfop(cfop);
-        item.setValorTotal(new BigDecimal(valor));
-        item.setAliquotaIcms(aliquota == null ? null : new BigDecimal(aliquota));
-        item.setValorIcms(icms == null ? null : new BigDecimal(icms));
-        item.setTaxDetail(new FiscalItemTaxDetail(null, null, origem, null, null, null, null, null, null, null, null,
-                stRetido == null ? null : new BigDecimal(stRetido), null, null, null, null, null, null));
+    /** The goods totals the calculation reads: products, freight, insurance and other expenses. */
+    private static GoodsTotals totals(BigDecimal products, BigDecimal freight, BigDecimal insurance, BigDecimal other) {
+        return new GoodsTotals(null, null, null, null, null, null, null, products, freight, insurance, null, null, null, null,
+                null, other, null);
+    }
+
+    private static void freight(GoodsInvoice document, String value) {
+        GoodsTotals t = document.getGoodsTotals();
+        document.setGoodsTotals(totals(t.productsAmount(), new BigDecimal(value), t.insuranceAmount(), t.otherExpensesAmount()));
+    }
+
+    /** Numbered in the order they are created (1, 2...), as in the note. */
+    private static FiscalDocumentItem item(GoodsInvoice document, String codigo, String ncm, String cfop, String valor,
+                                           String aliquota, String icms, String origem, String stRetido) {
+        FiscalDocumentItem item = TestNotes.item(document.getItems().size() + 1).code(codigo).ncm(ncm).cfop(cfop).total(valor)
+                .icms(null, null, aliquota, icms).build();
+        TestNotes.taxDetail(item, null, null, origem, null, null, null, null, null, null, null, null,
+                stRetido == null ? null : new BigDecimal(stRetido), null, null, null, null, null, null);
+        document.addItem(item);
         return item;
     }
 
@@ -78,8 +82,8 @@ class FronteiraCalculatorTest {
     /** NF-e 292727 (10/2026), fechaduras do RJ para PE: R$ 11.704,33, ICMS 7%, MVA ajustada 80,15% → SEFAZ-PE cobrou R$ 3.503,21. */
     @Test
     void stOfLocksFromRioDeJaneiro() {
-        FiscalXmlDocument document = note("RJ", "11704.33");
-        FiscalXmlDocumentItem item = item(document, "FECH-01", "83014000", "6102", "11704.33", "7", "819.30", "0", null);
+        GoodsInvoice document = note("RJ", "11704.33");
+        FiscalDocumentItem item = item(document, "FECH-01", "83014000", "6102", "11704.33", "7", "819.30", "0", null);
         FronteiraRule st = rule(FronteiraRuleKind.ST_MVA);
         st.setNcm("83014000");
         st.setMva(new BigDecimal("54")); // MVA original that gives the 80,15% ajustada with 7% → 20,5%
@@ -105,8 +109,8 @@ class FronteiraCalculatorTest {
      */
     @Test
     void credenciamentoCargaLiquidaWhateverTheRegime() {
-        FiscalXmlDocument document = note("SP", "887.00");
-        FiscalXmlDocumentItem item = item(document, "TEC-01", "52083200", "6102", "887.00", "7", "62.09", "0", null);
+        GoodsInvoice document = note("SP", "887.00");
+        FiscalDocumentItem item = item(document, "TEC-01", "52083200", "6102", "887.00", "7", "62.09", "0", null);
 
         ItemResult result = FronteiraCalculator.item(document, item,
                 new Context(List.of(interna(null, "20.5"), cargaTecidos()), false, "TECIDOS E ARMARINHO (INDUSTRIA)"));
@@ -122,11 +126,11 @@ class FronteiraCalculatorTest {
      */
     @Test
     void efiscoMemoryOfNote473() {
-        FiscalXmlDocument document = note("RN", "2400.00");
+        GoodsInvoice document = note("RN", "2400.00");
         document.setMetadataVersion(5); // read before the Simples credit was stored
-        FiscalXmlDocumentItem item = item(document, "P1", "52083200", "6101", "2400.00", null, null, "0", null);
-        item.setTaxDetail(new FiscalItemTaxDetail(null, null, "0", "102", null, null, null, null, null, null, null, null,
-                null, null, null, null, null, null));
+        FiscalDocumentItem item = item(document, "P1", "52083200", "6101", "2400.00", null, null, "0", null);
+        TestNotes.taxDetail(item, null, null, "0", "102", null, null, null, null, null, null, null, null,
+                null, null, null, null, null, null);
 
         ItemResult result = FronteiraCalculator.item(document, item,
                 new Context(List.of(interna(null, "20.5"), cargaTecidos()), false, "TECIDOS E ARMARINHO (INDUSTRIA)"));
@@ -143,9 +147,9 @@ class FronteiraCalculatorTest {
      */
     @Test
     void efiscoMemoryOfNote22799WithFreight() {
-        FiscalXmlDocument document = note("SC", "576.61");
-        document.setValorFrete(new BigDecimal("134.29"));
-        FiscalXmlDocumentItem item = item(document, "P1", "52083200", "6101", "576.61", "7", "49.77", "0", null);
+        GoodsInvoice document = note("SC", "576.61");
+        freight(document, "134.29");
+        FiscalDocumentItem item = item(document, "P1", "52083200", "6101", "576.61", "7", "49.77", "0", null);
 
         ItemResult result = FronteiraCalculator.item(document, item,
                 new Context(List.of(interna(null, "20.5"), cargaTecidos()), false, "TECIDOS E ARMARINHO (INDUSTRIA)"));
@@ -164,10 +168,10 @@ class FronteiraCalculatorTest {
      */
     @Test
     void efiscoMemoryOfNote973() {
-        FiscalXmlDocument document = note("RN", "14018.40");
-        FiscalXmlDocumentItem item = item(document, "P1", "52083200", "6101", "14018.40", null, null, "0", null);
-        item.setTaxDetail(new FiscalItemTaxDetail(null, null, "0", "102", null, null, null, null, null, null, null, null,
-                null, null, null, null, null, null));
+        GoodsInvoice document = note("RN", "14018.40");
+        FiscalDocumentItem item = item(document, "P1", "52083200", "6101", "14018.40", null, null, "0", null);
+        TestNotes.taxDetail(item, null, null, "0", "102", null, null, null, null, null, null, null, null,
+                null, null, null, null, null, null);
 
         ItemResult result = FronteiraCalculator.item(document, item,
                 new Context(List.of(interna(null, "20.5"), cargaTecidos()), false, "TECIDOS E ARMARINHO (INDUSTRIA)"));
@@ -180,10 +184,10 @@ class FronteiraCalculatorTest {
     /** e-Fisco's own memory of NF 475 (RN, R$ 13.720,00, Simples supplier): 13.720,00 × 5,5% = 754,60, the value of the extract. */
     @Test
     void efiscoMemoryOfNote475() {
-        FiscalXmlDocument document = note("RN", "13720.00");
-        FiscalXmlDocumentItem item = item(document, "P1", "52083200", "6101", "13720.00", null, null, "0", null);
-        item.setTaxDetail(new FiscalItemTaxDetail(null, null, "0", "102", null, null, null, null, null, null, null, null,
-                null, null, null, null, null, null));
+        GoodsInvoice document = note("RN", "13720.00");
+        FiscalDocumentItem item = item(document, "P1", "52083200", "6101", "13720.00", null, null, "0", null);
+        TestNotes.taxDetail(item, null, null, "0", "102", null, null, null, null, null, null, null, null,
+                null, null, null, null, null, null);
 
         ItemResult result = FronteiraCalculator.item(document, item,
                 new Context(List.of(interna(null, "20.5"), cargaTecidos()), false, "TECIDOS E ARMARINHO (INDUSTRIA)"));
@@ -195,9 +199,9 @@ class FronteiraCalculatorTest {
     /** Freight of a note with two items goes by product value, unrounded until the end (as e-Fisco keeps it). */
     @Test
     void freightIsSharedByProductValue() {
-        FiscalXmlDocument document = note("SC", "300.00");
-        document.setValorFrete(new BigDecimal("100.00"));
-        FiscalXmlDocumentItem first = item(document, "P1", "52083200", "6101", "100.00", "7", "7.00", "0", null);
+        GoodsInvoice document = note("SC", "300.00");
+        freight(document, "100.00");
+        FiscalDocumentItem first = item(document, "P1", "52083200", "6101", "100.00", "7", "7.00", "0", null);
 
         ItemResult result = FronteiraCalculator.item(document, first,
                 new Context(List.of(interna(null, "20.5"), cargaTecidos()), false, "TECIDOS E ARMARINHO (INDUSTRIA)"));
@@ -209,8 +213,8 @@ class FronteiraCalculatorTest {
     /** Without the credenciamento, a regime normal company doesn't take a carga líquida meant for one. */
     @Test
     void aCargaLiquidaOfAnotherCredenciamentoIsNotUsed() {
-        FiscalXmlDocument document = note("CE", "1000.00");
-        FiscalXmlDocumentItem item = item(document, "P1", "61091000", "6102", "1000.00", "12", "120.00", "0", null);
+        GoodsInvoice document = note("CE", "1000.00");
+        FiscalDocumentItem item = item(document, "P1", "61091000", "6102", "1000.00", "12", "120.00", "0", null);
 
         ItemResult result = FronteiraCalculator.item(document, item,
                 new Context(List.of(interna(null, "20.5"), cargaTecidos()), false, "OUTRO CREDENCIAMENTO"));
@@ -220,8 +224,8 @@ class FronteiraCalculatorTest {
 
     @Test
     void regimeNormalWithoutEncerramento() {
-        FiscalXmlDocument document = note("CE", "1000.00");
-        FiscalXmlDocumentItem item = item(document, "P1", "61091000", "6102", "1000.00", "12", "120.00", "0", null);
+        GoodsInvoice document = note("CE", "1000.00");
+        FiscalDocumentItem item = item(document, "P1", "61091000", "6102", "1000.00", "12", "120.00", "0", null);
 
         ItemResult result = FronteiraCalculator.item(document, item, new Context(List.of(interna(null, "20.5")), false, null));
 
@@ -232,8 +236,8 @@ class FronteiraCalculatorTest {
 
     @Test
     void theAccountantsFormulaWinsAndTheMostSpecificOneIsUsed() {
-        FiscalXmlDocument document = note("SP", "1000.00");
-        FiscalXmlDocumentItem item = item(document, "P1", "61091000", "6102", "1000.00", "7", "70.00", "0", null);
+        GoodsInvoice document = note("SP", "1000.00");
+        FiscalDocumentItem item = item(document, "P1", "61091000", "6102", "1000.00", "7", "70.00", "0", null);
         FronteiraRule byNcm = rule(FronteiraRuleKind.FORMULA);
         byNcm.setNcm("6109");
         byNcm.setFormula("partida * 10%");
@@ -253,8 +257,8 @@ class FronteiraCalculatorTest {
 
     @Test
     void aFormulaOutOfItsValidityIsNotUsed() {
-        FiscalXmlDocument document = note("SP", "1000.00");
-        FiscalXmlDocumentItem item = item(document, "P1", "61091000", "6102", "1000.00", "7", "70.00", "0", null);
+        GoodsInvoice document = note("SP", "1000.00");
+        FiscalDocumentItem item = item(document, "P1", "61091000", "6102", "1000.00", "7", "70.00", "0", null);
         FronteiraRule old = rule(FronteiraRuleKind.FORMULA);
         old.setProductCode("P1");
         old.setFormula("partida * 1%");
@@ -267,8 +271,8 @@ class FronteiraCalculatorTest {
 
     @Test
     void withoutARateItIsSemRegraNeverCobrouAMais() {
-        FiscalXmlDocument document = note("SP", "1000.00");
-        FiscalXmlDocumentItem item = item(document, "P1", "61091000", "6102", "1000.00", "7", "70.00", "0", null);
+        GoodsInvoice document = note("SP", "1000.00");
+        FiscalDocumentItem item = item(document, "P1", "61091000", "6102", "1000.00", "7", "70.00", "0", null);
 
         FronteiraCalculator.NoteResult result = FronteiraCalculator.calculate(document, List.of(item), new Context(List.of(), false, null));
 
@@ -279,10 +283,9 @@ class FronteiraCalculatorTest {
 
     @Test
     void devolutionAndStAlreadyWithheldHaveNoAntecipacao() {
-        FiscalXmlDocument document = note("SP", "2000.00");
-        FiscalXmlDocumentItem devolucao = item(document, "P1", "61091000", "6202", "1000.00", "7", "70.00", "0", null);
-        FiscalXmlDocumentItem stRetido = item(document, "P2", "83014000", "6403", "1000.00", "7", "70.00", "0", "150.00");
-        stRetido.setNumeroItem(2);
+        GoodsInvoice document = note("SP", "2000.00");
+        FiscalDocumentItem devolucao = item(document, "P1", "61091000", "6202", "1000.00", "7", "70.00", "0", null);
+        FiscalDocumentItem stRetido = item(document, "P2", "83014000", "6403", "1000.00", "7", "70.00", "0", "150.00");
         Context context = new Context(List.of(interna(null, "20.5")), false, null);
 
         FronteiraCalculator.NoteResult result = FronteiraCalculator.calculate(document, new ArrayList<>(List.of(devolucao, stRetido)), context);
@@ -298,8 +301,8 @@ class FronteiraCalculatorTest {
     @Test
     void bonificacaoAndOutrasAreChargedLikeAPurchase() {
         Context context = new Context(List.of(interna(null, "20.5"), cargaTecidos()), false, "TECIDOS E ARMARINHO (INDUSTRIA)");
-        FiscalXmlDocument sc = note("SC", "115.60");
-        FiscalXmlDocument sp = note("SP", "2.00");
+        GoodsInvoice sc = note("SC", "115.60");
+        GoodsInvoice sp = note("SP", "2.00");
 
         ItemResult bonificacao = FronteiraCalculator.item(sc, item(sc, "P1", "61091000", "6910", "115.60", "12", "13.87", "0", null), context);
         ItemResult outras = FronteiraCalculator.item(sp, item(sp, "P1", "61091000", "6949", "2.00", "7", "0.14", "0", null), context);
@@ -312,8 +315,8 @@ class FronteiraCalculatorTest {
 
     @Test
     void importedGoodsUseFourPercent() {
-        FiscalXmlDocument document = note("SP", "1000.00");
-        FiscalXmlDocumentItem item = item(document, "P1", "85171300", "6102", "1000.00", "4", "40.00", "1", null);
+        GoodsInvoice document = note("SP", "1000.00");
+        FiscalDocumentItem item = item(document, "P1", "85171300", "6102", "1000.00", "4", "40.00", "1", null);
 
         ItemResult result = FronteiraCalculator.item(document, item, new Context(List.of(interna(null, "20.5")), false, null));
 
@@ -323,8 +326,8 @@ class FronteiraCalculatorTest {
     /** A company's own rule beats the global one for the same NCM. */
     @Test
     void theCompanysRateBeatsTheGlobalOne() {
-        FiscalXmlDocument document = note("CE", "1000.00");
-        FiscalXmlDocumentItem item = item(document, "P1", "22030000", "6102", "1000.00", "12", "120.00", "0", null);
+        GoodsInvoice document = note("CE", "1000.00");
+        FiscalDocumentItem item = item(document, "P1", "22030000", "6102", "1000.00", "12", "120.00", "0", null);
         FronteiraRule global = interna("2203", "23");
         FronteiraRule own = interna("2203", "25");
         own.setCompany(new Company(UUID.randomUUID()));
@@ -335,11 +338,11 @@ class FronteiraCalculatorTest {
         assertThat(result.rulesUsed()).contains(own.getId());
     }
 
-    private static FiscalXmlDocumentItem simplesSupplierItem(FiscalXmlDocument document, String valor, String credito) {
-        FiscalXmlDocumentItem item = item(document, "P1", "61091000", "6102", valor, null, null, "0", null);
-        item.setTaxDetail(new FiscalItemTaxDetail(null, null, "0", credito == null ? "102" : "101", null, null, null, null, null,
+    private static FiscalDocumentItem simplesSupplierItem(GoodsInvoice document, String valor, String credito) {
+        FiscalDocumentItem item = item(document, "P1", "61091000", "6102", valor, null, null, "0", null);
+        TestNotes.taxDetail(item, null, null, "0", credito == null ? "102" : "101", null, null, null, null, null,
                 null, null, null, null, null, null, null, null, null, credito == null ? null : new BigDecimal("2.56"),
-                credito == null ? null : new BigDecimal(credito)));
+                credito == null ? null : new BigDecimal(credito));
         return item;
     }
 
@@ -354,9 +357,9 @@ class FronteiraCalculatorTest {
         st.setMva(new BigDecimal("54"));
         Context context = new Context(List.of(interna(null, "20.5"), diferencial, st), false, null);
 
-        FiscalXmlDocument rn = note("RN", "7728.00");
+        GoodsInvoice rn = note("RN", "7728.00");
         ItemResult normal = FronteiraCalculator.item(rn, item(rn, "P1", "61091000", "6102", "7728.00", "12", "927.36", "0", null), context);
-        FiscalXmlDocument rj = note("RJ", "11704.33");
+        GoodsInvoice rj = note("RJ", "11704.33");
         ItemResult withSt = FronteiraCalculator.item(rj, item(rj, "FECH-01", "83014000", "6102", "11704.33", "7", "819.30", "0", null), context);
         ItemResult devolucao = FronteiraCalculator.item(rn, item(rn, "P1", "61091000", "6202", "7728.00", "12", "927.36", "0", null), context);
 
@@ -371,7 +374,7 @@ class FronteiraCalculatorTest {
         FronteiraRule everything = rule(FronteiraRuleKind.FORMULA);
         everything.setFormula("partida * 1%");
         Context context = new Context(List.of(interna(null, "20.5"), everything), false, null);
-        FiscalXmlDocument document = note("SP", "1000.00");
+        GoodsInvoice document = note("SP", "1000.00");
 
         ItemResult devolucao = FronteiraCalculator.item(document, item(document, "P1", "61091000", "6202", "1000.00", "7", "70.00", "0", null), context);
         ItemResult retido = FronteiraCalculator.item(document, item(document, "P2", "83014000", "6403", "1000.00", "7", "70.00", "0", "150.00"), context);
@@ -392,7 +395,7 @@ class FronteiraCalculatorTest {
     /** NF 485 from a Simples supplier with no ICMS destacado: the regime normal diferencial needs no credit. */
     @Test
     void theDiferencialIsTheStandardAndNeedsNoCredit() {
-        FiscalXmlDocument document = note("RN", "7728.00");
+        GoodsInvoice document = note("RN", "7728.00");
         document.setMetadataVersion(5);
 
         ItemResult result = FronteiraCalculator.item(document, simplesSupplierItem(document, "7728.00", null),
@@ -408,7 +411,7 @@ class FronteiraCalculatorTest {
     /** Under ST, a Simples supplier with no ICMS destacado gets e-Fisco's crédito outorgado: the interstate rate over the product. */
     @Test
     void stFromASimplesSupplierTakesTheCreditoOutorgado() {
-        FiscalXmlDocument document = note("RN", "1000.00");
+        GoodsInvoice document = note("RN", "1000.00");
 
         ItemResult result = FronteiraCalculator.item(document, simplesSupplierItem(document, "1000.00", null),
                 new Context(List.of(interna(null, "20.5"), stLocks()), false, null));
@@ -428,10 +431,10 @@ class FronteiraCalculatorTest {
         return rule;
     }
 
-    private static FiscalXmlDocumentItem nobreak(FiscalXmlDocument document) {
-        FiscalXmlDocumentItem item = item(document, "11204481", "85044040", "6108", "4261.61", null, null, "0", null);
-        item.setTaxDetail(new FiscalItemTaxDetail(null, null, "0", "102", null, null, null, null, null, null, null, null,
-                null, null, null, null, null, null));
+    private static FiscalDocumentItem nobreak(GoodsInvoice document) {
+        FiscalDocumentItem item = item(document, "11204481", "85044040", "6108", "4261.61", null, null, "0", null);
+        TestNotes.taxDetail(item, null, null, "0", "102", null, null, null, null, null, null, null, null,
+                null, null, null, null, null, null);
         return item;
     }
 
@@ -442,7 +445,7 @@ class FronteiraCalculatorTest {
      */
     @Test
     void efiscoMemoryOfNote1810Agregacao() {
-        FiscalXmlDocument document = note("MG", "4261.61");
+        GoodsInvoice document = note("MG", "4261.61");
 
         ItemResult result = FronteiraCalculator.item(document, nobreak(document),
                 new Context(List.of(interna(null, "20.5"), cargaTecidos(), nobreakAgregacao()), false, "TECIDOS E ARMARINHO (INDUSTRIA)"));
@@ -458,7 +461,7 @@ class FronteiraCalculatorTest {
      */
     @Test
     void anAtivoByTheProductRuleIsOnlyTheDiferencial() {
-        FiscalXmlDocument document = note("MG", "4261.61");
+        GoodsInvoice document = note("MG", "4261.61");
         br.com.cshub.taxify.domain.fiscalrule.ProductFiscalRule ativo = new br.com.cshub.taxify.domain.fiscalrule.ProductFiscalRule(UUID.randomUUID());
         ativo.setProductCode("11204481");
         ativo.setCorrectCfop("1551");
@@ -480,10 +483,10 @@ class FronteiraCalculatorTest {
      */
     @Test
     void importedGoodsTakeTheFourPercentCredit() {
-        FiscalXmlDocument document = note("SP", "136.19");
-        FiscalXmlDocumentItem item = item(document, "TW6527", "85166000", "6106", "136.19", null, null, "1", null);
-        item.setTaxDetail(new FiscalItemTaxDetail(null, null, "1", "102", null, null, null, null, null, null, null, null,
-                null, null, null, null, null, null));
+        GoodsInvoice document = note("SP", "136.19");
+        FiscalDocumentItem item = item(document, "TW6527", "85166000", "6106", "136.19", null, null, "1", null);
+        TestNotes.taxDetail(item, null, null, "1", "102", null, null, null, null, null, null, null, null,
+                null, null, null, null, null, null);
         FronteiraRule eletro = nobreakAgregacao();
         eletro.setNcm("8516");
         Context asEfisco = new Context(List.of(interna(null, "20.5"), cargaTecidos(), eletro), false, "TECIDOS E ARMARINHO (INDUSTRIA)");
@@ -501,7 +504,7 @@ class FronteiraCalculatorTest {
     /** An agregação for the other region (or for non-Simples suppliers) is not used. */
     @Test
     void anAgregacaoOfAnotherRegionIsNotUsed() {
-        FiscalXmlDocument document = note("MG", "4261.61");
+        GoodsInvoice document = note("MG", "4261.61");
         FronteiraRule northeast = nobreakAgregacao();
         northeast.setOriginRegion(FronteiraCalculator.DEMAIS_REGIOES);
         FronteiraRule notSimples = nobreakAgregacao();

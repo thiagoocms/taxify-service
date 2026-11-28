@@ -10,7 +10,7 @@ import java.util.UUID;
 
 /**
  * The correct CFOP/NCM (and, optionally, tax classification - {@link ProductTaxRule}) for one product of one company, kept in taxify so already
- * downloaded/stored {@link br.com.cshub.taxify.domain.xml.FiscalXmlDocumentItem}s can be
+ * downloaded/stored {@link br.com.cshub.taxify.domain.fiscaldocument.FiscalDocumentItem}s can be
  * checked against it (see {@link br.com.cshub.taxify.service.ProductFiscalDivergenceService})
  * to find notes that were issued with the wrong classification and need rectifying.
  */

@@ -1,11 +1,12 @@
 package br.com.cshub.taxify.service;
 
+import br.com.cshub.taxify.support.TestNotes;
 import br.com.cshub.taxify.common.MessageService;
 import br.com.cshub.taxify.domain.certificate.CompanyCertificate;
 import br.com.cshub.taxify.domain.company.Company;
 import br.com.cshub.taxify.domain.document.Document;
-import br.com.cshub.taxify.domain.xml.FiscalXmlDocument;
-import br.com.cshub.taxify.domain.xml.FiscalXmlEvent;
+import br.com.cshub.taxify.domain.fiscaldocument.GoodsInvoice;
+import br.com.cshub.taxify.domain.fiscaldocument.FiscalDocumentEvent;
 import br.com.cshub.taxify.domain.xml.SefazNoteSummary;
 import br.com.cshub.taxify.domain.xml.SefazNoteSummary.CienciaStatus;
 import br.com.cshub.taxify.dto.fiscalxml.ManifestationDTOs;
@@ -17,8 +18,9 @@ import br.com.cshub.taxify.integration.sefaz.SefazEventClient;
 import br.com.cshub.taxify.integration.sefaz.SefazEventClient.EventRequest;
 import br.com.cshub.taxify.integration.sefaz.SefazEventClient.Manifestation;
 import br.com.cshub.taxify.integration.sefaz.SefazEventResponse;
-import br.com.cshub.taxify.repository.FiscalXmlDocumentRepository;
-import br.com.cshub.taxify.repository.FiscalXmlEventRepository;
+import br.com.cshub.taxify.domain.fiscaldocument.Nfe;
+import br.com.cshub.taxify.repository.NfeRepository;
+import br.com.cshub.taxify.repository.FiscalDocumentEventRepository;
 import br.com.cshub.taxify.repository.SefazNoteSummaryRepository;
 import br.com.cshub.taxify.validation.CompanyValidation;
 import org.junit.jupiter.api.BeforeEach;
@@ -58,11 +60,11 @@ class SefazManifestationScreenServiceTest {
     private static final String KEY_2 = "26241199888777000166550020000004561000000025";
 
     @Mock
-    private FiscalXmlDocumentRepository documentRepository;
+    private NfeRepository documentRepository;
     @Mock
     private SefazNoteSummaryRepository summaryRepository;
     @Mock
-    private FiscalXmlEventRepository eventRepository;
+    private FiscalDocumentEventRepository eventRepository;
     @Mock
     private FiscalXmlEventService eventService;
     @Mock
@@ -104,23 +106,15 @@ class SefazManifestationScreenServiceTest {
 
     @Test
     void listsStoredNotesAndSummariesByDeadlineWithTheirCiencia() {
-        FiscalXmlDocument stored = new FiscalXmlDocument();
-        stored.setId(UUID.randomUUID());
-        stored.setAccessKey(KEY_1);
-        stored.setNumero("123");
-        stored.setEmitenteNome("FORNECEDOR A");
-        stored.setIssuerCnpj("99888777000166");
-        stored.setIssueDate(LocalDate.now().minusDays(100).atStartOfDay());
-        stored.setValorTotalNota(new BigDecimal("50.00"));
+        Nfe stored = (Nfe) TestNotes.note(company).key(KEY_1).number("123").issuer("99888777000166", "FORNECEDOR A")
+                .issuedAt(LocalDate.now().minusDays(100).atStartOfDay()).total("50.00").build();
         SefazNoteSummary summary = new SefazNoteSummary();
         summary.setAccessKey(KEY_2);
         summary.setIssuerName("FORNECEDOR B");
         summary.setIssueDate(LocalDate.now().minusDays(170).atStartOfDay());
         when(documentRepository.findAwaitingManifestation(eq(company.getId()), eq(CNPJ), any(), any(), any())).thenReturn(List.of(stored));
         when(summaryRepository.findAwaitingManifestation(eq(company.getId()), any(), any(), any())).thenReturn(List.of(summary));
-        FiscalXmlEvent ciencia = new FiscalXmlEvent();
-        ciencia.setAccessKey(KEY_1);
-        ciencia.setEventType("210210");
+        FiscalDocumentEvent ciencia = new FiscalDocumentEvent(company, KEY_1, "210210", 1, null, null, null, null, true);
         when(eventRepository.findByCompany_IdAndAccessKeyInAndRegisteredIsTrue(eq(company.getId()), any())).thenReturn(List.of(ciencia));
 
         ManifestationDTOs.Pending pending = service.pending(company.getId().toString());

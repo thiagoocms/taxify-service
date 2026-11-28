@@ -14,6 +14,7 @@ import br.com.cshub.taxify.integration.sieg.SiegDocumentCounts;
 import br.com.cshub.taxify.repository.AccountingFirmRepository;
 import br.com.cshub.taxify.repository.CompanyRepository;
 import br.com.cshub.taxify.repository.FiscalXmlSyncControlRepository;
+import br.com.cshub.taxify.service.capture.CaptureCountsService;
 import br.com.cshub.taxify.repository.SubscriptionRepository;
 import br.com.cshub.taxify.service.capture.CapturePriorityService;
 import br.com.cshub.taxify.service.capture.CaptureStageRecorder;
@@ -121,6 +122,8 @@ class SiegCallSavingsQaTest {
     private CapturePriorityService priorityService;
     @Autowired
     private CaptureStageRecorder stageRecorder;
+    @Autowired
+    private CaptureCountsService countsService;
 
     private String firmId;
     private String companyId;
@@ -255,7 +258,7 @@ class SiegCallSavingsQaTest {
         properties.setEnabled(true);
         properties.setBatchSize(1000);
         return new FiscalXmlSyncScheduler(companyRepository, controlRepository, subscriptionRepository, providers, properties,
-                firmAccessService, null, clock, stageRecorder, priorityService);
+                firmAccessService, null, clock, stageRecorder, priorityService, countsService);
     }
 
     /** One tick of the real scheduler at the Recife instant. */
@@ -314,7 +317,7 @@ class SiegCallSavingsQaTest {
                 <nfeProc xmlns="http://www.portalfiscal.inf.br/nfe">
                   <NFe>
                     <infNFe Id="NFe%s" versao="4.00">
-                      <ide><dhEmi>%s</dhEmi></ide>
+                      <ide><mod>55</mod><dhEmi>%s</dhEmi></ide>
                       <emit><CNPJ>%s</CNPJ></emit>
                       <dest><CNPJ>%s</CNPJ></dest>
                     </infNFe>
@@ -351,25 +354,35 @@ class SiegCallSavingsQaTest {
 
     // ------------------------------------------------------------------------------------- queries
 
+    /**
+     * The received side's counters of the month last checked, read from capture_period_counts (FD-RN-32) under the names
+     * of the old fiscal_xml_sync_control columns these scenarios were written with.
+     */
     private Map<String, Object> control() {
-        return jdbc.queryForMap("SELECT * FROM fiscal_xml_sync_control WHERE company_id = ?", companyId);
+        return jdbc.queryForMap("SELECT period_month, provider_total AS total_sieg, imported_total AS total_importado,"
+                + " known_gap AS received_known_gap, stored_any_source_total AS received_stored_any_source FROM capture_period_counts"
+                + " WHERE company_id = ? AND channel = 'SIEG' AND document_type = 'NFE' AND side = 'RECEIVED' AND window_start IS NOT NULL"
+                + " ORDER BY period_month DESC LIMIT 1", companyId);
     }
 
     private int stored() {
-        return jdbc.queryForObject("SELECT COUNT(*) FROM fiscal_xml_documents WHERE company_id = ?", Integer.class, companyId);
+        return jdbc.queryForObject("SELECT COUNT(*) FROM fiscal_documents WHERE company_id = ? AND document_type IN ('NFE', 'NFCE')",
+                Integer.class, companyId);
     }
 
     private int foundInSieg() {
-        return jdbc.queryForObject("SELECT COUNT(*) FROM fiscal_xml_documents WHERE company_id = ? AND found_in_sieg_at IS NOT NULL",
+        return jdbc.queryForObject("SELECT COUNT(DISTINCT s.document_id) FROM fiscal_document_sources s JOIN fiscal_documents d"
+                + " ON d.id = s.document_id WHERE s.company_id = ? AND s.source = 'SIEG' AND d.document_type IN ('NFE', 'NFCE')",
                 Integer.class, companyId);
     }
 
     private int nfseStored() {
-        return jdbc.queryForObject("SELECT COUNT(*) FROM service_invoices WHERE company_id = ?", Integer.class, companyId);
+        return jdbc.queryForObject("SELECT COUNT(*) FROM fiscal_documents WHERE company_id = ? AND document_type = 'NFSE'",
+                Integer.class, companyId);
     }
 
     private List<String> missing(List<Nfe> expected) {
-        List<String> stored = jdbc.queryForList("SELECT access_key FROM fiscal_xml_documents WHERE company_id = ?", String.class, companyId);
+        List<String> stored = jdbc.queryForList("SELECT access_key FROM fiscal_documents WHERE company_id = ?", String.class, companyId);
         return expected.stream().map(Nfe::key).filter(k -> !stored.contains(k)).toList();
     }
 
@@ -555,7 +568,7 @@ class SiegCallSavingsQaTest {
         sieg.events.put(recent.key(), List.of(cancelEvent(recent.key()).getBytes(StandardCharsets.UTF_8)));
         sieg.events.put(twoDays.key(), List.of(cancelEvent(twoDays.key()).getBytes(StandardCharsets.UTF_8)));
         days(scheduler, "2026-12-18", "2026-12-19");
-        Map<String, String> status = jdbc.queryForList("SELECT access_key, status FROM fiscal_xml_documents WHERE company_id = ?", companyId)
+        Map<String, String> status = jdbc.queryForList("SELECT access_key, status FROM fiscal_documents WHERE company_id = ?", companyId)
                 .stream().collect(Collectors.toMap(r -> (String) r.get("access_key"), r -> String.valueOf(r.get("status"))));
         System.out.println("QA-S06 old(10d)=" + status.get(old.key()) + " recent(1d)=" + status.get(recent.key()) + " 2d="
                 + status.get(twoDays.key()) + " eventsCalls=" + sieg.calls.stream().filter(c -> c.purpose().equals("EVENTS")).count());
@@ -718,7 +731,7 @@ class SiegCallSavingsQaTest {
             tb.join();
         }
         assertThat(stored()).isEqualTo(80);
-        assertThat(jdbc.queryForObject("SELECT COUNT(*) FROM (SELECT access_key FROM fiscal_xml_documents WHERE company_id = ?"
+        assertThat(jdbc.queryForObject("SELECT COUNT(*) FROM (SELECT access_key FROM fiscal_documents WHERE company_id = ?"
                 + " GROUP BY access_key HAVING COUNT(*) > 1) d", Integer.class, companyId)).isZero();
         long pages = sieg.count("nfe");
         System.out.println("QA-S09 two instances, 6 rounds: nfe pages=" + pages + " counts=" + sieg.count("count"));
@@ -797,7 +810,7 @@ class SiegCallSavingsQaTest {
 
     /** Clears what the sync wrote for the company (notes, control row, requests), keeps the company. */
     private void cleanCompanyData() {
-        jdbc.update("DELETE i FROM fiscal_xml_document_items i JOIN fiscal_xml_documents d ON d.id = i.document_id WHERE d.company_id = ?",
+        jdbc.update("DELETE i FROM fiscal_document_items i JOIN fiscal_documents d ON d.id = i.document_id WHERE d.company_id = ?",
                 companyId);
         for (int pass = 0; pass < 3; pass++) {
             for (String table : jdbc.queryForList("SELECT DISTINCT table_name FROM information_schema.columns WHERE table_schema = DATABASE()"

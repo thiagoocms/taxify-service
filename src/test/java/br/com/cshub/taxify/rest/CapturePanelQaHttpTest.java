@@ -1017,15 +1017,26 @@ class CapturePanelQaHttpTest {
 
     private void control(String company, LocalDateTime lastAttempt, int receivedTotal, int receivedImported, int issuedTotal,
                          int issuedImported, LocalDateTime checkedAt, LocalDate sweptOn) {
+        jdbc.update("DELETE FROM capture_period_counts WHERE company_id = ?", company);
         jdbc.update("DELETE FROM fiscal_xml_sync_control WHERE company_id = ?", company);
-        jdbc.update("INSERT INTO fiscal_xml_sync_control (id, company_id, deleted, created_by, created_date, data_emissao_inicio,"
-                        + " data_emissao_fim, total_sieg, total_importado, ultima_verificacao_em, issued_total_sieg, issued_total_imported,"
-                        + " issued_checked_at, last_attempt_at, received_events_checked_on, issued_events_checked_on,"
-                        + " service_invoices_checked_on) VALUES (?, ?, 0, 'qa', ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)",
-                UUID.randomUUID().toString(), company, Timestamp.valueOf(NOW), java.sql.Date.valueOf(LocalDate.of(2026, 11, 1)),
-                java.sql.Date.valueOf(LocalDate.of(2026, 11, 27)), receivedTotal, receivedImported, Timestamp.valueOf(checkedAt),
-                issuedTotal, issuedImported, Timestamp.valueOf(checkedAt), lastAttempt == null ? null : Timestamp.valueOf(lastAttempt),
+        jdbc.update("INSERT INTO fiscal_xml_sync_control (id, company_id, deleted, created_by, created_date, last_attempt_at,"
+                        + " received_events_checked_on, issued_events_checked_on, service_invoices_checked_on)"
+                        + " VALUES (?, ?, 0, 'qa', ?, ?, ?, ?, ?)",
+                UUID.randomUUID().toString(), company, Timestamp.valueOf(NOW), lastAttempt == null ? null : Timestamp.valueOf(lastAttempt),
                 java.sql.Date.valueOf(sweptOn), java.sql.Date.valueOf(sweptOn), java.sql.Date.valueOf(sweptOn));
+        // the SIEG counters live in capture_period_counts (FD-RN-32): November's rows, the window of the month on both sides
+        counts(company, "RECEIVED", LocalDate.of(2026, 11, 1), LocalDate.of(2026, 11, 27), receivedTotal, receivedImported, checkedAt);
+        counts(company, "ISSUED", LocalDate.of(2026, 11, 1), LocalDate.of(2026, 11, 27), issuedTotal, issuedImported, checkedAt);
+    }
+
+    private void counts(String company, String side, LocalDate windowStart, LocalDate windowEnd, int providerTotal, int imported,
+                        LocalDateTime checkedAt) {
+        jdbc.update("INSERT INTO capture_period_counts (id, company_id, channel, document_type, side, period_month, window_start,"
+                        + " window_end, provider_total, provider_counted_at, imported_total, imported_counted_at, created_by,"
+                        + " created_date, deleted) VALUES (?, ?, 'SIEG', 'NFE', ?, '2026-11', ?, ?, ?, ?, ?, ?, 'qa', ?, 0)",
+                UUID.randomUUID().toString(), company, side, windowStart == null ? null : java.sql.Date.valueOf(windowStart),
+                windowEnd == null ? null : java.sql.Date.valueOf(windowEnd), providerTotal, Timestamp.valueOf(checkedAt), imported,
+                Timestamp.valueOf(checkedAt), Timestamp.valueOf(NOW));
     }
 
     private void certificate(String company, LocalDateTime validUntil) {
@@ -1053,7 +1064,7 @@ class CapturePanelQaHttpTest {
         List<String> companies = jdbc.queryForList("SELECT id FROM companies WHERE accounting_firm_id = ?", String.class, firm);
         for (String company : companies) {
             for (String table : List.of("capture_priority_requests", "capture_stage_status", "fiscal_xml_sync_control",
-                    "sefaz_dist_control", "nfse_adn_control", "company_certificates", "fiscal_xml_documents", "service_invoices",
+                    "sefaz_dist_control", "nfse_adn_control", "company_certificates", "fiscal_document_sources", "fiscal_documents", "capture_period_counts",
                     "recovery_tasks", "subscriptions", "users_companies")) {
                 jdbc.update("DELETE FROM " + table + " WHERE company_id = ?", company);
             }

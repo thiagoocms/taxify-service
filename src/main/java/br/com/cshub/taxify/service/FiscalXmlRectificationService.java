@@ -1,12 +1,14 @@
 package br.com.cshub.taxify.service;
 
+import br.com.cshub.taxify.service.fiscalcheck.EffectiveCfops;
 import br.com.cshub.taxify.service.fiscalcheck.OperationCfops;
 import br.com.cshub.taxify.domain.fiscalrule.ProductRules;
 import br.com.cshub.taxify.common.MessageService;
 import br.com.cshub.taxify.common.TenantAccessService;
 import br.com.cshub.taxify.domain.fiscalrule.ProductFiscalRule;
 import br.com.cshub.taxify.domain.invoice.InvoiceAuditLog;
-import br.com.cshub.taxify.domain.xml.FiscalXmlDocument;
+import br.com.cshub.taxify.domain.fiscaldocument.FiscalDocument;
+import br.com.cshub.taxify.domain.fiscaldocument.GoodsInvoice;
 import br.com.cshub.taxify.dto.fiscalrule.FiscalXmlRectificationResultDTO;
 import br.com.cshub.taxify.enumerated.InvoiceAuditStatus;
 import br.com.cshub.taxify.exception.BadRequestException;
@@ -14,12 +16,13 @@ import br.com.cshub.taxify.exception.ResourceNotFoundException;
 import br.com.cshub.taxify.exception.SiegIntegrationException;
 import br.com.cshub.taxify.integration.fiscalxml.FiscalXmlDomParser;
 import br.com.cshub.taxify.integration.sieg.FiscalXmlFileStorage;
-import br.com.cshub.taxify.repository.FiscalXmlDocumentRepository;
+import br.com.cshub.taxify.repository.FiscalDocumentRepository;
 import br.com.cshub.taxify.repository.InvoiceAuditLogRepository;
 import br.com.cshub.taxify.repository.ProductFiscalRuleRepository;
 import org.w3c.dom.Document;
 import org.w3c.dom.Element;
 import org.w3c.dom.NodeList;
+import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 
@@ -31,7 +34,9 @@ import javax.xml.transform.dom.DOMSource;
 import javax.xml.transform.stream.StreamResult;
 import java.io.ByteArrayOutputStream;
 import java.io.IOException;
+import java.time.Clock;
 import java.time.LocalDateTime;
+import java.time.ZoneId;
 import java.util.ArrayList;
 import java.util.List;
 import java.util.Map;
@@ -59,7 +64,7 @@ import static br.com.cshub.taxify.integration.fiscalxml.FiscalXmlDom.text;
  * row is written ({@link InvoiceAuditStatus#RECTIFIED}) - {@code user} is only set when
  * called from an authenticated request (see {@link CurrentUserService}); a background
  * trigger with no security context still logs the event, just without a user attached.
- * {@link FiscalXmlDocument#setRectifiedFilePath} is also updated to point at the new
+ * {@link GoodsInvoice#setRectifiedFilePath} is also updated to point at the new
  * file, so consumers (e.g. the export endpoint) know to serve the corrected version
  * instead of the original without having to scan the filesystem for it.
  *
@@ -77,7 +82,7 @@ public class FiscalXmlRectificationService {
     /** First parser version whose item columns hold every tax code the rectifier touches (IPI CST came in 3). */
     private static final int ITEM_COLUMNS_VERSION = 3;
 
-    private final FiscalXmlDocumentRepository documentRepository;
+    private final FiscalDocumentRepository documentRepository;
     private final ProductFiscalRuleRepository ruleRepository;
     private final InvoiceAuditLogRepository auditLogRepository;
     private final InvoiceAuditTrail auditTrail;
@@ -85,7 +90,7 @@ public class FiscalXmlRectificationService {
     private final MessageService messageService;
     private final TenantAccessService tenantAccessService;
 
-    public FiscalXmlRectificationService(FiscalXmlDocumentRepository documentRepository, ProductFiscalRuleRepository ruleRepository,
+    public FiscalXmlRectificationService(FiscalDocumentRepository documentRepository, ProductFiscalRuleRepository ruleRepository,
                                           InvoiceAuditLogRepository auditLogRepository, FiscalXmlFileStorage fileStorage,
                                           MessageService messageService, TenantAccessService tenantAccessService,
                                           InvoiceAuditTrail auditTrail) {
@@ -98,33 +103,45 @@ public class FiscalXmlRectificationService {
         this.tenantAccessService = tenantAccessService;
     }
 
+    /** Recife's clock (ClockConfig); the system default only where no bean is wired (unit tests). */
+    private Clock clock = Clock.system(ZoneId.of("America/Recife"));
+
+    @Autowired(required = false)
+    public void setClock(Clock clock) {
+        if (clock != null) {
+            this.clock = clock;
+        }
+    }
+
     @Transactional
     public FiscalXmlRectificationResultDTO rectify(UUID documentId) {
-        FiscalXmlDocument document = documentRepository.findFirstByIdAndDeletedIsFalse(documentId)
+        // NF-e, NFC-e and CT-e (the notes screen); an NFS-e id is "not found" (FD-RN-17)
+        FiscalDocument found = documentRepository.findXmlDocument(documentId)
                 .orElseThrow(() -> new ResourceNotFoundException("error.entity.not.found", messageService.getMessage("error.entity.not.found")));
-        tenantAccessService.assertCompanyAccess(document.getCompany());
-        if (document.isCanceled()) {
+        tenantAccessService.assertCompanyAccess(found.getCompany());
+        if (found.isCanceled()) {
             throw new BadRequestException("error.fiscalXml.rectification.canceled", messageService.getMessage("error.fiscalXml.rectification.canceled"));
         }
-        if (document.isOwnIssue()) {
+        if (found.isOwnIssue()) {
             // An authorized note the company issued can't be rewritten - that's a carta de correção.
             throw new BadRequestException("error.fiscalXml.rectification.own.issue", messageService.getMessage("error.fiscalXml.rectification.own.issue"));
         }
 
-        if (document.getDocumentType() != null && !"NFE".equals(document.getDocumentType())) {
+        if (!(found instanceof GoodsInvoice document)) {
             throw new BadRequestException("error.fiscalXml.rectification.not.nfe", messageService.getMessage("error.fiscalXml.rectification.not.nfe"));
         }
 
         // Only reads the XML (from S3) when the stored items show something a rule would change.
+        ProductRules rules = ProductRules.of(ruleRepository.findByCompany_IdAndDeletedIsFalse(document.getCompany().getId()));
         Document dom = null;
         List<String> corrections = List.of();
-        if (mayNeedCorrection(document)) {
+        if (mayNeedCorrection(document, rules)) {
             dom = parse(readOriginal(document.getXmlFilePath()));
             Element infNFe = first(dom, "infNFe");
             if (infNFe == null) {
                 throw new BadRequestException("error.fiscalXml.rectification.not.nfe", messageService.getMessage("error.fiscalXml.rectification.not.nfe"));
             }
-            corrections = applyRules(infNFe, document);
+            corrections = applyRules(infNFe, document, rules);
         }
 
         String rectifiedPath = null;
@@ -148,7 +165,10 @@ public class FiscalXmlRectificationService {
             String externalInvoiceKey = document.accessKeyOrId();
             auditTrail.record(document.getCompany(), externalInvoiceKey, InvoiceAuditStatus.RECTIFICATION_REVERTED, null);
         }
-        document.setLastRectificationCheckedAt(LocalDateTime.now());
+        document.setLastRectificationCheckedAt(LocalDateTime.now(clock));
+        // FD-RN-57: the items' CFOP of the version in effect (the rectified file's, or their own when there is none) -
+        // after the check time, which the rule's "rectified under" compares with
+        document.refreshEffectiveCfops(item -> EffectiveCfops.rectified(rules, item));
         documentRepository.save(document);
 
         return new FiscalXmlRectificationResultDTO(
@@ -160,13 +180,12 @@ public class FiscalXmlRectificationService {
      * ({@link RectificationPrecheck}). Notes whose columns came from a parser before version
      * 3 (tax codes incomplete) or that have no stored items are always read.
      */
-    private boolean mayNeedCorrection(FiscalXmlDocument document) {
+    private boolean mayNeedCorrection(GoodsInvoice document, ProductRules rules) {
         Integer version = document.getMetadataVersion();
-        if (version == null || version < ITEM_COLUMNS_VERSION || document.getItens().isEmpty()) {
+        if (version == null || version < ITEM_COLUMNS_VERSION || document.getItems().isEmpty()) {
             return true;
         }
-        ProductRules rules = ProductRules.of(ruleRepository.findByCompany_IdAndDeletedIsFalse(document.getCompany().getId()));
-        return document.getItens().stream()
+        return document.getItems().stream()
                 .anyMatch(item -> rules.forItem(item).map(rule -> RectificationPrecheck.mayChange(item, rule)).orElse(false));
     }
 
@@ -178,7 +197,7 @@ public class FiscalXmlRectificationService {
                 .isPresent();
     }
 
-    private void logRectification(FiscalXmlDocument document, String externalInvoiceKey, String notes) {
+    private void logRectification(GoodsInvoice document, String externalInvoiceKey, String notes) {
         auditTrail.record(document.getCompany(), externalInvoiceKey, InvoiceAuditStatus.RECTIFIED, notes);
     }
 
@@ -191,8 +210,7 @@ public class FiscalXmlRectificationService {
      * The rule of each item: by its code and the note's supplier ({@link ProductRules}); the CFOP
      * takes the first digit of the note's operation (ide/idDest).
      */
-    private List<String> applyRules(Element infNFe, FiscalXmlDocument document) {
-        ProductRules rules = ProductRules.of(ruleRepository.findByCompany_IdAndDeletedIsFalse(document.getCompany().getId()));
+    private List<String> applyRules(Element infNFe, GoodsInvoice document, ProductRules rules) {
         String supplier = ProductRules.supplierOf(document);
         String idDest = text(first(infNFe, "ide"), "idDest");
         List<String> corrections = new ArrayList<>();
@@ -241,7 +259,7 @@ public class FiscalXmlRectificationService {
     private void markAsRectified(Document dom, int correctionCount) {
         String text = (" Retificado por taxify em %s - %d campo(s) ajustado(s) conforme regra cadastrada. "
                 + "ATENCAO: a assinatura digital original deste XML pode estar invalida apos esta alteracao. ")
-                .formatted(LocalDateTime.now(), correctionCount);
+                .formatted(LocalDateTime.now(clock), correctionCount);
         Element root = dom.getDocumentElement();
         root.insertBefore(dom.createComment(text), root.getFirstChild());
     }

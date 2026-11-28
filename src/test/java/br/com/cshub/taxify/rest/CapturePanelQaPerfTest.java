@@ -140,7 +140,7 @@ class CapturePanelQaPerfTest {
         System.out.println("QA-PERF seed 5.000 empresas em " + (System.currentTimeMillis() - seedStart) + " ms");
         int total = jdbc.queryForObject("SELECT COUNT(*) FROM companies", Integer.class);
         assertThat(total).isEqualTo(5000);
-        jdbc.execute("ANALYZE TABLE companies, fiscal_xml_sync_control, fiscal_xml_documents, capture_stage_status, subscriptions");
+        jdbc.execute("ANALYZE TABLE companies, fiscal_xml_sync_control, capture_period_counts, fiscal_documents, capture_stage_status, subscriptions");
 
         warm(csadmin);
         long bigSelects = selects(() -> get("/platform/capture-panel?size=50", csadmin));
@@ -242,7 +242,7 @@ class CapturePanelQaPerfTest {
                 // ~20 notas por empresa, de 3 origens
                 for (int n = 0; n < 20; n++) {
                     notes.add(new Object[]{UUID.randomUUID().toString(), Timestamp.valueOf(NOW.minusHours(RANDOM.nextInt(24 * 25))),
-                            n % 4 == 0 ? "SEFAZ_DIST" : n % 4 == 1 ? "UPLOAD" : "SIEG", company});
+                            n % 4 == 0 ? "SEFAZ_DFE" : n % 4 == 1 ? "UPLOAD" : "SIEG", company});
                 }
             }
         }
@@ -251,19 +251,27 @@ class CapturePanelQaPerfTest {
                 + " VALUES (?, 0, ?, 'qa', ?, ?, ?, ?, ?)", companies);
         jdbc.batchUpdate("INSERT INTO subscriptions (id, deleted, created_date, created_by, start_date, end_date, company_id, plan_id)"
                 + " VALUES (?, 0, ?, 'qa', ?, ?, ?, ?)", subscriptions);
-        jdbc.batchUpdate("INSERT INTO fiscal_xml_sync_control (id, company_id, deleted, created_by, created_date, data_emissao_inicio,"
-                + " data_emissao_fim, total_sieg, total_importado, ultima_verificacao_em, issued_total_sieg, issued_total_imported,"
-                + " issued_checked_at, last_attempt_at, received_events_checked_on, issued_events_checked_on, service_invoices_checked_on)"
-                + " VALUES (?, ?, 0, 'qa', ?, '2026-11-01', '2026-11-27', ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)",
-                controls.stream().map(c -> new Object[]{c[0], c[1], c[2], c[3], c[4], c[5], c[6], c[7], c[8], c[9], c[10], c[10], c[10]}).toList());
+        jdbc.batchUpdate("INSERT INTO fiscal_xml_sync_control (id, company_id, deleted, created_by, created_date, last_attempt_at,"
+                + " received_events_checked_on, issued_events_checked_on, service_invoices_checked_on)"
+                + " VALUES (?, ?, 0, 'qa', ?, ?, ?, ?, ?)",
+                controls.stream().map(c -> new Object[]{c[0], c[1], c[2], c[9], c[10], c[10], c[10]}).toList());
+        // the SIEG counters in capture_period_counts (FD-RN-32): November, the window of the month on both sides
+        String counts = "INSERT INTO capture_period_counts (id, company_id, channel, document_type, side, period_month, window_start,"
+                + " window_end, provider_total, provider_counted_at, imported_total, imported_counted_at, created_by, created_date, deleted)"
+                + " VALUES (?, ?, 'SIEG', 'NFE', ?, '2026-11', ?, ?, ?, ?, ?, ?, 'qa', ?, 0)";
+        jdbc.batchUpdate(counts, controls.stream().map(c -> new Object[]{UUID.randomUUID().toString(), c[1], "RECEIVED", "2026-11-01",
+                "2026-11-27", c[3], c[5], c[4], c[5], c[2]}).toList());
+        jdbc.batchUpdate(counts, controls.stream().map(c -> new Object[]{UUID.randomUUID().toString(), c[1], "ISSUED", "2026-11-01", "2026-11-27",
+                c[6], c[8], c[7], c[8], c[2]}).toList());
         jdbc.batchUpdate("INSERT INTO capture_stage_status (id, company_id, stage, last_outcome, last_outcome_at, last_failure_at, failure_code,"
                 + " provider_status, consecutive_failures, deleted, created_by, created_date) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, 0, 'qa', ?)", stages);
         jdbc.batchUpdate("INSERT INTO company_certificates (id, company_id, file_path, password_encrypted, valid_until, deleted, created_by,"
                 + " created_date) VALUES (?, ?, 'certificados/ficticio.pfx', 'senha-cifrada-ficticia', ?, 0, 'qa', ?)", certificates);
         jdbc.batchUpdate("INSERT INTO sefaz_dist_control (id, company_id, ult_nsu, last_run_at, last_status, deleted, created_by, created_date)"
                 + " VALUES (?, ?, 1, ?, ?, 0, 'qa', ?)", sefaz);
-        jdbc.batchUpdate("INSERT INTO fiscal_xml_documents (id, deleted, created_date, created_by, document_type, source_system, company_id,"
-                + " xml_file_path) VALUES (?, 0, ?, 'qa', 'NFE', ?, ?, 'xml/ficticio.xml')", notes);
+        jdbc.batchUpdate("INSERT INTO fiscal_documents (id, deleted, created_date, created_by, document_type, model, source_system,"
+                + " company_id, xml_file_path, direction, company_role, status, metadata_version)"
+                + " VALUES (?, 0, ?, 'qa', 'NFE', '55', ?, ?, 'xml/ficticio.xml', 'INBOUND', 'RECIPIENT', 'AUTHORIZED', 0)", notes);
     }
 
     private void user(String firm, String login, String profile) {

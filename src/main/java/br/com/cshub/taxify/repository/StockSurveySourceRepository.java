@@ -28,7 +28,9 @@ import java.util.UUID;
 /**
  * The stock credit survey's calculation (spec 2026-11-27, F5a, section 8): projections without entity and the
  * idempotent upsert, a fixed number of statements per batch of companies (never one per company). All parameterized.
- * The reads start from {@code idx_fxd_company_direction_issue} and join the items by their {@code document_id} index.
+ * The reads start from {@code idx_fd_company_type_direction_issue} and join the items by their covering index
+ * {@code idx_fdi_document_cfop_amount} (document_id, cfop, total_amount). Only goods invoices
+ * ({@code document_type IN ('NFE','NFCE')}, FD-RN-04); the CFOP is stored without spaces (spec 3.6).
  * Called inside a transaction (the calculator's, or the refresh request's): the JdbcTemplate then uses the
  * transaction's connection - the same one JPA uses - and never asks the pool for a second one.
  */
@@ -51,9 +53,12 @@ public class StockSurveySourceRepository {
     private static final String COMPANIES = "SELECT c.id, c.accounting_firm_id, c.tax_regime_type FROM companies c"
             + " WHERE c.deleted = 0 AND (c.active IS NULL OR c.active = 1)";
 
-    private static final String PURCHASE_BASE = " FROM fiscal_xml_documents d JOIN fiscal_xml_document_items i ON i.document_id = d.id"
-            + " WHERE d.company_id IN (:ids) AND d.direction = 'INBOUND' AND d.deleted = 0"
-            + " AND (d.status IS NULL OR d.status <> 'CANCELED') AND d.issue_date >= :start AND d.issue_date < :end"
+    /** Goods invoices only: the document type is filtered by hand in native SQL (FD-RN-04). */
+    private static final String GOODS = " AND d.document_type IN ('NFE', 'NFCE')";
+
+    private static final String PURCHASE_BASE = " FROM fiscal_documents d JOIN fiscal_document_items i ON i.document_id = d.id"
+            + " WHERE d.company_id IN (:ids)" + GOODS + " AND d.direction = 'INBOUND' AND d.deleted = 0"
+            + " AND d.status <> 'CANCELED' AND d.issue_date >= :start AND d.issue_date < :end"
             + " AND i.cfop IN (:cfops)";
 
     private final NamedParameterJdbcTemplate jdbc;
@@ -80,7 +85,7 @@ public class StockSurveySourceRepository {
     public Map<UUID, List<MonthlyPurchases>> monthlyPurchases(Collection<UUID> companyIds, Collection<String> cfops,
                                                              LocalDateTime start, LocalDateTime end) {
         Map<UUID, List<MonthlyPurchases>> result = new HashMap<>();
-        jdbc.query("SELECT d.company_id, MONTH(d.issue_date) AS m, SUM(i.valor_total) AS v, COUNT(i.id) AS n,"
+        jdbc.query("SELECT d.company_id, MONTH(d.issue_date) AS m, SUM(i.total_amount) AS v, COUNT(i.id) AS n,"
                 + " COUNT(DISTINCT d.id) AS docs" + PURCHASE_BASE + " GROUP BY d.company_id, MONTH(d.issue_date)",
                 purchaseParams(companyIds, cfops, start, end), rs -> {
                     result.computeIfAbsent(uuid(rs, "company_id"), key -> new ArrayList<>()).add(new MonthlyPurchases(
@@ -92,21 +97,21 @@ public class StockSurveySourceRepository {
     /** Purchases per company and trimmed CST of PIS. */
     public Map<UUID, List<PurchaseGroup>> purchasesByCstPis(Collection<UUID> companyIds, Collection<String> cfops,
                                                             LocalDateTime start, LocalDateTime end) {
-        return groups("TRIM(i.cst_pis)", companyIds, cfops, start, end);
+        return groups("i.pis_cst", companyIds, cfops, start, end);
     }
 
     /** Purchases per company and trimmed NCM (the top 10 is cut in Java). */
     public Map<UUID, List<PurchaseGroup>> purchasesByNcm(Collection<UUID> companyIds, Collection<String> cfops,
                                                          LocalDateTime start, LocalDateTime end) {
-        return groups("TRIM(i.ncm)", companyIds, cfops, start, end);
+        return groups("i.ncm", companyIds, cfops, start, end);
     }
 
     /** Inbound notes of the year with any CFOP, per company and month: first and last issue date (no item join). */
     public Map<UUID, List<InboundMonth>> inboundMonths(Collection<UUID> companyIds, LocalDateTime start, LocalDateTime end) {
         Map<UUID, List<InboundMonth>> result = new HashMap<>();
         jdbc.query("SELECT d.company_id, MONTH(d.issue_date) AS m, MIN(d.issue_date) AS first_at, MAX(d.issue_date) AS last_at"
-                        + " FROM fiscal_xml_documents d WHERE d.company_id IN (:ids) AND d.direction = 'INBOUND' AND d.deleted = 0"
-                        + " AND (d.status IS NULL OR d.status <> 'CANCELED') AND d.issue_date >= :start AND d.issue_date < :end"
+                        + " FROM fiscal_documents d WHERE d.company_id IN (:ids)" + GOODS + " AND d.direction = 'INBOUND'"
+                        + " AND d.deleted = 0 AND d.status <> 'CANCELED' AND d.issue_date >= :start AND d.issue_date < :end"
                         + " GROUP BY d.company_id, MONTH(d.issue_date)",
                 new MapSqlParameterSource().addValue("ids", ids(companyIds)).addValue("start", Timestamp.valueOf(start))
                         .addValue("end", Timestamp.valueOf(end)), rs -> {
@@ -192,7 +197,7 @@ public class StockSurveySourceRepository {
     private Map<UUID, List<PurchaseGroup>> groups(String key, Collection<UUID> companyIds, Collection<String> cfops,
                                                   LocalDateTime start, LocalDateTime end) {
         Map<UUID, List<PurchaseGroup>> result = new HashMap<>();
-        jdbc.query("SELECT d.company_id, " + key + " AS k, SUM(i.valor_total) AS v, COUNT(i.id) AS n" + PURCHASE_BASE
+        jdbc.query("SELECT d.company_id, " + key + " AS k, SUM(i.total_amount) AS v, COUNT(i.id) AS n" + PURCHASE_BASE
                 + " GROUP BY d.company_id, " + key, purchaseParams(companyIds, cfops, start, end), rs -> {
                     result.computeIfAbsent(uuid(rs, "company_id"), id -> new ArrayList<>()).add(new PurchaseGroup(
                             rs.getString("k"), rs.getBigDecimal("v"), rs.getInt("n")));

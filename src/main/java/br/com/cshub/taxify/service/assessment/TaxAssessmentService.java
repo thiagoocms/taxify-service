@@ -11,8 +11,8 @@ import br.com.cshub.taxify.enumerated.FiscalDirection;
 import br.com.cshub.taxify.exception.BadRequestException;
 import br.com.cshub.taxify.repository.CompanyRepository;
 import br.com.cshub.taxify.repository.FiscalPeriodClosingRepository;
-import br.com.cshub.taxify.repository.FiscalXmlDocumentItemRepository;
-import br.com.cshub.taxify.repository.FiscalXmlDocumentRepository;
+import br.com.cshub.taxify.repository.FiscalDocumentItemRepository;
+import br.com.cshub.taxify.repository.GoodsInvoiceRepository;
 import br.com.cshub.taxify.service.CompanyTaxRegimeService;
 import br.com.cshub.taxify.validation.CompanyValidation;
 import org.slf4j.Logger;
@@ -46,8 +46,8 @@ public class TaxAssessmentService {
 
     private final CompanyValidation companyValidation;
     private final CompanyRepository companyRepository;
-    private final FiscalXmlDocumentItemRepository itemRepository;
-    private final FiscalXmlDocumentRepository documentRepository;
+    private final FiscalDocumentItemRepository itemRepository;
+    private final GoodsInvoiceRepository documentRepository;
     private final FiscalPeriodClosingRepository closingRepository;
     private final TenantAccessService tenantAccessService;
     private final MessageService messageService;
@@ -56,7 +56,7 @@ public class TaxAssessmentService {
     private final TaxAssessmentCache cache;
 
     public TaxAssessmentService(CompanyValidation companyValidation, CompanyRepository companyRepository,
-                                FiscalXmlDocumentItemRepository itemRepository, FiscalXmlDocumentRepository documentRepository,
+                                FiscalDocumentItemRepository itemRepository, GoodsInvoiceRepository documentRepository,
                                 FiscalPeriodClosingRepository closingRepository, TenantAccessService tenantAccessService,
                                 MessageService messageService, CompanyTaxRegimeService taxRegimeService, ObjectMapper objectMapper,
                                 TaxAssessmentCache cache) {

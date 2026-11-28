@@ -2,8 +2,8 @@ package br.com.cshub.taxify.service;
 
 import br.com.cshub.taxify.domain.fiscalrule.ProductFiscalRule;
 import br.com.cshub.taxify.domain.fiscalrule.ProductTaxRule;
-import br.com.cshub.taxify.domain.xml.FiscalItemTaxDetail;
-import br.com.cshub.taxify.domain.xml.FiscalXmlDocumentItem;
+import br.com.cshub.taxify.domain.fiscaldocument.FiscalDocumentItem;
+import br.com.cshub.taxify.support.TestNotes;
 import org.junit.jupiter.api.Test;
 
 import java.util.UUID;
@@ -12,15 +12,9 @@ import static org.assertj.core.api.Assertions.assertThat;
 
 class RectificationPrecheckTest {
 
-    private static FiscalXmlDocumentItem item(String cfop, String ncm, String cstIcms, String csosn) {
-        FiscalXmlDocumentItem item = new FiscalXmlDocumentItem();
-        item.setCodigo("P001");
-        item.setCfop(cfop);
-        item.setNcm(ncm);
-        item.setSituacaoTributariaIcms(csosn != null ? csosn : cstIcms);
-        item.setTaxDetail(new FiscalItemTaxDetail(null, null, "0", csosn, null, null, null, null, null,
-                null, null, null, null, null, null, null, null, null));
-        return item;
+    private static FiscalDocumentItem item(String cfop, String ncm, String cstIcms, String csosn) {
+        return TestNotes.item(1).code("P001").cfop(cfop).ncm(ncm)
+                .icms(csosn != null ? csosn : cstIcms, null, null, null).icmsDetail("0", csosn).build();
     }
 
     private static ProductFiscalRule rule(String cfop, String ncm, ProductTaxRule tax) {
@@ -64,7 +58,7 @@ class RectificationPrecheckTest {
 
     @Test
     void fieldTheNoteDoesNotHaveIsNeverRewritten() {
-        FiscalXmlDocumentItem item = item("5102", null, "00", null);
+        FiscalDocumentItem item = item("5102", null, "00", null);
         ProductTaxRule tax = new ProductTaxRule(null, null, null, null, null, "50", null, "01", null, "01", null, null, "000001");
 
         assertThat(RectificationPrecheck.mayChange(item, rule("5102", null, tax))).isFalse();

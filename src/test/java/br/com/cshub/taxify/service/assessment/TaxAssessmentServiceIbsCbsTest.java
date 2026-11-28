@@ -8,8 +8,8 @@ import br.com.cshub.taxify.dto.assessment.TaxAssessmentDTO;
 import br.com.cshub.taxify.enumerated.FiscalDirection;
 import br.com.cshub.taxify.repository.CompanyRepository;
 import br.com.cshub.taxify.repository.FiscalPeriodClosingRepository;
-import br.com.cshub.taxify.repository.FiscalXmlDocumentItemRepository;
-import br.com.cshub.taxify.repository.FiscalXmlDocumentRepository;
+import br.com.cshub.taxify.repository.FiscalDocumentItemRepository;
+import br.com.cshub.taxify.repository.GoodsInvoiceRepository;
 import br.com.cshub.taxify.service.CompanyTaxRegimeService;
 import br.com.cshub.taxify.validation.CompanyValidation;
 import org.junit.jupiter.api.Test;
@@ -30,9 +30,9 @@ import static org.mockito.Mockito.when;
 class TaxAssessmentServiceIbsCbsTest {
 
     private final CompanyValidation companyValidation = mock(CompanyValidation.class);
-    private final FiscalXmlDocumentItemRepository itemRepository = mock(FiscalXmlDocumentItemRepository.class);
+    private final FiscalDocumentItemRepository itemRepository = mock(FiscalDocumentItemRepository.class);
     private final TaxAssessmentService service = new TaxAssessmentService(companyValidation, mock(CompanyRepository.class),
-            itemRepository, mock(FiscalXmlDocumentRepository.class), mock(FiscalPeriodClosingRepository.class),
+            itemRepository, mock(GoodsInvoiceRepository.class), mock(FiscalPeriodClosingRepository.class),
             mock(TenantAccessService.class), mock(MessageService.class), mock(CompanyTaxRegimeService.class), mock(ObjectMapper.class),
             new TaxAssessmentCache());
 
