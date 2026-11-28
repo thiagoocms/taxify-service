@@ -355,6 +355,9 @@ class CfopFilterIntegrationTest {
         JsonNode repeated = it.ok(get(FRONTEIRA).param("companyId", a).param("periodo", "2026-11")
                 .param("cfops", "6102").param("cfops", "6403"), admin);
         assertThat(comma.get("cfopFilter")).isEqualTo(repeated.get("cfopFilter"));
+        JsonNode mixed = it.ok(get(FRONTEIRA).param("companyId", a).param("periodo", "2026-11")
+                .param("cfops", "6102,6403").param("cfops", "6949"), admin);
+        assertThat(mixed.get("cfopFilter").get("cfops").toString()).isEqualTo("[\"6102\",\"6403\",\"6949\"]");
         assertThat(comma.get("cfopFilter").get("cfops").toString()).isEqualTo("[\"6102\",\"6403\"]");
         assertThat(comma.get("cfopFilter").get("matchingLines")).isEmpty(); // no extract this month (CT-34)
         assertThat(comma.get("cfopFilter").get("totals").get("notes").asInt()).isZero();
