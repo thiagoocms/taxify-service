@@ -27,11 +27,29 @@
 # O schema de conferência (CHECK_SCHEMA, padrão fd_backup_check) precisa começar com fd_; um schema que já existe e que
 # não foi criado por este script (sem a tabela-marca fd_backup_check_marker) é recusado.
 #
-# Depois: copiar o arquivo e o .sha256 para o bucket S3 privado da conta, com criptografia (por exemplo
-#   aws s3 cp <arquivo> s3://<bucket>/fiscal-documents/ --sse aws:kms), anotar o SHA-256 no registro da release, passar
-#   o mesmo valor à imagem nova em FD_BACKUP_SHA256 (sem ele a V89 não apaga o legado) e apagar o arquivo do host e do
-#   S3 no prazo da P-FD-08 (30 dias). O arquivo tem dado de cliente: acesso só do Tony e do dev da janela. O script não
-#   imprime dado nenhum: só nomes de tabela, contagens e OK/DIFERENTE.
+# Permissões (runbook 6.2, passo 1): o usuário do MySQL deste script precisa, no schema da aplicação, de SELECT nas 5
+#   tabelas do dump e de CREATE + INSERT em fiscal_documents_backup_checks (a tabela é criada aqui na primeira vez,
+#   por backup-checks.sql), e de CREATE/DROP nos schemas fd_* (a conferência). O usuário da aplicação (o do Flyway)
+#   só lê fiscal_documents_backup_checks (SELECT), na V89. Na EC2 os dois são o root do container taxify-mysql.
+#
+# Depois (runbook 6.2, passo 1 -> passo 4):
+#   1. A última linha é "FD_BACKUP_SHA256=<64 hex>". Copiar o valor para o env INLINE do serviço da aplicação no
+#      compose DA EC2 (/home/ec2-user/docker-compose.yml, bloco environment, chave FD_BACKUP_SHA256) - não no
+#      docker-compose.yml do repositório (lá o padrão fica vazio) nem num .env. Conferir com
+#      `docker compose config | grep FD_BACKUP_SHA256` antes de subir a imagem nova.
+#   2. Copiar o arquivo e o .sha256 para o bucket S3 privado da conta, com criptografia (por exemplo
+#      aws s3 cp <arquivo> s3://<bucket>/fiscal-documents/ --sse aws:kms) e anotar o SHA-256 no registro da release.
+#   3. Apagar o arquivo do host e do S3 no prazo da P-FD-08 (30 dias); tirar FD_BACKUP_SHA256 do compose depois que a
+#      V89 rodou (ela não roda de novo). O arquivo tem dado de cliente: acesso só do Tony e do dev da janela.
+# Se a V89 recusar (a aplicação não sobe; log "V89 refused: ..."; V86-V88 já aplicadas, as legacy_* intactas):
+#   - SHA-256 ausente ou com outro valor: corrigir FD_BACKUP_SHA256 no compose da EC2, apagar a linha da V89 que
+#     falhou (`flyway repair`, ou DELETE FROM flyway_schema_history WHERE version = '89' AND success = 0) e subir de
+#     novo - nada foi apagado;
+#   - contagens das legacy_* diferentes das registradas (algo gravou depois do backup) ou backup não registrado: o
+#     backup não serve mais e não dá para refazê-lo depois do rename. Voltar com rollback.sql (estado B: devolve os
+#     nomes originais, apaga as tabelas novas e as linhas 86 a 89 do histórico), subir a imagem anterior e refazer a
+#     release do passo 1.
+# O script não imprime dado nenhum: só nomes de tabela, contagens, o SHA-256 e OK/DIFERENTE.
 set -euo pipefail
 # Git Bash (Windows) would turn the container path /tmp/... into a Windows path when calling docker
 export MSYS_NO_PATHCONV=1
