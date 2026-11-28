@@ -151,4 +151,27 @@ public interface FiscalDocumentItemRepository extends JpaRepository<FiscalDocume
             + " group by i.product.code order by coalesce(sum(i.totalAmount), 0) desc")
     List<Object[]> sumPurchasesByProduct(@Param("companyId") UUID companyId, @Param("from") LocalDateTime from,
                                          @Param("to") LocalDateTime to);
+
+    /**
+     * CF-RN-13 (P-CF-01 = c): the items in the filtered CFOPs - only them, their vProd and taxes, no apportionment of
+     * freight, insurance, other expenses or discount - per direction. Row: direction, item count, vProd, ICMS, ICMS-ST,
+     * IPI, PIS, COFINS. Canceled notes stay out (CF-RN-14).
+     */
+    String CFOP_ITEM_TOTALS = "select d.direction, count(i), coalesce(sum(i.totalAmount), 0), coalesce(sum(i.icms.amount), 0),"
+            + " coalesce(sum(i.icmsSt.amount), 0), coalesce(sum(i.ipi.amount), 0), coalesce(sum(i.pis.amount), 0),"
+            + " coalesce(sum(i.cofins.amount), 0)"
+            + " from FiscalDocumentItem i join i.document d where d.status <> " + CANCELED;
+
+    /**
+     * {@link #CFOP_ITEM_TOTALS} of the notes matching the list's predicate ({@link FiscalDocumentSearchFilter#WHERE}); the
+     * caller passes a filter with CFOPs and without the tab.
+     */
+    @Query(CFOP_ITEM_TOTALS + " and i.effectiveCfop in :#{#filter.cfopValues()} and" + FiscalDocumentSearchFilter.WHERE
+            + " group by d.direction")
+    List<Object[]> cfopItemTotalsByDirection(@Param(FiscalDocumentSearchFilter.PARAM) FiscalDocumentSearchFilter filter);
+
+    /** {@link #CFOP_ITEM_TOTALS} of these notes - the "só divergentes" path, in batches (CF-RN-15). */
+    @Query(CFOP_ITEM_TOTALS + " and i.effectiveCfop in :cfops and d.id in :documentIds group by d.direction")
+    List<Object[]> cfopItemTotalsOfDocuments(@Param("documentIds") Collection<UUID> documentIds,
+                                             @Param("cfops") Collection<String> cfops);
 }

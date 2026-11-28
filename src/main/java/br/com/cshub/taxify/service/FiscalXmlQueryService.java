@@ -8,8 +8,6 @@ import br.com.cshub.taxify.exception.BadRequestException;
 import br.com.cshub.taxify.integration.sieg.FiscalXmlFileStorage;
 import br.com.cshub.taxify.dto.fiscalxml.FiscalXmlEventDTO;
 import java.util.Locale;
-import java.math.BigDecimal;
-import br.com.cshub.taxify.enumerated.FiscalDirection;
 import br.com.cshub.taxify.dto.fiscalxml.FiscalXmlTotalsDTO;
 import br.com.cshub.taxify.common.MessageService;
 import br.com.cshub.taxify.common.TenantAccessService;
@@ -22,11 +20,8 @@ import br.com.cshub.taxify.mapper.fiscaldocument.LegacySourceNames;
 import br.com.cshub.taxify.repository.FiscalDocumentItemRepository;
 import br.com.cshub.taxify.repository.FiscalDocumentRepository;
 import br.com.cshub.taxify.repository.GoodsInvoiceRepository;
-import org.springframework.data.domain.PageRequest;
 import java.util.SortedSet;
 import java.util.TreeSet;
-import java.util.function.Function;
-import java.util.stream.Collectors;
 import br.com.cshub.taxify.dto.PageRequestDTO;
 import br.com.cshub.taxify.dto.fiscalxml.FiscalXmlDetailDTO;
 import br.com.cshub.taxify.dto.fiscalxml.FiscalXmlProdutoDTO;
@@ -35,7 +30,12 @@ import br.com.cshub.taxify.dto.fiscalxml.XmlSearchFilterDTO;
 import br.com.cshub.taxify.exception.ResourceNotFoundException;
 import br.com.cshub.taxify.integration.sieg.FiscalXmlMetadata;
 import br.com.cshub.taxify.integration.sieg.FiscalXmlMetadataParser;
+import br.com.cshub.taxify.validation.CfopFilterValidation;
 import br.com.cshub.taxify.validation.CompanyValidation;
+import br.com.cshub.taxify.domain.fiscaldocument.CfopFilter;
+import br.com.cshub.taxify.repository.FiscalDocumentSearchFilter;
+import java.time.Clock;
+import java.util.ArrayList;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 import br.com.cshub.taxify.enumerated.ReviewStatus;
@@ -76,14 +76,19 @@ public class FiscalXmlQueryService {
     private final CompanyValidation companyValidation;
     private final TenantAccessService tenantAccessService;
     private final MessageService messageService;
+    private final CfopFilterValidation cfopFilterValidation;
+    private final Clock clock;
 
     public FiscalXmlQueryService(FiscalDocumentRepository documentRepository, GoodsInvoiceRepository goodsInvoiceRepository,
                                  FiscalDocumentItemRepository itemRepository,
                                  FiscalXmlMetadataParser metadataParser, CompanyValidation companyValidation,
                                  TenantAccessService tenantAccessService, MessageService messageService,
                                  FiscalXmlEventService eventService, FiscalXmlFileStorage fileStorage,
-                                 DocumentDivergenceService divergenceService) {
+                                 DocumentDivergenceService divergenceService, CfopFilterValidation cfopFilterValidation,
+                                 Clock clock) {
         this.divergenceService = divergenceService;
+        this.cfopFilterValidation = cfopFilterValidation;
+        this.clock = clock;
         this.fileStorage = fileStorage;
         this.eventService = eventService;
         this.documentRepository = documentRepository;
@@ -95,35 +100,57 @@ public class FiscalXmlQueryService {
         this.messageService = messageService;
     }
 
-    /** Entries and exits of the period (same company/period filter as the list, other filters ignored). */
+    /**
+     * The cards: entries and exits of the notes matching every filter of the list but the tab - the same predicate
+     * ({@link FiscalDocumentSearchFilter#WHERE}), the whole note of each one (CF-RN-10 to 12); with a CFOP filter, also
+     * the items in those CFOPs (CF-RN-13). {@code divergencia} keeps, in memory, the same notes the list keeps (CF-RN-15).
+     */
     @Transactional(readOnly = true)
-    public FiscalXmlTotalsDTO totals(XmlSearchFilterDTO filter) {
-        Company company = companyValidation.checkExist(RequestIds.parse(filter.companyId(), messageService));
-        LocalDateTime from = IssuePeriod.start(filter.dataEmissaoInicio());
-        LocalDateTime to = IssuePeriod.end(filter.dataEmissaoFim());
+    public FiscalXmlTotalsDTO totals(XmlSearchFilterDTO dto) {
+        long started = System.nanoTime();
+        Company company = companyValidation.checkExist(RequestIds.parse(dto.companyId(), messageService));
+        ScreenFilter screen = screenFilter(dto, company);
+        FiscalDocumentSearchFilter filter = screen.filter().withoutDirection();
+        boolean filtered = screen.narrowsTheScope() || dto.onlyDivergent();
+        boolean withCfops = !filter.noCfops();
 
-        FiscalXmlTotalsDTO.DirectionTotals inbound = FiscalXmlTotalsDTO.DirectionTotals.empty();
-        FiscalXmlTotalsDTO.DirectionTotals outbound = FiscalXmlTotalsDTO.DirectionTotals.empty();
-        for (Object[] row : goodsInvoiceRepository.totalsByDirection(company.getId(), from, to)) {
-            FiscalXmlTotalsDTO.DirectionTotals totals = new FiscalXmlTotalsDTO.DirectionTotals(((Number) row[1]).longValue(),
-                    decimal(row[2]), decimal(row[3]), decimal(row[4]), decimal(row[5]), decimal(row[6]), decimal(row[7]),
-                    ((Number) row[8]).longValue());
-            if (row[0] == FiscalDirection.OUTBOUND) {
-                outbound = totals;
-            } else {
-                inbound = totals; // INBOUND, or a legacy row without direction
+        NoteCardTotals.Cards cards;
+        FiscalXmlTotalsDTO.CfopItems items = withCfops ? NoteCardTotals.emptyItems() : null;
+        if (screen.matchesNothing()) {
+            cards = NoteCardTotals.Cards.EMPTY;
+        } else if (dto.onlyDivergent()) {
+            List<GoodsInvoice> kept = divergentNotes(company, documentRepository.search(filter, Pageable.unpaged()).getContent())
+                    .stream().filter(GoodsInvoice.class::isInstance).map(GoodsInvoice.class::cast).toList();
+            cards = NoteCardTotals.sum(kept);
+            if (withCfops) {
+                items = cfopItemsOf(kept, filter);
+            }
+        } else {
+            cards = NoteCardTotals.fromRows(goodsInvoiceRepository.totalsByDirectionFiltered(filter));
+            if (withCfops) {
+                items = NoteCardTotals.addItemRows(items, itemRepository.cfopItemTotalsByDirection(filter));
             }
         }
-        return new FiscalXmlTotalsDTO(inbound, outbound);
+        if (log.isDebugEnabled()) {
+            log.debug("note totals: company {}, {} cfop(s), filters [{}], divergencia {}, {} ms", company.getId(),
+                    filter.cfops().values().size(), screen.activeFilterNames(), dto.onlyDivergent(),
+                    (System.nanoTime() - started) / 1_000_000);
+        }
+        return new FiscalXmlTotalsDTO(cards.inbound(), cards.outbound(), filtered, items);
     }
 
-    /** SUM over a CASE comes back as BigDecimal or Long/Integer depending on the dialect. */
-    private static BigDecimal decimal(Object value) {
-        if (value instanceof BigDecimal decimal) {
-            return decimal;
+    /** CF-RN-13 on the "só divergentes" path: the items of the kept, non-canceled notes, in batches of 500. */
+    private FiscalXmlTotalsDTO.CfopItems cfopItemsOf(List<GoodsInvoice> notes, FiscalDocumentSearchFilter filter) {
+        List<UUID> ids = notes.stream().filter(note -> !note.isCanceled()).map(GoodsInvoice::getId).toList();
+        FiscalXmlTotalsDTO.CfopItems items = NoteCardTotals.emptyItems();
+        for (int start = 0; start < ids.size(); start += ID_BATCH) {
+            items = NoteCardTotals.addItemRows(items, itemRepository.cfopItemTotalsOfDocuments(
+                    ids.subList(start, Math.min(ids.size(), start + ID_BATCH)), filter.cfops().values()));
         }
-        return value == null ? BigDecimal.ZERO : new BigDecimal(value.toString());
+        return items;
     }
+
+    private static final int ID_BATCH = 500;
 
     /** The note's SEFAZ events (cancelamento, carta de correção...) - same access check as the note. */
     @Transactional(readOnly = true)
@@ -159,46 +186,27 @@ public class FiscalXmlQueryService {
             Map.entry("ownIssue", "companyRole"), Map.entry("tipoOperacao", "header.operationType"));
 
     @Transactional(readOnly = true)
-    public Page<FiscalXmlSummaryDTO> search(XmlSearchFilterDTO filter) {
-        Company company = companyValidation.checkExist(RequestIds.parse(filter.companyId(), messageService));
-        Pageable pageable = withCurrentSortNames(PageRequestDTO.toPageable(filter.pagination(), "issueDate", Sort.Direction.DESC));
-
-        LocalDateTime from = IssuePeriod.start(filter.dataEmissaoInicio());
-        LocalDateTime to = IssuePeriod.end(filter.dataEmissaoFim());
-
-        // nNF is stored without leading zeros, so "000123" typed by the user still matches.
-        String numero = filter.numero() == null ? "" : filter.numero().replaceAll("\\D", "").replaceFirst("^0+(?=\\d)", "");
-
-        LocalDateTime comparisonCutoff = LocalDateTime.now().minusHours(SOURCE_COMPARISON_HOURS);
-        DocumentSourceKey origem = filter.origem() == null || filter.origem().isBlank() ? null : sourceOf(filter.origem().strip());
-        if (filter.origem() != null && !filter.origem().isBlank() && origem == null) {
+    public Page<FiscalXmlSummaryDTO> search(XmlSearchFilterDTO dto) {
+        Company company = companyValidation.checkExist(RequestIds.parse(dto.companyId(), messageService));
+        Pageable pageable = withCurrentSortNames(PageRequestDTO.toPageable(dto.pagination(), "issueDate", Sort.Direction.DESC));
+        ScreenFilter screen = screenFilter(dto, company);
+        if (screen.matchesNothing()) {
             return Page.empty(pageable); // an origin that never existed matches no note, as before
         }
-        String cfopFilter = filter.cfop() == null ? "" : filter.cfop().replaceAll("\\D", "");
-        Function<Pageable, Page<FiscalDocument>> query = page -> documentRepository.search(company.getId(), from, to,
-                numero.isEmpty() ? null : numero, filter.direction(), participantPattern(filter.participant()),
-                filter.reviewStatus(), origem,
-                XmlSearchFilterDTO.ONLY_SIEG.equals(filter.fonte()) ? comparisonCutoff : null,
-                XmlSearchFilterDTO.ONLY_SEFAZ.equals(filter.fonte()) ? comparisonCutoff : null,
-                cfopFilter.isEmpty() ? null : cfopFilter,
-                DocumentSourceKey.SIEG, DocumentSourceKey.SEFAZ_DFE,
-                page);
 
         Page<FiscalDocument> documents;
         Map<UUID, FiscalXmlSummaryDTO.DivergenceSummary> divergences;
-        if (filter.onlyDivergent()) {
+        if (dto.onlyDivergent()) {
             // The checks run in memory, so the filter does too: every note matching the other
             // filters is checked, the divergent ones are kept and paged here.
-            List<FiscalDocument> all = query.apply(Pageable.unpaged(pageable.getSort())).getContent();
+            List<FiscalDocument> all = documentRepository.search(screen.filter(), Pageable.unpaged(pageable.getSort())).getContent();
             divergences = divergenceService.summarize(company.getId(), all);
-            List<FiscalDocument> divergent = all.stream()
-                    .filter(document -> divergences.containsKey(document.getId()) || document.getReviewStatus() == ReviewStatus.DIVERGENT)
-                    .toList();
+            List<FiscalDocument> divergent = keepDivergent(all, divergences);
             int start = (int) Math.min(pageable.getOffset(), divergent.size());
             int end = Math.min(divergent.size(), start + pageable.getPageSize());
             documents = new PageImpl<>(divergent.subList(start, end), pageable, divergent.size());
         } else {
-            documents = query.apply(pageable);
+            documents = documentRepository.search(screen.filter(), pageable);
             divergences = divergenceService.summarize(company.getId(), documents.getContent());
         }
 
@@ -222,6 +230,71 @@ public class FiscalXmlQueryService {
 
         return documents.map(document -> FiscalXmlApiMapper.toSummary(document, itemCounts.getOrDefault(document.getId(), 0L),
                 List.copyOf(cfops.getOrDefault(document.getId(), new TreeSet<>())), divergences.get(document.getId())));
+    }
+
+    /** CF-RN-15: the notes the checks found something on, or marked "com divergência" - the list and the cards alike. */
+    private List<FiscalDocument> divergentNotes(Company company, List<FiscalDocument> all) {
+        return keepDivergent(all, divergenceService.summarize(company.getId(), all));
+    }
+
+    private static List<FiscalDocument> keepDivergent(List<FiscalDocument> all,
+                                                      Map<UUID, FiscalXmlSummaryDTO.DivergenceSummary> divergences) {
+        return all.stream()
+                .filter(document -> divergences.containsKey(document.getId()) || document.getReviewStatus() == ReviewStatus.DIVERGENT)
+                .toList();
+    }
+
+    /**
+     * The body read once, for the list and the cards alike. {@code matchesNothing}: an origin that never existed - no
+     * note matches, as before.
+     */
+    private record ScreenFilter(FiscalDocumentSearchFilter filter, boolean matchesNothing) {
+
+        boolean narrowsTheScope() {
+            return matchesNothing || filter.narrowsTheScope();
+        }
+
+        /** The names (never the values) of the filters on - the debug log of the cards. */
+        String activeFilterNames() {
+            List<String> names = new ArrayList<>();
+            if (filter.number() != null) {
+                names.add("numero");
+            }
+            if (filter.participant() != null) {
+                names.add("participant");
+            }
+            if (filter.reviewStatus() != null) {
+                names.add("reviewStatus");
+            }
+            if (filter.source() != null || matchesNothing) {
+                names.add("origem");
+            }
+            if (filter.onlySiegBefore() != null || filter.onlySefazBefore() != null) {
+                names.add("fonte");
+            }
+            if (!filter.noCfops()) {
+                names.add("cfops");
+            }
+            return String.join(",", names);
+        }
+    }
+
+    /** The body as the predicate's filter (CF-RN-01 to 09 for the CFOPs: a 400 on a broken {@code cfops}). */
+    private ScreenFilter screenFilter(XmlSearchFilterDTO dto, Company company) {
+        CfopFilter cfops = cfopFilterValidation.check(dto.cfops(), dto.cfop(), company.getId());
+        // nNF is stored without leading zeros, so "000123" typed by the user still matches.
+        String number = dto.numero() == null ? "" : dto.numero().replaceAll("\\D", "").replaceFirst("^0+(?=\\d)", "");
+        boolean withOrigin = dto.origem() != null && !dto.origem().isBlank();
+        DocumentSourceKey source = withOrigin ? sourceOf(dto.origem().strip()) : null;
+        LocalDateTime comparisonCutoff = LocalDateTime.now(clock).minusHours(SOURCE_COMPARISON_HOURS);
+        FiscalDocumentSearchFilter filter = new FiscalDocumentSearchFilter(company.getId(),
+                IssuePeriod.start(dto.dataEmissaoInicio()), IssuePeriod.end(dto.dataEmissaoFim()),
+                number.isEmpty() ? null : number, dto.direction(), participantPattern(dto.participant()), dto.reviewStatus(),
+                source,
+                XmlSearchFilterDTO.ONLY_SIEG.equals(dto.fonte()) ? comparisonCutoff : null,
+                XmlSearchFilterDTO.ONLY_SEFAZ.equals(dto.fonte()) ? comparisonCutoff : null,
+                cfops);
+        return new ScreenFilter(filter, withOrigin && source == null);
     }
 
     /** {@code origem} of the API (SIEG, SEFAZ_DIST, UPLOAD) as the source of the model; null when it is no valid source. */

@@ -7,9 +7,10 @@ import jakarta.validation.Valid;
 import jakarta.validation.constraints.NotBlank;
 
 import java.time.LocalDate;
+import java.util.List;
 
 /**
- * Body of the stored-XML search: company/period filter plus the page to return. Kept
+ * Body of the stored-XML search and of its cards ({@code /totais}): company/period filter plus the page to return. Kept
  * apart from the SIEG XmlDownloadFilterDTO, whose take/skip/xmlType belong to the SIEG
  * API call, not to our own database pagination.
  */
@@ -36,10 +37,18 @@ public record XmlSearchFilterDTO(
          * other way round. Blank = no comparison.
          */
         String fonte,
-        /** Notes with some item issued with this CFOP (4 digits); blank = any. */
+        /**
+         * <b>Deprecated</b> (CF-RN-09, one release): the old single CFOP - only digits, never checked; ignored when
+         * {@code cfops} comes filled. Removed in the next release (B-CF-06).
+         */
         String cfop,
         /** true = only notes the fiscal checks found something on, or marked "com divergência"; null/false = all. */
-        Boolean divergencia
+        Boolean divergencia,
+        /**
+         * Notes with some item whose effective CFOP is one of these (CF-RN-01 to 07): "1.102" reads as 1102, 4 digits
+         * each, at most 20 distinct; null or empty = any.
+         */
+        List<String> cfops
 ) {
 
     public static final String ONLY_SIEG = "SO_SIEG";
@@ -49,7 +58,7 @@ public record XmlSearchFilterDTO(
     public XmlSearchFilterDTO(String companyId, LocalDate dataEmissaoInicio, LocalDate dataEmissaoFim, String numero,
                               FiscalDirection direction, String participant, ReviewStatus reviewStatus,
                               PageRequestDTO pagination) {
-        this(companyId, dataEmissaoInicio, dataEmissaoFim, numero, direction, participant, reviewStatus, pagination, null, null, null, null);
+        this(companyId, dataEmissaoInicio, dataEmissaoFim, numero, direction, participant, reviewStatus, pagination, null, null, null, null, null);
     }
 
     public boolean onlyDivergent() {

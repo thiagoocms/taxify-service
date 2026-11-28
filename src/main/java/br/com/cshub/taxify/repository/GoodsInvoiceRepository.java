@@ -121,10 +121,10 @@ public interface GoodsInvoiceRepository extends AbstractJpaRepository<GoodsInvoi
                                      Pageable pageable);
 
     /**
-     * Period totals per direction - canceled notes don't count in the sums, only in their own count. Row: direction,
-     * count, total, ICMS, ICMS-ST, IPI, PIS, COFINS, canceled count.
+     * The sums of the cards per direction - canceled notes don't count in the sums, only in their own count. Row:
+     * direction, count, total, ICMS, ICMS-ST, IPI, PIS, COFINS, canceled count.
      */
-    @Query("select d.direction,"
+    String TOTALS_BY_DIRECTION = "select d.direction,"
             + " sum(case when d.status = " + CANCELED + " then 0 else 1 end),"
             + " coalesce(sum(case when d.status = " + CANCELED + " then 0 else d.totalAmount end), 0),"
             + " coalesce(sum(case when d.status = " + CANCELED + " then 0 else d.goodsTotals.icmsAmount end), 0),"
@@ -133,12 +133,23 @@ public interface GoodsInvoiceRepository extends AbstractJpaRepository<GoodsInvoi
             + " coalesce(sum(case when d.status = " + CANCELED + " then 0 else d.goodsTotals.pisAmount end), 0),"
             + " coalesce(sum(case when d.status = " + CANCELED + " then 0 else d.goodsTotals.cofinsAmount end), 0),"
             + " sum(case when d.status = " + CANCELED + " then 1 else 0 end)"
-            + " from GoodsInvoice d where d.company.id = :companyId and d.deleted = false"
+            + " from GoodsInvoice d where";
+
+    /** Period totals per direction, every note of the company and period ({@link #TOTALS_BY_DIRECTION}) - the reports. */
+    @Query(TOTALS_BY_DIRECTION + " d.company.id = :companyId and d.deleted = false"
             + " and d.issueDate between :issueDateFrom and :issueDateTo"
             + " group by d.direction")
     List<Object[]> totalsByDirection(@Param("companyId") UUID companyId,
                                      @Param("issueDateFrom") LocalDateTime issueDateFrom,
                                      @Param("issueDateTo") LocalDateTime issueDateTo);
+
+    /**
+     * The cards of the notes screen ({@link #TOTALS_BY_DIRECTION}): the NF-e and NFC-e matching the list's predicate
+     * ({@link FiscalDocumentSearchFilter#WHERE}, CF-RN-10) - the whole note of each one (CF-RN-12). The caller passes
+     * the filter without the tab (CF-RN-11).
+     */
+    @Query(TOTALS_BY_DIRECTION + FiscalDocumentSearchFilter.WHERE + " group by d.direction")
+    List<Object[]> totalsByDirectionFiltered(@Param(FiscalDocumentSearchFilter.PARAM) FiscalDocumentSearchFilter filter);
 
     /** Outbound (non-canceled) notes per company in [from, to). Row: company id, count. */
     @Query("select d.company.id, count(d) from GoodsInvoice d where d.company.id in :companyIds and d.deleted = false"

@@ -1,10 +1,7 @@
 package br.com.cshub.taxify.repository;
 
 import br.com.cshub.taxify.common.AbstractJpaRepository;
-import br.com.cshub.taxify.domain.fiscaldocument.DocumentSourceKey;
 import br.com.cshub.taxify.domain.fiscaldocument.FiscalDocument;
-import br.com.cshub.taxify.enumerated.FiscalDirection;
-import br.com.cshub.taxify.enumerated.ReviewStatus;
 import org.springframework.data.domain.Page;
 import org.springframework.data.domain.Pageable;
 import org.springframework.data.jpa.repository.Modifying;
@@ -63,46 +60,11 @@ public interface FiscalDocumentRepository extends AbstractJpaRepository<FiscalDo
                                                        @Param("to") LocalDateTime to);
 
     /**
-     * The notes screen. Every filter is optional (null = not applied): {@code number} exact, {@code direction}
-     * entry/exit, {@code participant} a lower-case piece of the issuer's or recipient's name, or digits of their
-     * document, {@code cfop} some item with it as its effective CFOP - the rectified one when the note has a rectified XML
-     * (FD-RN-57, decision of 2026-11-28), stored without spaces (spec 3.6) -, {@code source} the first origin
-     * ({@code source_system}). {@code onlySiegBefore}: seen by SIEG before it and never by SEFAZ, a third-party note;
-     * {@code onlySefazBefore}: seen by SEFAZ before it and never by SIEG ({@code fiscal_document_sources}, FD-RN-13).
+     * The notes screen: NF-e, NFC-e and CT-e matching {@link FiscalDocumentSearchFilter#WHERE} - the same predicate as
+     * the cards (CF-RN-10). A CT-e has no items, so it never matches a CFOP filter (CF-RN-08).
      */
-    @Query("select d from FiscalDocument d where d.company.id = :companyId and d.deleted = false and type(d) in (Nfe, Nfce, Cte)"
-            + " and d.issueDate between :issueDateFrom and :issueDateTo"
-            + " and (:number is null or d.number = :number)"
-            + " and (:direction is null or d.direction = :direction)"
-            + " and (:participant is null"
-            + "      or lower(d.issuer.name) like :participant or lower(d.recipient.name) like :participant"
-            + "      or d.issuer.document like :participant or d.recipient.document like :participant)"
-            + " and (:reviewStatus is null"
-            + "      or coalesce(d.review.status, br.com.cshub.taxify.enumerated.ReviewStatus.PENDING) = :reviewStatus)"
-            + " and (:source is null or d.sourceSystem = :source)"
-            + " and (:onlySiegBefore is null or (d.companyRole <> br.com.cshub.taxify.enumerated.CompanyDocumentRole.ISSUER"
-            + "      and exists (select s.id from FiscalDocumentSource s where s.document = d and s.source = :sieg"
-            + "                  and s.firstSeenAt < :onlySiegBefore)"
-            + "      and not exists (select s.id from FiscalDocumentSource s where s.document = d and s.source = :sefaz)))"
-            + " and (:onlySefazBefore is null"
-            + "      or (exists (select s.id from FiscalDocumentSource s where s.document = d and s.source = :sefaz"
-            + "                  and s.firstSeenAt < :onlySefazBefore)"
-            + "      and not exists (select s.id from FiscalDocumentSource s where s.document = d and s.source = :sieg)))"
-            + " and (:cfop is null or exists (select i.id from FiscalDocumentItem i where i.document = d and i.effectiveCfop = :cfop))")
-    Page<FiscalDocument> search(@Param("companyId") UUID companyId,
-                                @Param("issueDateFrom") LocalDateTime issueDateFrom,
-                                @Param("issueDateTo") LocalDateTime issueDateTo,
-                                @Param("number") String number,
-                                @Param("direction") FiscalDirection direction,
-                                @Param("participant") String participant,
-                                @Param("reviewStatus") ReviewStatus reviewStatus,
-                                @Param("source") DocumentSourceKey source,
-                                @Param("onlySiegBefore") LocalDateTime onlySiegBefore,
-                                @Param("onlySefazBefore") LocalDateTime onlySefazBefore,
-                                @Param("cfop") String cfop,
-                                @Param("sieg") DocumentSourceKey sieg,
-                                @Param("sefaz") DocumentSourceKey sefaz,
-                                Pageable pageable);
+    @Query("select d from FiscalDocument d where type(d) in (Nfe, Nfce, Cte) and" + FiscalDocumentSearchFilter.WHERE)
+    Page<FiscalDocument> search(@Param(FiscalDocumentSearchFilter.PARAM) FiscalDocumentSearchFilter filter, Pageable pageable);
 
     /**
      * NF-e, NFC-e and CT-e with a file still outside S3 (original or rectified), in id order after {@code afterId} (ids are
