@@ -113,32 +113,36 @@ public abstract class GoodsInvoice extends FiscalDocument {
         return isDigitsOfLength(getAccessKey(), ACCESS_KEY_44);
     }
 
+    /** Never null: {@link GoodsInvoiceHeader#EMPTY} when every column is null. */
     public GoodsInvoiceHeader getHeader() {
-        return header;
+        return header == null ? GoodsInvoiceHeader.EMPTY : header;
     }
 
     public void setHeader(GoodsInvoiceHeader header) {
         this.header = header;
     }
 
+    /** Never null: {@link IssuerDetails#EMPTY} when every column is null. */
     public IssuerDetails getIssuerDetails() {
-        return issuerDetails;
+        return issuerDetails == null ? IssuerDetails.EMPTY : issuerDetails;
     }
 
     public void setIssuerDetails(IssuerDetails issuerDetails) {
         this.issuerDetails = issuerDetails;
     }
 
+    /** Never null: {@link RecipientDetails#EMPTY} when every column is null. */
     public RecipientDetails getRecipientDetails() {
-        return recipientDetails;
+        return recipientDetails == null ? RecipientDetails.EMPTY : recipientDetails;
     }
 
     public void setRecipientDetails(RecipientDetails recipientDetails) {
         this.recipientDetails = recipientDetails;
     }
 
+    /** Never null: {@link GoodsTotals#EMPTY} when every column is null. */
     public GoodsTotals getGoodsTotals() {
-        return goodsTotals;
+        return goodsTotals == null ? GoodsTotals.EMPTY : goodsTotals;
     }
 
     public void setGoodsTotals(GoodsTotals goodsTotals) {

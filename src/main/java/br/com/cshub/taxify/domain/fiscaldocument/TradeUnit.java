@@ -19,6 +19,8 @@ public record TradeUnit(
         BigDecimal unitPrice
 ) {
     public static final int SCALE = 4;
+    /** No unit, quantity nor price (every column null). */
+    public static final TradeUnit EMPTY = new TradeUnit(null, null, null);
 
     public TradeUnit {
         quantity = quantity == null ? null : quantity.setScale(SCALE, RoundingMode.HALF_UP);

@@ -22,7 +22,7 @@ public record DocumentReview(
     public static final int MAX_NOTE = 500;
 
     /**
-     * The same rule as the old model ({@code FiscalXmlDocument.review}): back to PENDING clears who and when; a blank
+     * The same rule as the old model (the review of the old notes table): back to PENDING clears who and when; a blank
      * note is null, a note longer than 500 characters is cut (not stripped), a shorter one is stripped.
      */
     public static DocumentReview of(ReviewStatus status, String by, String note, LocalDateTime at) {

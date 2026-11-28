@@ -19,6 +19,9 @@ public record Product(
         @Column(name = "benefit_code", length = 10) String benefitCode,
         @Column(name = "cfop", length = 10) String cfop
 ) {
+    /** No product field (every column null). */
+    public static final Product EMPTY = new Product(null, null, null, null, null, null, null);
+
     public Product {
         cfop = FiscalText.trimSpaces(cfop);
     }

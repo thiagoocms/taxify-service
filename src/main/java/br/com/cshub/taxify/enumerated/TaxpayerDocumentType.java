@@ -1,5 +1,7 @@
 package br.com.cshub.taxify.enumerated;
 
+import br.com.cshub.taxify.domain.fiscaldocument.FiscalText;
+
 /** The kind of document that identifies a party of a fiscal document (FD-RN-09, I-06). */
 public enum TaxpayerDocumentType {
     CNPJ,
@@ -26,9 +28,12 @@ public enum TaxpayerDocumentType {
         };
     }
 
-    /** Whether {@code document} has the shape this type requires (I-06). */
+    /**
+     * Whether {@code document} has the shape this type requires (I-06). "Has text" is {@link FiscalText#hasText} - only
+     * the ordinary space is blank, like the SQL of the cutover (a tab in a foreign id is text on both sides).
+     */
     public boolean accepts(String document) {
-        if (document == null || document.isBlank()) {
+        if (!FiscalText.hasText(document)) {
             return false;
         }
         return switch (this) {

@@ -17,6 +17,9 @@ public record ItemFederalTax(
         BigDecimal rate,
         BigDecimal amount
 ) {
+    /** No field of the tax (every column null). */
+    public static final ItemFederalTax EMPTY = new ItemFederalTax(null, null, null, null);
+
     public ItemFederalTax {
         base = money(base);
         rate = FiscalDecimals.rate(rate);

@@ -498,16 +498,18 @@ public abstract class FiscalDocument extends AbstractAuditingEntity {
         return canceledAt;
     }
 
+    /** The issuer; {@link Party#EMPTY} when the document has none (never null). */
     public Party getIssuer() {
-        return issuer;
+        return issuer == null ? Party.EMPTY : issuer;
     }
 
     public void setIssuer(Party issuer) {
         this.issuer = issuer;
     }
 
+    /** The recipient; {@link Party#EMPTY} when the document has none (never null). */
     public Party getRecipient() {
-        return recipient;
+        return recipient == null ? Party.EMPTY : recipient;
     }
 
     public void setRecipient(Party recipient) {
@@ -530,8 +532,9 @@ public abstract class FiscalDocument extends AbstractAuditingEntity {
         this.ibsCbsTotals = ibsCbsTotals;
     }
 
+    /** The federal withholdings; {@link Withholdings#EMPTY} when there is none (never null). */
     public Withholdings getWithholdings() {
-        return withholdings;
+        return withholdings == null ? Withholdings.EMPTY : withholdings;
     }
 
     public void setWithholdings(Withholdings withholdings) {
@@ -568,5 +571,17 @@ public abstract class FiscalDocument extends AbstractAuditingEntity {
 
     public DocumentReview getReview() {
         return review;
+    }
+
+    public LocalDateTime getReviewedAt() {
+        return review == null ? null : review.reviewedAt();
+    }
+
+    public String getReviewedBy() {
+        return review == null ? null : review.reviewedBy();
+    }
+
+    public String getReviewNote() {
+        return review == null ? null : review.note();
     }
 }

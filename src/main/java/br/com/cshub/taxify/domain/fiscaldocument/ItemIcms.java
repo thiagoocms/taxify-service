@@ -25,6 +25,9 @@ public record ItemIcms(
         @Column(name = "icms_amount", precision = 19, scale = 2) BigDecimal amount,
         @Column(name = "icms_relief_amount", precision = 19, scale = 2) BigDecimal reliefAmount
 ) {
+    /** No ICMS field (every column null). */
+    public static final ItemIcms EMPTY = new ItemIcms(null, null, null, null, null, null, null, null, null);
+
     public ItemIcms {
         base = money(base);
         rate = FiscalDecimals.rate(rate);

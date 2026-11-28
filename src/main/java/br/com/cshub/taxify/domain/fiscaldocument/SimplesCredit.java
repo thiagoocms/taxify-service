@@ -16,6 +16,9 @@ public record SimplesCredit(
         @Column(name = "simples_credit_rate", precision = 9, scale = 4) BigDecimal rate,
         @Column(name = "simples_credit_amount", precision = 19, scale = 2) BigDecimal amount
 ) {
+    /** No Simples credit (every column null). */
+    public static final SimplesCredit EMPTY = new SimplesCredit(null, null);
+
     public SimplesCredit {
         rate = FiscalDecimals.rate(rate);
         amount = money(amount);

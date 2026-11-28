@@ -121,6 +121,31 @@ public class FiscalDocumentItem {
         this.document = Objects.requireNonNull(invoice, "invoice");
     }
 
+    /**
+     * Whether the item has any of the tax detail fields (origin, CSOSN, base modality and reduction, relief, ICMS-ST,
+     * IPI/PIS/COFINS base and rate, CEST, cBenef, Simples credit) - the item of a note read by a parser before they
+     * existed has none, and the checks skip what they need from them (the old {@code taxDetail == null}).
+     */
+    public boolean hasTaxDetail() {
+        Product p = getProduct();
+        ItemIcms i = getIcms();
+        ItemIcmsSt st = getIcmsSt();
+        SimplesCredit sn = getSimplesCredit();
+        return anyNonNull(p.cest(), p.benefitCode(), i.origin(), i.csosn(), i.baseModality(), i.baseReduction(),
+                i.reliefAmount(), st.baseModality(), st.mva(), st.base(), st.rate(), st.amount(),
+                getIpi().base(), getIpi().rate(), getPis().base(), getPis().rate(), getCofins().base(), getCofins().rate(),
+                sn.rate(), sn.amount());
+    }
+
+    private static boolean anyNonNull(Object... values) {
+        for (Object value : values) {
+            if (value != null) {
+                return true;
+            }
+        }
+        return false;
+    }
+
     /** The CFOP of the item, already without spaces. */
     public String cfop() {
         return product == null ? null : product.cfop();
@@ -143,24 +168,27 @@ public class FiscalDocumentItem {
         return itemNumber;
     }
 
+    /** Never null: {@link Product#EMPTY} when every column is null. */
     public Product getProduct() {
-        return product;
+        return product == null ? Product.EMPTY : product;
     }
 
     public void setProduct(Product product) {
         this.product = product;
     }
 
+    /** Never null: {@link TradeUnit#EMPTY} when every column is null. */
     public TradeUnit getCommercial() {
-        return commercial;
+        return commercial == null ? TradeUnit.EMPTY : commercial;
     }
 
     public void setCommercial(TradeUnit commercial) {
         this.commercial = commercial;
     }
 
+    /** Never null: {@link TradeUnit#EMPTY} when every column is null. */
     public TradeUnit getTaxable() {
-        return taxable;
+        return taxable == null ? TradeUnit.EMPTY : taxable;
     }
 
     public void setTaxable(TradeUnit taxable) {
@@ -175,40 +203,45 @@ public class FiscalDocumentItem {
         this.totalAmount = FiscalDecimals.money(totalAmount);
     }
 
+    /** Never null: {@link ItemIcms#EMPTY} when every column is null. */
     public ItemIcms getIcms() {
-        return icms;
+        return icms == null ? ItemIcms.EMPTY : icms;
     }
 
     public void setIcms(ItemIcms icms) {
         this.icms = icms;
     }
 
+    /** Never null: {@link ItemIcmsSt#EMPTY} when every column is null. */
     public ItemIcmsSt getIcmsSt() {
-        return icmsSt;
+        return icmsSt == null ? ItemIcmsSt.EMPTY : icmsSt;
     }
 
     public void setIcmsSt(ItemIcmsSt icmsSt) {
         this.icmsSt = icmsSt;
     }
 
+    /** Never null: {@link ItemFederalTax#EMPTY} when every column is null. */
     public ItemFederalTax getIpi() {
-        return ipi;
+        return ipi == null ? ItemFederalTax.EMPTY : ipi;
     }
 
     public void setIpi(ItemFederalTax ipi) {
         this.ipi = ipi;
     }
 
+    /** Never null: {@link ItemFederalTax#EMPTY} when every column is null. */
     public ItemFederalTax getPis() {
-        return pis;
+        return pis == null ? ItemFederalTax.EMPTY : pis;
     }
 
     public void setPis(ItemFederalTax pis) {
         this.pis = pis;
     }
 
+    /** Never null: {@link ItemFederalTax#EMPTY} when every column is null. */
     public ItemFederalTax getCofins() {
-        return cofins;
+        return cofins == null ? ItemFederalTax.EMPTY : cofins;
     }
 
     public void setCofins(ItemFederalTax cofins) {
@@ -223,8 +256,9 @@ public class FiscalDocumentItem {
         this.ibsCbs = ibsCbs;
     }
 
+    /** Never null: {@link SimplesCredit#EMPTY} when every column is null. */
     public SimplesCredit getSimplesCredit() {
-        return simplesCredit;
+        return simplesCredit == null ? SimplesCredit.EMPTY : simplesCredit;
     }
 
     public void setSimplesCredit(SimplesCredit simplesCredit) {

@@ -105,6 +105,18 @@ class FiscalDocumentRulesTest {
             assertThat(new Party(null, null, "Consumidor", null, null).hasCoherentDocument()).isTrue();
             assertThat(new Party(null, TaxpayerDocumentType.CPF, "Consumidor", null, null).hasCoherentDocument()).isFalse();
         }
+
+        /** I-06 with FiscalText#hasText: only the ordinary space is blank, as in the SQL of V87 (TRIM). */
+        @Test
+        void hasTextIsTheOneOfTheCutover() {
+            assertThat(new Party("   ", null, "Consumidor", null, null).hasCoherentDocument()).as("spaces = no document").isTrue();
+            assertThat(new Party("   ", TaxpayerDocumentType.FOREIGN, "Exterior", null, null).hasCoherentDocument()).isFalse();
+            assertThat(new Party("\t", null, "Exterior", null, null).hasCoherentDocument()).as("a tab is text: needs a type").isFalse();
+            assertThat(new Party("\t", TaxpayerDocumentType.FOREIGN, "Exterior", null, null).hasCoherentDocument()).isTrue();
+            assertThat(TaxpayerDocumentType.FOREIGN.accepts("\t")).isTrue();
+            assertThat(TaxpayerDocumentType.FOREIGN.accepts("  ")).isFalse();
+            assertThat(TaxpayerDocumentType.CNPJ.accepts(" 11222333000181")).isFalse();
+        }
     }
 
     @Nested

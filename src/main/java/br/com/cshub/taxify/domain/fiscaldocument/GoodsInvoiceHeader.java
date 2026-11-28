@@ -23,4 +23,7 @@ public record GoodsInvoiceHeader(
         @Column(name = "header_emission_process", length = 5) String emissionProcess,
         @Column(name = "header_emission_process_version", length = 30) String emissionProcessVersion
 ) {
+    /** No header field (every column null). */
+    public static final GoodsInvoiceHeader EMPTY = new GoodsInvoiceHeader(null, null, null, null, null, null, null, null, null,
+            null, null, null, null, null);
 }

@@ -14,10 +14,29 @@ public interface PartyIdentity {
      * FOREIGN = up to 20 characters). A document without a type, or a type without a document, is incoherent.
      */
     default boolean hasCoherentDocument() {
-        boolean noDocument = document() == null || document().isBlank();
+        boolean noDocument = !FiscalText.hasText(document());
         if (documentType() == null) {
             return noDocument;
         }
-        return documentType().accepts(document());
+        return !noDocument && documentType().accepts(document());
+    }
+
+    /** The document when it is a CNPJ - what the API shows in the {@code *Cnpj} fields. */
+    default String cnpj() {
+        return documentOf(TaxpayerDocumentType.CNPJ);
+    }
+
+    /** The document when it is a CPF. */
+    default String cpf() {
+        return documentOf(TaxpayerDocumentType.CPF);
+    }
+
+    /** The document when it is a foreign id (idEstrangeiro). */
+    default String foreignId() {
+        return documentOf(TaxpayerDocumentType.FOREIGN);
+    }
+
+    private String documentOf(TaxpayerDocumentType type) {
+        return documentType() == type ? document() : null;
     }
 }

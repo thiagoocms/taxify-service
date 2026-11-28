@@ -15,4 +15,6 @@ public record PartyAddress(
         String countryCode,
         String countryName
 ) {
+    /** No address (every column null). */
+    public static final PartyAddress EMPTY = new PartyAddress(null, null, null, null, null, null, null, null, null);
 }

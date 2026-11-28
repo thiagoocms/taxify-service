@@ -17,6 +17,9 @@ public record ItemIcmsSt(
         @Column(name = "icms_st_rate", precision = 9, scale = 4) BigDecimal rate,
         @Column(name = "icms_st_amount", precision = 19, scale = 2) BigDecimal amount
 ) {
+    /** No ICMS-ST field (every column null). */
+    public static final ItemIcmsSt EMPTY = new ItemIcmsSt(null, null, null, null, null);
+
     public ItemIcmsSt {
         mva = FiscalDecimals.rate(mva);
         base = money(base);

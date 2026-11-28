@@ -26,4 +26,11 @@ public record RecipientDetails(
         })
         PartyAddress address
 ) {
+    /** No detail (every column null). */
+    public static final RecipientDetails EMPTY = new RecipientDetails(null, null, null, null);
+
+    /** The address, or an empty one. */
+    public PartyAddress addressOrEmpty() {
+        return address == null ? PartyAddress.EMPTY : address;
+    }
 }

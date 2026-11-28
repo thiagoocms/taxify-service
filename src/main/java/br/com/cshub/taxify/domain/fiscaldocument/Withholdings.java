@@ -20,6 +20,9 @@ public record Withholdings(
         @Column(name = "withheld_irrf_amount", precision = 19, scale = 2) BigDecimal irrf,
         @Column(name = "withheld_inss_amount", precision = 19, scale = 2) BigDecimal inss
 ) {
+    /** No withholding (every column null). */
+    public static final Withholdings EMPTY = new Withholdings(null, null, null, null, null);
+
     public Withholdings {
         pis = money(pis);
         cofins = money(cofins);

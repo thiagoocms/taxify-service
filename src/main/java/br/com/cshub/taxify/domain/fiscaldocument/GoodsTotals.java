@@ -32,6 +32,10 @@ public record GoodsTotals(
         @Column(name = "other_expenses_amount", precision = 19, scale = 2) BigDecimal otherExpensesAmount,
         @Column(name = "approximate_taxes_amount", precision = 19, scale = 2) BigDecimal approximateTaxesAmount
 ) {
+    /** No total (every column null). */
+    public static final GoodsTotals EMPTY = new GoodsTotals(null, null, null, null, null, null, null, null, null, null, null,
+            null, null, null, null, null, null);
+
     public GoodsTotals {
         icmsBase = money(icmsBase);
         icmsAmount = money(icmsAmount);

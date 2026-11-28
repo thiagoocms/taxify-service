@@ -1,5 +1,7 @@
 package br.com.cshub.taxify.domain.fiscaldocument;
 
+import br.com.cshub.taxify.enumerated.RetrievalMode;
+
 import java.util.Objects;
 import java.util.regex.Pattern;
 
@@ -33,6 +35,17 @@ public record DocumentSourceKey(String value) {
 
     public boolean isUpload() {
         return UPLOAD.equals(this);
+    }
+
+    /**
+     * How this source delivers a document today (spec 3.10): the upload is not retrieved ({@code NONE}), SIEG pages a
+     * period ({@code PERIOD}), the authorities' distributions (SEFAZ DF-e, ADN and any other provider) follow a cursor.
+     */
+    public RetrievalMode currentRetrievalMode() {
+        if (isUpload()) {
+            return RetrievalMode.NONE;
+        }
+        return SIEG.equals(this) ? RetrievalMode.PERIOD : RetrievalMode.CURSOR;
     }
 
     @Override

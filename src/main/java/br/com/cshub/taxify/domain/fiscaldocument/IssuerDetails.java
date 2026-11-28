@@ -29,4 +29,11 @@ public record IssuerDetails(
         })
         PartyAddress address
 ) {
+    /** No detail (every column null). */
+    public static final IssuerDetails EMPTY = new IssuerDetails(null, null, null, null, null, null, null);
+
+    /** The address, or an empty one. */
+    public PartyAddress addressOrEmpty() {
+        return address == null ? PartyAddress.EMPTY : address;
+    }
 }

@@ -197,8 +197,9 @@ public class Nfse extends FiscalDocument {
         this.deductionsAmount = money(deductionsAmount);
     }
 
+    /** Never null: not withheld and without values when every ISS column is null. */
     public IssTax getIss() {
-        return iss;
+        return iss == null ? IssTax.notWithheld() : iss;
     }
 
     public void setIss(IssTax iss) {

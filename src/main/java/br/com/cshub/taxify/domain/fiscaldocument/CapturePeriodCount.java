@@ -135,6 +135,23 @@ public class CapturePeriodCount extends AbstractAuditingEntity {
         this.importedCountedAt = at;
     }
 
+    /**
+     * A re-read of the period (reconciliation) corrected what this provider delivered, keeping when it was counted -
+     * the period was not checked again (the old {@code setTotalImported} of the reconciliation).
+     */
+    public void correctImported(int total) {
+        this.importedTotal = nonNegative(total);
+    }
+
+    /**
+     * How a closed period stands after it was checked again (the first days of the next month): the provider's count and
+     * what it delivered, keeping the dates of the period (the old {@code refreshPreviousMonth}).
+     */
+    public void refreshClosed(Integer providerTotal, int imported) {
+        this.providerTotal = nonNegativeOrNull(providerTotal);
+        this.importedTotal = nonNegative(imported);
+    }
+
     public void recordStoredAnySource(Integer total) {
         this.storedAnySourceTotal = nonNegativeOrNull(total);
     }
