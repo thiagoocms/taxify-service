@@ -135,9 +135,9 @@ public class FiscalXmlPurgeScheduler {
     }
 
     /**
-     * One page: each document has its invariants checked (UPDATE) before it is marked and any file deleted - a document
-     * the model refuses keeps its files and stays unmarked -, then the files go and the mark is flushed at once
-     * ({@code saveAndFlush}), so a failing row shows up on its own document. {@code lastRead[0]}: the page's last id, known before anything can fail.
+     * One page: each document has its invariants checked (UPDATE) - a document the model refuses keeps its files and
+     * stays unmarked -, then it is marked by a native UPDATE in a transaction of its own and only then its files are
+     * deleted; files that fail to go take the mark back. Nothing of a document depends on the page's transaction. {@code lastRead[0]}: the page's last id, known before anything can fail.
      */
     private PageResult purgePage(LocalDateTime cutoff, String afterId, String[] lastRead) {
         List<FiscalDocument> documents = documentRepository.findPurgeCandidates(cutoff, afterId, PageRequest.of(0, PAGE_SIZE));
@@ -150,26 +150,46 @@ public class FiscalXmlPurgeScheduler {
             if (document.isXmlPurged()) {
                 continue;
             }
+            String id = document.getId().toString();
             try {
-                // a document the model refuses is left as it is: files kept, not marked (the flush never meets it)
+                // a document the model refuses is left as it is: files kept, not marked
                 document.verifyInvariants(InvariantScope.UPDATE);
-                purgeFiles(document);
             } catch (FiscalDocumentInvariantException e) {
                 failed++;
-                log.warn("fiscal.xml.purge.document.refused documentId={} invariant={}", document.getId(), e.getInvariant());
-                continue;
-            } catch (IOException | RuntimeException e) {
-                // the file stays for the next run; the document is not marked
-                failed++;
-                log.warn("fiscal.xml.purge.document.failed documentId={} error={}", document.getId(), e.getClass().getSimpleName());
+                log.warn("fiscal.xml.purge.document.refused documentId={} invariant={}", id, e.getInvariant());
                 continue;
             }
-            document.markXmlPurged(now);
-            // a failing save ends the page's transaction: the page is retried by the next run (purge())
-            documentRepository.saveAndFlush(document);
-            purged++;
+            // I-D: the mark first, committed on its own (never undone by a later failure with the files gone)
+            boolean marked;
+            try {
+                marked = documentRepository.markXmlPurged(id, now) == 1;
+            } catch (RuntimeException e) {
+                failed++;
+                log.warn("fiscal.xml.purge.document.failed documentId={} step=mark error={}", id, e.getClass().getSimpleName());
+                continue;
+            }
+            if (!marked) {
+                continue; // another run marked it meanwhile
+            }
+            try {
+                purgeFiles(document);
+                purged++;
+            } catch (IOException | RuntimeException e) {
+                // the files stay: the mark is taken back so the next run tries again
+                failed++;
+                unmark(id, now);
+                log.warn("fiscal.xml.purge.document.failed documentId={} step=files error={}", id, e.getClass().getSimpleName());
+            }
         }
         return new PageResult(documents.size(), purged, failed, lastId);
+    }
+
+    private void unmark(String id, LocalDateTime at) {
+        try {
+            documentRepository.unmarkXmlPurged(id, at);
+        } catch (RuntimeException e) {
+            log.warn("fiscal.xml.purge.document.unmark.failed documentId={} error={}", id, e.getClass().getSimpleName());
+        }
     }
 
     private void purgeFiles(FiscalDocument document) throws IOException {

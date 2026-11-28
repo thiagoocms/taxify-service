@@ -16,7 +16,7 @@ import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.io.TempDir;
 import org.mockito.ArgumentCaptor;
-import org.springframework.dao.DataIntegrityViolationException;
+import org.springframework.dao.CannotAcquireLockException;
 import org.springframework.data.domain.Pageable;
 import org.springframework.transaction.PlatformTransactionManager;
 
@@ -30,6 +30,8 @@ import java.time.LocalDateTime;
 import java.time.ZoneId;
 import java.time.ZonedDateTime;
 import java.util.ArrayList;
+import java.util.HashSet;
+import java.util.Set;
 import java.util.List;
 import java.util.Optional;
 import java.util.UUID;
@@ -76,6 +78,15 @@ class FiscalXmlPurgeSchedulerTest {
         when(reservation.reserve(anyString(), anyInt())).thenReturn(Optional.of(
                 new RoutineRunReservation.Reservation("run", FiscalXmlPurgeScheduler.ROUTINE, LocalDate.of(2026, 12, 1), false)));
         when(documentRepository.findPurgeCandidates(any(), anyString(), any())).thenReturn(List.of());
+        // the native mark (its own transaction) and its undo, kept here
+        when(documentRepository.markXmlPurged(anyString(), any())).thenAnswer(call -> marked.add(call.getArgument(0)) ? 1 : 0);
+        when(documentRepository.unmarkXmlPurged(anyString(), any())).thenAnswer(call -> marked.remove(call.<String>getArgument(0)) ? 1 : 0);
+    }
+
+    private final Set<String> marked = new HashSet<>();
+
+    private boolean isMarked(FiscalDocument document) {
+        return marked.contains(document.getId().toString());
     }
 
     private GoodsInvoice document(String xmlPath) {
@@ -114,8 +125,8 @@ class FiscalXmlPurgeSchedulerTest {
 
         assertThat(Files.exists(original)).isFalse();
         assertThat(Files.exists(rectified)).isFalse();
-        assertThat(document.getXmlPurgedAt()).isEqualTo(NOW);
-        verify(documentRepository).saveAndFlush(document);
+        verify(documentRepository).markXmlPurged(document.getId().toString(), NOW);
+        assertThat(isMarked(document)).isTrue();
         verify(reservation).finish(any(), eq(1), eq(0));
     }
 
@@ -137,7 +148,7 @@ class FiscalXmlPurgeSchedulerTest {
 
         scheduler.purgeOldFiles();
 
-        assertThat(alreadyGone.isXmlPurged()).isTrue();
+        assertThat(isMarked(alreadyGone)).isTrue();
     }
 
     /** CA-FD-22: 1.200 candidates = 3 pages by id; a file that fails leaves only that document unmarked. */
@@ -166,10 +177,10 @@ class FiscalXmlPurgeSchedulerTest {
         assertThat(summary.candidates()).isEqualTo(1200);
         assertThat(summary.purged()).isEqualTo(1199);
         assertThat(summary.failed()).isEqualTo(1);
-        assertThat(all.get(700).isXmlPurged()).isFalse();
-        assertThat(all.stream().filter(FiscalDocument::isXmlPurged).count()).isEqualTo(1199);
+        assertThat(isMarked(all.get(700))).as("marked, then taken back: the file is still there").isFalse();
+        assertThat(marked).hasSize(1199);
         verify(documentRepository, times(3)).findPurgeCandidates(any(), anyString(), any());
-        verify(documentRepository, never()).saveAndFlush(all.get(700));
+        verify(documentRepository).unmarkXmlPurged(all.get(700).getId().toString(), NOW);
     }
 
     /** I-4: a document the model refuses (UPDATE) keeps its files and stays unmarked; the page goes on. */
@@ -186,17 +197,20 @@ class FiscalXmlPurgeSchedulerTest {
         FiscalXmlPurgeScheduler.PurgeSummary summary = scheduler.purge();
 
         assertThat(Files.exists(refusedFile)).isTrue();
-        assertThat(refused.isXmlPurged()).isFalse();
+        assertThat(isMarked(refused)).isFalse();
         assertThat(Files.exists(okFile)).isFalse();
-        assertThat(ok.isXmlPurged()).isTrue();
+        assertThat(isMarked(ok)).isTrue();
         assertThat(summary.purged()).isEqualTo(1);
         assertThat(summary.failed()).isEqualTo(1);
-        verify(documentRepository, never()).saveAndFlush(refused);
+        verify(documentRepository, never()).markXmlPurged(eq(refused.getId().toString()), any());
     }
 
-    /** I-4: a page whose save fails is given up (its transaction rolls back) and the run goes on after it. */
+    /**
+     * I-D: the mark goes first, in a transaction of its own - a mark that fails leaves only its document (files kept,
+     * the next run tries again); the rest of the page and the next page are purged.
+     */
     @Test
-    void aPageWhoseSaveFailsDoesNotStopTheRun() throws IOException {
+    void aMarkThatFailsLeavesOnlyItsDocument() throws IOException {
         List<FiscalDocument> all = new ArrayList<>();
         for (int i = 0; i < 600; i++) {
             Path file = Files.writeString(tempDir.resolve("p" + i + ".xml"), "<a/>", StandardCharsets.UTF_8);
@@ -209,14 +223,17 @@ class FiscalXmlPurgeSchedulerTest {
             Pageable page = call.getArgument(2);
             return all.stream().filter(d -> d.getId().toString().compareTo(afterId) > 0).limit(page.getPageSize()).toList();
         });
-        when(documentRepository.saveAndFlush(all.get(10))).thenThrow(new DataIntegrityViolationException("x"));
+        when(documentRepository.markXmlPurged(eq(all.get(10).getId().toString()), any()))
+                .thenThrow(new CannotAcquireLockException("x"));
 
         FiscalXmlPurgeScheduler.PurgeSummary summary = scheduler.purge();
 
         assertThat(summary.pages()).isEqualTo(2);
-        assertThat(summary.purged()).as("the second page's 100").isEqualTo(100);
-        assertThat(summary.failed()).as("the first page").isEqualTo(1);
+        assertThat(summary.purged()).isEqualTo(599);
+        assertThat(summary.failed()).isEqualTo(1);
         verify(documentRepository, times(2)).findPurgeCandidates(any(), anyString(), any());
-        assertThat(all.get(599).isXmlPurged()).isTrue();
+        assertThat(Files.exists(Path.of(all.get(10).getXmlFilePath()))).as("not marked: its file stays").isTrue();
+        assertThat(Files.exists(Path.of(all.get(11).getXmlFilePath()))).isFalse();
+        assertThat(isMarked(all.get(599))).isTrue();
     }
 }

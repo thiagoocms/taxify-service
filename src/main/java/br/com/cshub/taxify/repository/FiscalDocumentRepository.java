@@ -7,9 +7,12 @@ import br.com.cshub.taxify.enumerated.FiscalDirection;
 import br.com.cshub.taxify.enumerated.ReviewStatus;
 import org.springframework.data.domain.Page;
 import org.springframework.data.domain.Pageable;
+import org.springframework.data.jpa.repository.Modifying;
 import org.springframework.data.jpa.repository.Query;
 import org.springframework.data.repository.query.Param;
 import org.springframework.stereotype.Repository;
+import org.springframework.transaction.annotation.Propagation;
+import org.springframework.transaction.annotation.Transactional;
 
 import java.time.LocalDateTime;
 import java.util.List;
@@ -23,6 +26,22 @@ import java.util.UUID;
  */
 @Repository
 public interface FiscalDocumentRepository extends AbstractJpaRepository<FiscalDocument, UUID>, FiscalDocumentSourceRepository {
+
+    /**
+     * The purge's mark (FD-RN-16), in a transaction of its own, before the document's files are deleted: a failure
+     * later never undoes it with the files already gone. 1 = marked now, 0 = already marked (another run).
+     */
+    @Modifying
+    @Transactional(propagation = Propagation.REQUIRES_NEW)
+    @Query(value = "UPDATE fiscal_documents SET xml_purged_at = :at, last_modified_by = 'system', last_modified_date = :at"
+            + " WHERE id = :id AND xml_purged_at IS NULL", nativeQuery = true)
+    int markXmlPurged(@Param("id") String id, @Param("at") LocalDateTime at);
+
+    /** Undoes {@link #markXmlPurged} when the files could not be deleted (the next run tries again). */
+    @Modifying
+    @Transactional(propagation = Propagation.REQUIRES_NEW)
+    @Query(value = "UPDATE fiscal_documents SET xml_purged_at = NULL WHERE id = :id AND xml_purged_at = :at", nativeQuery = true)
+    int unmarkXmlPurged(@Param("id") String id, @Param("at") LocalDateTime at);
 
     /** The idempotency of the import (FD-RN-12): one document per company and access key, any type. */
     boolean existsByCompany_IdAndAccessKey(UUID companyId, String accessKey);

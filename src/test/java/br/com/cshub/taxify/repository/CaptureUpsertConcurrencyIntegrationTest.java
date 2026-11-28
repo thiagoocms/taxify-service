@@ -150,6 +150,19 @@ class CaptureUpsertConcurrencyIntegrationTest {
         assertThat((LocalDateTime) rows.getFirst().get("first_seen_at")).isEqualTo(NOW.plusHours(2));
     }
 
+    /** I-D: the purge's mark commits on its own (outside any transaction of the caller), once; the undo takes it back. */
+    @Test
+    void thePurgeMarkCommitsOnItsOwnAndCanBeTakenBack() {
+        assertThat(documents.markXmlPurged(documentId, NOW)).isOne();
+        assertThat(documents.markXmlPurged(documentId, NOW.plusHours(1))).as("already marked").isZero();
+        assertThat((LocalDateTime) jdbc.queryForObject("SELECT xml_purged_at FROM fiscal_documents WHERE id = ?", LocalDateTime.class,
+                documentId)).isEqualTo(NOW);
+
+        assertThat(documents.unmarkXmlPurged(documentId, NOW)).isOne();
+        assertThat(jdbc.queryForObject("SELECT xml_purged_at FROM fiscal_documents WHERE id = ?", LocalDateTime.class, documentId))
+                .isNull();
+    }
+
     /**
      * {@code first} writes in its transaction and waits; {@code second} starts its own and writes the same key (it waits
      * on the row lock); then {@code first} commits and {@code second} goes on. Both results, or the exception.
