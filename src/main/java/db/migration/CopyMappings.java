@@ -46,18 +46,24 @@ final class CopyMappings {
             + " AND (ide_tipo_operacao IS NULL OR TRIM(ide_tipo_operacao) NOT IN ('0', '1'))";
 
     /**
-     * FD-RN-57: the effective CFOP of an item of a rectified note - what {@code FiscalXmlRectificationService} writes in
-     * the rectified XML ({@code EffectiveCfops}): the CFOP of the item's active {@code product_fiscal_rules} row (the
-     * supplier's rule first, else the code's general one - no supplier), with its first digit following the note's
-     * destination ({@link #forOperation}); no rule (or an empty result) = the item's own CFOP. A scalar expression over
-     * the given columns, so V87 (new tables) and V88 (legacy tables) apply the same rule.
+     * FD-RN-57: the effective CFOP of an item of a rectified note - the rule the notes screen used to show the rectified
+     * CFOP ({@code EffectiveCfops}): the item's active {@code product_fiscal_rules} row (the supplier's rule first, else
+     * the code's general one - no supplier), when the note's rectification was checked at or after the rule last
+     * changed ({@code ProductRuleCheck.rectifiedUnder}), gives its CFOP with the first digit following the note's
+     * destination ({@link #forOperation}); no rule, a rule changed later or an empty result = the item's own CFOP; an
+     * item without CFOP has none. A scalar expression over the given columns, so V87 (new tables) and V88 (legacy
+     * tables) apply the same rule.
      */
-    static String rectifiedEffectiveCfop(String cfop, String productCode, String companyId, String supplier, String destination) {
-        return "COALESCE((SELECT NULLIF(" + forOperation("TRIM(r.cfop_correto)", "TRIM(" + destination + ")") + ", '')"
+    static String rectifiedEffectiveCfop(String cfop, String productCode, String companyId, String supplier, String destination,
+                                         String checkedAt) {
+        String changedAt = "COALESCE(r.last_modified_date, r.created_date)";
+        return "CASE WHEN " + cfop + " IS NULL THEN NULL ELSE COALESCE((SELECT CASE WHEN " + checkedAt + " IS NOT NULL AND ("
+                + changedAt + " IS NULL OR " + changedAt + " <= " + checkedAt + ") THEN NULLIF(TRIM("
+                + forOperation("TRIM(r.cfop_correto)", "TRIM(" + destination + ")") + "), '') END"
                 + " FROM product_fiscal_rules r WHERE r.company_id = " + companyId + " AND r.deleted = 0"
                 + " AND r.codigo_produto = " + productCode
                 + " AND (r.documento_fornecedor = " + supplier + " OR NULLIF(r.documento_fornecedor, '') IS NULL)"
-                + " ORDER BY NULLIF(r.documento_fornecedor, '') IS NULL, r.id LIMIT 1), " + cfop + ")";
+                + " ORDER BY NULLIF(r.documento_fornecedor, '') IS NULL, r.id LIMIT 1), " + cfop + ") END";
     }
 
     /**

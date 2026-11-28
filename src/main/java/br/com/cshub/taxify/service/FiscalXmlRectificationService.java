@@ -152,9 +152,10 @@ public class FiscalXmlRectificationService {
             String externalInvoiceKey = document.accessKeyOrId();
             auditTrail.record(document.getCompany(), externalInvoiceKey, InvoiceAuditStatus.RECTIFICATION_REVERTED, null);
         }
-        // FD-RN-57: the items' CFOP of the version in effect (the rectified file's, or their own when there is none)
-        document.refreshEffectiveCfops(item -> EffectiveCfops.rectified(rules, item));
         document.setLastRectificationCheckedAt(LocalDateTime.now());
+        // FD-RN-57: the items' CFOP of the version in effect (the rectified file's, or their own when there is none) -
+        // after the check time, which the rule's "rectified under" compares with
+        document.refreshEffectiveCfops(item -> EffectiveCfops.rectified(rules, item));
         documentRepository.save(document);
 
         return new FiscalXmlRectificationResultDTO(

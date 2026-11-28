@@ -145,11 +145,11 @@ class TranslatorAndCutoverParityTest {
                 .map(e -> e.getKey().name() + ":" + e.getValue()).toList() + " divergences=" + divergences.size());
         divergences.forEach(d -> System.out.println("  " + d));
 
-        assertThat(compared).containsEntry(DOCUMENTS, 19 + 7).containsEntry(ITEMS, 10).containsEntry(EVENTS, 2);
+        assertThat(compared).containsEntry(DOCUMENTS, 19 + 7).containsEntry(ITEMS, 12).containsEntry(EVENTS, 2);
         // FD-RN-57 on both sides: K1 by the supplier's rule, x6 by the general rules and the interstate destination
         assertThat(jdbc.queryForList("SELECT i.effective_cfop FROM fiscal_document_items i JOIN legacy_fiscal_xml_documents d"
                 + " ON d.id = i.document_id WHERE d.access_key IN (?, ?) ORDER BY d.access_key, i.item_number", String.class,
-                key(1), key(206))).containsExactly("1556", "1102", "2949", "6405", "2102", "2102");
+                key(1), key(206))).containsExactly("1556", "1102", "2949", "6102", "2102", "2102", "6405", null);
         assertThat(compared.get(SOURCES)).isGreaterThanOrEqualTo(10);
         assertThat(compared.get(COUNTS)).isEqualTo(7);
         assertThat(divergences).as("SQL of V87 x LegacyFiscalDocumentTranslator, column by column").isEmpty();
@@ -211,23 +211,28 @@ class TranslatorAndCutoverParityTest {
         insert(jdbc, "fiscal_xml_document_items", item("i1000000-0000-4000-8000-000000000103", doc("x5"), "numero_item", 1,
                 "cfop", "   ", "valor_total", "5.00"));
         // FD-RN-57: product rules of E1 - P-1 for the supplier (wins on K1, a rectified note of that supplier, dest 1),
-        // P-1 general, P-9 general (exit CFOP on an interstate note: 5405 -> 6405), a deleted one and one of E2
+        // P-1 general, P-9 general but changed after x6 was last checked (the screen shows the issued CFOP), P-7 general
+        // (exit CFOP on an interstate note: 5405 -> 6405), a deleted one and one of E2
         String rules = "product_fiscal_rules";
         insert(jdbc, rules, LegacyFixtures.audited("id", "a1000000-0000-4000-8000-000000000001", "company_id", E1,
                 "codigo_produto", "P-1", "documento_fornecedor", LegacyFixtures.SUPPLIER_CNPJ, "cfop_correto", "1556"));
         insert(jdbc, rules, LegacyFixtures.audited("id", "a1000000-0000-4000-8000-000000000002", "company_id", E1,
                 "codigo_produto", "P-1", "documento_fornecedor", null, "cfop_correto", "1949"));
         insert(jdbc, rules, LegacyFixtures.audited("id", "a1000000-0000-4000-8000-000000000003", "company_id", E1,
-                "codigo_produto", "P-9", "documento_fornecedor", "", "cfop_correto", " 5405 "));
+                "codigo_produto", "P-9", "documento_fornecedor", "", "cfop_correto", "1102",
+                "last_modified_date", "2026-11-25 08:00:00"));
+        insert(jdbc, rules, LegacyFixtures.audited("id", "a1000000-0000-4000-8000-000000000006", "company_id", E1,
+                "codigo_produto", "P-7", "documento_fornecedor", "", "cfop_correto", " 5405 "));
         insert(jdbc, rules, LegacyFixtures.audited("id", "a1000000-0000-4000-8000-000000000004", "company_id", E1,
                 "codigo_produto", "P-8", "documento_fornecedor", null, "cfop_correto", "1403", "deleted", 1));
         insert(jdbc, rules, LegacyFixtures.audited("id", "a1000000-0000-4000-8000-000000000005", "company_id", E2,
                 "codigo_produto", "P-9", "documento_fornecedor", null, "cfop_correto", "1101"));
-        // a rectified note of another supplier, interstate (idDest " 2 "): P-1 by the general rule, P-9, P-8 (deleted rule:
-        // keeps its CFOP) and an item without code
+        // a rectified note of another supplier, interstate (idDest " 2 "), checked on 2026-11-20: P-1 by the general rule,
+        // P-9 (rule changed later: own CFOP), P-8 (deleted rule: own CFOP), an item without code, P-7 and P-7 without CFOP
         insert(jdbc, fxd, nfe(doc("x6"), E1, "access_key", key(206), "direction", "INBOUND", "own_issue", 0,
                 "issue_date", "2026-10-28 10:00:00", "issuer_cnpj", "11444777000161", "ide_destino_operacao", " 2 ",
-                "total_valor_total_nota", "30.00", "rectified_file_path", "rect/x6.xml"));
+                "total_valor_total_nota", "30.00", "rectified_file_path", "rect/x6.xml",
+                "last_rectification_checked_at", "2026-11-20 10:00:00"));
         insert(jdbc, "fiscal_xml_document_items", item("i1000000-0000-4000-8000-000000000104", doc("x6"), "numero_item", 1,
                 "codigo", "P-1", "cfop", "2102", "valor_total", "10.00"));
         insert(jdbc, "fiscal_xml_document_items", item("i1000000-0000-4000-8000-000000000105", doc("x6"), "numero_item", 2,
@@ -236,6 +241,10 @@ class TranslatorAndCutoverParityTest {
                 "codigo", "P-8", "cfop", "2102", "valor_total", "5.00"));
         insert(jdbc, "fiscal_xml_document_items", item("i1000000-0000-4000-8000-000000000107", doc("x6"), "numero_item", 4,
                 "cfop", "2102", "valor_total", "5.00"));
+        insert(jdbc, "fiscal_xml_document_items", item("i1000000-0000-4000-8000-000000000108", doc("x6"), "numero_item", 5,
+                "codigo", "P-7", "cfop", "6102", "valor_total", "5.00"));
+        insert(jdbc, "fiscal_xml_document_items", item("i1000000-0000-4000-8000-000000000109", doc("x6"), "numero_item", 6,
+                "codigo", "P-7", "cfop", null, "valor_total", "5.00"));
         // NFS-e issued by the company with a blank provider document and nothing else of the provider
         insert(jdbc, "service_invoices", nfse(doc("y2"), E1, "access_key", "2611606" + "7".repeat(43), "direction", "PRESTADA",
                 "issue_date", "2026-10-27 11:00:00", "prestador_documento", "  ", "tomador_documento", LegacyFixtures.E1_CNPJ,

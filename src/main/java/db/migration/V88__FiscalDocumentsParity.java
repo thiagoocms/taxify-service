@@ -214,7 +214,8 @@ public class V88__FiscalDocumentsParity extends BaseJavaMigration {
     private static Aggregate effectiveCfopLegacy() {
         String supplier = CopyMappings.goodsInvoice().get("issuer_document").replaceAll("\\bl\\.", "ld.");
         String effective = "CASE WHEN ld.document_type <> 'CTE' AND ld.rectified_file_path IS NOT NULL THEN "
-                + CopyMappings.rectifiedEffectiveCfop("TRIM(l.cfop)", "l.codigo", "ld.company_id", supplier, "ld.ide_destino_operacao")
+                + CopyMappings.rectifiedEffectiveCfop("TRIM(l.cfop)", "l.codigo", "ld.company_id", supplier, "ld.ide_destino_operacao",
+                "ld.last_rectification_checked_at")
                 + " ELSE TRIM(l.cfop) END";
         return new Aggregate("SELECT ld.company_id, " + effective + ", COUNT(*) FROM " + LegacyTable.ITEMS.legacyName() + " l JOIN "
                 + LegacyTable.DOCUMENTS.legacyName() + " ld ON ld.id = l.document_id GROUP BY 1, 2", 2);
