@@ -24,10 +24,19 @@ public interface FiscalDocumentItemRepository extends JpaRepository<FiscalDocume
     String CANCELED = "br.com.cshub.taxify.enumerated.FiscalDocumentStatus.CANCELED";
     String ISSUER = "br.com.cshub.taxify.enumerated.CompanyDocumentRole.ISSUER";
 
-    /** Fetches each item's note with it - callers read the note of every item. */
+    /**
+     * Fetches each item's note with it - callers read the note of every item. In a fixed order (QA of 2026-11-28, the
+     * order of the fiscal conference's rows): the old query had none and MySQL returned the items in the order of its
+     * access path - the note by (company, issue date, id), then its items by (note, CFOP, total, id) -, which this
+     * ORDER BY makes explicit.
+     */
     @EntityGraph(attributePaths = "document")
+    @Query("select i from FiscalDocumentItem i join i.document d where d.company.id = :companyId"
+            + " and d.issueDate between :issueDateFrom and :issueDateTo"
+            + " order by d.issueDate, d.id, i.product.cfop, i.totalAmount, i.id")
     List<FiscalDocumentItem> findByDocument_Company_IdAndDocument_IssueDateBetween(
-            UUID companyId, LocalDateTime issueDateFrom, LocalDateTime issueDateTo);
+            @Param("companyId") UUID companyId, @Param("issueDateFrom") LocalDateTime issueDateFrom,
+            @Param("issueDateTo") LocalDateTime issueDateTo);
 
     List<FiscalDocumentItem> findByDocument_IdOrderByItemNumberAsc(UUID documentId);
 

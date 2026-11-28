@@ -126,7 +126,8 @@ public class ProductRuleSuggestionService {
 
         void add(String descricao, String supplierName, Object[] row, long count) {
             total += count;
-            if (supplierName != null) {
+            // QA of 2026-11-28: one name whatever the order of the rows (the groups bring each its max) - the greatest
+            if (supplierName != null && (this.supplierName == null || supplierName.compareTo(this.supplierName) > 0)) {
                 this.supplierName = supplierName;
             }
             if (descricao != null && count > descricaoCount) {
