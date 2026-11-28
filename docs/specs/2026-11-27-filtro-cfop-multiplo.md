@@ -1,6 +1,6 @@
 # Filtro de CFOP múltiplo (chips) e totais que acompanham o filtro
 
-Spec do po-taxify, 2026-11-27, revisão 1. Pedido do Tony de 2026-11-27.
+Spec do po-taxify, 2026-11-27, revisão 2 (2026-11-28: decisões do Tony na P-CF-01 = c e P-CF-02 = CFOP efetivo; contrato final do backend na seção 6). Pedido do Tony de 2026-11-27.
 
 ## Status e decisões
 
@@ -8,13 +8,13 @@ Spec do po-taxify, 2026-11-27, revisão 1. Pedido do Tony de 2026-11-27.
 |---|---|
 | **F-CF-01: componente `shared/components/chips-input`** | **Pronta para implementar já.** Não depende do backend nem da remodelagem |
 | Backend: notas fiscais (B-CF-01 a B-CF-03) | Pronta para implementar, **depois do merge da remodelagem** (`2026-11-27-remodelagem-documentos-fiscais.md`, branch `feature/fiscal-documents`, B-FD-05 e B-FD-07). É escrita contra o modelo novo (`fiscal_documents` e `fiscal_document_items`) |
-| Backend: subtotal dos itens no CFOP (B-CF-04) | **Depende da P-CF-01** (semântica do total com CFOP) |
+| Backend: subtotal dos itens no CFOP (B-CF-04) | **Decidida (2026-11-28): P-CF-01 = opção (c)**. Implementada |
 | Backend: Fronteira (B-CF-05) | Pronta para implementar, depois do merge da remodelagem (a B-FD-05 migra a Fronteira) |
 | Front das telas (F-CF-02 e F-CF-03) | Pode ser desenvolvido em paralelo contra o contrato desta spec. O merge acontece depois do backend |
 | Variável de ambiente | Nenhuma. A feature só lê dados e não chama provedor externo (seção 9) |
 | Migration | Nenhuma. O índice que a consulta usa já existe na remodelagem (seção 8) |
 
-O que bloqueia: só a **P-CF-01** e só para a B-CF-04 e a linha de subtotal do F-CF-02. As outras perguntas têm recomendação aceitável e a spec já está escrita com ela.
+Nada bloqueia mais. Decisões do Tony (2026-11-28): **P-CF-01 = (c)** (card com a nota inteira + linha secundária com a soma dos itens nos CFOPs) e **P-CF-02 = CFOP efetivo** (`fiscal_document_items.effective_cfop`, gravado pela remodelagem, FD-RN-57). As demais perguntas seguem a recomendação.
 
 ## 1. Estado atual (confirmado no código em 2026-11-27)
 
@@ -41,7 +41,7 @@ O que bloqueia: só a **P-CF-01** e só para a B-CF-04 e a linha de subtotal do 
 
 Há mais duas diferenças que a spec trata:
 - **CT-e:** a lista do modelo novo traz NF-e, NFC-e e CT-e (`type(d) in (Nfe, Nfce, Cte)`), mas os cards contam só NF-e e NFC-e (`GoodsInvoice`). O CT-e não tem item, então nunca casa com o filtro de CFOP. Com CFOP no filtro, a lista e os cards contam as mesmas notas. Sem ele, a diferença continua como hoje (risco R-03).
-- **CFOP filtrado × CFOP exibido:** o filtro compara o CFOP **emitido** (a coluna do item). A coluna "CFOP" da lista mostra o CFOP **efetivo**, o retificado quando a versão retificada o trocou (`effectiveCfop`, `:223-228`). Uma nota retificada de 5102 para 1102 aparece com 1102 e só é achada pelo filtro 5102 (P-CF-02).
+- **CFOP filtrado × CFOP exibido:** depois da remodelagem (FD-RN-57) o item grava o CFOP **efetivo** (`effective_cfop`, índice `idx_fdi_document_effective_cfop`), e a coluna "CFOP" da lista e o filtro usam esse mesmo valor. Uma nota retificada de 5102 para 1102 aparece com 1102 e é achada pelo filtro 1102 (P-CF-02, decidida).
 
 ### Fronteira PE
 - **Backend:** `GET /api/v1/fronteira?companyId&periodo` (`FronteiraResource.report`, `:81-82`) monta o `FronteiraDTOs.Report` inteiro: todas as linhas do extrato, sem paginação, mais o `Summary` do extrato inteiro e as entradas "sem cobrança".
@@ -49,7 +49,7 @@ Há mais duas diferenças que a spec trata:
 - **Front:** `C:\workspace\taxify-front\src\app\features\fronteira\fronteira.component.ts`. Hoje **não há filtro de CFOP**. O filtro rápido por resultado ou marca (`filter`, `filtered`, `:209-216`) roda no front, sobre as linhas já carregadas. Os cards de resumo (`Summary`) são do **extrato inteiro** e não acompanham nenhum filtro. Os contadores dos filtros rápidos são contados no front (`:464`, `:468`).
 
 ### Reaproveitado
-- `XmlSearchFilterDTO`, `FiscalXmlQueryService.search/totals`, `FiscalDocumentRepository.search`, `GoodsInvoiceRepository.totalsByDirection` e `FiscalDocumentItemRepository` (índice `idx_fdi_document_cfop_amount (document_id, cfop, total_amount)`).
+- `XmlSearchFilterDTO`, `FiscalXmlQueryService.search/totals`, `FiscalDocumentRepository.search`, `GoodsInvoiceRepository.totalsByDirection` e `FiscalDocumentItemRepository` (índice `idx_fdi_document_effective_cfop (document_id, effective_cfop)`).
 - `FronteiraService.report` e a classe interna `Tally` (as mesmas contas de cobrado a mais e a menos, aplicadas ao recorte).
 - O `app-input` (`shared/components/input/input.ts`) como referência de estilo, rótulo, `setDisabledState` e autocomplete com `searchFn`. O componente novo **não estende** o `app-input`: o valor dele é uma lista.
 - O formato de erro único e o `MessageService` com `i18n/errors_pt.properties`.
@@ -98,7 +98,7 @@ Há mais duas diferenças que a spec trata:
 | **CF-RN-04 Limite** | Até **20 CFOPs** por filtro (P-CF-04). No front, o 21º é recusado com "Limite de 20 CFOPs no filtro.". No backend, mais de 20 valores distintos responde 400 `error.cfopFilter.tooMany` |
 | **CF-RN-05 Ordem e canonicalização no backend** | O backend normaliza, valida, remove os duplicados e ordena em ordem crescente antes de consultar. A resposta não ecoa a lista. Na URL, o front mantém a ordem em que os chips foram adicionados |
 | **CF-RN-06 Semântica "ou"** | Com vários CFOPs, a nota entra se tiver **pelo menos um item** com **algum** dos CFOPs (OU entre os CFOPs). Os demais filtros continuam combinados com E |
-| **CF-RN-07 CFOP comparado** | Compara-se o CFOP **emitido**, gravado no item (`fiscal_document_items.cfop`, sem espaços), como hoje. O CFOP efetivo depois da retificação fica fora nesta fase (P-CF-02) |
+| **CF-RN-07 CFOP comparado** | Compara-se o CFOP **efetivo** do item (`fiscal_document_items.effective_cfop`, sem espaços): o da versão retificada quando a nota tem XML retificado, senão o emitido. É o mesmo valor que a coluna "CFOP" da lista mostra (P-CF-02, decidida em 2026-11-28) |
 | **CF-RN-08 Tipos de documento** | O filtro de CFOP só casa com NF-e e NFC-e, que têm itens. **CT-e e NFS-e nunca casam.** Com CFOP no filtro, o CT-e some da lista, como acontece hoje com um CFOP só |
 | **CF-RN-09 Compatibilidade por uma release** | O corpo aceita `cfops` (lista, novo) e `cfop` (string, antigo). Se `cfops` vier preenchido (não nulo e não vazio), ele vale e `cfop` é ignorado. Se só vier `cfop` não vazio, ele vira `[cfop]` com o **comportamento de hoje**: só dígitos, **sem validação**, e um valor que não tem 4 dígitos simplesmente não casa com nada. Assim a versão antiga do front continua funcionando durante a troca. O campo `cfop` é removido na release seguinte (tarefa B-CF-06) |
 
@@ -108,8 +108,8 @@ Há mais duas diferenças que a spec trata:
 |---|---|
 | **CF-RN-10 Totais seguem o filtro** | `POST /totais` aplica **todos** os filtros do corpo que a lista aplica: `numero`, `participant`, `reviewStatus`, `origem`, `fonte`, `cfops`/`cfop` e `divergencia`. A única exceção é `direction` (CF-RN-11). A lista e os totais usam **o mesmo predicado**, que fica num lugar só no código (constante JPQL compartilhada ou `Specification`), para não divergirem (risco R-01) |
 | **CF-RN-11 Aba não filtra os cards** | `direction` **não** se aplica aos totais. Os dois cards (Entradas e Saídas) são o seletor da aba: clicar em "Entradas" não pode zerar o card de Saídas. O card da aba ativa continua destacado (`active`), como hoje (P-CF-03) |
-| **CF-RN-12 Semântica com CFOP: nota inteira** | No card, `count`, `total`, `icms`, `icmsSt`, `ipi`, `pis` e `cofins` somam a **nota inteira** (os campos do cabeçalho, `totalAmount` = vNF e `goodsTotals.*`) de cada nota que passa no filtro, isto é, que tem pelo menos um item com algum dos CFOPs (opção b). Assim o card bate com a lista: o `count` é o número de notas não canceladas da lista, e o `total` é a soma da coluna "Valor total" delas (pergunta P-CF-01) |
-| **CF-RN-13 Subtotal dos itens no CFOP** *(depende da P-CF-01; recomendação: opção c)* | Com CFOP no filtro, cada card ganha a linha "Itens nos CFOPs filtrados": a soma, **só dos itens** com algum dos CFOPs, de `total_amount` (vProd), `icms_amount`, `icms_st_amount`, `ipi_amount`, `pis_amount` e `cofins_amount`, com `itemCount`. O rótulo deixa claro que é o **valor dos produtos**, sem rateio de frete, seguro, outras despesas e desconto, e sem somar IPI e ST ao valor. Por isso ele pode ser menor que o total da nota. A Taxify não rateia nada nesta fase: o rateio por CFOP do livro fiscal é regra que só entra com fonte (P-CF-01) |
+| **CF-RN-12 Semântica com CFOP: nota inteira** | No card, `count`, `total`, `icms`, `icmsSt`, `ipi`, `pis` e `cofins` somam a **nota inteira** (os campos do cabeçalho, `totalAmount` = vNF e `goodsTotals.*`) de cada nota que passa no filtro, isto é, que tem pelo menos um item com algum dos CFOPs (P-CF-01 = c: o card é a parte b). Assim o card bate com a lista: o `count` é o número de notas não canceladas da lista, e o `total` é a soma da coluna "Valor total" delas (pergunta P-CF-01) |
+| **CF-RN-13 Subtotal dos itens no CFOP** *(P-CF-01 = c, decidida)* | Com CFOP no filtro, cada card ganha a linha "valor dos produtos com esses CFOPs (sem frete, seguro e desconto)": a soma, **só dos itens** cujo CFOP efetivo é algum dos CFOPs, de `total_amount` (vProd), `icms_amount`, `icms_st_amount`, `ipi_amount`, `pis_amount` e `cofins_amount`, com `itemCount`. O rótulo deixa claro que é o **valor dos produtos**, sem rateio de frete, seguro, outras despesas e desconto, e sem somar IPI e ST ao valor. Por isso ele pode ser menor que o total da nota. A Taxify não rateia nada nesta fase: o rateio por CFOP do livro fiscal é regra que só entra com fonte (P-CF-01) |
 | **CF-RN-14 Canceladas** | Como hoje: a nota cancelada que passa no filtro conta só em `canceledCount` e fica fora de todas as somas, inclusive do subtotal dos itens |
 | **CF-RN-15 Só divergentes** | Com `divergencia=true`, os totais são somados em memória sobre as mesmas notas que a lista mantém. As notas que passam nos outros filtros são carregadas e checadas (`divergenceService.summarize`), e ficam só as divergentes ou marcadas DIVERGENT, como no `search` (`:171-181`). A soma usa `BigDecimal.add`, sem arredondamento: os valores já têm escala 2. A lista e os totais fazem a checagem **uma vez cada**. Não há cache entre as duas chamadas nesta fase (risco R-02) |
 | **CF-RN-16 Escala e arredondamento** | As somas são exatas, em escala 2, como as colunas (`precision 19, scale 2`). Não há divisão nem arredondamento. SUM de nenhuma linha é 0,00 (`coalesce`) |
@@ -212,7 +212,7 @@ Resposta de `/totais` (`FiscalXmlTotalsDTO`). Os campos de hoje ficam iguais e e
 | Campo novo | Regra |
 |---|---|
 | `filtered` (boolean) | CF-RN-17 |
-| `cfopItems` (objeto ou `null`) | CF-RN-13. É `null` sem filtro de CFOP. **Só existe se o Tony escolher a opção c na P-CF-01.** Com a opção b, o campo não entra no contrato |
+| `cfopItems` (objeto ou `null`) | CF-RN-13 (P-CF-01 = c). É `null` sem filtro de CFOP; com CFOP, `inbound` e `outbound` vêm **sempre** (zerados quando não há item). Campos: `itemCount`, `itemsAmount` (vProd), `icms`, `icmsSt`, `ipi`, `pis`, `cofins` |
 
 Erros (formato único `{timestamp, status, code, message, details}`, com os campos extras no topo):
 
@@ -257,6 +257,17 @@ Os relatórios `relatorio.pdf`, `relatorio.csv`, `pedido-revisao.pdf` e `pedido-
 - `FronteiraReportDTO` (`core/models/fronteira.model.ts`): entra `cfopFilter?: {...} | null`.
 - `FronteiraService.report(companyId, periodo, cfops?)`: manda `cfops` como parâmetro repetido.
 
+### 6.4 Contrato final implementado (backend, 2026-11-28)
+
+Confere com o front (feito contra mock):
+1. O front novo só manda `cfops`; `cfop` continua aceito por uma release (CF-RN-09) e loga INFO "legacy cfop filter used" com o `companyId`.
+2. `/totais` recebe o mesmo `XmlSearchFilterDTO` da lista. `direction` e `pagination` são aceitos e **ignorados** nos totais (CF-RN-11).
+3. Resposta de `/totais`: `inbound`, `outbound` (como antes), `filtered` (boolean, CF-RN-17) e `cfopItems` (`null` sem CFOP; com CFOP, `inbound` e `outbound` sempre presentes, com `itemCount`, `itemsAmount`, `icms`, `icmsSt`, `ipi`, `pis`, `cofins`). `filtered` é `true` com `numero`, `participant`, `reviewStatus`, `origem` (inclusive inválida, que não casa nada), `fonte` (`SO_SIEG`/`SO_SEFAZ`), `cfops`/`cfop` ou `divergencia=true`.
+4. O filtro compara o CFOP **efetivo** (`effective_cfop`).
+5. Erros 400 no formato único, com `message` em pt/en: `error.cfopFilter.invalid` + `invalidValues` (strings como vieram, `null` vira `""`, no máximo 20) e `error.cfopFilter.tooMany` + `maxItems: 20`. A validação acontece depois da checagem de acesso à empresa (empresa de fora continua 404).
+6. Fronteira: `GET /api/v1/fronteira?companyId&periodo&cfops` aceita `cfops=6102&cfops=6949` e `cfops=6102,6949`. `lines`, `semCobranca`, `summary` e `previaIcms` vêm sempre inteiros. `cfopFilter` é `null` sem `cfops` e **sempre preenchido** com `cfops` (sem extrato: `matchingLines` vazio, `notes` 0, `linesWithoutXml` 0, a prévia recortada). Campos: `cfops`, `matchingLines` (int, crescente), `matchingUncharged` (UUID), `linesWithoutXml`, `totals` {`notes`, `invoicesAmount`, `icmsCharged`, `icmsCalculated`, `chargedAbove`, `chargedBelow`, `unchargedCount`, `unchargedPreview`}. `POST /fronteira/importar`, `POST /fronteira/sincronizar`, PDF, CSV e pedido de revisão não recebem `cfops` e devolvem `cfopFilter: null`. `Line.linha` é único por linha do extrato (o parser numera em sequência, 1..n).
+7. O predicado único fica em `FiscalDocumentSearchFilter.WHERE` (lista, cards e subtotal dos itens). Um filtro novo da tela (por exemplo `documentTypes`) entra como componente do record + uma cláusula no `WHERE` + um termo em `narrowsTheScope()`.
+
 ## 7. Implementação no modelo novo (orientação ao backend)
 
 - **Lista:** em `FiscalDocumentRepository.search`, troque `:cfop` por `(:noCfops = true or exists (select i.id from FiscalDocumentItem i where i.document = d and i.product.cfop in :cfops))`. Com lista vazia, passe `noCfops = true` e uma lista sentinela (`List.of("")`), porque `in ()` vazio é inválido no MySQL e no Hibernate.
@@ -269,7 +280,7 @@ Os relatórios `relatorio.pdf`, `relatorio.csv`, `pedido-revisao.pdf` e `pedido-
 ## 8. Modelo de dados
 
 Nenhuma tabela, coluna ou migration nova.
-- A subconsulta `exists ... i.document = d and i.product.cfop in (...)` usa o índice `idx_fdi_document_cfop_amount (document_id, cfop, total_amount)`, criado pela remodelagem.
+- A subconsulta `exists ... ci.document = d and ci.effectiveCfop in (...)` usa o índice `idx_fdi_document_effective_cfop (document_id, effective_cfop)`, criado pela remodelagem (V86_1).
 - A consulta de subtotal (B-CF-04) parte das notas da empresa e do período (`idx` de `(company_id, issue_date)` da remodelagem) e chega aos itens por `document_id`. Ela lê da tabela as colunas de imposto que não estão no índice, o que é aceitável porque o escopo é uma empresa e um período.
 - Tabela grande: `fiscal_document_items` pode ter milhões de linhas na carteira de 5.000 empresas, mas toda consulta desta spec é **de uma empresa** e tem a data como filtro. O QA mede com `EXPLAIN` (Q-CF-02).
 
@@ -320,7 +331,7 @@ Nada de valor, CNPJ, nome de participante ou número de nota.
 | CA-23 | CF-RN-11 | Dado o filtro `cfops=[5102]`, quando clico no card "Entradas", então a lista mostra só as entradas e o card de Saídas **continua** com o valor dele |
 | CA-24 | CF-RN-14 | Dado uma nota cancelada com item 5102, quando filtro 5102, então ela aparece na lista, conta em "1 cancelada (fora dos totais)" e não entra em nenhuma soma |
 | CA-25 | CF-RN-17 | Dado algum filtro além de empresa, período e aba, então os cards mostram o selo "Totais do filtro" com tooltip dos filtros; sem filtro, o selo não aparece |
-| CA-26 | CF-RN-13 *(se P-CF-01 = c)* | Dado `cfops=[5102]`, então cada card mostra "Itens nos CFOPs filtrados: R$ 1.100,00 em produtos · ICMS R$ 132,00" com a nota "valor dos produtos, sem frete, seguro e desconto" (CT-10) |
+| CA-26 | CF-RN-13 *(se P-CF-01 = c)* | Dado `cfops=[5102]`, então cada card mostra "Valor dos produtos com esses CFOPs: R$ 2.100,00 · ICMS R$ 252,00" com a nota "sem frete, seguro e desconto" (CT-10; a revisão 1 dizia 1.100,00 / 132,00, que não batia com o CT-10) |
 | CA-27 | CF-RN-32, 33 | Dado que abro `/notas-fiscais?cfops=1102,11,1.102,2102`, então os chips são `1102` e `2102`, a URL vira `?cfops=1102,2102` e nenhum toast aparece |
 | CA-28 | CF-RN-09 | Dado a versão anterior do front, que manda `cfop: "110"` enquanto o usuário digita, então a API responde 200 com a lista vazia (sem 400) |
 | CA-29 | CF-RN-04, 6.1 | Dado `cfops` com 21 valores distintos, quando chamo `/totais` ou a lista, então a resposta é 400 `error.cfopFilter.tooMany` com `maxItems: 20` |
@@ -375,7 +386,7 @@ Os demais impostos (ST, IPI, PIS, COFINS) são 0,00 em todas, para simplificar.
 | CT-24 | ADMIN de E2 chama com `companyId` de A | 404 | CF-RN-18 |
 | CT-25 | Escritório E1 bloqueado, `cfops=[5102]` | 200, igual ao CT-10 | Usuários |
 | CT-26 | Nota N6 emitida em 30/11/2026 às 23:30 (Recife) com item 5102, período 01/11 a 30/11 | Entra na lista e no card. Com o período 01/12 a 31/12, não entra | IssuePeriod de hoje |
-| CT-27 | N1 retificada (5102 trocado por 1102 pela regra do produto), filtro `[1102]` | Não casa (compara o emitido, CF-RN-07); com `[5102]`, casa, e a coluna CFOP mostra 1102 | CF-RN-07, P-CF-02 |
+| CT-27 | N1 retificada (5102 trocado por 1102 pela regra do produto, `effective_cfop` = 1102), filtro `[1102]` | Casa (compara o efetivo, CF-RN-07), e a coluna CFOP mostra 1102; com `[5102]`, não casa | CF-RN-07, P-CF-02 |
 | CT-28 | Duas abas do navegador, cada uma com um filtro diferente, recarregando os totais ao mesmo tempo | Cada aba recebe o próprio total (rota sem estado, sem cache compartilhado) | CF-RN-10 |
 | CT-29 | Front: abrir `?cfops=1102,11,1.102,2102` | Chips `1102` e `2102`; URL reescrita com `replaceUrl`; o botão "voltar" não passa pela URL inválida | CF-RN-33 |
 
@@ -410,14 +421,14 @@ O backend vem **depois do merge da remodelagem** (B-FD-05 e B-FD-07 no master). 
 | B-CF-01 | backend | `CfopFilter` (normalizar, validar, canonicalizar e `legacy`), `cfops` no `XmlSearchFilterDTO` com `cfop` deprecated (CF-RN-09), codes `error.cfopFilter.invalid` e `error.cfopFilter.tooMany` em `errors_pt/en.properties`, com os campos extras | merge da remodelagem |
 | B-CF-02 | backend | Lista com `cfops` (`FiscalDocumentRepository.search` com `in`, sentinela para a lista vazia). Testes CT-10, 11, 16, 18 a 22 | B-CF-01 |
 | B-CF-03 | backend | Totais com todos os filtros menos a direção (CF-RN-10 a 12, 14 a 17): WHERE compartilhado com a lista, caminho em memória para `divergencia` e campo `filtered`. Testes CT-01 e CT-10 a 17, 23 a 26 e 28 | B-CF-02 |
-| B-CF-04 | backend | `cfopItems` (CF-RN-13). Só se a P-CF-01 for c | B-CF-03, P-CF-01 |
+| B-CF-04 | backend | `cfopItems` (CF-RN-13). P-CF-01 = c (decidida) | B-CF-03 |
 | B-CF-05 | backend | Fronteira: parâmetro `cfops`, bloco `cfopFilter` com o `Tally` aplicado ao recorte (CF-RN-20 a 27). Testes CT-30 a 32 e 34 a 37 | B-CF-01 |
 | B-CF-06 | backend | **Release seguinte:** remover `cfop` do DTO, o log de legado e o CT-18 a CT-20. Só depois de o log INFO ficar zerado por 7 dias | B-CF-02 em produção |
 | F-CF-01 | frontend | `shared/components/chips-input` (CI-RN-01 a 27), com testes unitários dos CA-01 a 17 e uma página de demonstração local para a captura headless a 1366 e 390 px | nenhuma |
 | F-CF-02 | frontend | Notas fiscais: trocar o `app-input` do CFOP pelo `chips-input` (normalize e validate de CFOP, `maxItems=20`, rótulo "CFOP", placeholder "Ex.: 1102", hint "Digite e tecle Enter"). Estado na URL (CF-RN-30 a 34) e no `InvoiceStateService` (`cfops: string[]`). Mandar **todos** os filtros para `/totais` e pedir os totais de novo em toda mudança de filtro, menos aba e página (corrigir `loadXmls(false)` da origem e do "só divergentes"). Selo "Totais do filtro" e, se P-CF-01 = c, a linha de subtotal dos itens | F-CF-01, contrato B-CF-03 |
 | F-CF-03 | frontend | Fronteira: o mesmo componente na barra de filtros da conferência, `cfops` na URL e no GET, tabela filtrada por `matchingLines`/`matchingUncharged`, faixa "Notas com CFOP …" com `cfopFilter.totals`, aviso de `linesWithoutXml` e contadores dos filtros rápidos sobre o recorte | F-CF-01, contrato B-CF-05 |
 | Q-CF-01 | QA | Componente: CA-01 a 17, teclado só, leitor de tela (NVDA ou VoiceOver) e prints headless a 1366 e 390 px | F-CF-01 |
-| Q-CF-02 | QA | Notas fiscais: CA-20 a 32 e CT-01 a 29 com a massa fictícia. `EXPLAIN` da lista e dos totais com CFOP numa base com pelo menos 100 mil itens: precisa usar `idx_fdi_document_cfop_amount`, sem *full scan* de `fiscal_document_items` | B-CF-03, F-CF-02 |
+| Q-CF-02 | QA | Notas fiscais: CA-20 a 32 e CT-01 a 29 com a massa fictícia. `EXPLAIN` da lista e dos totais com CFOP numa base com pelo menos 100 mil itens: precisa usar `idx_fdi_document_effective_cfop`, sem *full scan* de `fiscal_document_items` | B-CF-03, F-CF-02 |
 | Q-CF-03 | QA | Fronteira: CA-40 a 45 e CT-30 a 37 | B-CF-05, F-CF-03 |
 | Q-CF-04 | QA | Paralelo de uma semana com um Fiscal: 3 empresas × 5 combinações de filtro, total do card contra a soma manual da planilha. A meta é diferença 0,00 | Q-CF-02 |
 
@@ -436,7 +447,7 @@ O backend vem **depois do merge da remodelagem** (B-FD-05 e B-FD-07 no master). 
 - Sem SES, sem jurídico e sem infra nova.
 
 **Fora do escopo**
-- Filtro pelo CFOP efetivo (retificado) e pelo CFOP de entrada da Fronteira (P-CF-02 e P-CF-06).
+- Filtro pelo CFOP de entrada da Fronteira (P-CF-06). (O CFOP efetivo entrou: P-CF-02.)
 - Validação do CFOP contra a tabela oficial (P-CF-05) e o autocomplete de CFOP com a descrição. O componente já suporta; falta a tabela versionada com fonte.
 - Rateio de frete, seguro, desconto e outras despesas por CFOP.
 - CFOP do CT-e (que fica no `ide` do CT-e, não em itens).
@@ -448,7 +459,7 @@ O backend vem **depois do merge da remodelagem** (B-FD-05 e B-FD-07 no master). 
 
 ### Bloqueia (só a B-CF-04 e a linha de subtotal do F-CF-02)
 
-**P-CF-01 Semântica do total com filtro por CFOP.** O CFOP é do item, e o total do card é da nota.
+**P-CF-01 Semântica do total com filtro por CFOP.** **Decidida pelo Tony em 2026-11-28: opção (c).** O CFOP é do item, e o total do card é da nota.
 - (a) Somar **só os itens** com aqueles CFOPs. Responde "quanto comprei em 5102", mas o card deixa de bater com a lista (uma nota com 5102 e 5405 aparece inteira na lista e pela metade no card). E o valor é o vProd, sem frete, IPI e ST: não é o total da nota nem o valor contábil do livro, que exigiria rateio, e rateio é regra fiscal que só entra com fonte.
 - (b) Somar **as notas inteiras** que têm pelo menos um item daqueles CFOPs. O card bate com a lista e com a coluna "Valor total", e é a mesma regra da lista. Mas uma nota "segmentada" entra inteira.
 - (c) **(b) no card e (a) como linha secundária**, rotulada "Itens nos CFOPs filtrados: valor dos produtos, sem frete, seguro e desconto".
@@ -456,7 +467,7 @@ O backend vem **depois do merge da remodelagem** (B-FD-05 e B-FD-07 no master). 
 
 ### Com recomendação aceitável (a spec já segue a recomendação)
 
-**P-CF-02 Filtrar pelo CFOP emitido ou pelo efetivo (retificado)?** Hoje o filtro compara o emitido, e a coluna mostra o efetivo. O efetivo depende da regra do produto em memória e não cabe num `exists` com índice. **Recomendação:** o emitido nesta fase (CF-RN-07), com o tooltip do chip "compara o CFOP emitido na nota". Se for o efetivo, é preciso gravar o CFOP retificado no item (coluna nova e migration), ou seja, outra spec.
+**P-CF-02 Filtrar pelo CFOP emitido ou pelo efetivo (retificado)?** Hoje o filtro compara o emitido, e a coluna mostra o efetivo. O efetivo depende da regra do produto em memória e não cabe num `exists` com índice. **Recomendação (rev. 1):** o emitido. **Decisão do Tony (2026-11-28): o efetivo.** A remodelagem já grava o CFOP efetivo no item (`effective_cfop`, FD-RN-57) com índice, então cabe no `exists` sem migration nova (CF-RN-07).
 
 **P-CF-03 A aba Entradas/Saídas filtra os cards?** **Recomendação:** não (CF-RN-11). Os cards são o próprio seletor da aba. Se filtrasse, clicar em "Entradas" zeraria o card de Saídas. Se o Tony quiser que filtre, o card da outra direção mostra "—" e vira só um botão.
 
