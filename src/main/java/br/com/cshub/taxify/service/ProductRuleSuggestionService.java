@@ -2,11 +2,14 @@ package br.com.cshub.taxify.service;
 
 import br.com.cshub.taxify.common.DocumentNumbers;
 import br.com.cshub.taxify.domain.fiscalrule.ProductRules;
+import br.com.cshub.taxify.domain.fiscalrule.PurchaseUnitPrices;
 import br.com.cshub.taxify.service.fiscalcheck.OperationCfops;
 import br.com.cshub.taxify.common.RequestIds;
 import br.com.cshub.taxify.common.MessageService;
 import br.com.cshub.taxify.dto.fiscalrule.ProductRuleSuggestionDTO;
+import br.com.cshub.taxify.dto.fiscalrule.ProductRuleSuggestionDTO.OtherUnit;
 import br.com.cshub.taxify.dto.fiscalrule.ProductRuleSuggestionDTO.SuggestedValue;
+import br.com.cshub.taxify.dto.fiscalrule.ProductRuleSuggestionDTO.UnitPrice;
 import br.com.cshub.taxify.repository.FiscalDocumentItemRepository;
 import br.com.cshub.taxify.repository.ProductFiscalRuleRepository;
 import br.com.cshub.taxify.validation.CompanyValidation;
@@ -29,7 +32,9 @@ import java.util.UUID;
  * often, with how consistent the notes are about it - so the accountant confirms a prefilled
  * rule instead of typing every product. The supplier's exit CFOP becomes the equivalent entry
  * CFOP ({@link EntryCfops}: 5102 -> 1102); the supplier's one is returned alongside. One
- * aggregated query per company; the mode of each field is computed here.
+ * aggregated query per company; the mode of each field is computed here. A second one brings the
+ * commercial unit prices ({@link PurchaseUnitPrices}, spec PU) - two queries on the items whatever
+ * the number of products (PU-RN-07).
  */
 @Service
 public class ProductRuleSuggestionService {
@@ -85,20 +90,63 @@ public class ProductRuleSuggestionService {
                 continue;
             }
             long count = ((Number) row[row.length - 1]).longValue();
-            Product product = products.computeIfAbsent(codigo + '|' + supplier, key -> new Product(codigo, supplier));
+            Product product = products.computeIfAbsent(key(codigo, supplier), key -> new Product(codigo, supplier));
             product.add((String) row[1], (String) row[SUPPLIER + 1], row, count);
         }
         ProductRules rules = products.isEmpty() ? ProductRules.none()
                 : ProductRules.of(ruleRepository.findByCompany_IdAndDeletedIsFalse(id));
 
-        return products.values().stream()
+        List<Product> chosen = products.values().stream()
                 .filter(product -> !onlyWithoutRule || !product.hasRule(rules))
                 .sorted(Comparator.comparingLong((Product product) -> product.total).reversed()
                         .thenComparing(product -> product.codigo)
                         .thenComparing(product -> product.supplier == null ? "" : product.supplier))
                 .limit(MAX_PRODUCTS)
-                .map(product -> product.toDTO(product.hasRule(rules)))
                 .toList();
+        Map<String, PurchaseUnitPrices> prices = chosen.isEmpty() ? Map.of() : unitPrices(id, chosen);
+        return chosen.stream()
+                .map(product -> product.toDTO(product.hasRule(rules), unitPrice(prices.get(product.key()))))
+                .toList();
+    }
+
+    /** The unit prices of the products that go into the answer, keyed as {@link Product#key()} - one query (PU-RN-07). */
+    private Map<String, PurchaseUnitPrices> unitPrices(UUID companyId, List<Product> chosen) {
+        Map<String, PurchaseUnitPrices> prices = new HashMap<>();
+        for (Product product : chosen) {
+            prices.put(product.key(), new PurchaseUnitPrices());
+        }
+        for (Object[] row : itemRepository.findReceivedUnitPricesByProduct(companyId)) {
+            PurchaseUnitPrices price = prices.get(key((String) row[0], DocumentNumbers.onlyDigits((String) row[1])));
+            if (price != null) {
+                price.add((String) row[2], ((Number) row[3]).longValue(), decimal(row[4]), decimal(row[5]),
+                        decimal(row[6]), decimal(row[7]));
+            }
+        }
+        return prices;
+    }
+
+    private static UnitPrice unitPrice(PurchaseUnitPrices prices) {
+        if (prices == null) {
+            return null;
+        }
+        return prices.summary()
+                .map(summary -> new UnitPrice(summary.average(), summary.min(), summary.max(), summary.unit(),
+                        summary.itemsConsidered(), summary.totalQuantity(),
+                        summary.otherUnits().stream().map(other -> new OtherUnit(other.unit(), other.itemsConsidered())).toList()))
+                .orElse(null);
+    }
+
+    private static BigDecimal decimal(Object value) {
+        return switch (value) {
+            case null -> null;
+            case BigDecimal decimal -> decimal;
+            case Number number -> new BigDecimal(number.toString());
+            default -> new BigDecimal(value.toString());
+        };
+    }
+
+    private static String key(String codigo, String supplier) {
+        return codigo + '|' + supplier;
     }
 
     /** Counts per value of each field across the product's combinations. */
@@ -118,6 +166,10 @@ public class ProductRuleSuggestionService {
             for (int i = 0; i < FIELDS.length; i++) {
                 counts.add(new HashMap<>());
             }
+        }
+
+        String key() {
+            return ProductRuleSuggestionService.key(codigo, supplier);
         }
 
         boolean hasRule(ProductRules rules) {
@@ -148,7 +200,7 @@ public class ProductRuleSuggestionService {
             }
         }
 
-        ProductRuleSuggestionDTO toDTO(boolean hasRule) {
+        ProductRuleSuggestionDTO toDTO(boolean hasRule, UnitPrice unitPrice) {
             Map<String, SuggestedValue> fields = new LinkedHashMap<>();
             for (int i = 0; i < FIELDS.length; i++) {
                 SuggestedValue mode = mode(counts.get(i));
@@ -157,7 +209,7 @@ public class ProductRuleSuggestionService {
                 }
             }
             return new ProductRuleSuggestionDTO(codigo, descricao, total, hasRule, fields, mode(supplierCfops),
-                    supplier, supplierName);
+                    supplier, supplierName, unitPrice);
         }
 
         private static SuggestedValue mode(Map<String, Long> byValue) {

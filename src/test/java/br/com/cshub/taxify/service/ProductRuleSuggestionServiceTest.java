@@ -4,12 +4,15 @@ import br.com.cshub.taxify.common.MessageService;
 import br.com.cshub.taxify.domain.company.Company;
 import br.com.cshub.taxify.domain.fiscalrule.ProductFiscalRule;
 import br.com.cshub.taxify.dto.fiscalrule.ProductRuleSuggestionDTO;
+import br.com.cshub.taxify.dto.fiscalrule.ProductRuleSuggestionDTO.OtherUnit;
+import br.com.cshub.taxify.dto.fiscalrule.ProductRuleSuggestionDTO.UnitPrice;
 import br.com.cshub.taxify.repository.FiscalDocumentItemRepository;
 import br.com.cshub.taxify.repository.ProductFiscalRuleRepository;
 import br.com.cshub.taxify.validation.CompanyValidation;
 import org.junit.jupiter.api.Test;
 
 import java.math.BigDecimal;
+import java.util.ArrayList;
 import java.util.List;
 import java.util.UUID;
 
@@ -17,6 +20,10 @@ import static org.assertj.core.api.Assertions.assertThat;
 import static org.mockito.ArgumentMatchers.any;
 import static org.mockito.ArgumentMatchers.eq;
 import static org.mockito.Mockito.mock;
+import static org.mockito.Mockito.never;
+import static org.mockito.Mockito.times;
+import static org.mockito.Mockito.verify;
+import static org.mockito.Mockito.verifyNoMoreInteractions;
 import static org.mockito.Mockito.when;
 
 class ProductRuleSuggestionServiceTest {
@@ -109,6 +116,124 @@ class ProductRuleSuggestionServiceTest {
                 .extracting(ProductRuleSuggestionDTO::descricaoProduto).containsExactly("Cimento");
         assertThat(service.suggest(companyId.toString(), false, "001", "99.888.777/0001-66"))
                 .extracting(ProductRuleSuggestionDTO::descricaoProduto).containsExactly("Cimento");
+    }
+
+    // ---- spec PU: the commercial unit price of each suggestion (CT-01, 06, 07, 08, 13, 14) ----
+
+    private static final String SUPPLIER_B = "11444777000161";
+
+    @Test
+    void ct07EachSupplierHasItsOwnPriceAndCt08TheSupplierIsJoinedByItsDigits() {
+        when(companyValidation.checkExist(companyId)).thenReturn(new Company(companyId));
+        when(itemRepository.findReceivedClassificationsByProduct(companyId)).thenReturn(List.of(
+                row("PRD-001", "Parafuso", "73181500", "5102", "0", "00", null, null, null, "01", SUPPLIER, "Fornecedor A", 4),
+                row("PRD-001", "Parafuso", "73181500", "5102", "0", "00", null, null, null, "01", SUPPLIER_B, "Fornecedor B", 1)));
+        when(itemRepository.findReceivedUnitPricesByProduct(companyId)).thenReturn(List.of(
+                // CT-01 in A, split between the masked and the bare document (CT-08) and between "un" and "UN"
+                price("PRD-001", "11.222.333/0001-81", "un", 1, "10", "120", "12", "12"),
+                price("PRD-001", SUPPLIER, "UN", 2, "90", "1350", "14", "15.5"),
+                price("PRD-001", SUPPLIER_B, "UN", 1, "4", "80", "20", "20"),
+                price("OTHER", SUPPLIER, "UN", 1, "1", "1", "1", "1")));
+        when(ruleRepository.findByCompany_IdAndDeletedIsFalse(companyId)).thenReturn(List.of());
+
+        List<ProductRuleSuggestionDTO> result = service.suggest(companyId.toString(), false, null, null);
+
+        assertThat(result).extracting(ProductRuleSuggestionDTO::documentoFornecedor).containsExactly(SUPPLIER, SUPPLIER_B);
+        assertThat(result.get(0).unitPrice()).isEqualTo(new UnitPrice(new BigDecimal("14.7000"), new BigDecimal("12.0000"),
+                new BigDecimal("15.5000"), "UN", 3, new BigDecimal("100.0000"), List.of()));
+        assertThat(result.get(1).unitPrice()).isEqualTo(new UnitPrice(new BigDecimal("20.0000"), new BigDecimal("20.0000"),
+                new BigDecimal("20.0000"), "UN", 1, new BigDecimal("4.0000"), List.of()));
+        // PU-RN-08: the price is not a rule field
+        assertThat(result.get(0).campos()).doesNotContainKeys("unitPrice", "average");
+    }
+
+    @Test
+    void ct03TheOtherUnitsGoApart() {
+        when(companyValidation.checkExist(companyId)).thenReturn(new Company(companyId));
+        when(itemRepository.findReceivedClassificationsByProduct(companyId)).thenReturn(List.<Object[]>of(
+                row("PRD-001", "Parafuso", "73181500", "5102", "0", "00", null, null, null, "01", 4)));
+        when(itemRepository.findReceivedUnitPricesByProduct(companyId)).thenReturn(List.of(
+                price("PRD-001", SUPPLIER, "un", 1, "2", "10", "5", "5"),
+                price("PRD-001", SUPPLIER, "UN ", 2, "3", "16.5", "5", "6.5"),
+                price("PRD-001", SUPPLIER, "CX", 1, "1", "60", "60", "60")));
+        when(ruleRepository.findByCompany_IdAndDeletedIsFalse(companyId)).thenReturn(List.of());
+
+        UnitPrice unitPrice = service.suggest(companyId.toString(), false, null, null).getFirst().unitPrice();
+
+        assertThat(unitPrice.unit()).isEqualTo("UN");
+        assertThat(unitPrice.average()).isEqualTo(new BigDecimal("5.3000"));
+        assertThat(unitPrice.itemsConsidered()).isEqualTo(3);
+        assertThat(unitPrice.otherUnits()).containsExactly(new OtherUnit("CX", 1));
+    }
+
+    @Test
+    void ct06WithoutAnyPricedItemThePriceIsNullAndTheItemsStillCount() {
+        when(companyValidation.checkExist(companyId)).thenReturn(new Company(companyId));
+        when(itemRepository.findReceivedClassificationsByProduct(companyId)).thenReturn(List.<Object[]>of(
+                row("PRD-001", "Parafuso", "73181500", "5102", "0", "00", null, null, null, "01", 2)));
+        when(itemRepository.findReceivedUnitPricesByProduct(companyId)).thenReturn(List.of());
+        when(ruleRepository.findByCompany_IdAndDeletedIsFalse(companyId)).thenReturn(List.of());
+
+        ProductRuleSuggestionDTO suggestion = service.suggest(companyId.toString(), false, null, null).getFirst();
+
+        assertThat(suggestion.unitPrice()).isNull();
+        assertThat(suggestion.ocorrencias()).isEqualTo(2);
+    }
+
+    @Test
+    void ct13TwoQueriesOnTheItemsWhateverTheNumberOfProducts() {
+        for (int products : new int[]{3, 300}) {
+            FiscalDocumentItemRepository items = mock(FiscalDocumentItemRepository.class);
+            ProductRuleSuggestionService counted = new ProductRuleSuggestionService(items, ruleRepository, companyValidation,
+                    mock(MessageService.class));
+            when(companyValidation.checkExist(companyId)).thenReturn(new Company(companyId));
+            List<Object[]> classifications = new ArrayList<>();
+            List<Object[]> prices = new ArrayList<>();
+            for (int i = 0; i < products; i++) {
+                classifications.add(row("P" + i, "Produto " + i, "1", "5102", "0", "00", null, null, null, "01", 1));
+                prices.add(price("P" + i, SUPPLIER, "UN", 1, "1", "2", "2", "2"));
+            }
+            when(items.findReceivedClassificationsByProduct(companyId)).thenReturn(classifications);
+            when(items.findReceivedUnitPricesByProduct(companyId)).thenReturn(prices);
+            when(ruleRepository.findByCompany_IdAndDeletedIsFalse(companyId)).thenReturn(List.of());
+
+            List<ProductRuleSuggestionDTO> result = counted.suggest(companyId.toString(), false, null, null);
+
+            assertThat(result).hasSize(products).allSatisfy(suggestion -> assertThat(suggestion.unitPrice()).isNotNull());
+            verify(items, times(1)).findReceivedClassificationsByProduct(companyId);
+            verify(items, times(1)).findReceivedUnitPricesByProduct(companyId);
+            verifyNoMoreInteractions(items);
+        }
+    }
+
+    @Test
+    void ct14TheRuleFormGetsThePriceOfItsProductAndNoPriceQueryWithoutProducts() {
+        when(companyValidation.checkExist(companyId)).thenReturn(new Company(companyId));
+        when(itemRepository.findReceivedClassificationsByProduct(companyId)).thenReturn(List.of(
+                row("PRD-001", "Parafuso", "73181500", "5102", "0", "00", null, null, null, "01", 3),
+                row("PRD-002", "Porca", "73181600", "5102", "0", "00", null, null, null, "01", 9)));
+        when(itemRepository.findReceivedUnitPricesByProduct(companyId)).thenReturn(List.of(
+                price("PRD-001", SUPPLIER, "UN", 3, "100", "1470", "12", "15.5"),
+                price("PRD-002", SUPPLIER, "UN", 9, "9", "9", "1", "1")));
+        when(ruleRepository.findByCompany_IdAndDeletedIsFalse(companyId)).thenReturn(List.of());
+
+        List<ProductRuleSuggestionDTO> result = service.suggest(companyId.toString(), false, "PRD-001", "11222333000181");
+
+        assertThat(result).singleElement().satisfies(suggestion ->
+                assertThat(suggestion.unitPrice().average()).isEqualTo(new BigDecimal("14.7000")));
+
+        FiscalDocumentItemRepository empty = mock(FiscalDocumentItemRepository.class);
+        when(empty.findReceivedClassificationsByProduct(companyId)).thenReturn(List.of());
+        assertThat(new ProductRuleSuggestionService(empty, ruleRepository, companyValidation, mock(MessageService.class))
+                .suggest(companyId.toString(), false, null, null)).isEmpty();
+        verify(empty, never()).findReceivedUnitPricesByProduct(any());
+    }
+
+    /** A row of findReceivedUnitPricesByProduct: code, supplier, unit, count, Σq, Σ(q×p), min, max. */
+    private static Object[] price(String codigo, String supplier, String unit, long count, String quantity, String amount,
+                                  String min, String max) {
+        return new Object[]{codigo, supplier, unit, count, new BigDecimal(quantity).setScale(4),
+                new BigDecimal(amount).setScale(8), new BigDecimal(min).setScale(4), new BigDecimal(max).setScale(4)};
     }
 
     private static ProductFiscalRule rule(String codigo, String supplier) {

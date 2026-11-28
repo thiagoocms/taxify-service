@@ -112,6 +112,24 @@ public interface FiscalDocumentItemRepository extends JpaRepository<FiscalDocume
     List<Object[]> findReceivedClassificationsByProduct(@Param("companyId") UUID companyId);
 
     /**
+     * The commercial unit prices ({@code vUnCom}) of the company's products on the notes it received - the same items as
+     * {@link #findReceivedClassificationsByProduct} (spec PU, PU-RN-01), only those with a price {@code >= 0} and a
+     * quantity {@code > 0} (PU-RN-03). One row per product code, supplier document and unit as stored; the caller joins
+     * them by the supplier's digits and the normalized unit (PU-RN-07). Row: code, supplier document, unit, count,
+     * Σ quantity, Σ (quantity × unit price), min unit price, max unit price.
+     */
+    @Query("select i.product.code, d.issuer.document, i.commercial.unit, count(i), sum(i.commercial.quantity),"
+            + " sum(i.commercial.quantity * i.commercial.unitPrice), min(i.commercial.unitPrice), max(i.commercial.unitPrice)"
+            + " from FiscalDocumentItem i join i.document d"
+            + " where d.company.id = :companyId and d.deleted = false and d.status <> " + CANCELED
+            + " and d.companyRole <> " + ISSUER
+            + " and i.product.code is not null and i.product.code <> ''"
+            + " and i.commercial.quantity is not null and i.commercial.quantity > 0"
+            + " and i.commercial.unitPrice is not null and i.commercial.unitPrice >= 0"
+            + " group by i.product.code, d.issuer.document, i.commercial.unit")
+    List<Object[]> findReceivedUnitPricesByProduct(@Param("companyId") UUID companyId);
+
+    /**
      * IBS and CBS of the items of the period per company and direction - the informative IBS/CBS block of the
      * assessment. Only items with an IBS/CBS group; canceled and deleted notes are out. vIBS falls back to
      * vIBSUF + vIBSMun when the note leaves it out. Row: company id, direction, sum of IBS, sum of CBS, number of notes.

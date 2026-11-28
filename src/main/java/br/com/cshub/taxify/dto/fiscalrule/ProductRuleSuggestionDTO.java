@@ -1,6 +1,7 @@
 package br.com.cshub.taxify.dto.fiscalrule;
 
 import java.math.BigDecimal;
+import java.util.List;
 import java.util.Map;
 
 /**
@@ -17,6 +18,8 @@ import java.util.Map;
  * @param documentoFornecedor CNPJ/CPF of the supplier whose code this is (the product code on a
  *                            received note is the supplier's)
  * @param nomeFornecedor      the supplier's name on the notes
+ * @param unitPrice           the commercial unit price it was bought at (spec PU) - informative, never part of
+ *                            {@code campos}; null when no item has a price and a quantity
  */
 public record ProductRuleSuggestionDTO(
         String codigoProduto,
@@ -26,8 +29,26 @@ public record ProductRuleSuggestionDTO(
         Map<String, SuggestedValue> campos,
         SuggestedValue cfopFornecedor,
         String documentoFornecedor,
-        String nomeFornecedor
+        String nomeFornecedor,
+        UnitPrice unitPrice
 ) {
+
+    /**
+     * The commercial unit price ({@code vUnCom}) of the predominant unit (PU-RN-04 to 06), 4 places.
+     *
+     * @param average         weighted by the quantity: Σ(qCom × vUnCom) ÷ Σ qCom, HALF_UP
+     * @param unit            the predominant unit, trimmed and in upper case ("—" without one)
+     * @param itemsConsidered items of that unit in the price
+     * @param totalQuantity   Σ qCom of those items
+     * @param otherUnits      the other units the product came in (left out of the price), most items first
+     */
+    public record UnitPrice(BigDecimal average, BigDecimal min, BigDecimal max, String unit, long itemsConsidered,
+                            BigDecimal totalQuantity, List<OtherUnit> otherUnits) {
+    }
+
+    /** A unit the product also came in, with its number of items. */
+    public record OtherUnit(String unit, long itemsConsidered) {
+    }
 
     /**
      * The most frequent value of one field.
