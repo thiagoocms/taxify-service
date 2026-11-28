@@ -1549,9 +1549,36 @@
       "query:periodo" : {
         "type" : "String",
         "required" : false
+      },
+      "query:cfops" : {
+        "multi" : true,
+        "type" : "String",
+        "required" : false
       }
     },
     "response" : {
+      "cfopFilter" : {
+        "cfops" : {
+          "array" : "String"
+        },
+        "linesWithoutXml" : "int",
+        "matchingLines" : {
+          "array" : "Integer"
+        },
+        "matchingUncharged" : {
+          "array" : "java.util.UUID"
+        },
+        "totals" : {
+          "chargedAbove" : "BigDecimal",
+          "chargedBelow" : "BigDecimal",
+          "icmsCalculated" : "BigDecimal",
+          "icmsCharged" : "BigDecimal",
+          "invoicesAmount" : "BigDecimal",
+          "notes" : "int",
+          "unchargedCount" : "int",
+          "unchargedPreview" : "BigDecimal"
+        }
+      },
       "companyId" : "java.util.UUID",
       "companyName" : "String",
       "extract" : {
@@ -4955,6 +4982,28 @@
       }
     },
     "response" : {
+      "cfopFilter" : {
+        "cfops" : {
+          "array" : "String"
+        },
+        "linesWithoutXml" : "int",
+        "matchingLines" : {
+          "array" : "Integer"
+        },
+        "matchingUncharged" : {
+          "array" : "java.util.UUID"
+        },
+        "totals" : {
+          "chargedAbove" : "BigDecimal",
+          "chargedBelow" : "BigDecimal",
+          "icmsCalculated" : "BigDecimal",
+          "icmsCharged" : "BigDecimal",
+          "invoicesAmount" : "BigDecimal",
+          "notes" : "int",
+          "unchargedCount" : "int",
+          "unchargedPreview" : "BigDecimal"
+        }
+      },
       "companyId" : "java.util.UUID",
       "companyName" : "String",
       "extract" : {
@@ -5424,6 +5473,28 @@
     },
     "response" : {
       "report" : {
+        "cfopFilter" : {
+          "cfops" : {
+            "array" : "String"
+          },
+          "linesWithoutXml" : "int",
+          "matchingLines" : {
+            "array" : "Integer"
+          },
+          "matchingUncharged" : {
+            "array" : "java.util.UUID"
+          },
+          "totals" : {
+            "chargedAbove" : "BigDecimal",
+            "chargedBelow" : "BigDecimal",
+            "icmsCalculated" : "BigDecimal",
+            "icmsCharged" : "BigDecimal",
+            "invoicesAmount" : "BigDecimal",
+            "notes" : "int",
+            "unchargedCount" : "int",
+            "unchargedPreview" : "BigDecimal"
+          }
+        },
         "companyId" : "java.util.UUID",
         "companyName" : "String",
         "extract" : {
@@ -5701,6 +5772,9 @@
     "params" : {
       "body" : {
         "cfop" : "String",
+        "cfops" : {
+          "array" : "String"
+        },
         "companyId" : "String",
         "dataEmissaoFim" : "LocalDate",
         "dataEmissaoInicio" : "LocalDate",
@@ -6437,6 +6511,9 @@
     "params" : {
       "body" : {
         "cfop" : "String",
+        "cfops" : {
+          "array" : "String"
+        },
         "companyId" : "String",
         "dataEmissaoFim" : "LocalDate",
         "dataEmissaoInicio" : "LocalDate",
@@ -6462,6 +6539,27 @@
       }
     },
     "response" : {
+      "cfopItems" : {
+        "inbound" : {
+          "cofins" : "BigDecimal",
+          "icms" : "BigDecimal",
+          "icmsSt" : "BigDecimal",
+          "ipi" : "BigDecimal",
+          "itemCount" : "long",
+          "itemsAmount" : "BigDecimal",
+          "pis" : "BigDecimal"
+        },
+        "outbound" : {
+          "cofins" : "BigDecimal",
+          "icms" : "BigDecimal",
+          "icmsSt" : "BigDecimal",
+          "ipi" : "BigDecimal",
+          "itemCount" : "long",
+          "itemsAmount" : "BigDecimal",
+          "pis" : "BigDecimal"
+        }
+      },
+      "filtered" : "boolean",
       "inbound" : {
         "canceledCount" : "long",
         "cofins" : "BigDecimal",
