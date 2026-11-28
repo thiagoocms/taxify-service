@@ -36,7 +36,7 @@ UNION ALL SELECT 'ids', 'events extra', COUNT(*) FROM fiscal_document_events n
 WITH o AS (
     SELECT company_id, DATE_FORMAT(issue_date, '%Y-%m') AS period,
            CASE WHEN document_type = 'CTE' THEN 'CTE' WHEN TRIM(ide_modelo) = '65' THEN 'NFCE' ELSE 'NFE' END AS type,
-           COALESCE(direction, CASE WHEN own_issue = 1 THEN CASE TRIM(ide_tipo_operacao) WHEN '0' THEN 'INBOUND'
+           COALESCE(direction, CASE WHEN own THEN CASE TRIM(ide_tipo_operacao) WHEN '0' THEN 'INBOUND'
                     WHEN '1' THEN 'OUTBOUND' END ELSE 'INBOUND' END) AS direction,
            COUNT(*) AS n, SUM(CASE WHEN status = 'CANCELED' THEN 1 ELSE 0 END) AS canceled,
            SUM(total_valor_total_nota) AS total, SUM(total_valor_icms) AS icms,
@@ -46,8 +46,11 @@ WITH o AS (
            SUM(CASE WHEN document_type = 'CTE' THEN NULL ELSE total_valor_cofins END) AS cofins,
            SUM(ret_pis) AS w_pis, SUM(ret_cofins) AS w_cofins, SUM(ret_csll) AS w_csll, SUM(ret_irrf) AS w_irrf,
            SUM(ret_inss) AS w_inss, SUM(total_valor_ibs) AS ibs, SUM(total_valor_cbs) AS cbs,
-           SUM(CASE WHEN own_issue = 1 THEN 1 ELSE 0 END) AS issuer
-    FROM fd_old.fiscal_xml_documents GROUP BY 1, 2, 3, 4),
+           SUM(CASE WHEN own THEN 1 ELSE 0 END) AS issuer
+    -- own issue as the V87 (CopyMappings.ownIssue): own_issue, or for a row without it and without direction the old
+    -- FiscalDirectionBackfill's rule (the company's document is the issuer's CNPJ or CPF)
+    FROM (SELECT x.*, CASE WHEN x.own_issue IS NOT NULL THEN x.own_issue = 1 WHEN x.direction IS NULL THEN COALESCE(NULLIF(REPLACE(REPLACE(REPLACE(REPLACE((SELECT od.number FROM companies oc JOIN documents od ON od.id = oc.document_id WHERE oc.id = x.company_id), '.', ''), '/', ''), '-', ''), ' ', ''), '') IS NOT NULL AND (REPLACE(REPLACE(REPLACE(REPLACE((SELECT od.number FROM companies oc JOIN documents od ON od.id = oc.document_id WHERE oc.id = x.company_id), '.', ''), '/', ''), '-', ''), ' ', '') = REPLACE(REPLACE(REPLACE(REPLACE(x.issuer_cnpj, '.', ''), '/', ''), '-', ''), ' ', '') OR REPLACE(REPLACE(REPLACE(REPLACE((SELECT od.number FROM companies oc JOIN documents od ON od.id = oc.document_id WHERE oc.id = x.company_id), '.', ''), '/', ''), '-', ''), ' ', '') = REPLACE(REPLACE(REPLACE(REPLACE(x.emit_cpf, '.', ''), '/', ''), '-', ''), ' ', '')), FALSE) ELSE FALSE END AS own
+          FROM fd_old.fiscal_xml_documents x) t GROUP BY 1, 2, 3, 4),
 n AS (
     SELECT company_id, DATE_FORMAT(issue_date, '%Y-%m') AS period, document_type AS type, direction, COUNT(*) AS n,
            SUM(CASE WHEN status = 'CANCELED' THEN 1 ELSE 0 END) AS canceled, SUM(total_amount) AS total,
@@ -108,6 +111,32 @@ SELECT 'items' AS block, o.company_id, o.period, o.cfop FROM o
 UNION ALL
 SELECT 'items (only new)', n.company_id, n.period, n.cfop FROM n
     LEFT JOIN o ON n.company_id = o.company_id AND n.period <=> o.period AND n.cfop <=> o.cfop
+    WHERE o.company_id IS NULL;
+
+-- CFOP efetivo (FD-RN-57) por empresa x CFOP: o lado antigo pela regra da V87 (CopyMappings.rectifiedEffectiveCfop),
+-- com as regras de produto do schema da aplicação
+WITH o AS (
+    SELECT ld.company_id, CASE WHEN ld.document_type <> 'CTE' AND ld.rectified_file_path IS NOT NULL THEN
+             CASE WHEN TRIM(l.cfop) IS NULL THEN NULL ELSE COALESCE((
+                 SELECT CASE WHEN ld.last_rectification_checked_at IS NOT NULL AND (COALESCE(r.last_modified_date, r.created_date) IS NULL
+                             OR COALESCE(r.last_modified_date, r.created_date) <= ld.last_rectification_checked_at)
+                        THEN NULLIF(TRIM(CASE WHEN TRIM(r.cfop_correto) REGEXP '^[0-9]{4}$' AND TRIM(ld.ide_destino_operacao) IN ('1', '2', '3') THEN CASE WHEN LEFT(TRIM(r.cfop_correto), 1) IN ('1', '2', '3') THEN CONCAT(TRIM(ld.ide_destino_operacao), SUBSTRING(TRIM(r.cfop_correto), 2)) WHEN LEFT(TRIM(r.cfop_correto), 1) IN ('5', '6', '7') THEN CONCAT(CAST(TRIM(ld.ide_destino_operacao) + 4 AS CHAR), SUBSTRING(TRIM(r.cfop_correto), 2)) ELSE TRIM(r.cfop_correto) END ELSE TRIM(r.cfop_correto) END), '') END
+                 FROM product_fiscal_rules r WHERE r.company_id = ld.company_id AND r.deleted = 0
+                   AND CAST(r.codigo_produto AS BINARY) = CAST(l.codigo AS BINARY)
+                   AND (CAST(REPLACE(REPLACE(REPLACE(REPLACE(r.documento_fornecedor, '.', ''), '/', ''), '-', ''), ' ', '') AS BINARY) = CAST(CASE WHEN NULLIF(TRIM(ld.issuer_cnpj), '') IS NOT NULL THEN ld.issuer_cnpj WHEN NULLIF(TRIM(ld.emit_cpf), '') IS NOT NULL THEN ld.emit_cpf END AS BINARY) OR NULLIF(REPLACE(REPLACE(REPLACE(REPLACE(r.documento_fornecedor, '.', ''), '/', ''), '-', ''), ' ', ''), '') IS NULL)
+                 ORDER BY NULLIF(REPLACE(REPLACE(REPLACE(REPLACE(r.documento_fornecedor, '.', ''), '/', ''), '-', ''), ' ', ''), '') IS NULL, r.id LIMIT 1), TRIM(l.cfop)) END
+         ELSE TRIM(l.cfop) END AS cfop, COUNT(*) AS n
+    FROM fd_old.fiscal_xml_document_items l JOIN fd_old.fiscal_xml_documents ld ON ld.id = l.document_id GROUP BY 1, 2),
+n AS (
+    SELECT d.company_id, i.effective_cfop AS cfop, COUNT(*) AS n
+    FROM fiscal_document_items i JOIN fiscal_documents d ON d.id = i.document_id
+    WHERE d.document_type IN ('NFE', 'NFCE', 'CTE') GROUP BY 1, 2)
+SELECT 'effective-cfop' AS block, o.company_id, o.cfop FROM o
+    LEFT JOIN n ON n.company_id = o.company_id AND n.cfop <=> o.cfop
+    WHERE NOT (n.n <=> o.n)
+UNION ALL
+SELECT 'effective-cfop (only new)', n.company_id, n.cfop FROM n
+    LEFT JOIN o ON n.company_id = o.company_id AND n.cfop <=> o.cfop
     WHERE o.company_id IS NULL;
 
 -- eventos por empresa x tipo x registrado

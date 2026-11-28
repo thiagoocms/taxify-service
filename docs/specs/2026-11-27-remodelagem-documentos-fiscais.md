@@ -815,7 +815,7 @@ Tudo no horário de Recife, fora do expediente (P-FD-02 sugere 21h de um dia út
 
 | Passo | O quê | Quem | Volta, se falhar aqui |
 |---|---|---|---|
-| 0 | Véspera: remedição de leitura na EC2 (seção 8), com aprovação do Tony. Confirma o FD-RN-30 e as contagens de nulos | Tony + dev | Não segue |
+| 0 | Véspera: remedição de leitura na EC2 (seção 8), com aprovação do Tony. Confirma o FD-RN-30 e as contagens de nulos. Rodar também `scripts/fiscal-documents/precheck.sql` (só leitura): `regras_fornecedor_com_caractere_fora_da_mascara` **tem de dar 0** (corrigir as regras na tela antes); as demais linhas (regras com máscara, regras duplicadas, notas sem `own_issue` e sem direção, notas retificadas) vão para o registro da release | Tony + dev | Não segue |
 | 1 | **Backup obrigatório (FD-RN-52)**, feito depois do passo 2 (rotinas paradas, nada mais entra) e antes do passo 3: dump das 4 tabelas + `fiscal_xml_sync_control`, gravado fora do container, SHA-256 anotado, restauração conferida num schema descartável. É a **única** forma de volta | dev, com aprovação | Não segue |
 | 2 | Pausar as rotinas no compose: `FISCAL_XML_SYNC_ENABLED`, `SEFAZ_DIST_ENABLED`, `NFSE_ADN_ENABLED`, `FISCAL_XML_RECTIFICATION_ENABLED`, `FISCAL_XML_PURGE_ENABLED`, `AUDIT_ENABLED`, `PENDENCIES_ENABLED`, `TAXIFY_CAPTURE_PRIORITY_ENABLED` e `TAXIFY_PENDENCY_ALERTS_ENABLED` em `false`; `TAXIFY_STOCK_SURVEY_ENABLED` continua `false` | dev | Religar as flags |
 | 3 | **Parar** a versão atual (todas as instâncias) antes de subir a nova. Nunca as duas juntas | dev | Subir a imagem anterior |
