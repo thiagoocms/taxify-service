@@ -32,6 +32,15 @@ final class CopyMappings {
     static final String DERIVED_DIRECTION = "COALESCE(l.direction, CASE WHEN l.own_issue = 1 THEN CASE TRIM(l.ide_tipo_operacao)"
             + " WHEN '0' THEN 'INBOUND' WHEN '1' THEN 'OUTBOUND' END ELSE 'INBOUND' END)";
 
+    /**
+     * I-04-T: a copied CT-e row whose derived direction is not the one of its role - own issue (ISSUER) must be
+     * OUTBOUND, anything else (RECIPIENT) INBOUND, the only direction a copied RECIPIENT keeps. A NULL derived direction
+     * counts as a violation too. Alias {@code l}.
+     */
+    static final String CTE_DIRECTION_VIOLATES_I04T = "l.document_type = 'CTE' AND ((l.own_issue = 1 AND COALESCE("
+            + DERIVED_DIRECTION + ", '') <> 'OUTBOUND') OR (COALESCE(l.own_issue, 0) <> 1 AND COALESCE("
+            + DERIVED_DIRECTION + ", '') <> 'INBOUND'))";
+
     /** Rows whose direction is NULL and the rule above can't fill. */
     static final String UNRESOLVED_DIRECTION = "direction IS NULL AND own_issue = 1"
             + " AND (ide_tipo_operacao IS NULL OR TRIM(ide_tipo_operacao) NOT IN ('0', '1'))";

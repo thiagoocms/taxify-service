@@ -88,24 +88,52 @@ class FiscalDocumentsBackupAndRollbackTest {
 
     /** backup.sh with the password in an options file (as the operator's prompt would write it), never in the environment. */
     private Result backup(String checkSchema) throws Exception {
+        return backup(checkSchema, "backup");
+    }
+
+    private Result backup(String checkSchema, String outDir) throws Exception {
         Path cnf = out.resolve("client.cnf");
         Files.writeString(cnf, "[client]\nuser=root\npassword=" + System.getenv().getOrDefault("DB_PASSWORD", "root") + "\n");
+        Map<String, String> env = backupEnvironment(checkSchema, outDir, "root");
+        env.put("DB_DEFAULTS_FILE", cnf.toString().replace('\\', '/'));
+        return runBackup(env, null);
+    }
+
+    private Map<String, String> backupEnvironment(String checkSchema, String outDir, String user) {
         Map<String, String> env = new LinkedHashMap<>();
         env.put("DOCKER_CONTAINER", CONTAINER);
         env.put("DB_NAME", SCRATCH);
-        env.put("DB_USER", "root");
-        env.put("DB_DEFAULTS_FILE", cnf.toString().replace('\\', '/'));
-        env.put("OUT_DIR", out.resolve("backup").toString().replace('\\', '/'));
+        env.put("DB_USER", user);
+        env.put("OUT_DIR", out.resolve(outDir).toString().replace('\\', '/'));
         env.put("KEEP_CHECK_SCHEMA", "1");
         env.put("CHECK_SCHEMA", checkSchema);
+        return env;
+    }
+
+    private Result runBackup(Map<String, String> env, File stdin) throws Exception {
         return run(List.of(System.getenv().getOrDefault("FD_BASH", "bash"),
-                SCRIPTS.resolve("backup.sh").toString().replace('\\', '/')), env, null);
+                SCRIPTS.resolve("backup.sh").toString().replace('\\', '/')), env, stdin);
     }
 
     private Path dumpFile() throws IOException {
-        try (var files = Files.list(out.resolve("backup"))) {
+        return dumpFile("backup");
+    }
+
+    private Path dumpFile(String outDir) throws IOException {
+        try (var files = Files.list(out.resolve(outDir))) {
             return files.filter(p -> p.getFileName().toString().endsWith(".sql")).findFirst().orElseThrow();
         }
+    }
+
+    /** The SHA-256 backup.sh wrote next to the dump ({@code <sha>  <file>}). */
+    private String sha256Of(String outDir) throws IOException {
+        Path dump = dumpFile(outDir);
+        return Files.readString(dump.resolveSibling(dump.getFileName() + ".sha256")).split("\\s+")[0];
+    }
+
+    private static Flyway flywayWithBackup(String target, String sha) {
+        return Flyway.configure().configuration(flyway(target).getConfiguration())
+                .placeholders(Map.of("fd_backup_sha256", sha)).load();
     }
 
     private Result mysqlInContainer(String workdir, File stdin) throws Exception {
@@ -162,8 +190,15 @@ class FiscalDocumentsBackupAndRollbackTest {
         assertThat(backup.output()).contains("BACKUP CONFERIDO").contains("fiscal_xml_documents: 13 linhas - OK")
                 .contains("fiscal_xml_sync_control: 3 linhas - OK").doesNotContain(LegacyFixtures.E1_CNPJ);
         assertThat(Files.readString(dumpFile().resolveSibling(dumpFile().getFileName() + ".sha256"))).contains(dumpFile().getFileName().toString());
+        // FD-RN-52: the checked backup recorded for V89 - its SHA-256 and the rows of each dumped table
+        String sha = sha256Of("backup");
+        assertThat(backup.output()).contains("FD_BACKUP_SHA256=" + sha);
+        assertThat(jdbc.queryForList("SELECT CONCAT(backup_sha256, '|', table_name, '|', row_count)"
+                + " FROM fiscal_documents_backup_checks ORDER BY id", String.class)).containsExactly(
+                sha + "|fiscal_xml_documents|13", sha + "|fiscal_xml_document_items|3", sha + "|service_invoices|5",
+                sha + "|fiscal_xml_events|2", sha + "|fiscal_xml_sync_control|3");
 
-        flyway("latest").migrate();
+        flywayWithBackup("latest", sha).migrate();
         assertThat(tableExists(jdbc, "fiscal_xml_documents")).isFalse();
 
         Result parity = mysqlInContainer(null, SCRIPTS.resolve("parity.sql").toFile());
@@ -254,5 +289,137 @@ class FiscalDocumentsBackupAndRollbackTest {
         } finally {
             jdbc("").execute("DROP DATABASE IF EXISTS fd_foreign");
         }
+    }
+
+    // ------------------------------------------------------------------ FD-RN-52: the backup lock of V89, end to end
+
+    /**
+     * Two checked backups, a note written between them: the SHA-256 of the first file no longer opens V89 (it is not the
+     * last one recorded); the one of the second does.
+     */
+    @Test
+    void v89OnlyOpensWithTheSha256OfTheLastCheckedBackup() throws Exception {
+        flyway(BEFORE).migrate();
+        JdbcTemplate jdbc = jdbc(SCRATCH);
+        seed(jdbc);
+        assertThat(backup("fd_old", "first").exit()).isZero();
+        LegacyFixtures.insert(jdbc, "fiscal_xml_documents", LegacyFixtures.nfe(doc("late"), LegacyFixtures.E1,
+                "access_key", LegacyFixtures.key(500), "direction", "INBOUND", "own_issue", 0, "issue_date", "2026-10-20 10:00:00"));
+        Result second = backup("fd_old", "second");
+        assertThat(second.exit()).as(second.output()).isZero();
+        assertThat(second.output()).contains("fiscal_xml_documents: 14 linhas - OK");
+        String first = sha256Of("first");
+        String last = sha256Of("second");
+        assertThat(first).isNotEqualTo(last);
+
+        assertThatThrownBy(() -> flywayWithBackup("latest", first).migrate()).rootCause()
+                .hasMessageContaining("is not the SHA-256 of the last backup checked by backup.sh");
+        assertThat(jdbc.queryForObject("SELECT COUNT(*) FROM legacy_fiscal_xml_documents", Integer.class)).isEqualTo(14);
+
+        flywayWithBackup("latest", last).repair();
+        flywayWithBackup("latest", last).migrate();
+        assertThat(tableExists(jdbc, "legacy_fiscal_xml_documents")).isFalse();
+        assertThat(jdbc.queryForObject("SELECT COUNT(*) FROM fiscal_documents WHERE id = ?", Integer.class, doc("late"))).isOne();
+    }
+
+    /**
+     * The password goes to the options file between double quotes with {@code \} and {@code "} escaped: one with
+     * {@code #}, spaces and both quotes, typed at the prompt (stdin), logs in.
+     */
+    @Test
+    void backupWithAPasswordWithHashSpacesAndQuotes() throws Exception {
+        flyway(BEFORE).migrate();
+        seed(jdbc(SCRATCH));
+        String password = "p#ss wo\"rd 'x\\y #z ";
+        JdbcTemplate admin = jdbc("");
+        admin.execute("DROP USER IF EXISTS 'fd_backup_test'@'%'");
+        admin.update("CREATE USER 'fd_backup_test'@'%' IDENTIFIED BY ?", password);
+        admin.execute("GRANT ALL PRIVILEGES ON *.* TO 'fd_backup_test'@'%'");
+        try {
+            Path stdin = out.resolve("password.txt");
+            Files.writeString(stdin, password + "\n");
+            Result result = runBackup(backupEnvironment("fd_old", "backup", "fd_backup_test"), stdin.toFile());
+            assertThat(result.exit()).as(result.output()).isZero();
+            assertThat(result.output()).contains("BACKUP CONFERIDO").doesNotContain(password).doesNotContain("p#ss");
+            // the wrong password is refused: the quoting is what made the right one work
+            Files.writeString(stdin, "p\n");
+            assertThat(runBackup(backupEnvironment("fd_old", "wrong", "fd_backup_test"), stdin.toFile()).exit()).isNotZero();
+        } finally {
+            admin.execute("DROP USER IF EXISTS 'fd_backup_test'@'%'");
+        }
+    }
+
+    // ------------------------------------------------------------------ rollback.sql: V87 stopped before the rename
+
+    /**
+     * 6.5 item 0, state A: V87 stopped in its checks (id collision) - the old tables keep their names, the new ones are
+     * empty. rollback.sql drops them and the history rows V86 to V87, and the previous image validates and has nothing
+     * to run. With a row in a new table it stops without touching anything.
+     */
+    @Test
+    void rollbackAfterV87StoppedBeforeTheRename() throws Exception {
+        flyway(BEFORE).migrate();
+        JdbcTemplate jdbc = jdbc(SCRATCH);
+        seed(jdbc);
+        LegacyFixtures.insert(jdbc, "service_invoices", LegacyFixtures.nfse(doc("k2"), LegacyFixtures.E1,
+                "access_key", "2611606" + "9".repeat(43)));
+        Map<String, Object> before = snapshot(jdbc);
+        assertThatThrownBy(() -> flyway("latest").migrate()).rootCause().hasMessageContaining("before the rename");
+        assertThat(jdbc.queryForObject("SELECT COUNT(*) FROM flyway_schema_history WHERE version = '87' AND success = 0",
+                Integer.class)).isOne();
+
+        // something wrote in a new table after the failure: stop, nothing dropped
+        jdbc.update("INSERT INTO capture_period_counts (id, company_id, channel, document_type, side, period_month,"
+                + " imported_total, created_by, created_date, deleted) VALUES ('cpc-1', ?, 'SIEG', 'NFE', 'RECEIVED', '2026-11', 0,"
+                + " 'qa@exemplo.test', '2026-11-27 08:00:00', 0)", LegacyFixtures.E1);
+        Result stopped = rollbackLegacy();
+        assertThat(stopped.exit()).isNotZero();
+        assertThat(stopped.output()).contains("fd_rollback_stopped_new_tables_not_empty");
+        assertThat(tableExists(jdbc, "fiscal_documents")).isTrue();
+        assertThat(jdbc.queryForObject("SELECT COUNT(*) FROM flyway_schema_history WHERE version = '86'", Integer.class)).isOne();
+        jdbc.update("DELETE FROM capture_period_counts");
+
+        Result rollback = rollbackLegacy();
+        assertThat(rollback.exit()).as(rollback.output()).isZero();
+
+        assertThat(snapshot(jdbc)).isEqualTo(before);
+        for (String table : FiscalDocumentTables.TABLES) {
+            assertThat(tableExists(jdbc, table)).as(table).isFalse();
+        }
+        assertThat(jdbc.queryForObject("SELECT COUNT(*) FROM service_invoices WHERE id = ?", Integer.class, doc("k2"))).isOne();
+        Flyway previousImage = flyway("latest", "classpath:db/migration");
+        assertThat(previousImage.validateWithResult().validationSuccessful).isTrue();
+        assertThat(previousImage.migrate().migrationsExecuted).isZero();
+    }
+
+    // ------------------------------------------------------------------ V89 stopped in the middle of the drops
+
+    /**
+     * V89 dropped part of the legacy_* and fell (here: legacy_fiscal_xml_events already gone). rollback.sql stops without
+     * touching anything (mixed state, documented in its header); fixing and running again finishes V89 - the backup is
+     * compared only with the legacy tables still there.
+     */
+    @Test
+    void v89StoppedInTheMiddleResumesAndRollbackSqlRefusesIt() throws Exception {
+        flyway(BEFORE).migrate();
+        JdbcTemplate jdbc = jdbc(SCRATCH);
+        seed(jdbc);
+        assertThat(backup().exit()).isZero();
+        String sha = sha256Of("backup");
+        flywayWithBackup("88", sha).migrate();
+        jdbc.execute("DROP TABLE legacy_fiscal_xml_events");
+
+        Result rollback = rollbackLegacy();
+        assertThat(rollback.exit()).isNotZero();
+        assertThat(rollback.output()).contains("fd_rollback_stopped_legacy_and_original_tables_mixed");
+        assertThat(tableExists(jdbc, "fiscal_documents")).isTrue();
+        assertThat(tableExists(jdbc, "legacy_fiscal_xml_documents")).isTrue();
+
+        flywayWithBackup("latest", sha).migrate();
+        for (LegacyTable table : LegacyTable.values()) {
+            assertThat(tableExists(jdbc, table.legacyName())).as(table.legacyName()).isFalse();
+        }
+        assertThat(columns(jdbc, "fiscal_xml_sync_control")).doesNotContain("total_sieg");
+        assertThat(jdbc.queryForObject("SELECT COUNT(*) FROM fiscal_document_events", Integer.class)).isEqualTo(2);
     }
 }
