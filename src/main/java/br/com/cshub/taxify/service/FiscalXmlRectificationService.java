@@ -22,6 +22,7 @@ import br.com.cshub.taxify.repository.ProductFiscalRuleRepository;
 import org.w3c.dom.Document;
 import org.w3c.dom.Element;
 import org.w3c.dom.NodeList;
+import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 
@@ -33,7 +34,9 @@ import javax.xml.transform.dom.DOMSource;
 import javax.xml.transform.stream.StreamResult;
 import java.io.ByteArrayOutputStream;
 import java.io.IOException;
+import java.time.Clock;
 import java.time.LocalDateTime;
+import java.time.ZoneId;
 import java.util.ArrayList;
 import java.util.List;
 import java.util.Map;
@@ -100,6 +103,16 @@ public class FiscalXmlRectificationService {
         this.tenantAccessService = tenantAccessService;
     }
 
+    /** Recife's clock (ClockConfig); the system default only where no bean is wired (unit tests). */
+    private Clock clock = Clock.system(ZoneId.of("America/Recife"));
+
+    @Autowired(required = false)
+    public void setClock(Clock clock) {
+        if (clock != null) {
+            this.clock = clock;
+        }
+    }
+
     @Transactional
     public FiscalXmlRectificationResultDTO rectify(UUID documentId) {
         // NF-e, NFC-e and CT-e (the notes screen); an NFS-e id is "not found" (FD-RN-17)
@@ -152,7 +165,7 @@ public class FiscalXmlRectificationService {
             String externalInvoiceKey = document.accessKeyOrId();
             auditTrail.record(document.getCompany(), externalInvoiceKey, InvoiceAuditStatus.RECTIFICATION_REVERTED, null);
         }
-        document.setLastRectificationCheckedAt(LocalDateTime.now());
+        document.setLastRectificationCheckedAt(LocalDateTime.now(clock));
         // FD-RN-57: the items' CFOP of the version in effect (the rectified file's, or their own when there is none) -
         // after the check time, which the rule's "rectified under" compares with
         document.refreshEffectiveCfops(item -> EffectiveCfops.rectified(rules, item));
@@ -246,7 +259,7 @@ public class FiscalXmlRectificationService {
     private void markAsRectified(Document dom, int correctionCount) {
         String text = (" Retificado por taxify em %s - %d campo(s) ajustado(s) conforme regra cadastrada. "
                 + "ATENCAO: a assinatura digital original deste XML pode estar invalida apos esta alteracao. ")
-                .formatted(LocalDateTime.now(), correctionCount);
+                .formatted(LocalDateTime.now(clock), correctionCount);
         Element root = dom.getDocumentElement();
         root.insertBefore(dom.createComment(text), root.getFirstChild());
     }

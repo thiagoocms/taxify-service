@@ -231,6 +231,7 @@ public class ServiceInvoiceService {
      * {@code position}: where the file is in its batch (-1 = alone), for the log of a refused one. What the model
      * adjusted (decimals rounded, party documents completed by their tag - I-17, I-06) is logged by {@link ImportLog}.
      */
+    @Transactional
     public Stored store(Company company, byte[] xml, String source, int position) {
         Optional<NfseXml> parsed = NfseXml.parse(xml);
         if (parsed.isEmpty()) {

@@ -2,6 +2,8 @@ package br.com.cshub.taxify.config;
 
 import br.com.cshub.taxify.domain.fiscaldocument.FiscalDocumentItem;
 import br.com.cshub.taxify.domain.fiscaldocument.GoodsInvoice;
+import br.com.cshub.taxify.domain.fiscaldocument.ImportAdjustments;
+import br.com.cshub.taxify.service.fiscaldocument.ImportLog;
 import br.com.cshub.taxify.integration.fiscalxml.NfeRetentions;
 import br.com.cshub.taxify.mapper.fiscaldocument.FiscalDocumentFactory;
 import br.com.cshub.taxify.dto.fiscalxml.FiscalXmlImpostoItemDTO;
@@ -132,8 +134,15 @@ public class FiscalXmlTaxDetailBackfill {
                     markDone(document);
                     return Outcome.UNREADABLE;
                 }
-                apply(document, metadata);
-                document.setWithholdings(NfeRetentions.parse(xml).toWithholdings());
+                byte[] read = xml;
+                // I-17: what the model rounded while the columns were refreshed is logged as on the import
+                ImportAdjustments.Collected<Boolean> refreshed = ImportAdjustments.collect(() -> {
+                    apply(document, metadata);
+                    document.setWithholdings(NfeRetentions.parse(read).toWithholdings());
+                    return true;
+                });
+                ImportLog.adjustments(document.getCompany(), metadata.documentType(), document.getSourceSystem(), -1,
+                        refreshed.adjustments());
                 markDone(document);
                 return Outcome.UPDATED;
             });
