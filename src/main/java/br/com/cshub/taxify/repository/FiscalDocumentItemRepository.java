@@ -53,6 +53,14 @@ public interface FiscalDocumentItemRepository extends JpaRepository<FiscalDocume
     @Query("select i.document.id, count(i) from FiscalDocumentItem i where i.document.id in :documentIds group by i.document.id")
     List<Object[]> countByDocumentIds(@Param("documentIds") Collection<UUID> documentIds);
 
+    /**
+     * Each row is {documentId, effective CFOP} (FD-RN-57) - the CFOPs of the version in effect of a whole page of notes
+     * in one query, as the notes screen shows them and its filter finds them.
+     */
+    @Query("select distinct i.document.id, i.effectiveCfop from FiscalDocumentItem i"
+            + " where i.document.id in :documentIds and i.effectiveCfop is not null")
+    List<Object[]> findDistinctEffectiveCfopsByDocumentIds(@Param("documentIds") Collection<UUID> documentIds);
+
     /** Each row is {documentId, product code, cfop} - the CFOPs of a whole page of notes in one query, per product. */
     @Query("select distinct i.document.id, i.product.code, i.product.cfop from FiscalDocumentItem i"
             + " where i.document.id in :documentIds and i.product.cfop is not null")

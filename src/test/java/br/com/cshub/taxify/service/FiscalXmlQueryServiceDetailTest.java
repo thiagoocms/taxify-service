@@ -64,8 +64,6 @@ class FiscalXmlQueryServiceDetailTest {
     private FiscalXmlEventService eventService;
     @Mock
     private FiscalXmlFileStorage fileStorage;
-    @Mock
-    private br.com.cshub.taxify.repository.ProductFiscalRuleRepository ruleRepository;
 
     private FiscalXmlQueryService service;
     private GoodsInvoice document;
@@ -73,7 +71,7 @@ class FiscalXmlQueryServiceDetailTest {
     @BeforeEach
     void setUp() {
         service = new FiscalXmlQueryService(documentRepository, goodsInvoiceRepository, itemRepository, new FiscalXmlMetadataParser(),
-                companyValidation, tenantAccessService, messageService, eventService, fileStorage, ruleRepository, null);
+                companyValidation, tenantAccessService, messageService, eventService, fileStorage, null);
         document = TestNotes.note(TestNotes.company(TestNotes.COMPANY_CNPJ)).xml("s3://bucket/fiscal-xml/note.xml")
                 .metadataVersion(null).build();
         when(documentRepository.findXmlDocument(document.getId())).thenReturn(Optional.of(document));
@@ -114,12 +112,8 @@ class FiscalXmlQueryServiceDetailTest {
         document.addItem(withRule);
         document.addItem(withoutRule);
         when(itemRepository.findByDocument_IdOrderByItemNumberAsc(document.getId())).thenReturn(java.util.List.of(withRule, withoutRule));
-        br.com.cshub.taxify.domain.fiscalrule.ProductFiscalRule rule = new br.com.cshub.taxify.domain.fiscalrule.ProductFiscalRule(UUID.randomUUID());
-        rule.setProductCode("P1");
-        rule.setCorrectCfop("5102");
-        org.springframework.test.util.ReflectionTestUtils.setField(rule, "lastModifiedDate", java.time.LocalDateTime.now().minusDays(1));
-        org.mockito.Mockito.lenient().when(ruleRepository.findByCompany_IdAndDeletedIsFalse(document.getCompany().getId()))
-                .thenReturn(java.util.List.of(rule));
+        // FD-RN-57: the rectification stored the CFOP of the rectified file on the item (P1: 5102)
+        document.refreshEffectiveCfops(item -> item == withRule ? "5102" : null);
 
         var tab = service.findProdutosAsRectified(document.getId());
         assertThat(tab.get(0).cfop()).isEqualTo("5102");

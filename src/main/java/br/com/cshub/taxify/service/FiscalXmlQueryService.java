@@ -1,14 +1,9 @@
 package br.com.cshub.taxify.service;
 
-import br.com.cshub.taxify.service.fiscalcheck.OperationCfops;
-import br.com.cshub.taxify.domain.fiscalrule.ProductRules;
 import br.com.cshub.taxify.common.IssuePeriod;
 import br.com.cshub.taxify.common.RequestIds;
 import br.com.cshub.taxify.common.SortProperties;
 import br.com.cshub.taxify.exception.BadRequestException;
-import br.com.cshub.taxify.domain.fiscalrule.ProductFiscalRule;
-import br.com.cshub.taxify.repository.ProductFiscalRuleRepository;
-import br.com.cshub.taxify.service.fiscalcheck.ProductRuleCheck;
 
 import br.com.cshub.taxify.integration.sieg.FiscalXmlFileStorage;
 import br.com.cshub.taxify.dto.fiscalxml.FiscalXmlEventDTO;
@@ -72,7 +67,6 @@ public class FiscalXmlQueryService {
 
     private final FiscalXmlEventService eventService;
     private final FiscalXmlFileStorage fileStorage;
-    private final ProductFiscalRuleRepository ruleRepository;
     private final DocumentDivergenceService divergenceService;
 
     private final FiscalDocumentRepository documentRepository;
@@ -88,8 +82,7 @@ public class FiscalXmlQueryService {
                                  FiscalXmlMetadataParser metadataParser, CompanyValidation companyValidation,
                                  TenantAccessService tenantAccessService, MessageService messageService,
                                  FiscalXmlEventService eventService, FiscalXmlFileStorage fileStorage,
-                                 ProductFiscalRuleRepository ruleRepository, DocumentDivergenceService divergenceService) {
-        this.ruleRepository = ruleRepository;
+                                 DocumentDivergenceService divergenceService) {
         this.divergenceService = divergenceService;
         this.fileStorage = fileStorage;
         this.eventService = eventService;
@@ -216,13 +209,11 @@ public class FiscalXmlQueryService {
             for (Object[] row : itemRepository.countByDocumentIds(ids)) {
                 itemCounts.put((UUID) row[0], (Long) row[1]);
             }
-            Map<UUID, FiscalDocument> byId = documents.getContent().stream()
-                    .collect(Collectors.toMap(FiscalDocument::getId, d -> d));
-            ProductRules rules = rulesIfAnyRectified(company.getId(), documents.getContent());
-            for (Object[] row : itemRepository.findDistinctCfopsByDocumentIds(ids)) {
+            // FD-RN-57: the CFOP of the version in effect, as stored - the one the filter finds and the exported
+            // rectified file has
+            for (Object[] row : itemRepository.findDistinctEffectiveCfopsByDocumentIds(ids)) {
                 UUID documentId = (UUID) row[0];
-                ProductFiscalRule rule = rules.find((String) row[1], ProductRules.supplierOf(byId.get(documentId))).orElse(null);
-                String cfop = effectiveCfop(byId.get(documentId), rule, (String) row[2]);
+                String cfop = ((String) row[1]).strip();
                 if (!cfop.isEmpty()) {
                     cfops.computeIfAbsent(documentId, id -> new TreeSet<>()).add(cfop);
                 }
@@ -247,26 +238,6 @@ public class FiscalXmlQueryService {
         return SortProperties.resolve(pageable, GoodsInvoice.class, LEGACY_SORT)
                 .orElseThrow(() -> new BadRequestException(BadRequestException.DEFAULT_CODE,
                         messageService.getMessage(BadRequestException.DEFAULT_CODE)));
-    }
-
-    /** The company's rules by product code - only read when some note of the page has a rectified version. */
-    private ProductRules rulesIfAnyRectified(UUID companyId, List<FiscalDocument> documents) {
-        if (documents.stream().noneMatch(FiscalXmlApiMapper::isRectified)) {
-            return ProductRules.none();
-        }
-        return ProductRules.of(ruleRepository.findByCompany_IdAndDeletedIsFalse(companyId));
-    }
-
-    /**
-     * The item's CFOP as the note stands now: a rectified version built with the current rule
-     * rewrote it to the rule's CFOP (the item column keeps what was issued).
-     */
-    private static String effectiveCfop(FiscalDocument document, ProductFiscalRule rule, String issued) {
-        if (rule != null && rule.getCorrectCfop() != null && document instanceof GoodsInvoice goods
-                && ProductRuleCheck.rectifiedUnder(goods, rule)) {
-            return OperationCfops.forOperation(rule.getCorrectCfop(), goods.getHeader().destinationType()).strip();
-        }
-        return issued.strip();
     }
 
     /** First parser version that stores every header field the detail shows (the header and country columns). */
@@ -314,13 +285,12 @@ public class FiscalXmlQueryService {
     @Transactional(readOnly = true)
     public List<FiscalXmlProdutoDTO> findProdutosAsRectified(UUID documentId) {
         FiscalDocument document = findDocument(documentId);
-        ProductRules rules = rulesIfAnyRectified(document.getCompany().getId(), List.of(document));
+        // FD-RN-57: the stored effective CFOP - the rectified file's, the same the list shows and the filter finds
         return itemRepository.findByDocument_IdOrderByItemNumberAsc(document.getId()).stream()
                 .map(item -> {
                     FiscalXmlProdutoDTO produto = FiscalXmlApiMapper.toProduto(item);
-                    ProductFiscalRule rule = rules.forItem(item).orElse(null);
-                    return item.cfop() == null ? produto
-                            : produto.withRectifiedCfop(effectiveCfop(document, rule, item.cfop()));
+                    String effective = item.getEffectiveCfop() == null ? item.cfop() : item.getEffectiveCfop();
+                    return item.cfop() == null ? produto : produto.withRectifiedCfop(effective.strip());
                 })
                 .toList();
     }
