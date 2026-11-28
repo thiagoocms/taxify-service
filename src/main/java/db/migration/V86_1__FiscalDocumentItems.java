@@ -30,6 +30,8 @@ public class V86_1__FiscalDocumentItems extends TableMigration {
         column("cest", "varchar(10)");
         column("benefit_code", "varchar(10)");
         column("cfop", "varchar(10)");
+        // FD-RN-57: the CFOP of the version in effect (the rectified XML's, else cfop) - the notes screen filters by it
+        column("effective_cfop", "varchar(10)");
         column("commercial_unit", "varchar(10)");
         column("taxable_unit", "varchar(10)");
         column("commercial_quantity", "decimal(19,4)");
@@ -71,6 +73,7 @@ public class V86_1__FiscalDocumentItems extends TableMigration {
         column("simples_credit_amount", "decimal(19,2)");
 
         index("idx_fdi_document_cfop_amount", "document_id", "cfop", "total_amount");
+        index("idx_fdi_document_effective_cfop", "document_id", "effective_cfop");
         foreignKey("fk_fiscal_document_items_document", "document_id", DOCUMENTS);
     }
 }

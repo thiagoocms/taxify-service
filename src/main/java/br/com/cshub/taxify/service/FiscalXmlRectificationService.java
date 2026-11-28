@@ -1,5 +1,6 @@
 package br.com.cshub.taxify.service;
 
+import br.com.cshub.taxify.service.fiscalcheck.EffectiveCfops;
 import br.com.cshub.taxify.service.fiscalcheck.OperationCfops;
 import br.com.cshub.taxify.domain.fiscalrule.ProductRules;
 import br.com.cshub.taxify.common.MessageService;
@@ -118,15 +119,16 @@ public class FiscalXmlRectificationService {
         }
 
         // Only reads the XML (from S3) when the stored items show something a rule would change.
+        ProductRules rules = ProductRules.of(ruleRepository.findByCompany_IdAndDeletedIsFalse(document.getCompany().getId()));
         Document dom = null;
         List<String> corrections = List.of();
-        if (mayNeedCorrection(document)) {
+        if (mayNeedCorrection(document, rules)) {
             dom = parse(readOriginal(document.getXmlFilePath()));
             Element infNFe = first(dom, "infNFe");
             if (infNFe == null) {
                 throw new BadRequestException("error.fiscalXml.rectification.not.nfe", messageService.getMessage("error.fiscalXml.rectification.not.nfe"));
             }
-            corrections = applyRules(infNFe, document);
+            corrections = applyRules(infNFe, document, rules);
         }
 
         String rectifiedPath = null;
@@ -150,6 +152,8 @@ public class FiscalXmlRectificationService {
             String externalInvoiceKey = document.accessKeyOrId();
             auditTrail.record(document.getCompany(), externalInvoiceKey, InvoiceAuditStatus.RECTIFICATION_REVERTED, null);
         }
+        // FD-RN-57: the items' CFOP of the version in effect (the rectified file's, or their own when there is none)
+        document.refreshEffectiveCfops(item -> EffectiveCfops.rectified(rules, item));
         document.setLastRectificationCheckedAt(LocalDateTime.now());
         documentRepository.save(document);
 
@@ -162,12 +166,11 @@ public class FiscalXmlRectificationService {
      * ({@link RectificationPrecheck}). Notes whose columns came from a parser before version
      * 3 (tax codes incomplete) or that have no stored items are always read.
      */
-    private boolean mayNeedCorrection(GoodsInvoice document) {
+    private boolean mayNeedCorrection(GoodsInvoice document, ProductRules rules) {
         Integer version = document.getMetadataVersion();
         if (version == null || version < ITEM_COLUMNS_VERSION || document.getItems().isEmpty()) {
             return true;
         }
-        ProductRules rules = ProductRules.of(ruleRepository.findByCompany_IdAndDeletedIsFalse(document.getCompany().getId()));
         return document.getItems().stream()
                 .anyMatch(item -> rules.forItem(item).map(rule -> RectificationPrecheck.mayChange(item, rule)).orElse(false));
     }
@@ -193,8 +196,7 @@ public class FiscalXmlRectificationService {
      * The rule of each item: by its code and the note's supplier ({@link ProductRules}); the CFOP
      * takes the first digit of the note's operation (ide/idDest).
      */
-    private List<String> applyRules(Element infNFe, GoodsInvoice document) {
-        ProductRules rules = ProductRules.of(ruleRepository.findByCompany_IdAndDeletedIsFalse(document.getCompany().getId()));
+    private List<String> applyRules(Element infNFe, GoodsInvoice document, ProductRules rules) {
         String supplier = ProductRules.supplierOf(document);
         String idDest = text(first(infNFe, "ide"), "idDest");
         List<String> corrections = new ArrayList<>();

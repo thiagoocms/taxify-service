@@ -24,11 +24,17 @@ import java.util.UUID;
 /**
  * An item ({@code det}) of a goods invoice - only {@link GoodsInvoice} has items (FD-RN-06, I-16). Part of the invoice
  * aggregate: no auditing columns and no company, as today. The covering index {@code (document_id, cfop, total_amount)}
- * serves the assessment and the stock credit (spec 3.6).
+ * serves the assessment and the stock credit (spec 3.6); {@code (document_id, effective_cfop)} serves the CFOP filter of
+ * the notes screen (FD-RN-57).
+ *
+ * <p>{@code effectiveCfop} (FD-RN-57): the CFOP the item has in the version of the note in effect - the rectified
+ * XML's when the invoice has one, else the item's own (trimmed) CFOP. It follows the product's CFOP while the invoice
+ * is not rectified; {@link GoodsInvoice#refreshEffectiveCfops} sets it when a rectification is applied or dropped.
  */
 @Entity
 @Table(name = "fiscal_document_items",
-        indexes = @Index(name = "idx_fdi_document_cfop_amount", columnList = "document_id, cfop, total_amount"))
+        indexes = {@Index(name = "idx_fdi_document_cfop_amount", columnList = "document_id, cfop, total_amount"),
+                @Index(name = "idx_fdi_document_effective_cfop", columnList = "document_id, effective_cfop")})
 public class FiscalDocumentItem {
 
     @Id
@@ -46,6 +52,9 @@ public class FiscalDocumentItem {
 
     @Embedded
     private Product product;
+
+    @Column(name = "effective_cfop", length = 10)
+    private String effectiveCfop;
 
     @Embedded
     @AttributeOverrides({
@@ -110,7 +119,7 @@ public class FiscalDocumentItem {
 
     public FiscalDocumentItem(Integer itemNumber, Product product) {
         this.itemNumber = itemNumber;
-        this.product = product;
+        setProduct(product);
     }
 
     /** Called by {@link GoodsInvoice#addItem(FiscalDocumentItem)}: an item belongs to one invoice only. */
@@ -173,8 +182,27 @@ public class FiscalDocumentItem {
         return product == null ? Product.EMPTY : product;
     }
 
+    /** The product data; the effective CFOP follows its CFOP unless the invoice is rectified (FD-RN-57). */
     public void setProduct(Product product) {
         this.product = product;
+        if (!isOfRectifiedInvoice()) {
+            this.effectiveCfop = getProduct().cfop();
+        }
+    }
+
+    /** The CFOP of the version of the note in effect (FD-RN-57). */
+    public String getEffectiveCfop() {
+        return effectiveCfop;
+    }
+
+    /** Sets the CFOP of the rectified version (trimmed like every CFOP of the model); null or blank = the item's own. */
+    void applyEffectiveCfop(String cfop) {
+        String trimmed = FiscalText.trimSpaces(cfop);
+        this.effectiveCfop = trimmed == null || trimmed.isEmpty() ? getProduct().cfop() : trimmed;
+    }
+
+    private boolean isOfRectifiedInvoice() {
+        return document != null && document.getRectifiedFilePath() != null;
     }
 
     /** Never null: {@link TradeUnit#EMPTY} when every column is null. */

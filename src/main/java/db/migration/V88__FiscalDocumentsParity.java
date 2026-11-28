@@ -29,6 +29,8 @@ import java.util.Set;
  *   <li><b>NFS-e</b> by company × month × direction: count, canceled, deleted, service, ISS, withheld ISS, IRRF, PIS,
  *   COFINS, CSLL, INSS, net, ISS base, deductions and the two withheld flags;</li>
  *   <li><b>items</b> by company × month × trimmed CFOP: count, total, ICMS, ICMS-ST, IPI, PIS, COFINS, IBS, CBS;</li>
+ *   <li><b>effective CFOP</b> (FD-RN-57) by company × effective CFOP: count - the old side computed from the legacy
+ *   note, its rectified file and the product rules;</li>
  *   <li><b>events</b> by company × event type × registered: count and count linked to a document;</li>
  *   <li><b>sources</b> by company × source: documents with the old date filled (or uploaded) × rows, and the minimum and
  *   maximum date;</li>
@@ -77,6 +79,7 @@ public class V88__FiscalDocumentsParity extends BaseJavaMigration {
             }
             if (items && documents) {
                 compare(db, "items", itemsLegacy(), itemsNew(), groups, failed);
+                compare(db, "effective-cfop", effectiveCfopLegacy(), effectiveCfopNew(), groups, failed);
             }
             if (events) {
                 compare(db, "events", eventsLegacy(), eventsNew(), groups, failed);
@@ -206,6 +209,20 @@ public class V88__FiscalDocumentsParity extends BaseJavaMigration {
                 + " SUM(i.pis_amount), SUM(i.cofins_amount), SUM(i.ibs_amount), SUM(i.cbs_amount)"
                 + " FROM " + FDI + " i JOIN " + FD + " d ON d.id = i.document_id"
                 + " WHERE d.document_type IN ('NFE', 'NFCE', 'CTE') GROUP BY 1, 2, 3", 3);
+    }
+
+    private static Aggregate effectiveCfopLegacy() {
+        String supplier = CopyMappings.goodsInvoice().get("issuer_document").replaceAll("\\bl\\.", "ld.");
+        String effective = "CASE WHEN ld.document_type <> 'CTE' AND ld.rectified_file_path IS NOT NULL THEN "
+                + CopyMappings.rectifiedEffectiveCfop("TRIM(l.cfop)", "l.codigo", "ld.company_id", supplier, "ld.ide_destino_operacao")
+                + " ELSE TRIM(l.cfop) END";
+        return new Aggregate("SELECT ld.company_id, " + effective + ", COUNT(*) FROM " + LegacyTable.ITEMS.legacyName() + " l JOIN "
+                + LegacyTable.DOCUMENTS.legacyName() + " ld ON ld.id = l.document_id GROUP BY 1, 2", 2);
+    }
+
+    private static Aggregate effectiveCfopNew() {
+        return new Aggregate("SELECT d.company_id, i.effective_cfop, COUNT(*) FROM " + FDI + " i JOIN " + FD + " d ON d.id = i.document_id"
+                + " WHERE d.document_type IN ('NFE', 'NFCE', 'CTE') GROUP BY 1, 2", 2);
     }
 
     private static Aggregate eventsLegacy() {

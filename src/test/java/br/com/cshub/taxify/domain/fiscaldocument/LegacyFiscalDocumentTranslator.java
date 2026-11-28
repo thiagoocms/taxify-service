@@ -19,6 +19,8 @@ import br.com.cshub.taxify.enumerated.ReviewStatus;
 import br.com.cshub.taxify.enumerated.TaxpayerDocumentType;
 import br.com.cshub.taxify.mapper.fiscaldocument.LegacyNfseDirection;
 import br.com.cshub.taxify.mapper.fiscaldocument.LegacySourceNames;
+import br.com.cshub.taxify.domain.fiscalrule.ProductRules;
+import br.com.cshub.taxify.service.fiscalcheck.EffectiveCfops;
 import org.springframework.test.util.ReflectionTestUtils;
 
 import java.time.LocalDateTime;
@@ -149,8 +151,16 @@ public final class LegacyFiscalDocumentTranslator {
 
     // ---------------------------------------------------------------- NF-e, NFC-e and CT-e rows
 
-    /** A {@code fiscal_xml_documents} row (with its items) as {@link Nfe}, {@link Nfce} or {@link Cte}. */
+    /** A {@code fiscal_xml_documents} row (with its items) as {@link Nfe}, {@link Nfce} or {@link Cte}, without product rules. */
     public static FiscalDocument fromGoodsRow(FiscalXmlDocument legacy) {
+        return fromGoodsRow(legacy, ProductRules.none());
+    }
+
+    /**
+     * The same, with the company's product rules: the items of a rectified note take the rectified XML's CFOP as their
+     * effective CFOP (FD-RN-57, {@link EffectiveCfops}).
+     */
+    public static FiscalDocument fromGoodsRow(FiscalXmlDocument legacy, ProductRules rules) {
         FiscalDocumentType type = typeOf(legacy.getDocumentType(), legacy.getModelo());
         DocumentSourceKey source = sourceFromLegacy(legacy.getSourceSystem());
         FiscalDocument document = switch (type) {
@@ -162,6 +172,7 @@ public final class LegacyFiscalDocumentTranslator {
         copyCommon(legacy, document);
         if (document instanceof GoodsInvoice goods) {
             copyGoodsBlock(legacy, goods);
+            goods.refreshEffectiveCfops(item -> EffectiveCfops.rectified(rules, item));
         } else if (document instanceof Cte cte) {
             if (legacy.getItens() != null && !legacy.getItens().isEmpty()) {
                 throw new IllegalStateException("legacy CT-e row with items");

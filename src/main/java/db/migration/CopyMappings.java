@@ -46,6 +46,36 @@ final class CopyMappings {
             + " AND (ide_tipo_operacao IS NULL OR TRIM(ide_tipo_operacao) NOT IN ('0', '1'))";
 
     /**
+     * FD-RN-57: the effective CFOP of an item of a rectified note - what {@code FiscalXmlRectificationService} writes in
+     * the rectified XML ({@code EffectiveCfops}): the CFOP of the item's active {@code product_fiscal_rules} row (the
+     * supplier's rule first, else the code's general one - no supplier), with its first digit following the note's
+     * destination ({@link #forOperation}); no rule (or an empty result) = the item's own CFOP. A scalar expression over
+     * the given columns, so V87 (new tables) and V88 (legacy tables) apply the same rule.
+     */
+    static String rectifiedEffectiveCfop(String cfop, String productCode, String companyId, String supplier, String destination) {
+        return "COALESCE((SELECT NULLIF(" + forOperation("TRIM(r.cfop_correto)", "TRIM(" + destination + ")") + ", '')"
+                + " FROM product_fiscal_rules r WHERE r.company_id = " + companyId + " AND r.deleted = 0"
+                + " AND r.codigo_produto = " + productCode
+                + " AND (r.documento_fornecedor = " + supplier + " OR NULLIF(r.documento_fornecedor, '') IS NULL)"
+                + " ORDER BY NULLIF(r.documento_fornecedor, '') IS NULL, r.id LIMIT 1), " + cfop + ")";
+    }
+
+    /**
+     * {@code OperationCfops.forOperation} in SQL: a 4-digit CFOP and a destination 1-3 take the destination's first digit
+     * (1xxx-3xxx entries: 1/2/3; 5xxx-7xxx exits: 5/6/7); anything else keeps the CFOP as registered.
+     */
+    static String forOperation(String cfop, String destination) {
+        return "CASE WHEN " + cfop + " REGEXP '^[0-9]{4}$' AND " + destination + " IN ('1', '2', '3') THEN"
+                + " CASE WHEN LEFT(" + cfop + ", 1) IN ('1', '2', '3') THEN CONCAT(" + destination + ", SUBSTRING(" + cfop + ", 2))"
+                + " WHEN LEFT(" + cfop + ", 1) IN ('5', '6', '7') THEN CONCAT(CAST(" + destination + " + 4 AS CHAR), SUBSTRING("
+                + cfop + ", 2)) ELSE " + cfop + " END ELSE " + cfop + " END";
+    }
+
+    /** Active rules whose supplier document is not only digits: Java strips the mask, the SQL compares as stored. */
+    static final String RULES_WITH_MASKED_SUPPLIER = "SELECT COUNT(*) FROM product_fiscal_rules WHERE deleted = 0"
+            + " AND NULLIF(documento_fornecedor, '') IS NOT NULL AND NOT (documento_fornecedor REGEXP '^[0-9]+$')";
+
+    /**
      * "Has text" and every TRIM of this copy (party documents, model, CFOP, previous month) strip only the ordinary
      * space, the same rule the domain translator follows (agreed with the domain dev): a tab or line break is kept.
      * NF-e: {@code CTE} stays, {@code NFE} with model 65 is the NFC-e (FD-RN-14).
@@ -275,6 +305,8 @@ final class CopyMappings {
         m.put("benefit_code", "l.codigo_beneficio");
         // stored without spaces: the queries stop using trim() and use the index
         m.put("cfop", "TRIM(l.cfop)");
+        // FD-RN-57: the item's own CFOP; V87 then sets the rectified one on the items of rectified notes
+        m.put("effective_cfop", "TRIM(l.cfop)");
         m.put("commercial_unit", "l.unidade_comercial");
         m.put("taxable_unit", "l.unidade_tributavel");
         m.put("commercial_quantity", "l.quantidade_comercial");

@@ -299,6 +299,28 @@ class FiscalXmlRectificationServiceTest {
         assertThat(rectifiedContent).contains("<NCM>87654321</NCM>");
     }
 
+    /** FD-RN-57: the item's effective CFOP is the rectified XML's while the rectification is in effect, its own after it. */
+    @Test
+    void theEffectiveCfopFollowsTheRectificationAndGoesBackWithTheRevert() throws IOException {
+        GoodsInvoice document = parsedDocument();
+        when(documentRepository.findXmlDocument(documentId)).thenReturn(Optional.of(document));
+        when(ruleRepository.findByCompany_IdAndDeletedIsFalse(companyId)).thenReturn(List.of(ruleWithCfop("5102")));
+        assertThat(document.getItems().getFirst().getEffectiveCfop()).as("on import = the item's CFOP").isEqualTo("5405");
+
+        FiscalXmlRectificationResultDTO rectified = service.rectify(documentId);
+
+        assertThat(rectified.rectifiedFilePath()).isNotNull();
+        assertThat(Files.readString(Path.of(rectified.rectifiedFilePath()), StandardCharsets.UTF_8)).contains("<CFOP>5102</CFOP>");
+        assertThat(document.getItems().getFirst().getEffectiveCfop()).isEqualTo("5102");
+        assertThat(document.getItems().getFirst().getProduct().cfop()).as("the original stays").isEqualTo("5405");
+
+        when(ruleRepository.findByCompany_IdAndDeletedIsFalse(companyId)).thenReturn(List.of());
+        service.rectify(documentId);
+
+        assertThat(document.getRectifiedFilePath()).isNull();
+        assertThat(document.getItems().getFirst().getEffectiveCfop()).isEqualTo("5405");
+    }
+
     /** A note saved by the current parser, with its one item stored as columns (CFOP 5405, NCM 12345678). */
     private GoodsInvoice parsedDocument() {
         return TestNotes.note(company()).id(documentId).key("35240112345678000199550010000000011000000010")

@@ -170,7 +170,7 @@ class FiscalDocumentMappingTest {
     @Test
     void itemsEventsSourcesAndCountsHaveTheColumnsOfTheSpec() {
         assertThat(columns("fiscal_document_items").keySet()).containsExactlyInAnyOrder("id", "document_id",
-                "item_number", "product_code", "barcode", "description", "ncm", "cest", "benefit_code", "cfop",
+                "item_number", "product_code", "barcode", "description", "ncm", "cest", "benefit_code", "cfop", "effective_cfop",
                 "commercial_unit", "taxable_unit", "commercial_quantity", "commercial_unit_price", "taxable_quantity",
                 "taxable_unit_price", "total_amount", "goods_origin", "icms_cst", "icms_csosn", "icms_base_modality",
                 "icms_st_base_modality", "icms_base", "icms_amount", "icms_relief_amount", "icms_st_base", "icms_st_amount",
@@ -202,7 +202,8 @@ class FiscalDocumentMappingTest {
                 Map.entry("idx_fd_purge", List.of("xml_purged_at", "issue_date")),
                 Map.entry("idx_fd_type_metadata_version", List.of("document_type", "metadata_version")));
         assertThat(indexes("fiscal_document_items"))
-                .containsOnly(Map.entry("idx_fdi_document_cfop_amount", List.of("document_id", "cfop", "total_amount")));
+                .containsOnly(Map.entry("idx_fdi_document_cfop_amount", List.of("document_id", "cfop", "total_amount")),
+                        Map.entry("idx_fdi_document_effective_cfop", List.of("document_id", "effective_cfop")));
         assertThat(uniqueKeys("fiscal_document_events")).containsEntry("uk_fiscal_document_events",
                 List.of("company_id", "access_key", "event_type", "sequence_number"));
         assertThat(indexes("fiscal_document_events")).containsOnly(Map.entry("idx_fde_document", List.of("document_id")));

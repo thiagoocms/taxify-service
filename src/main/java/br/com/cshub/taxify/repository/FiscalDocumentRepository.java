@@ -46,7 +46,8 @@ public interface FiscalDocumentRepository extends AbstractJpaRepository<FiscalDo
     /**
      * The notes screen. Every filter is optional (null = not applied): {@code number} exact, {@code direction}
      * entry/exit, {@code participant} a lower-case piece of the issuer's or recipient's name, or digits of their
-     * document, {@code cfop} some item issued with it (stored without spaces, spec 3.6), {@code source} the first origin
+     * document, {@code cfop} some item with it as its effective CFOP - the rectified one when the note has a rectified XML
+     * (FD-RN-57, decision of 2026-11-28), stored without spaces (spec 3.6) -, {@code source} the first origin
      * ({@code source_system}). {@code onlySiegBefore}: seen by SIEG before it and never by SEFAZ, a third-party note;
      * {@code onlySefazBefore}: seen by SEFAZ before it and never by SIEG ({@code fiscal_document_sources}, FD-RN-13).
      */
@@ -68,7 +69,7 @@ public interface FiscalDocumentRepository extends AbstractJpaRepository<FiscalDo
             + "      or (exists (select s.id from FiscalDocumentSource s where s.document = d and s.source = :sefaz"
             + "                  and s.firstSeenAt < :onlySefazBefore)"
             + "      and not exists (select s.id from FiscalDocumentSource s where s.document = d and s.source = :sieg)))"
-            + " and (:cfop is null or exists (select i.id from FiscalDocumentItem i where i.document = d and i.product.cfop = :cfop))")
+            + " and (:cfop is null or exists (select i.id from FiscalDocumentItem i where i.document = d and i.effectiveCfop = :cfop))")
     Page<FiscalDocument> search(@Param("companyId") UUID companyId,
                                 @Param("issueDateFrom") LocalDateTime issueDateFrom,
                                 @Param("issueDateTo") LocalDateTime issueDateTo,

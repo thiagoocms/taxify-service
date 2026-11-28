@@ -29,7 +29,7 @@ final class FiscalDocumentTables {
             new Expected(DOCUMENTS, List.of("uk_fiscal_documents_company_key", "idx_fd_company_type_issue",
                     "idx_fd_company_type_direction_issue", "idx_fd_company_type_source_created", "idx_fd_purge",
                     "idx_fd_type_metadata_version"), List.<String[]>of(new String[]{"company_id", "companies"})),
-            new Expected(ITEMS, List.of("idx_fdi_document_cfop_amount"), List.<String[]>of(new String[]{"document_id", DOCUMENTS})),
+            new Expected(ITEMS, List.of("idx_fdi_document_cfop_amount", "idx_fdi_document_effective_cfop"), List.<String[]>of(new String[]{"document_id", DOCUMENTS})),
             new Expected(EVENTS, List.of("uk_fiscal_document_events", "idx_fde_document"),
                     List.of(new String[]{"company_id", "companies"}, new String[]{"document_id", DOCUMENTS})),
             new Expected(SOURCES, List.of("uk_fiscal_document_sources", "idx_fds_company_source_seen"),

@@ -7,6 +7,8 @@ import br.com.cshub.taxify.domain.fiscaldocument.FiscalDocumentItem;
 import br.com.cshub.taxify.domain.fiscaldocument.FiscalDocumentSource;
 import br.com.cshub.taxify.domain.fiscaldocument.GoodsInvoice;
 import br.com.cshub.taxify.domain.fiscaldocument.LegacyFiscalDocumentTranslator;
+import br.com.cshub.taxify.domain.fiscalrule.ProductFiscalRule;
+import br.com.cshub.taxify.domain.fiscalrule.ProductRules;
 import legacy.xml.FiscalXmlDocument;
 import legacy.xml.FiscalXmlDocumentItem;
 import legacy.xml.FiscalXmlEvent;
@@ -130,7 +132,7 @@ class TranslatorAndCutoverParityTest {
         Map<Table, Map<List<Object>, Map<String, Object>>> expected = translateWithJava();
 
         flyway("87").migrate();
-        assertThat(jdbc.queryForObject("SELECT COUNT(*) FROM legacy_fiscal_xml_documents", Integer.class)).isEqualTo(18);
+        assertThat(jdbc.queryForObject("SELECT COUNT(*) FROM legacy_fiscal_xml_documents", Integer.class)).isEqualTo(19);
 
         List<String> divergences = new ArrayList<>();
         Map<Table, Integer> compared = new LinkedHashMap<>();
@@ -143,7 +145,11 @@ class TranslatorAndCutoverParityTest {
                 .map(e -> e.getKey().name() + ":" + e.getValue()).toList() + " divergences=" + divergences.size());
         divergences.forEach(d -> System.out.println("  " + d));
 
-        assertThat(compared).containsEntry(DOCUMENTS, 18 + 7).containsEntry(ITEMS, 6).containsEntry(EVENTS, 2);
+        assertThat(compared).containsEntry(DOCUMENTS, 19 + 7).containsEntry(ITEMS, 10).containsEntry(EVENTS, 2);
+        // FD-RN-57 on both sides: K1 by the supplier's rule, x6 by the general rules and the interstate destination
+        assertThat(jdbc.queryForList("SELECT i.effective_cfop FROM fiscal_document_items i JOIN legacy_fiscal_xml_documents d"
+                + " ON d.id = i.document_id WHERE d.access_key IN (?, ?) ORDER BY d.access_key, i.item_number", String.class,
+                key(1), key(206))).containsExactly("1556", "1102", "2949", "6405", "2102", "2102");
         assertThat(compared.get(SOURCES)).isGreaterThanOrEqualTo(10);
         assertThat(compared.get(COUNTS)).isEqualTo(7);
         assertThat(divergences).as("SQL of V87 x LegacyFiscalDocumentTranslator, column by column").isEmpty();
@@ -157,11 +163,13 @@ class TranslatorAndCutoverParityTest {
         jdbc.update("UPDATE fiscal_document_sources SET first_seen_at = first_seen_at + INTERVAL 1 SECOND WHERE source = 'UPLOAD'"
                 + " AND document_id = (SELECT id FROM legacy_service_invoices WHERE access_key = 'ABRASF-2611606-99-1')");
         jdbc.update("UPDATE capture_period_counts SET closed_at = NULL WHERE company_id = ? AND period_month = '2026-09'", E1);
+        jdbc.update("UPDATE fiscal_document_items SET effective_cfop = '6102' WHERE effective_cfop = '6405'");
         List<String> planted = new ArrayList<>();
         for (Table table : List.of(DOCUMENTS, ITEMS, EVENTS, SOURCES, COUNTS)) {
             planted.addAll(compare(table, expected.get(table), rowsOf(jdbc, table), names));
         }
-        assertThat(planted).hasSize(4).anyMatch(d -> d.contains("d-x2") && d.contains(".products_amount: java=null sql=290"))
+        assertThat(planted).hasSize(5).anyMatch(d -> d.contains("d-x2") && d.contains(".products_amount: java=null sql=290"))
+                .anyMatch(d -> d.contains(".effective_cfop: java=6405 sql=6102"))
                 .anyMatch(d -> d.contains(".cfop: java=5102 sql=5102 "))
                 .anyMatch(d -> d.contains("d-y1") && d.contains(".first_seen_at"))
                 .anyMatch(d -> d.contains("2026-09") && d.contains(".closed_at: java=closed sql=open"));
@@ -202,6 +210,32 @@ class TranslatorAndCutoverParityTest {
                 "issue_date", "2026-10-26 10:00:00", "total_valor_total_nota", "5.00"));
         insert(jdbc, "fiscal_xml_document_items", item("i1000000-0000-4000-8000-000000000103", doc("x5"), "numero_item", 1,
                 "cfop", "   ", "valor_total", "5.00"));
+        // FD-RN-57: product rules of E1 - P-1 for the supplier (wins on K1, a rectified note of that supplier, dest 1),
+        // P-1 general, P-9 general (exit CFOP on an interstate note: 5405 -> 6405), a deleted one and one of E2
+        String rules = "product_fiscal_rules";
+        insert(jdbc, rules, LegacyFixtures.audited("id", "a1000000-0000-4000-8000-000000000001", "company_id", E1,
+                "codigo_produto", "P-1", "documento_fornecedor", LegacyFixtures.SUPPLIER_CNPJ, "cfop_correto", "1556"));
+        insert(jdbc, rules, LegacyFixtures.audited("id", "a1000000-0000-4000-8000-000000000002", "company_id", E1,
+                "codigo_produto", "P-1", "documento_fornecedor", null, "cfop_correto", "1949"));
+        insert(jdbc, rules, LegacyFixtures.audited("id", "a1000000-0000-4000-8000-000000000003", "company_id", E1,
+                "codigo_produto", "P-9", "documento_fornecedor", "", "cfop_correto", " 5405 "));
+        insert(jdbc, rules, LegacyFixtures.audited("id", "a1000000-0000-4000-8000-000000000004", "company_id", E1,
+                "codigo_produto", "P-8", "documento_fornecedor", null, "cfop_correto", "1403", "deleted", 1));
+        insert(jdbc, rules, LegacyFixtures.audited("id", "a1000000-0000-4000-8000-000000000005", "company_id", E2,
+                "codigo_produto", "P-9", "documento_fornecedor", null, "cfop_correto", "1101"));
+        // a rectified note of another supplier, interstate (idDest " 2 "): P-1 by the general rule, P-9, P-8 (deleted rule:
+        // keeps its CFOP) and an item without code
+        insert(jdbc, fxd, nfe(doc("x6"), E1, "access_key", key(206), "direction", "INBOUND", "own_issue", 0,
+                "issue_date", "2026-10-28 10:00:00", "issuer_cnpj", "11444777000161", "ide_destino_operacao", " 2 ",
+                "total_valor_total_nota", "30.00", "rectified_file_path", "rect/x6.xml"));
+        insert(jdbc, "fiscal_xml_document_items", item("i1000000-0000-4000-8000-000000000104", doc("x6"), "numero_item", 1,
+                "codigo", "P-1", "cfop", "2102", "valor_total", "10.00"));
+        insert(jdbc, "fiscal_xml_document_items", item("i1000000-0000-4000-8000-000000000105", doc("x6"), "numero_item", 2,
+                "codigo", "P-9", "cfop", " 6102", "valor_total", "10.00"));
+        insert(jdbc, "fiscal_xml_document_items", item("i1000000-0000-4000-8000-000000000106", doc("x6"), "numero_item", 3,
+                "codigo", "P-8", "cfop", "2102", "valor_total", "5.00"));
+        insert(jdbc, "fiscal_xml_document_items", item("i1000000-0000-4000-8000-000000000107", doc("x6"), "numero_item", 4,
+                "cfop", "2102", "valor_total", "5.00"));
         // NFS-e issued by the company with a blank provider document and nothing else of the provider
         insert(jdbc, "service_invoices", nfse(doc("y2"), E1, "access_key", "2611606" + "7".repeat(43), "direction", "PRESTADA",
                 "issue_date", "2026-10-27 11:00:00", "prestador_documento", "  ", "tomador_documento", LegacyFixtures.E1_CNPJ,
@@ -284,8 +318,15 @@ class TranslatorAndCutoverParityTest {
             SharedSessionContractImplementor implementor = (SharedSessionContractImplementor) session;
             Function<Object, Map<String, Object>> columns = entity -> columnsOf(sessionFactory, implementor, entity);
             Map<UUID, FiscalDocument> byId = new LinkedHashMap<>();
+            // FD-RN-57: the active product rules of each company, as FiscalXmlRectificationService loads them
+            Map<UUID, List<ProductFiscalRule>> rulesByCompany = new LinkedHashMap<>();
+            for (ProductFiscalRule rule : session.createSelectionQuery("from ProductFiscalRule r where r.deleted = false order by r.id",
+                    ProductFiscalRule.class).list()) {
+                rulesByCompany.computeIfAbsent(rule.getCompany().getId(), id -> new ArrayList<>()).add(rule);
+            }
             for (FiscalXmlDocument legacy : session.createSelectionQuery("from LegacyFiscalXmlDocument", FiscalXmlDocument.class).list()) {
-                byId.put(legacy.getId(), LegacyFiscalDocumentTranslator.fromGoodsRow(legacy));
+                ProductRules rules = ProductRules.of(rulesByCompany.getOrDefault(legacy.getCompany().getId(), List.of()));
+                byId.put(legacy.getId(), LegacyFiscalDocumentTranslator.fromGoodsRow(legacy, rules));
             }
             for (ServiceInvoice legacy : session.createSelectionQuery("from LegacyServiceInvoice", ServiceInvoice.class).list()) {
                 byId.put(legacy.getId(), LegacyFiscalDocumentTranslator.fromServiceInvoice(legacy));

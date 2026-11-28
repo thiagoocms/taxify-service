@@ -67,6 +67,7 @@ public class V87__FiscalDocumentsCutover extends BaseJavaMigration {
             rename(db, locations);
             copyDocuments(db, locations);
             copySources(db, locations);
+            effectiveCfops(db, locations);
         } else {
             log.info("fiscal.documents.cutover.nothing.to.do reason=no-legacy-tables");
         }
@@ -269,6 +270,27 @@ public class V87__FiscalDocumentsCutover extends BaseJavaMigration {
         }
         log.info("fiscal.documents.cutover.copied step={} table={} copied={} existing={} ms={}",
                 step, target, copied, rows - copied, System.currentTimeMillis() - started);
+    }
+
+    // ------------------------------------------------------------------ 3b. effective CFOP
+
+    /**
+     * FD-RN-57: the items of the rectified notes take the CFOP of the rectified XML ({@link CopyMappings#rectifiedEffectiveCfop},
+     * from the company's product rules); every other item keeps its own (the copy). Idempotent: the same rule on a rerun.
+     */
+    private void effectiveCfops(CutoverDatabase db, Map<LegacyTable, LegacyTable.Location> locations) {
+        if (!present(LegacyTable.ITEMS, locations) || !present(LegacyTable.DOCUMENTS, locations)) {
+            return;
+        }
+        long started = System.currentTimeMillis();
+        long masked = db.count(CopyMappings.RULES_WITH_MASKED_SUPPLIER);
+        int updated = db.jdbc.update("UPDATE " + FiscalDocumentTables.ITEMS + " i JOIN " + FiscalDocumentTables.DOCUMENTS
+                + " d ON d.id = i.document_id SET i.effective_cfop = " + CopyMappings.rectifiedEffectiveCfop("i.cfop", "i.product_code",
+                "d.company_id", "d.issuer_document", "d.header_destination_type")
+                + " WHERE d.document_type IN ('NFE', 'NFCE') AND d.rectified_file_path IS NOT NULL");
+        long changed = db.count("SELECT COUNT(*) FROM " + FiscalDocumentTables.ITEMS + " WHERE NOT (effective_cfop <=> cfop)");
+        log.info("fiscal.documents.cutover.effective.cfop itemsOfRectifiedNotes={} differentFromCfop={} rulesWithMaskedSupplier={} ms={}",
+                updated, changed, masked, System.currentTimeMillis() - started);
     }
 
     // ------------------------------------------------------------------ 4. sources

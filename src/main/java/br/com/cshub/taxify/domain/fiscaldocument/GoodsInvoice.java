@@ -16,6 +16,7 @@ import java.util.ArrayList;
 import java.util.Collections;
 import java.util.List;
 import java.util.Objects;
+import java.util.function.Function;
 
 /**
  * A goods invoice - NF-e ({@link Nfe}) or NFC-e ({@link Nfce}): the only documents with items (FD-RN-06, I-16) and
@@ -77,6 +78,18 @@ public abstract class GoodsInvoice extends FiscalDocument {
 
     public List<FiscalDocumentItem> getItems() {
         return Collections.unmodifiableList(items);
+    }
+
+    /**
+     * FD-RN-57: the effective CFOP of every item after a rectification was applied or dropped - with a rectified file,
+     * what {@code rectifiedCfop} says the rectified XML has for the item (null = the item's own CFOP); without one, the
+     * item's own CFOP.
+     */
+    public void refreshEffectiveCfops(Function<FiscalDocumentItem, String> rectifiedCfop) {
+        Objects.requireNonNull(rectifiedCfop, "rectifiedCfop");
+        for (FiscalDocumentItem item : items) {
+            item.applyEffectiveCfop(rectifiedFilePath == null ? null : rectifiedCfop.apply(item));
+        }
     }
 
     /**
