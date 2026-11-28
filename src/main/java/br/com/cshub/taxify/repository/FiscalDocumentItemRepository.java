@@ -160,7 +160,7 @@ public interface FiscalDocumentItemRepository extends JpaRepository<FiscalDocume
     String CFOP_ITEM_TOTALS = "select d.direction, count(i), coalesce(sum(i.totalAmount), 0), coalesce(sum(i.icms.amount), 0),"
             + " coalesce(sum(i.icmsSt.amount), 0), coalesce(sum(i.ipi.amount), 0), coalesce(sum(i.pis.amount), 0),"
             + " coalesce(sum(i.cofins.amount), 0)"
-            + " from FiscalDocumentItem i join i.document d where d.status <> " + CANCELED;
+            + " from FiscalDocumentItem i join i.document d where type(d) in (Nfe, Nfce) and d.status <> " + CANCELED;
 
     /**
      * {@link #CFOP_ITEM_TOTALS} of the notes matching the list's predicate ({@link FiscalDocumentSearchFilter#WHERE}); the
