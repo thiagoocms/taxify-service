@@ -1,4 +1,4 @@
-package db.fiscaldocuments;
+package db.migration;
 
 import org.springframework.jdbc.core.JdbcTemplate;
 

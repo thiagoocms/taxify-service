@@ -1,9 +1,9 @@
-package db.fiscaldocuments;
+package db.migration;
 
 import db.migration.TableMigration;
 
-import static db.fiscaldocuments.FiscalDocumentTables.DOCUMENTS;
-import static db.fiscaldocuments.FiscalDocumentTables.SOURCES;
+import static db.migration.FiscalDocumentTables.DOCUMENTS;
+import static db.migration.FiscalDocumentTables.SOURCES;
 
 /**
  * Remodel of the fiscal documents (spec 2026-11-27, 3.10, T4, FD-RN-31, 40): in which source each document was seen,

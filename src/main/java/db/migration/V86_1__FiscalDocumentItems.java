@@ -1,11 +1,11 @@
-package db.fiscaldocuments;
+package db.migration;
 
 import db.migration.TableMigration;
 
 import java.util.List;
 
-import static db.fiscaldocuments.FiscalDocumentTables.DOCUMENTS;
-import static db.fiscaldocuments.FiscalDocumentTables.ITEMS;
+import static db.migration.FiscalDocumentTables.DOCUMENTS;
+import static db.migration.FiscalDocumentTables.ITEMS;
 
 /**
  * Remodel of the fiscal documents (spec 2026-11-27, 3.6): the items of the goods invoices (NF-e and NFC-e), empty -

@@ -1,6 +1,5 @@
 package br.com.cshub.taxify.domain.fiscaldocument;
 
-import br.com.cshub.taxify.config.StagedEntitiesConfig;
 import org.hibernate.boot.Metadata;
 import org.hibernate.boot.MetadataSources;
 import org.hibernate.boot.registry.StandardServiceRegistry;
@@ -27,9 +26,8 @@ import static org.assertj.core.api.Assertions.assertThat;
 
 /**
  * The mapping of the new model, checked without a database: Hibernate builds and validates the metadata of the whole
- * model (old and new entities together, as after V86) with the MySQL dialect and no JDBC access, and the tables,
- * columns, types, keys and indexes are compared with spec 3.4 to 3.11. Also checks that the staged entities stay out
- * of the persistence unit Spring builds today.
+ * model with the MySQL dialect and no JDBC access, and the tables,
+ * columns, types, keys and indexes are compared with spec 3.4 to 3.11.
  */
 class FiscalDocumentMappingTest {
 
@@ -223,15 +221,17 @@ class FiscalDocumentMappingTest {
         assertThat(foreignKeys("capture_period_counts")).containsExactly("fk_capture_period_counts_company");
     }
 
-    /** Until V86 the new entities (and their converters) are not part of the persistence unit Spring builds. */
+    /** The staging filter is gone (spec 3.12 D-01): the scan of the application lists every new entity and converter. */
     @Test
-    void stagedEntitiesStayOutOfThePersistenceUnit() {
+    void everyFiscalDocumentEntityIsScanned() {
         List<String> all = scan().getManagedClassNames();
-        assertThat(all).contains(FiscalDocument.class.getName(), Nfe.class.getName(), DocumentSourceKeyConverter.class.getName());
-        List<String> managed = all.stream().filter(StagedEntitiesConfig::isManaged).toList();
-        assertThat(managed).noneMatch(name -> name.startsWith(StagedEntitiesConfig.STAGED_PACKAGE))
-                .contains("br.com.cshub.taxify.domain.xml.FiscalXmlDocument", "br.com.cshub.taxify.domain.company.Company");
-        assertThat(new StagedEntitiesConfig().stagedEntitiesFilter().matches(Cte.class.getName())).isFalse();
+        assertThat(all).contains(FiscalDocument.class.getName(), GoodsInvoice.class.getName(), Nfe.class.getName(),
+                Nfce.class.getName(), Nfse.class.getName(), Cte.class.getName(), FiscalDocumentItem.class.getName(),
+                FiscalDocumentEvent.class.getName(), FiscalDocumentSource.class.getName(), CapturePeriodCount.class.getName(),
+                DocumentSourceKeyConverter.class.getName());
+        assertThat(all).noneMatch(name -> name.startsWith("br.com.cshub.taxify.domain.xml.FiscalXmlDocument")
+                || name.equals("br.com.cshub.taxify.domain.xml.ServiceInvoice")
+                || name.equals("br.com.cshub.taxify.domain.xml.FiscalXmlEvent"));
     }
 
     private static Map<String, List<String>> uniqueKeys(String table) {

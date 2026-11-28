@@ -1,4 +1,4 @@
-package db.fiscaldocuments;
+package db.migration;
 
 import java.util.ArrayList;
 import java.util.List;

@@ -27,8 +27,7 @@ import java.util.Map;
  * A unique key or foreign key the data doesn't allow yet (duplicates, orphans) is logged and
  * skipped instead of failing the deploy - the next run tries again.
  *
- * <p>Public so the fiscal documents cutover ({@code db.fiscaldocuments}, a separate Flyway location until the new
- * entities land) declares its tables the same way.
+ * <p>Public so the helpers of the fiscal documents cutover (V86 to V89) declare their tables the same way.
  */
 public abstract class TableMigration extends BaseJavaMigration {
 

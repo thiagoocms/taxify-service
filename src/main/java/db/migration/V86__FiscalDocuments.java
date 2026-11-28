@@ -1,11 +1,11 @@
-package db.fiscaldocuments;
+package db.migration;
 
 import db.migration.TableMigration;
 
 import java.util.List;
 
-import static db.fiscaldocuments.FiscalDocumentTables.DOCUMENTS;
-import static db.fiscaldocuments.FiscalDocumentTables.DOCUMENT_TYPE_CHECK;
+import static db.migration.FiscalDocumentTables.DOCUMENTS;
+import static db.migration.FiscalDocumentTables.DOCUMENT_TYPE_CHECK;
 
 /**
  * Remodel of the fiscal documents (spec 2026-11-27, B-FD-02, 3.4): {@code fiscal_documents}, empty - V87 fills it.

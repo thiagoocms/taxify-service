@@ -1,4 +1,4 @@
-package db.fiscaldocuments;
+package db.migration;
 
 import ch.qos.logback.classic.Logger;
 import ch.qos.logback.classic.spi.ILoggingEvent;
@@ -28,14 +28,14 @@ import java.util.LinkedHashMap;
 import java.util.List;
 import java.util.Map;
 
-import static db.fiscaldocuments.LegacyFixtures.E1;
-import static db.fiscaldocuments.LegacyFixtures.E1_CNPJ;
-import static db.fiscaldocuments.LegacyFixtures.E2;
-import static db.fiscaldocuments.LegacyFixtures.E3;
-import static db.fiscaldocuments.LegacyFixtures.SUPPLIER_CNPJ;
-import static db.fiscaldocuments.LegacyFixtures.SUPPLIER_CPF;
-import static db.fiscaldocuments.LegacyFixtures.doc;
-import static db.fiscaldocuments.LegacyFixtures.key;
+import static db.migration.LegacyFixtures.E1;
+import static db.migration.LegacyFixtures.E1_CNPJ;
+import static db.migration.LegacyFixtures.E2;
+import static db.migration.LegacyFixtures.E3;
+import static db.migration.LegacyFixtures.SUPPLIER_CNPJ;
+import static db.migration.LegacyFixtures.SUPPLIER_CPF;
+import static db.migration.LegacyFixtures.doc;
+import static db.migration.LegacyFixtures.key;
 import static org.assertj.core.api.Assertions.assertThat;
 import static org.assertj.core.api.Assertions.assertThatThrownBy;
 import static org.mockito.Mockito.mock;
@@ -44,8 +44,7 @@ import static org.mockito.Mockito.when;
 /**
  * V86 to V89 of the fiscal documents remodel (spec 2026-11-27) on a disposable database of the local MySQL: the
  * schema of the master (Flyway up to {@value #BEFORE}) with fictitious data covering every conversion, then the four
- * migrations, run by a Flyway pointed at both locations ({@code db/migration} and {@code db/fiscaldocuments}, which
- * the application doesn't load until the new entities land).
+ * migrations, run by a Flyway pointed at the application's location ({@code classpath:db/migration}).
  *
  * <p>Scratch database {@value #SCRATCH}, created and dropped by the test; only with DB_HOST=localhost.
  */
@@ -57,7 +56,7 @@ class FiscalDocumentsMigrationsTest {
     static final String BEFORE = "85";
     /** Fictitious SHA-256 of "the backup" for the V89 lock (FD_BACKUP_SHA256). */
     static final String BACKUP_SHA256 = "0123456789abcdef0123456789abcdef0123456789abcdef0123456789abcdef";
-    static final String[] LOCATIONS = {"classpath:db/migration", "classpath:db/fiscaldocuments"};
+    static final String[] LOCATIONS = {"classpath:db/migration"};
 
     private final ListAppender<ILoggingEvent> logs = new ListAppender<>();
     private final List<Logger> migrationLoggers = List.of(V86__FiscalDocuments.class, V87__FiscalDocumentsCutover.class,
@@ -425,11 +424,9 @@ class FiscalDocumentsMigrationsTest {
         }
         assertThat(columns(jdbc, "fiscal_xml_sync_control")).doesNotContain("total_sieg", "received_prev_month");
 
-        // Flyway sees exactly V86-V89 in the new location, and the application's location doesn't see them
+        // the application's location (classpath:db/migration) runs exactly V86-V89 after V85
         assertThat(Arrays.stream(flyway("latest").info().applied()).map(MigrationInfo::getVersion)
-                .filter(v -> v.isNewerThan("85")).map(Object::toString)).containsExactly("86", "86.1", "86.2", "86.3", "86.4", "87", "88", "89");
-        assertThat(Arrays.stream(flyway("latest", "classpath:db/migration").info().all())
-                .noneMatch(info -> info.getScript().contains("fiscaldocuments") && info.getState().isResolved())).isTrue();
+                .filter(v -> v.isNewerThan("85")).map(Object::toString)).startsWith("86", "86.1", "86.2", "86.3", "86.4", "87", "88", "89");
     }
 
     /** A database without the four old tables (already removed): V87 to V89 log "nothing to do" and only drop the counters. */

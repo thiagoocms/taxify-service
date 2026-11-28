@@ -192,6 +192,9 @@ services:
       TAXIFY_SIEG_EVENTS_ONLY_RECENT_NOTES: ${TAXIFY_SIEG_EVENTS_ONLY_RECENT_NOTES:-true}
       TAXIFY_SIEG_REQUEST_LOG_ENABLED: ${TAXIFY_SIEG_REQUEST_LOG_ENABLED:-true}
       TAXIFY_SIEG_REQUEST_LOG_CRON: ${TAXIFY_SIEG_REQUEST_LOG_CRON:-0 59 23 * * *}
+      # Remodelagem dos documentos fiscais (V89, FD-RN-52): SHA-256 do backup conferido pelo
+      # scripts/fiscal-documents/backup.sh. Vazio = a V89 não apaga o legado e a aplicação não sobe com legado copiado.
+      FD_BACKUP_SHA256: ${FD_BACKUP_SHA256:-}
       ACESSORIAS_SYNC_ENABLED: true
       ACESSORIAS_SYNC_CRON: 0 0 3 * * *
       BILLING_SYNC_ENABLED: true

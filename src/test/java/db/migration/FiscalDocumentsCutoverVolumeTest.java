@@ -1,4 +1,4 @@
-package db.fiscaldocuments;
+package db.migration;
 
 import ch.qos.logback.classic.Logger;
 import ch.qos.logback.classic.spi.ILoggingEvent;
@@ -12,10 +12,10 @@ import org.springframework.jdbc.core.JdbcTemplate;
 
 import java.util.List;
 
-import static db.fiscaldocuments.FiscalDocumentsMigrationsTest.BEFORE;
-import static db.fiscaldocuments.FiscalDocumentsMigrationsTest.SCRATCH;
-import static db.fiscaldocuments.FiscalDocumentsMigrationsTest.flyway;
-import static db.fiscaldocuments.FiscalDocumentsMigrationsTest.jdbc;
+import static db.migration.FiscalDocumentsMigrationsTest.BEFORE;
+import static db.migration.FiscalDocumentsMigrationsTest.SCRATCH;
+import static db.migration.FiscalDocumentsMigrationsTest.flyway;
+import static db.migration.FiscalDocumentsMigrationsTest.jdbc;
 import static org.assertj.core.api.Assertions.assertThat;
 
 /**

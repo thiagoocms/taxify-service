@@ -1,9 +1,9 @@
-package db.fiscaldocuments;
+package db.migration;
 
 import db.migration.TableMigration;
 
-import static db.fiscaldocuments.FiscalDocumentTables.DOCUMENTS;
-import static db.fiscaldocuments.FiscalDocumentTables.EVENTS;
+import static db.migration.FiscalDocumentTables.DOCUMENTS;
+import static db.migration.FiscalDocumentTables.EVENTS;
 
 /**
  * Remodel of the fiscal documents (spec 2026-11-27, 3.7): the events of every document type (cancelation, CC-e,

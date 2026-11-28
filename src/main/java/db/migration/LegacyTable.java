@@ -1,4 +1,4 @@
-package db.fiscaldocuments;
+package db.migration;
 
 /**
  * The four tables the remodel replaces (FD-RN-26). V87 renames them to {@code legacy_*} in one atomic

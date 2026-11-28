@@ -1,8 +1,8 @@
-package db.fiscaldocuments;
+package db.migration;
 
 import db.migration.TableMigration;
 
-import static db.fiscaldocuments.FiscalDocumentTables.COUNTS;
+import static db.migration.FiscalDocumentTables.COUNTS;
 
 /**
  * Remodel of the fiscal documents (spec 2026-11-27, 3.11, T2, FD-RN-32, 40): the capture counts per company, channel,
