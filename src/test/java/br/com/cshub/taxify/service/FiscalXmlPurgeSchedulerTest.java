@@ -3,6 +3,9 @@ package br.com.cshub.taxify.service;
 import br.com.cshub.taxify.common.MessageService;
 import br.com.cshub.taxify.domain.fiscaldocument.FiscalDocument;
 import br.com.cshub.taxify.domain.fiscaldocument.GoodsInvoice;
+import br.com.cshub.taxify.enumerated.FiscalDocumentInvariant;
+import br.com.cshub.taxify.enumerated.InvariantScope;
+import br.com.cshub.taxify.exception.FiscalDocumentInvariantException;
 import br.com.cshub.taxify.integration.fiscalxml.FiscalXmlPurgeProperties;
 import br.com.cshub.taxify.integration.fiscalxml.FiscalXmlSyncProperties;
 import br.com.cshub.taxify.integration.sieg.FiscalXmlFileStorage;
@@ -13,6 +16,7 @@ import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.io.TempDir;
 import org.mockito.ArgumentCaptor;
+import org.springframework.dao.DataIntegrityViolationException;
 import org.springframework.data.domain.Pageable;
 import org.springframework.transaction.PlatformTransactionManager;
 
@@ -37,6 +41,8 @@ import static org.mockito.ArgumentMatchers.anyString;
 import static org.mockito.ArgumentMatchers.eq;
 import static org.mockito.Mockito.mock;
 import static org.mockito.Mockito.never;
+import static org.mockito.Mockito.doThrow;
+import static org.mockito.Mockito.spy;
 import static org.mockito.Mockito.times;
 import static org.mockito.Mockito.verify;
 import static org.mockito.Mockito.verifyNoInteractions;
@@ -109,7 +115,7 @@ class FiscalXmlPurgeSchedulerTest {
         assertThat(Files.exists(original)).isFalse();
         assertThat(Files.exists(rectified)).isFalse();
         assertThat(document.getXmlPurgedAt()).isEqualTo(NOW);
-        verify(documentRepository).save(document);
+        verify(documentRepository).saveAndFlush(document);
         verify(reservation).finish(any(), eq(1), eq(0));
     }
 
@@ -163,6 +169,54 @@ class FiscalXmlPurgeSchedulerTest {
         assertThat(all.get(700).isXmlPurged()).isFalse();
         assertThat(all.stream().filter(FiscalDocument::isXmlPurged).count()).isEqualTo(1199);
         verify(documentRepository, times(3)).findPurgeCandidates(any(), anyString(), any());
-        verify(documentRepository, never()).save(all.get(700));
+        verify(documentRepository, never()).saveAndFlush(all.get(700));
+    }
+
+    /** I-4: a document the model refuses (UPDATE) keeps its files and stays unmarked; the page goes on. */
+    @Test
+    void aDocumentThatBreaksAnInvariantKeepsItsFiles() throws IOException {
+        Path refusedFile = Files.writeString(tempDir.resolve("refused.xml"), "<a/>", StandardCharsets.UTF_8);
+        Path okFile = Files.writeString(tempDir.resolve("ok.xml"), "<a/>", StandardCharsets.UTF_8);
+        GoodsInvoice refused = spy(document(refusedFile.toString()));
+        doThrow(new FiscalDocumentInvariantException(FiscalDocumentInvariant.I09_XML_FILE_PATH, null))
+                .when(refused).verifyInvariants(InvariantScope.UPDATE);
+        GoodsInvoice ok = document(okFile.toString());
+        when(documentRepository.findPurgeCandidates(any(), eq(""), any())).thenReturn(List.of(refused, ok));
+
+        FiscalXmlPurgeScheduler.PurgeSummary summary = scheduler.purge();
+
+        assertThat(Files.exists(refusedFile)).isTrue();
+        assertThat(refused.isXmlPurged()).isFalse();
+        assertThat(Files.exists(okFile)).isFalse();
+        assertThat(ok.isXmlPurged()).isTrue();
+        assertThat(summary.purged()).isEqualTo(1);
+        assertThat(summary.failed()).isEqualTo(1);
+        verify(documentRepository, never()).saveAndFlush(refused);
+    }
+
+    /** I-4: a page whose save fails is given up (its transaction rolls back) and the run goes on after it. */
+    @Test
+    void aPageWhoseSaveFailsDoesNotStopTheRun() throws IOException {
+        List<FiscalDocument> all = new ArrayList<>();
+        for (int i = 0; i < 600; i++) {
+            Path file = Files.writeString(tempDir.resolve("p" + i + ".xml"), "<a/>", StandardCharsets.UTF_8);
+            GoodsInvoice document = document(file.toString());
+            document.setId(UUID.fromString(String.format("00000000-0000-0000-0000-%012d", i)));
+            all.add(document);
+        }
+        when(documentRepository.findPurgeCandidates(any(), anyString(), any())).thenAnswer(call -> {
+            String afterId = call.getArgument(1);
+            Pageable page = call.getArgument(2);
+            return all.stream().filter(d -> d.getId().toString().compareTo(afterId) > 0).limit(page.getPageSize()).toList();
+        });
+        when(documentRepository.saveAndFlush(all.get(10))).thenThrow(new DataIntegrityViolationException("x"));
+
+        FiscalXmlPurgeScheduler.PurgeSummary summary = scheduler.purge();
+
+        assertThat(summary.pages()).isEqualTo(2);
+        assertThat(summary.purged()).as("the second page's 100").isEqualTo(100);
+        assertThat(summary.failed()).as("the first page").isEqualTo(1);
+        verify(documentRepository, times(2)).findPurgeCandidates(any(), anyString(), any());
+        assertThat(all.get(599).isXmlPurged()).isTrue();
     }
 }
