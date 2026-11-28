@@ -11,7 +11,9 @@
  *
  * <p><b>At integration</b> (the release that swaps the entities, spec 6.4): move these classes to {@code db.migration}
  * in the same commit as the new entities and the removal of {@code FiscalXmlDocument}, {@code ServiceInvoice}...;
- * keep the versions (86, 86.1 to 86.4, 87, 88, 89 - after V85 of {@code fix/sieg-call-savings}); point the tests at
+ * keep the versions (86, 86.1 to 86.4, 87, 88, 89 - after V85 of {@code fix/sieg-call-savings}); add
+ * {@code FD_BACKUP_SHA256} to the compose files ({@code ${FD_BACKUP_SHA256:-}}: empty keeps the legacy tables, V89
+ * stops) and map it to {@code spring.flyway.placeholders.fd_backup_sha256} or leave the variable; point the tests at
  * {@code classpath:db/migration} only; and keep {@code LegacyFiscalDocumentTranslator} and {@code
  * CopyMappings} saying the same thing (the domain test of the translator and the migration test of
  * the copy cover the same cases).

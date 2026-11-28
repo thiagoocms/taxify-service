@@ -395,7 +395,8 @@ class FiscalDocumentsMigrationsTest {
                 .containsExactly("document_id", "cfop", "total_amount");
         assertThat(indexColumns(jdbc, "fiscal_document_events", "uk_fiscal_document_events"))
                 .containsExactly("company_id", "access_key", "event_type", "sequence_number");
-        assertThat(indexColumns(jdbc, "fiscal_document_sources", "uk_fiscal_document_sources")).containsExactly("document_id", "source");
+        assertThat(indexColumns(jdbc, "fiscal_document_sources", "uk_fiscal_document_sources"))
+                .containsExactly("document_id", "source", "retrieval_mode");
         assertThat(indexColumns(jdbc, "capture_period_counts", "uk_capture_period_counts"))
                 .containsExactly("company_id", "channel", "document_type", "side", "period_month");
         assertThat(jdbc.queryForList("SELECT constraint_name FROM information_schema.referential_constraints WHERE"

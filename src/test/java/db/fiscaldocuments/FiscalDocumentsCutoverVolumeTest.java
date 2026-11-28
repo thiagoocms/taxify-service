@@ -99,7 +99,8 @@ class FiscalDocumentsCutoverVolumeTest {
         jdbc.update("INSERT" + HINT + "INTO fiscal_xml_document_items (id, document_id, numero_item, codigo, descricao, ncm, cfop,"
                 + " unidade_comercial, quantidade_comercial, valor_unitario_comercial, valor_total, cst_icms, base_calculo_icms,"
                 + " aliquota_icms, valor_icms, cst_pis, valor_pis, cst_cofins, valor_cofins, ibs_valor, cbs_valor)" + series(items)
-                + " SELECT " + id("b", "i") + ", " + id("a", "1 + i % " + documents) + ", 1 + i DIV " + documents + ","
+                // items only on goods invoices: the ids multiple of 400 are CT-e
+                + " SELECT " + id("b", "i") + ", " + id("a", "1 + i % " + documents + " - IF((1 + i % " + documents + ") % 400 = 0, 1, 0)") + ", 1 + i DIV " + documents + ","
                 + " CONCAT('P-', i % 500), 'Produto de exemplo para o ensaio de volume', '52081100', IF(i % 2 = 0, '1102', '5102 '),"
                 + " 'UN', 1 + i % 20, 10.1234, 10.00 + (i % 300), '00', 10.00 + (i % 300), 12.0000, (i % 300) * 0.12, '01', 0.65,"
                 + " '01', 3.00, 0.01, 0.09 FROM n");

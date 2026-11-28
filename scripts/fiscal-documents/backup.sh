@@ -29,6 +29,8 @@
 #   S3 no prazo da P-FD-08 (30 dias). O arquivo tem dado de cliente: acesso só do Tony e do dev da janela. O script não
 #   imprime dado nenhum: só nomes de tabela, contagens e OK/DIFERENTE.
 set -euo pipefail
+# Git Bash (Windows) would turn the container path /tmp/... into a Windows path when calling docker
+export MSYS_NO_PATHCONV=1
 
 : "${DB_NAME:?informe DB_NAME (o schema da aplicação)}"
 : "${DB_USER:?informe DB_USER}"

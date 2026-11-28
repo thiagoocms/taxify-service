@@ -114,7 +114,7 @@ public class V87__FiscalDocumentsCutover extends BaseJavaMigration {
             unexpected(db, problems, documents, "direction IS NOT NULL AND direction NOT IN ('INBOUND', 'OUTBOUND')", "unknown direction");
             unexpected(db, problems, documents, "status IS NOT NULL AND status NOT IN ('AUTHORIZED', 'CANCELED')", "unknown status");
             unexpected(db, problems, documents, "CHAR_LENGTH(TRIM(ide_modelo)) > 2", "ide_modelo longer than 2");
-            unexpected(db, problems, documents, SOURCE_KEY_INVALID, "source_system outside " + SOURCE_KEY_PATTERN);
+            unexpected(db, problems, documents, sourceKeyInvalid(db), "source_system outside " + SOURCE_KEY_PATTERN);
             // FD-RN-56: what the backfill rule can't fill is for the Tony to decide
             long unresolved = db.count("SELECT COUNT(*) FROM " + documents + " WHERE " + CopyMappings.UNRESOLVED_DIRECTION);
             if (unresolved > 0) {
@@ -132,7 +132,7 @@ public class V87__FiscalDocumentsCutover extends BaseJavaMigration {
         if (hasInvoices) {
             unexpected(db, problems, invoices, "direction NOT IN ('PRESTADA', 'TOMADA', 'TERCEIRO')", "unknown NFS-e direction");
             unexpected(db, problems, invoices, "layout NOT IN ('NACIONAL', 'ABRASF')", "unknown NFS-e layout");
-            unexpected(db, problems, invoices, SOURCE_KEY_INVALID, "source_system outside " + SOURCE_KEY_PATTERN);
+            unexpected(db, problems, invoices, sourceKeyInvalid(db), "source_system outside " + SOURCE_KEY_PATTERN);
         }
         if (!problems.isEmpty()) {
             throw new IllegalStateException("fiscal documents cutover stopped before the rename, nothing copied: " + problems);
@@ -142,7 +142,14 @@ public class V87__FiscalDocumentsCutover extends BaseJavaMigration {
 
     /** Source keys are upper-case words ({@code DocumentSourceKey}); compared byte by byte, so {@code sieg} is refused. */
     static final String SOURCE_KEY_PATTERN = "^[A-Z][A-Z0-9_]*$";
-    private static final String SOURCE_KEY_INVALID = "NOT (CAST(source_system AS BINARY) REGEXP '" + SOURCE_KEY_PATTERN + "')";
+
+    /** Case-sensitive on both servers: REGEXP_LIKE with "c" on MySQL 8 (it refuses a binary operand), BINARY on 5.7. */
+    private static String sourceKeyInvalid(CutoverDatabase db) {
+        String version = db.jdbc.queryForObject("SELECT VERSION()", String.class);
+        boolean mysql8 = version != null && Integer.parseInt(version.substring(0, version.indexOf('.'))) >= 8;
+        return mysql8 ? "NOT REGEXP_LIKE(source_system, '" + SOURCE_KEY_PATTERN + "', 'c')"
+                : "NOT (BINARY source_system REGEXP '" + SOURCE_KEY_PATTERN + "')";
+    }
 
     /**
      * What the copy changes or the domain tolerates, counted before copying (FD-RN-55, 56, 3.11; counts only): directions
@@ -157,7 +164,7 @@ public class V87__FiscalDocumentsCutover extends BaseJavaMigration {
         log.info("fiscal.documents.cutover.canceled.at.discarded count={}", canceledAtDropped);
         if (invoices != null) {
             long nationalKey = db.count("SELECT COUNT(*) FROM " + invoices
-                    + " WHERE layout = 'NACIONAL' AND NOT (CAST(access_key AS BINARY) REGEXP '^[0-9]{50}$')");
+                    + " WHERE layout = 'NACIONAL' AND NOT (access_key REGEXP '^[0-9]{50}$')");
             long untyped = db.count("SELECT COUNT(*) FROM " + invoices + " WHERE ("
                     + CopyMappings.hasText("prestador_documento") + " AND " + CopyMappings.documentTypeBySize("prestador_documento")
                     + " IS NULL) OR (" + CopyMappings.hasText("tomador_documento") + " AND "
@@ -302,7 +309,7 @@ public class V87__FiscalDocumentsCutover extends BaseJavaMigration {
      * month (window start; the issued side only when it was ever checked, with the received side's window), the previous
      * month of V79 (closed; not copied when it is the current month) and, for each of the two V85 gap slots
      * ({@code known_gap}, {@code earlier_gap}), the gap on its month's row - or a row of its own, closed unless it is the
-     * current month. {@code stored_any_source_total} goes on the current month. Absent V85 columns read as NULL.
+     * current month. {@code stored_any_source_total} goes on the current month. V85 columns read as NULL only on a database that never ran V85 (with V85, a missing one stops the cutover).
      */
     private void copyCaptureCounts(CutoverDatabase db) {
         if (!SyncControlCounters.present(db)) {

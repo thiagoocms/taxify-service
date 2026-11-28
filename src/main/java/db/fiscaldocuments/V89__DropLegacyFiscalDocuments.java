@@ -15,8 +15,11 @@ import java.util.Locale;
  * tables - children first - and the counter columns of {@code fiscal_xml_sync_control} that V87 moved to
  * {@code capture_period_counts}. The backup of runbook step 1 (FD-RN-52) is the only way back after this.
  *
- * <p>Runs only after V88 (parity) succeeded: Flyway stops at the first failure, and this migration checks it again in
- * the schema history before dropping anything. Idempotent ({@code DROP TABLE IF EXISTS}, a column only when it is
+ * <p>Runs only after V88 (parity) succeeded: Flyway stops at the first failure, and this migration checks the history again
+ * (V87 ran = V88 must have succeeded, also before dropping the counter columns). With legacy rows to drop it also needs
+ * the SHA-256 of the checked backup ({@code FD_BACKUP_SHA256} or the Flyway placeholder {@code fd_backup_sha256}):
+ * without it, it stops and the legacy_* tables stay. Checked
+ * before dropping anything. Idempotent ({@code DROP TABLE IF EXISTS}, a column only when it is
  * there). On a database without the old tables nothing is dropped but the counter columns, when present - the new
  * {@code FiscalXmlSyncControl} no longer maps them, and {@code total_sieg}/{@code total_importado}/
  * {@code ultima_verificacao_em} are {@code NOT NULL} without default, so leaving them would break its inserts.
