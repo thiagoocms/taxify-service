@@ -375,6 +375,20 @@ class SiegXmlIntegrationServiceImportTest {
                 .contains("source=UPLOAD", "position=0").doesNotContain(key43).doesNotContain("12345678000195");
     }
 
+    /** QA B3: an uploaded NF-e whose infNFe Id carries no key ("NFe") is not stored either (I-07, CA-FD-10). */
+    @Test
+    void anUploadWithAnEmptyKeyIsNotStored() {
+        String xml = nfe("NFe", "55", "<CNPJ>12345678000195</CNPJ>", "<CNPJ>11594485000105</CNPJ>", "");
+
+        XmlDownloadResultDTO result = service.importManual(companyId.toString(), xml.getBytes(StandardCharsets.UTF_8));
+
+        assertThat(result.totalPersistedNew()).isZero();
+        assertThat(result.totalParseErrors()).isEqualTo(1);
+        verify(xmlDocumentRepository, org.mockito.Mockito.never()).save(any());
+        assertThat(logLines("fiscal.document.invariant.violated")).singleElement().asString()
+                .contains("invariant=I07_ACCESS_KEY", "source=UPLOAD", "keyHash=-");
+    }
+
     /** I-17 (2026-11-28): a value with more places than the column is rounded HALF_UP, stored, and logged. */
     @Test
     void aDecimalWithMorePlacesIsRoundedAndTheNoteIsStored() {

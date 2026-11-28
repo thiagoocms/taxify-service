@@ -100,10 +100,14 @@ public abstract class GoodsInvoice extends FiscalDocument {
         return !isOwnIssue() && !isCanceled();
     }
 
-    /** I-07: the odd file uploaded by hand may come without a key (identified by its id, {@link #accessKeyOrId()}). */
+    /**
+     * I-07 (CA-FD-10, CT-FD-21; QA of 2026-11-28): every new NF-e/NFC-e needs its key of 44 digits, the upload too. Only
+     * a row copied from the old model ({@code metadata_version = 0}) may lack it - the odd file uploaded by hand before
+     * the remodel, identified by its id ({@link #accessKeyOrId()}).
+     */
     @Override
     protected boolean requiresAccessKey() {
-        return !getSourceSystem().isUpload();
+        return !isUnparsedCopy();
     }
 
     @Override

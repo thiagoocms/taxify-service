@@ -23,7 +23,7 @@ public enum FiscalDocumentInvariant {
     I05_ISSUER_ROLE_MATCHES_COMPANY(false),
     /** document type of each party coherent with its size. Always. */
     I06_PARTY_DOCUMENT_TYPE(true),
-    /** access key filled, except goods invoices uploaded by hand. CREATE. */
+    /** access key filled - only a goods invoice copied from the old model (metadata_version 0) may lack it. CREATE. */
     I07_ACCESS_KEY(false),
     /** issue date filled. CREATE. */
     I08_ISSUE_DATE(false),
