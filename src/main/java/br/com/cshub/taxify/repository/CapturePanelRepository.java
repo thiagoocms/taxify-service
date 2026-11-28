@@ -94,7 +94,7 @@ public class CapturePanelRepository {
             + " p.provider_total, p.imported_total, p.imported_counted_at, p.stored_any_source_total, p.closed_at"
             + " FROM capture_period_counts p JOIN companies c ON c.id = p.company_id"
             + " JOIN fiscal_xml_sync_control x ON x.company_id = c.id AND x.deleted = 0"
-            + " WHERE c.deleted = 0 AND p.channel = 'SIEG' AND p.document_type = 'NFE'";
+            + " WHERE c.deleted = 0 AND p.deleted = 0 AND p.channel = 'SIEG' AND p.document_type = 'NFE'";
 
     /** One row of {@code capture_period_counts} as the panel reads it. */
     record CountRow(String side, YearMonth month, LocalDate windowStart, LocalDate windowEnd, Integer providerTotal,
@@ -190,10 +190,10 @@ public class CapturePanelRepository {
         return jdbc.query("SELECT x.id, x.company_id, c.accounting_firm_id, x.last_attempt_at, r.checked_at AS received_checked_at,"
                         + " i.checked_at AS issued_checked_at FROM fiscal_xml_sync_control x JOIN companies c ON c.id = x.company_id"
                         + " LEFT JOIN (SELECT company_id, MAX(imported_counted_at) AS checked_at FROM capture_period_counts"
-                        + "            WHERE channel = 'SIEG' AND document_type = 'NFE' AND side = 'RECEIVED' GROUP BY company_id) r"
+                        + "            WHERE deleted = 0 AND channel = 'SIEG' AND document_type = 'NFE' AND side = 'RECEIVED' GROUP BY company_id) r"
                         + "        ON r.company_id = x.company_id"
                         + " LEFT JOIN (SELECT company_id, MAX(imported_counted_at) AS checked_at FROM capture_period_counts"
-                        + "            WHERE channel = 'SIEG' AND document_type = 'NFE' AND side = 'ISSUED' GROUP BY company_id) i"
+                        + "            WHERE deleted = 0 AND channel = 'SIEG' AND document_type = 'NFE' AND side = 'ISSUED' GROUP BY company_id) i"
                         + "        ON i.company_id = x.company_id"
                         + " WHERE x.deleted = 0",
                 new MapSqlParameterSource(), (rs, i) -> new QueueRow(uuid(rs, "id"), uuid(rs, "company_id"),

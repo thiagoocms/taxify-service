@@ -71,9 +71,12 @@ public interface NfseRepository extends AbstractJpaRepository<Nfse, UUID>, Fisca
     List<Nfse> findForRetentions(@Param("companyIds") Collection<UUID> companyIds,
                                  @Param("from") LocalDate from, @Param("to") LocalDate to);
 
-    /** The period's notes that aren't canceled - totals and retentions. */
-    @Query("select n from Nfse n where n.company.id = :companyId and n.deleted = false and n.status <> " + CANCELED
-            + " and n.issueDate between :from and :to")
+    /**
+     * The period's notes that aren't canceled - totals and retentions -, with their origins in the same query (the
+     * totals read where each note was seen: one query for the screen, never one per note).
+     */
+    @Query("select distinct n from Nfse n left join fetch n.sources where n.company.id = :companyId and n.deleted = false"
+            + " and n.status <> " + CANCELED + " and n.issueDate between :from and :to")
     List<Nfse> findActiveInPeriod(@Param("companyId") UUID companyId, @Param("from") LocalDateTime from,
                                   @Param("to") LocalDateTime to);
 }

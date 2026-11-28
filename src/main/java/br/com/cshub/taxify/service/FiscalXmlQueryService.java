@@ -4,6 +4,8 @@ import br.com.cshub.taxify.service.fiscalcheck.OperationCfops;
 import br.com.cshub.taxify.domain.fiscalrule.ProductRules;
 import br.com.cshub.taxify.common.IssuePeriod;
 import br.com.cshub.taxify.common.RequestIds;
+import br.com.cshub.taxify.common.SortProperties;
+import br.com.cshub.taxify.exception.BadRequestException;
 import br.com.cshub.taxify.domain.fiscalrule.ProductFiscalRule;
 import br.com.cshub.taxify.repository.ProductFiscalRuleRepository;
 import br.com.cshub.taxify.service.fiscalcheck.ProductRuleCheck;
@@ -150,9 +152,18 @@ public class FiscalXmlQueryService {
     public static final long SOURCE_COMPARISON_HOURS = 48;
 
     /** The sort of the list by the old property names too (the entity of the screen was renamed, FD-RN-23). */
-    private static final Map<String, String> LEGACY_SORT = Map.of(
-            "numero", "number", "modelo", "model", "serie", "series", "valorTotalNota", "totalAmount",
-            "emitenteNome", "issuer.name", "destinatarioNome", "recipient.name", "naturezaOperacao", "operationNature");
+    /**
+     * {@code sort=} names of the old entity (and of the API) -> properties of the model. {@code documentType} sorts by
+     * the model (55 NF-e, 57 CT-e, 65 NFC-e - the discriminator is no property) and {@code ownIssue} by the company's
+     * role; anything else unknown is a 400, as in the CRUD base ({@link SortProperties}).
+     */
+    static final Map<String, String> LEGACY_SORT = Map.ofEntries(
+            Map.entry("numero", "number"), Map.entry("modelo", "model"), Map.entry("serie", "series"),
+            Map.entry("valorTotalNota", "totalAmount"), Map.entry("emitenteNome", "issuer.name"),
+            Map.entry("destinatarioNome", "recipient.name"), Map.entry("naturezaOperacao", "operationNature"),
+            Map.entry("documentType", "model"), Map.entry("reviewStatus", "review.status"),
+            Map.entry("issuerCnpj", "issuer.document"), Map.entry("recipientCnpj", "recipient.document"),
+            Map.entry("ownIssue", "companyRole"), Map.entry("tipoOperacao", "header.operationType"));
 
     @Transactional(readOnly = true)
     public Page<FiscalXmlSummaryDTO> search(XmlSearchFilterDTO filter) {
@@ -231,11 +242,11 @@ public class FiscalXmlQueryService {
         }
     }
 
-    private static Pageable withCurrentSortNames(Pageable pageable) {
-        Sort sort = Sort.by(pageable.getSort().stream()
-                .map(order -> order.withProperty(LEGACY_SORT.getOrDefault(order.getProperty(), order.getProperty())))
-                .toList());
-        return PageRequest.of(pageable.getPageNumber(), pageable.getPageSize(), sort);
+    /** The sort with the old names translated and checked on the goods invoice (its properties include the common ones). */
+    private Pageable withCurrentSortNames(Pageable pageable) {
+        return SortProperties.resolve(pageable, GoodsInvoice.class, LEGACY_SORT)
+                .orElseThrow(() -> new BadRequestException(BadRequestException.DEFAULT_CODE,
+                        messageService.getMessage(BadRequestException.DEFAULT_CODE)));
     }
 
     /** The company's rules by product code - only read when some note of the page has a rectified version. */

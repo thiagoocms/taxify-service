@@ -26,7 +26,7 @@ class FiscalDocumentFactoryCteTest {
 
     private static final String ISSUER = "11222333000181";
     private static final String SENDER = "11444777000161";
-    private static final String TAKER = "45723174000110";
+    private static final String TAKER = "12345678000195";
     private static final String KEY = "26261111222333000181570010000000011000000010";
 
     private final FiscalXmlMetadataParser parser = new FiscalXmlMetadataParser();
@@ -104,7 +104,7 @@ class FiscalDocumentFactoryCteTest {
 
     @Test
     void aCompanyInNoGroupIsAThirdParty() {
-        Cte cte = upload(cte(true), company("60701190000104"));
+        Cte cte = upload(cte(true), company("99999999000191"));
 
         assertThat(cte.getCompanyRole()).isEqualTo(CompanyDocumentRole.THIRD_PARTY);
         assertThat(cte.getDirection()).isNull();
