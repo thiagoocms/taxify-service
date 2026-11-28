@@ -100,8 +100,51 @@ public final class FronteiraDTOs {
     /**
      * {@code extract} null: no extract imported for the period yet - the lines are empty, and
      * {@code semCobranca} holds the month's interstate entries with the prévia ({@code previaIcms}).
+     * {@code cfopFilter}: with {@code cfops} in the request, which lines and entries match and their totals - everything
+     * else stays of the whole extract (CF-RN-24); null without {@code cfops}.
      */
     public record Report(UUID companyId, String companyName, String periodo, Extract extract, Summary summary,
-                         List<Line> lines, List<Uncharged> semCobranca, BigDecimal previaIcms, List<Period> periodos) {
+                         List<Line> lines, List<Uncharged> semCobranca, BigDecimal previaIcms, List<Period> periodos,
+                         CfopSelection cfopFilter) {
+
+        /** Without a CFOP filter. */
+        public Report(UUID companyId, String companyName, String periodo, Extract extract, Summary summary,
+                      List<Line> lines, List<Uncharged> semCobranca, BigDecimal previaIcms, List<Period> periodos) {
+            this(companyId, companyName, periodo, extract, summary, lines, semCobranca, previaIcms, periodos, null);
+        }
+
+        public Report withCfopFilter(CfopSelection selection) {
+            return new Report(companyId, companyName, periodo, extract, summary, lines, semCobranca, previaIcms, periodos, selection);
+        }
+    }
+
+    /**
+     * The CFOP cut of the report (spec 2026-11-27, CF-RN-20 to 27): a line matches when its note has at least one of the
+     * CFOPs the supplier issued (the ones the line shows, {@code NoteRef.cfops}).
+     *
+     * @param cfops             the canonical list (normalized, no duplicate, ascending)
+     * @param matchingLines     {@code Line.linha} of each matching line, ascending
+     * @param matchingUncharged {@code documentId} of each matching entry without a charge
+     * @param linesWithoutXml   lines of the extract without a note here (SEM_XML, SO_RESUMO): they never match (CF-RN-22)
+     */
+    public record CfopSelection(List<String> cfops, List<Integer> matchingLines, List<UUID> matchingUncharged,
+                                int linesWithoutXml, CfopSelectionTotals totals) {
+    }
+
+    /**
+     * CF-RN-25: the same accounts as the {@link Summary}, over the matching lines only - the whole note, as e-Fisco charges.
+     *
+     * @param notes            matching lines
+     * @param invoicesAmount   sum of their {@code valorNota} (the extract's)
+     * @param icmsCharged      sum of their {@code icmsDevido}
+     * @param icmsCalculated   Taxify's calculation of them (without the SEM_REGRA ones)
+     * @param chargedAbove     COBROU_A_MAIS differences
+     * @param chargedBelow     COBROU_A_MENOS and NAO_CALCULOU differences
+     * @param unchargedCount   matching entries without a charge
+     * @param unchargedPreview their prévia
+     */
+    public record CfopSelectionTotals(int notes, BigDecimal invoicesAmount, BigDecimal icmsCharged, BigDecimal icmsCalculated,
+                                      BigDecimal chargedAbove, BigDecimal chargedBelow, int unchargedCount,
+                                      BigDecimal unchargedPreview) {
     }
 }

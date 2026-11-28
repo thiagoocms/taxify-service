@@ -77,10 +77,14 @@ public class FronteiraResource {
         return ResponseEntity.ok(new EfiscoSync(result, service.report(companyId, period.toString())));
     }
 
-    /** The comparison of a period ("2026-11"); blank = the latest imported. */
+    /**
+     * The comparison of a period ("2026-11"); blank = the latest imported. {@code cfops} (optional, {@code cfops=6102,6403}
+     * or repeated): the CFOP cut in {@code cfopFilter}, the rest of the report unchanged.
+     */
     @GetMapping
-    public ResponseEntity<FronteiraDTOs.Report> report(@RequestParam String companyId, @RequestParam(name = "periodo", required = false) String period) {
-        return ResponseEntity.ok(service.report(companyId, period));
+    public ResponseEntity<FronteiraDTOs.Report> report(@RequestParam String companyId, @RequestParam(name = "periodo", required = false) String period,
+                                                       @RequestParam(name = "cfops", required = false) List<String> cfops) {
+        return ResponseEntity.ok(service.report(companyId, period, cfops));
     }
 
     /** The month's report (PDF): summary with the guide after the adjustments, the notes to revise and the rules used. */

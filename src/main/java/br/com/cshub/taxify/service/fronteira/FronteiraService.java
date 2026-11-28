@@ -23,7 +23,9 @@ import br.com.cshub.taxify.repository.EfiscoExtractRepository;
 import br.com.cshub.taxify.repository.FiscalDocumentItemRepository;
 import br.com.cshub.taxify.repository.GoodsInvoiceRepository;
 import br.com.cshub.taxify.service.fiscalcheck.DocumentDivergenceService;
+import br.com.cshub.taxify.validation.CfopFilterValidation;
 import br.com.cshub.taxify.validation.CompanyValidation;
+import br.com.cshub.taxify.domain.fiscaldocument.CfopFilter;
 import org.springframework.data.domain.AuditorAware;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
@@ -83,6 +85,7 @@ public class FronteiraService {
     private final MessageService messageService;
     private final AuditorAware<String> auditorAware;
     private final br.com.cshub.taxify.integration.sieg.FiscalXmlFileStorage storage;
+    private final CfopFilterValidation cfopFilterValidation;
     private static final org.slf4j.Logger log = org.slf4j.LoggerFactory.getLogger(FronteiraService.class);
 
     public FronteiraService(EfiscoExtractParser parser, EfiscoExtractRepository extractRepository,
@@ -91,8 +94,10 @@ public class FronteiraService {
                             SefazNoteSummaryRepository summaryRepository,
                             br.com.cshub.taxify.repository.ProductFiscalRuleRepository productRuleRepository,
                             CompanyValidation companyValidation, MessageService messageService, AuditorAware<String> auditorAware,
-                            br.com.cshub.taxify.integration.sieg.FiscalXmlFileStorage storage) {
+                            br.com.cshub.taxify.integration.sieg.FiscalXmlFileStorage storage,
+                            CfopFilterValidation cfopFilterValidation) {
         this.storage = storage;
+        this.cfopFilterValidation = cfopFilterValidation;
         this.productRuleRepository = productRuleRepository;
         this.ruleService = ruleService;
         this.summaryRepository = summaryRepository;
@@ -258,12 +263,62 @@ public class FronteiraService {
 
     @Transactional
     public FronteiraDTOs.Report report(String companyId, String requestedPeriod) {
+        return report(companyId, requestedPeriod, null);
+    }
+
+    /**
+     * The comparison of a period; with {@code cfops} (CF-RN-20, a 400 when broken), also the CFOP cut
+     * ({@code cfopFilter}) - the rest of the report stays of the whole extract (CF-RN-24).
+     */
+    @Transactional
+    public FronteiraDTOs.Report report(String companyId, String requestedPeriod, List<String> cfops) {
+        long started = System.nanoTime();
         Company company = company(companyId);
+        CfopFilter cfopFilter = cfopFilterValidation.check(cfops);
         List<EfiscoExtract> extracts = extractRepository.findByCompany_IdAndDeletedIsFalseOrderByPeriodDesc(company.getId());
         YearMonth month = requestedPeriod == null || requestedPeriod.isBlank()
                 ? (extracts.isEmpty() ? YearMonth.now() : YearMonth.parse(extracts.get(0).getPeriod()))
                 : month(requestedPeriod);
-        return report(company, month);
+        FronteiraDTOs.Report report = report(company, month);
+        if (cfopFilter.isEmpty()) {
+            return report;
+        }
+        FronteiraDTOs.CfopSelection selection = cfopSelection(cfopFilter, report.lines(), report.semCobranca());
+        if (log.isDebugEnabled()) {
+            log.debug("fronteira cfop cut: company {}, period {}, {} cfop(s), {} matching line(s), {} without xml, {} ms",
+                    company.getId(), month, cfopFilter.values().size(), selection.matchingLines().size(),
+                    selection.linesWithoutXml(), (System.nanoTime() - started) / 1_000_000);
+        }
+        return report.withCfopFilter(selection);
+    }
+
+    /**
+     * CF-RN-21 to 27: the lines and the entries without a charge whose note has one of the CFOPs (the supplier's, the
+     * ones the screen shows), and the {@link Tally} of the matching lines - the same accounts as the summary, nothing
+     * recalculated. A line without a note here never matches.
+     */
+    static FronteiraDTOs.CfopSelection cfopSelection(CfopFilter filter, List<FronteiraDTOs.Line> lines,
+                                                     List<FronteiraDTOs.Uncharged> uncharged) {
+        Tally cut = new Tally();
+        List<Integer> matchingLines = new ArrayList<>();
+        int withoutXml = 0;
+        for (FronteiraDTOs.Line line : lines) {
+            if (line.nota() == null) {
+                withoutXml++;
+            } else if (filter.matchesAny(line.nota().cfops())) {
+                matchingLines.add(line.linha());
+                cut.add(line);
+            }
+        }
+        matchingLines.sort(Comparator.naturalOrder());
+        List<FronteiraDTOs.Uncharged> matchingEntries = uncharged.stream().filter(entry -> filter.matchesAny(entry.cfops())).toList();
+        BigDecimal preview = matchingEntries.stream().map(FronteiraDTOs.Uncharged::calculo).filter(java.util.Objects::nonNull)
+                .map(FronteiraRuleDTOs.NoteCalc::valor).reduce(BigDecimal.ZERO, BigDecimal::add);
+        FronteiraDTOs.CfopSelectionTotals totals = new FronteiraDTOs.CfopSelectionTotals(matchingLines.size(),
+                cut.invoicesAmount, cut.icmsDevido, cut.icmsCalculado, cut.cobradoAMais, cut.cobradoAMenos,
+                matchingEntries.size(), preview);
+        return new FronteiraDTOs.CfopSelection(filter.values(), List.copyOf(matchingLines),
+                matchingEntries.stream().map(FronteiraDTOs.Uncharged::documentId).toList(), withoutXml, totals);
     }
 
     private FronteiraDTOs.Report report(Company company, YearMonth month) {
@@ -322,17 +377,12 @@ public class FronteiraService {
         List<FronteiraDTOs.Line> lines = new ArrayList<>();
         Tally tally = new Tally();
         for (EfiscoExtractNote note : notes) {
-            tally.invoicesAmount = tally.invoicesAmount.add(note.getInvoiceAmount());
-            tally.icmsDevido = tally.icmsDevido.add(note.getIcmsDue());
             BigDecimal rate = rate(note);
             List<Flag> flags = new ArrayList<>();
             BigDecimal differenceToRate = null;
             if (predominant != null && rate != null && note.getIcmsDue().signum() > 0 && offRate(note, rate, predominant)) {
                 differenceToRate = note.getIcmsDue().subtract(expected(note, predominant));
                 flags.add(Flag.FORA_DA_TAXA);
-                tally.outsideRate++;
-                tally.icmsOutsideRate = tally.icmsOutsideRate.add(note.getIcmsDue());
-                tally.differenceOutsideRate = tally.differenceOutsideRate.add(differenceToRate);
             }
             String key = key(note.getIssuerCnpj(), note.getInvoiceNumber());
             GoodsInvoice document = documents.get(key);
@@ -340,21 +390,17 @@ public class FronteiraService {
             FronteiraRuleDTOs.NoteCalc calc = null;
             if (document == null) {
                 flags.add(summaryOnly.contains(key) ? Flag.SO_RESUMO : Flag.SEM_XML);
-                tally.semXml++;
             } else {
                 if (document.isCanceled()) {
                     flags.add(Flag.NOTA_CANCELADA);
-                    tally.canceled++;
                 }
                 if (document.getTotalAmount() != null
                         && document.getTotalAmount().subtract(note.getInvoiceAmount()).abs().compareTo(new BigDecimal("0.01")) > 0) {
                     flags.add(Flag.VALOR_DIFERENTE);
-                    tally.differentAmount++;
                 }
                 DivergenceSummary divergence = divergences.get(document.getId());
                 if (divergence != null) {
                     flags.add(Flag.DIVERGENCIA_FISCAL);
-                    tally.withDivergence++;
                 }
                 ref = new FronteiraDTOs.NoteRef(document.getId(), document.getIssuer().name(), document.getIssueDate(),
                         document.getTotalAmount(), document.getOperationNature(),
@@ -366,10 +412,11 @@ public class FronteiraService {
             BigDecimal difference = calc == null || resultado == Result.SEM_REGRA || resultado == Result.PENDENTE
                     ? null : note.getIcmsDue().subtract(calc.valor());
             boolean reviewed = calc == null || calc.conferido();
-            tally.count(resultado, difference, calc, reviewed);
-            lines.add(new FronteiraDTOs.Line(note.getLineNumber(), note.getRecordNumber(), note.getCrossingDate(), note.getInvoiceNumber(),
-                    note.getUf(), note.getIssuerCnpj(), note.getInvoiceAmount(), note.getIcmsDue(), rate, differenceToRate,
-                    List.copyOf(flags), ref, resultado, reviewed, difference, calc));
+            FronteiraDTOs.Line line = new FronteiraDTOs.Line(note.getLineNumber(), note.getRecordNumber(), note.getCrossingDate(),
+                    note.getInvoiceNumber(), note.getUf(), note.getIssuerCnpj(), note.getInvoiceAmount(), note.getIcmsDue(), rate,
+                    differenceToRate, List.copyOf(flags), ref, resultado, reviewed, difference, calc);
+            tally.add(line);
+            lines.add(line);
         }
 
         FronteiraDTOs.Summary summary = new FronteiraDTOs.Summary(notes.size(), tally.invoicesAmount, tally.icmsDevido, predominant,
@@ -418,7 +465,31 @@ public class FronteiraService {
         int outsideRate, semXml, differentAmount, canceled, withDivergence;
         int confere, aMais, aMenos, notCalculated, withoutRule, pendentes, toReview;
 
-        void count(Result resultado, BigDecimal difference, FronteiraRuleDTOs.NoteCalc calc, boolean reviewed) {
+        /** One line of the extract, from what the line itself carries - the summary and the CFOP cut alike (CF-RN-25). */
+        void add(FronteiraDTOs.Line line) {
+            invoicesAmount = invoicesAmount.add(line.valorNota());
+            icmsDevido = icmsDevido.add(line.icmsDevido());
+            if (line.flags().contains(Flag.FORA_DA_TAXA)) {
+                outsideRate++;
+                icmsOutsideRate = icmsOutsideRate.add(line.icmsDevido());
+                differenceOutsideRate = differenceOutsideRate.add(line.diferencaParaTaxa());
+            }
+            if (line.flags().contains(Flag.SEM_XML) || line.flags().contains(Flag.SO_RESUMO)) {
+                semXml++;
+            }
+            if (line.flags().contains(Flag.NOTA_CANCELADA)) {
+                canceled++;
+            }
+            if (line.flags().contains(Flag.VALOR_DIFERENTE)) {
+                differentAmount++;
+            }
+            if (line.flags().contains(Flag.DIVERGENCIA_FISCAL)) {
+                withDivergence++;
+            }
+            count(line.resultado(), line.diferenca(), line.calculo(), line.conferido());
+        }
+
+        private void count(Result resultado, BigDecimal difference, FronteiraRuleDTOs.NoteCalc calc, boolean reviewed) {
             if (calc != null && !calc.semRegra()) {
                 icmsCalculado = icmsCalculado.add(calc.valor());
             }
