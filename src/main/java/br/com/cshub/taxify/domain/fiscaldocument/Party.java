@@ -40,6 +40,20 @@ public record Party(
         return new Party(null, null, name, uf, cityCode);
     }
 
+    /**
+     * A party of an imported XML: the Brazilian document by its tag ({@link PartyDocuments}, I-06), else the foreign id,
+     * else none.
+     */
+    public static Party tagged(PartyDocuments.Tagged brazilian, String foreignId, String name, String uf, String cityCode) {
+        if (brazilian.document() != null) {
+            return new Party(brazilian.document(), brazilian.type(), name, uf, cityCode);
+        }
+        if (FiscalText.hasText(foreignId)) {
+            return new Party(foreignId, TaxpayerDocumentType.FOREIGN, name, uf, cityCode);
+        }
+        return new Party(null, null, name, uf, cityCode);
+    }
+
     /** A party identified by a Brazilian document, the type taken from its size (14 = CNPJ, 11 = CPF). */
     public static Party brazilian(String document, String name, String uf, String cityCode) {
         return new Party(document, TaxpayerDocumentType.bySize(document), name, uf, cityCode);

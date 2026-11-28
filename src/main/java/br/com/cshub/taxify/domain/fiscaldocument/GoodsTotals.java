@@ -37,22 +37,22 @@ public record GoodsTotals(
             null, null, null, null, null, null);
 
     public GoodsTotals {
-        icmsBase = money(icmsBase);
-        icmsAmount = money(icmsAmount);
-        icmsReliefAmount = money(icmsReliefAmount);
-        fcpAmount = money(fcpAmount);
-        icmsStBase = money(icmsStBase);
-        icmsStAmount = money(icmsStAmount);
-        fcpStAmount = money(fcpStAmount);
-        productsAmount = money(productsAmount);
-        freightAmount = money(freightAmount);
-        insuranceAmount = money(insuranceAmount);
-        discountAmount = money(discountAmount);
-        importTaxAmount = money(importTaxAmount);
-        ipiAmount = money(ipiAmount);
-        pisAmount = money(pisAmount);
-        cofinsAmount = money(cofinsAmount);
-        otherExpensesAmount = money(otherExpensesAmount);
-        approximateTaxesAmount = money(approximateTaxesAmount);
+        icmsBase = money(icmsBase, "GoodsTotals.icmsBase");
+        icmsAmount = money(icmsAmount, "GoodsTotals.icmsAmount");
+        icmsReliefAmount = money(icmsReliefAmount, "GoodsTotals.icmsReliefAmount");
+        fcpAmount = money(fcpAmount, "GoodsTotals.fcpAmount");
+        icmsStBase = money(icmsStBase, "GoodsTotals.icmsStBase");
+        icmsStAmount = money(icmsStAmount, "GoodsTotals.icmsStAmount");
+        fcpStAmount = money(fcpStAmount, "GoodsTotals.fcpStAmount");
+        productsAmount = money(productsAmount, "GoodsTotals.productsAmount");
+        freightAmount = money(freightAmount, "GoodsTotals.freightAmount");
+        insuranceAmount = money(insuranceAmount, "GoodsTotals.insuranceAmount");
+        discountAmount = money(discountAmount, "GoodsTotals.discountAmount");
+        importTaxAmount = money(importTaxAmount, "GoodsTotals.importTaxAmount");
+        ipiAmount = money(ipiAmount, "GoodsTotals.ipiAmount");
+        pisAmount = money(pisAmount, "GoodsTotals.pisAmount");
+        cofinsAmount = money(cofinsAmount, "GoodsTotals.cofinsAmount");
+        otherExpensesAmount = money(otherExpensesAmount, "GoodsTotals.otherExpensesAmount");
+        approximateTaxesAmount = money(approximateTaxesAmount, "GoodsTotals.approximateTaxesAmount");
     }
 }

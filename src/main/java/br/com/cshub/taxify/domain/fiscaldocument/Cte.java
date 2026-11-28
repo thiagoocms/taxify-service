@@ -279,7 +279,7 @@ public class Cte extends FiscalDocument {
     }
 
     public void setAmountReceivable(BigDecimal amountReceivable) {
-        this.amountReceivable = money(amountReceivable);
+        this.amountReceivable = money(amountReceivable, "Cte.amountReceivable");
     }
 
     public BigDecimal getCargoValue() {
@@ -287,7 +287,7 @@ public class Cte extends FiscalDocument {
     }
 
     public void setCargoValue(BigDecimal cargoValue) {
-        this.cargoValue = money(cargoValue);
+        this.cargoValue = money(cargoValue, "Cte.cargoValue");
     }
 
     public CteIcms getIcms() {

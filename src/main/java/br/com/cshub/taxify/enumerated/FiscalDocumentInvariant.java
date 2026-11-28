@@ -41,7 +41,7 @@ public enum FiscalDocumentInvariant {
     I14_NFSE_WITHHELD_FLAGS(true),
     /** CT-e: at least one participation flag true, except with role THIRD_PARTY. CREATE. */
     I15_CTE_PARTICIPATION(false),
-    /** Money with scale 2 and rates with scale 4, never rounded. Always (checked when the value is built). */
+    /** Money with scale 2 and rates with scale 4: more places are rounded HALF_UP and recorded (2026-11-28), not refused. */
     I17_DECIMAL_SCALE(true);
 
     private final boolean always;

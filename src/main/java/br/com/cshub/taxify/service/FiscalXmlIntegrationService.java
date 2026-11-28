@@ -16,6 +16,8 @@ import br.com.cshub.taxify.domain.fiscaldocument.CapturePeriodCount;
 import br.com.cshub.taxify.domain.fiscaldocument.DocumentSourceKey;
 import br.com.cshub.taxify.domain.fiscaldocument.FiscalDocument;
 import br.com.cshub.taxify.domain.fiscaldocument.GoodsInvoice;
+import br.com.cshub.taxify.domain.fiscaldocument.ImportAdjustments;
+import br.com.cshub.taxify.service.fiscaldocument.ImportLog;
 import br.com.cshub.taxify.domain.xml.FiscalXmlSyncControl;
 import br.com.cshub.taxify.enumerated.CaptureSide;
 import br.com.cshub.taxify.enumerated.InvariantScope;
@@ -599,7 +601,9 @@ public class FiscalXmlIntegrationService {
         List<String> persistedKeys = new ArrayList<>();
         List<FiscalXmlItemDTO> xmls = new ArrayList<>();
 
+        int position = -1;
         for (byte[] xmlBytes : xmlContents) {
+            position++;
             Optional<FiscalEventData> event = eventParser.parse(xmlBytes);
             if (event.isPresent()) {
                 if (eventService.record(company, event.get())) {
@@ -611,7 +615,7 @@ public class FiscalXmlIntegrationService {
 
             // a service invoice (NFS-e) is an Nfse - it has no NF-e fields to fill
             if (NfseXml.looksLikeNfse(xmlBytes)) {
-                switch (serviceInvoiceService.store(company, xmlBytes, LegacySourceNames.toLegacyName(source))) {
+                switch (serviceInvoiceService.store(company, xmlBytes, LegacySourceNames.toLegacyName(source), position)) {
                     case NEW -> persistedNew++;
                     case DUPLICATE -> duplicated++;
                     case INVALID -> parseErrors++;
@@ -629,20 +633,20 @@ public class FiscalXmlIntegrationService {
                 continue;
             }
 
-            if (metadata.accessKey() != null && documentRepository.existsByCompany_IdAndAccessKey(company.getId(), metadata.accessKey())) {
+            Optional<FiscalDocument> known = metadata.accessKey() == null ? Optional.empty()
+                    : documentRepository.findFirstByCompany_IdAndAccessKey(company.getId(), metadata.accessKey());
+            if (known.isPresent()) {
                 duplicated++;
-                documentRepository.findFirstByCompany_IdAndAccessKey(company.getId(), metadata.accessKey())
-                        .ifPresent(known -> {
-                            known.markSeenIn(source, source.currentRetrievalMode(), LocalDateTime.now(clock));
-                            documentRepository.save(known);
-                        });
+                // FD-RN-31: seen again - an atomic upsert, so a duplicate never fails the page (I-3)
+                documentRepository.recordSeen(UUID.randomUUID().toString(), known.get().getId().toString(),
+                        company.getId().toString(), source.value(), source.currentRetrievalMode().name(), LocalDateTime.now(clock));
                 if (withItems) {
                     xmls.add(toItemDTO(metadata, xmlContent));
                 }
                 continue;
             }
 
-            Optional<FiscalDocument> fresh = newDocument(metadata, company, source, xmlBytes);
+            Optional<FiscalDocument> fresh = newDocument(metadata, company, source, xmlBytes, position);
             if (fresh.isEmpty()) {
                 parseErrors++;
                 continue;
@@ -671,27 +675,32 @@ public class FiscalXmlIntegrationService {
     }
 
     /**
-     * The document of a new XML (FD-RN-03): built by {@link FiscalDocumentFactory}, its file stored, seen in
-     * {@code source} (FD-RN-31) and the SEFAZ summary of the note completed; its invariants checked (CREATE). A document
-     * that breaks one is not stored - a read failure of the batch, logged with the invariant code only.
+     * The document of a new XML (FD-RN-03): built by {@link FiscalDocumentFactory} - what the model adjusted (decimals
+     * rounded, party documents completed, I-17 and I-06) logged by {@link ImportLog} -, seen in {@code source}
+     * (FD-RN-31), its invariants checked (CREATE), then the SEFAZ summary of the note completed and its file stored. A
+     * document that breaks an invariant is not stored and touches nothing else (no summary completed, no file) - a read
+     * failure of the batch, logged with the company, type, invariant, source, position in the batch and a short hash of
+     * the key.
      */
     private Optional<FiscalDocument> newDocument(FiscalXmlMetadata metadata, Company company, DocumentSourceKey source,
-                                                 byte[] xmlBytes) {
+                                                 byte[] xmlBytes, int position) {
         try {
-            FiscalDocument document = FiscalDocumentFactory.fromParsed(metadata, company, source, PENDING_FILE,
-                    FiscalXmlMetadataParser.CURRENT_VERSION, NfeRetentions.parse(xmlBytes)).orElse(null);
+            ImportAdjustments.Collected<Optional<FiscalDocument>> built = ImportAdjustments.collect(() ->
+                    FiscalDocumentFactory.fromParsed(metadata, company, source, PENDING_FILE,
+                            FiscalXmlMetadataParser.CURRENT_VERSION, NfeRetentions.parse(xmlBytes)));
+            FiscalDocument document = built.value().orElse(null);
             if (document == null) {
                 return Optional.empty();
             }
+            ImportLog.adjustments(company, metadata.documentType(), source, position, built.adjustments());
             LocalDateTime now = LocalDateTime.now(clock);
             document.markSeenIn(source, source.currentRetrievalMode(), now);
-            completeSummary(company, document);
             document.verifyInvariants(InvariantScope.CREATE);
+            completeSummary(company, document);
             document.setXmlFilePath(fileStorage.store(company.getId(), metadata.accessKey(), xmlBytes));
             return Optional.of(document);
         } catch (FiscalDocumentInvariantException e) {
-            log.warn("fiscal.document.invariant.violated id={} type={} invariant={} source={}", null,
-                    e.getDocumentType(), e.getInvariant(), LegacySourceNames.toLegacyName(source));
+            ImportLog.violated(company, metadata.documentType(), e, source, position, metadata.accessKey());
             return Optional.empty();
         }
     }
@@ -710,11 +719,11 @@ public class FiscalXmlIntegrationService {
         summaryRepository.findByCompany_IdAndAccessKey(company.getId(), document.getAccessKey())
                 .filter(summary -> !summary.isCompleted())
                 .ifPresent(summary -> {
-                    summary.setCompletedAt(LocalDateTime.now());
+                    summary.setCompletedAt(LocalDateTime.now(clock));
                     summaryRepository.save(summary);
                     if (document.firstSeenIn(DocumentSourceKey.SEFAZ_DFE).isEmpty()) {
                         document.markSeenIn(DocumentSourceKey.SEFAZ_DFE, RetrievalMode.CURSOR,
-                                summary.getCreatedDate() != null ? summary.getCreatedDate() : LocalDateTime.now());
+                                summary.getCreatedDate() != null ? summary.getCreatedDate() : LocalDateTime.now(clock));
                     }
                 });
     }

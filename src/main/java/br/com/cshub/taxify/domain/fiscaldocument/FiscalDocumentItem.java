@@ -228,7 +228,7 @@ public class FiscalDocumentItem {
     }
 
     public void setTotalAmount(BigDecimal totalAmount) {
-        this.totalAmount = FiscalDecimals.money(totalAmount);
+        this.totalAmount = FiscalDecimals.money(totalAmount, "FiscalDocumentItem.totalAmount");
     }
 
     /** Never null: {@link ItemIcms#EMPTY} when every column is null. */

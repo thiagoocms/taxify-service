@@ -57,7 +57,12 @@ public record NfseXml(
         BigDecimal valorCsll,
         BigDecimal valorInss,
         BigDecimal valorLiquido,
-        boolean canceled
+        boolean canceled,
+        /* the document of each party by the tag it came in (I-06: a short one is completed by its tag's size) */
+        String prestadorCnpj,
+        String prestadorCpf,
+        String tomadorCnpj,
+        String tomadorCpf
 ) {
 
     public static final String NACIONAL = "NACIONAL";
@@ -151,7 +156,11 @@ public record NfseXml(
                 decimal(text(tribFed, "vRetCSLL")),
                 decimal(text(tribFed, "vRetCP")),
                 decimal(text(nfseValues, "vLiq")),
-                false));
+                false,
+                text(emit != null ? emit : prest, "CNPJ"),
+                text(emit != null ? emit : prest, "CPF"),
+                text(toma, "CNPJ"),
+                text(toma, "CPF")));
     }
 
     private static Optional<NfseXml> abrasf(Element inf, boolean canceled) {
@@ -208,12 +217,22 @@ public record NfseXml(
                 decimal(text(valores, "ValorCsll")),
                 decimal(text(valores, "ValorInss")),
                 decimal(firstNonNull(text(valoresNfse, "ValorLiquidoNfse"), text(valores, "ValorLiquidoNfse"))),
-                canceled));
+                canceled,
+                abrasfTag(prestador, "Cnpj"),
+                abrasfTag(prestador, "Cpf"),
+                abrasfTag(tomador, "Cnpj"),
+                abrasfTag(tomador, "Cpf")));
     }
 
     /** CNPJ, CPF (or nothing) of a national party element. */
     private static String document(Element party) {
         return firstNonNull(text(party, "CNPJ"), text(party, "CPF"));
+    }
+
+    /** One ABRASF document tag ({@code Cnpj} or {@code Cpf}) under the party, digits only; null when absent. */
+    private static String abrasfTag(Element party, String tag) {
+        String value = text(party, tag);
+        return value == null ? null : value.replaceAll("\\D", "");
     }
 
     /** ABRASF: CpfCnpj/Cnpj, CpfCnpj/Cpf or a bare Cnpj, anywhere under the party. */

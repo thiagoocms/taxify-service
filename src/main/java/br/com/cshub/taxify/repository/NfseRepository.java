@@ -20,7 +20,7 @@ import java.util.UUID;
 
 /** The service invoices ({@code from Nfse}, FD-RN-04): an id of another type is "not found" here (FD-RN-17). */
 @Repository
-public interface NfseRepository extends AbstractJpaRepository<Nfse, UUID> {
+public interface NfseRepository extends AbstractJpaRepository<Nfse, UUID>, FiscalDocumentSourceRepository {
 
     String CANCELED = "br.com.cshub.taxify.enumerated.FiscalDocumentStatus.CANCELED";
 

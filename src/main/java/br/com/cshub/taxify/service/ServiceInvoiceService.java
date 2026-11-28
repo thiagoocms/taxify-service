@@ -4,7 +4,9 @@ import br.com.cshub.taxify.common.DocumentNumbers;
 import br.com.cshub.taxify.common.IssuePeriod;
 import br.com.cshub.taxify.domain.company.Company;
 import br.com.cshub.taxify.domain.fiscaldocument.DocumentSourceKey;
+import br.com.cshub.taxify.domain.fiscaldocument.ImportAdjustments;
 import br.com.cshub.taxify.domain.fiscaldocument.Nfse;
+import br.com.cshub.taxify.service.fiscaldocument.ImportLog;
 import br.com.cshub.taxify.enumerated.RetrievalMode;
 import br.com.cshub.taxify.exception.FiscalDocumentInvariantException;
 import br.com.cshub.taxify.enumerated.InvariantScope;
@@ -23,6 +25,7 @@ import org.slf4j.LoggerFactory;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 
+import java.time.Clock;
 import java.time.Instant;
 import java.time.LocalDateTime;
 import java.time.LocalDate;
@@ -55,9 +58,12 @@ public class ServiceInvoiceService {
     private final SiegClient siegClient;
     private final FirmIntegrationService firmIntegrationService;
     private final CompanyValidation companyValidation;
+    private final Clock clock;
+    private static final String NFSE_TYPE = "NFSE";
 
     public ServiceInvoiceService(NfseRepository repository, FiscalXmlFileStorage fileStorage, SiegClient siegClient,
-                                 FirmIntegrationService firmIntegrationService, CompanyValidation companyValidation) {
+                                 FirmIntegrationService firmIntegrationService, CompanyValidation companyValidation, Clock clock) {
+        this.clock = clock;
         this.repository = repository;
         this.fileStorage = fileStorage;
         this.siegClient = siegClient;
@@ -218,6 +224,14 @@ public class ServiceInvoiceService {
      */
     @Transactional
     public Stored store(Company company, byte[] xml, String source) {
+        return store(company, xml, source, -1);
+    }
+
+    /**
+     * {@code position}: where the file is in its batch (-1 = alone), for the log of a refused one. What the model
+     * adjusted (decimals rounded, party documents completed by their tag - I-17, I-06) is logged by {@link ImportLog}.
+     */
+    public Stored store(Company company, byte[] xml, String source, int position) {
         Optional<NfseXml> parsed = NfseXml.parse(xml);
         if (parsed.isEmpty()) {
             return Stored.INVALID;
@@ -226,22 +240,28 @@ public class ServiceInvoiceService {
         DocumentSourceKey origin = LegacySourceNames.toSource(source);
         Optional<Nfse> known = repository.findByCompany_IdAndAccessKey(company.getId(), nfse.accessKey());
         if (known.isPresent()) {
-            markSeenIn(known.get(), origin);
-            if (nfse.canceled()) {
+            // FD-RN-31: seen again - an atomic upsert, so a duplicate never fails the batch (I-3)
+            repository.recordSeen(UUID.randomUUID().toString(), known.get().getId().toString(), company.getId().toString(),
+                    origin.value(), origin.currentRetrievalMode().name(), LocalDateTime.now(clock));
+            if (nfse.canceled() && !known.get().isCanceled()) {
                 known.get().cancelByLayout();
+                repository.save(known.get());
             }
-            repository.save(known.get());
             return Stored.DUPLICATE;
         }
         Nfse invoice;
         try {
-            invoice = FiscalDocumentFactory.fromParsed(nfse, company, origin, "NFSE-" + nfse.accessKey());
+            ImportAdjustments.Collected<Nfse> built = ImportAdjustments.collect(() ->
+                    FiscalDocumentFactory.fromParsed(nfse, company, origin, "NFSE-" + nfse.accessKey()));
+            invoice = built.value();
+            ImportLog.adjustments(company, NFSE_TYPE, origin, position, built.adjustments());
             markSeenIn(invoice, origin);
             invoice.verifyInvariants(InvariantScope.CREATE);
-        } catch (FiscalDocumentInvariantException | IllegalArgumentException e) {
-            log.warn("fiscal.document.invariant.violated id={} type=NFSE invariant={} source={}", null,
-                    e instanceof FiscalDocumentInvariantException violated ? violated.getInvariant() : e.getClass().getSimpleName(),
-                    source);
+        } catch (FiscalDocumentInvariantException e) {
+            ImportLog.violated(company, NFSE_TYPE, e, origin, position, nfse.accessKey());
+            return Stored.INVALID;
+        } catch (IllegalArgumentException e) {
+            ImportLog.violated(company, NFSE_TYPE, e.getClass().getSimpleName(), origin, position, nfse.accessKey());
             return Stored.INVALID;
         }
         invoice.setXmlFilePath(fileStorage.store(company.getId(), "NFSE-" + nfse.accessKey(), xml));
@@ -264,7 +284,7 @@ public class ServiceInvoiceService {
 
     /** FD-RN-31: the source delivered the note now - first or last time. */
     private void markSeenIn(Nfse invoice, DocumentSourceKey source) {
-        invoice.markSeenIn(source, source.currentRetrievalMode(), LocalDateTime.now());
+        invoice.markSeenIn(source, source.currentRetrievalMode(), LocalDateTime.now(clock));
     }
 
     /** The company is the provider (PRESTADA), the taker (TOMADA) or neither (TERCEIRO). */

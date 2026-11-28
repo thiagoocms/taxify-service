@@ -31,16 +31,16 @@ public record ItemIbsCbs(
         @Column(name = "ibs_cbs_deferral_or_refund") Boolean deferralOrRefund
 ) {
     public ItemIbsCbs {
-        base = money(base);
-        stateRate = FiscalDecimals.rate(stateRate);
-        stateRateReduction = FiscalDecimals.rate(stateRateReduction);
-        stateAmount = money(stateAmount);
-        cityRate = FiscalDecimals.rate(cityRate);
-        cityRateReduction = FiscalDecimals.rate(cityRateReduction);
-        cityAmount = money(cityAmount);
-        ibsAmount = money(ibsAmount);
-        cbsRate = FiscalDecimals.rate(cbsRate);
-        cbsRateReduction = FiscalDecimals.rate(cbsRateReduction);
-        cbsAmount = money(cbsAmount);
+        base = money(base, "ItemIbsCbs.base");
+        stateRate = FiscalDecimals.rate(stateRate, "ItemIbsCbs.stateRate");
+        stateRateReduction = FiscalDecimals.rate(stateRateReduction, "ItemIbsCbs.stateRateReduction");
+        stateAmount = money(stateAmount, "ItemIbsCbs.stateAmount");
+        cityRate = FiscalDecimals.rate(cityRate, "ItemIbsCbs.cityRate");
+        cityRateReduction = FiscalDecimals.rate(cityRateReduction, "ItemIbsCbs.cityRateReduction");
+        cityAmount = money(cityAmount, "ItemIbsCbs.cityAmount");
+        ibsAmount = money(ibsAmount, "ItemIbsCbs.ibsAmount");
+        cbsRate = FiscalDecimals.rate(cbsRate, "ItemIbsCbs.cbsRate");
+        cbsRateReduction = FiscalDecimals.rate(cbsRateReduction, "ItemIbsCbs.cbsRateReduction");
+        cbsAmount = money(cbsAmount, "ItemIbsCbs.cbsAmount");
     }
 }

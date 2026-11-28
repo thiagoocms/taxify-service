@@ -456,13 +456,29 @@ class FiscalDocumentInvariantsTest {
     @Nested
     class I17DecimalScale {
         @Test
-        void moneyIsKeptWithScale2WithoutRounding() {
+        void moneyThatFitsIsKeptWithScale2AndNothingIsRecorded() {
             Nfe nfe = receivedNfe();
-            nfe.setTotalAmount(new BigDecimal("4000.5"));
-            assertThat(nfe.getTotalAmount()).isEqualByComparingTo("4000.50").hasToString("4000.50");
-            assertThatThrownBy(() -> nfe.setTotalAmount(new BigDecimal("4000.005")))
-                    .isInstanceOfSatisfying(FiscalDocumentInvariantException.class,
-                            e -> assertThat(e.getInvariant()).isEqualTo(FiscalDocumentInvariant.I17_DECIMAL_SCALE));
+            ImportAdjustments.Collected<BigDecimal> kept = ImportAdjustments.collect(() -> {
+                nfe.setTotalAmount(new BigDecimal("4000.5"));
+                nfe.setTotalAmount(new BigDecimal("4000.5000"));
+                return nfe.getTotalAmount();
+            });
+            assertThat(kept.value()).hasToString("4000.50");
+            assertThat(kept.adjustments()).as("trailing zeros are not extra places").isEmpty();
+        }
+
+        /** Decision of 2026-11-28: more places than the column = rounded HALF_UP (as MySQL did) and recorded, never refused. */
+        @Test
+        void moneyWithMorePlacesIsRoundedHalfUpAndRecorded() {
+            Nfe nfe = receivedNfe();
+            ImportAdjustments.Collected<BigDecimal> rounded = ImportAdjustments.collect(() -> {
+                nfe.setTotalAmount(new BigDecimal("4000.005"));
+                return nfe.getTotalAmount();
+            });
+            assertThat(rounded.value()).hasToString("4000.01");
+            assertThat(rounded.adjustments()).containsExactly(new ImportAdjustments.Adjustment(ImportAdjustments.Kind.DECIMAL_ROUNDED, "FiscalDocument.totalAmount", 3));
+            nfe.setTotalAmount(new BigDecimal("4000.004"));
+            assertThat(nfe.getTotalAmount()).as("outside a collection: rounded, nothing recorded").hasToString("4000.00");
         }
 
         /** CT-FD-19: the maximum of decimal(15,2) and the rate 5.0000 fit unchanged. */
@@ -486,9 +502,13 @@ class FiscalDocumentInvariantsTest {
         }
 
         @Test
-        void ratesWithMoreThan4PlacesAreRefused() {
-            assertThatThrownBy(() -> new ItemFederalTax("01", null, new BigDecimal("1.65001"), null))
-                    .isInstanceOf(FiscalDocumentInvariantException.class);
+        void ratesWithMoreThan4PlacesAreRoundedAndRecorded() {
+            ImportAdjustments.Collected<ItemFederalTax> pis = ImportAdjustments.collect(
+                    () -> new ItemFederalTax("01", new BigDecimal("100.125"), new BigDecimal("1.65005"), null));
+            assertThat(pis.value().rate()).hasToString("1.6501");
+            assertThat(pis.value().base()).hasToString("100.13");
+            assertThat(pis.adjustments()).containsExactlyInAnyOrder(new ImportAdjustments.Adjustment(ImportAdjustments.Kind.DECIMAL_ROUNDED, "ItemFederalTax.rate", 5),
+                    new ImportAdjustments.Adjustment(ImportAdjustments.Kind.DECIMAL_ROUNDED, "ItemFederalTax.base", 3));
             assertThat(new ItemFederalTax("01", null, new BigDecimal("1.65"), null).rate()).hasToString("1.6500");
         }
     }

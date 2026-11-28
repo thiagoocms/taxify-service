@@ -18,10 +18,10 @@ public record IssTax(
         @Column(name = "withheld_iss_amount", precision = 19, scale = 2) BigDecimal withheldAmount
 ) {
     public IssTax {
-        base = money(base);
-        rate = FiscalDecimals.rate(rate);
-        amount = money(amount);
-        withheldAmount = money(withheldAmount);
+        base = money(base, "IssTax.base");
+        rate = FiscalDecimals.rate(rate, "IssTax.rate");
+        amount = money(amount, "IssTax.amount");
+        withheldAmount = money(withheldAmount, "IssTax.withheldAmount");
     }
 
     /** No ISS informed and not withheld - the default of a new NFS-e. */

@@ -478,7 +478,9 @@ public class FiscalXmlMetadataParser {
             return null;
         }
         String digitsOnly = rawId.replaceAll("\\D", "");
-        return digitsOnly.length() == 44 ? digitsOnly : null;
+        // CT-FD-21: a key of another size is kept, so the model refuses the document (I-10, I-11, I-12) instead of
+        // storing an upload without key
+        return digitsOnly.isEmpty() ? null : digitsOnly;
     }
 
     private LocalDateTime extractIssueDate(Element infoElement) {

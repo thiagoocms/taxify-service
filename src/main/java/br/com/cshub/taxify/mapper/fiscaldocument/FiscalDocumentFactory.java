@@ -46,6 +46,7 @@ import br.com.cshub.taxify.enumerated.TaxpayerDocumentType;
 import br.com.cshub.taxify.integration.fiscalxml.NfeRetentions;
 import br.com.cshub.taxify.integration.nfse.NfseXml;
 import br.com.cshub.taxify.integration.sieg.CteParticipants;
+import br.com.cshub.taxify.domain.fiscaldocument.PartyDocuments;
 import br.com.cshub.taxify.integration.sieg.FiscalXmlMetadata;
 import br.com.cshub.taxify.service.FiscalDirections;
 
@@ -99,12 +100,13 @@ public final class FiscalDocumentFactory {
         FiscalXmlEmitenteDTO emit = metadata.emitente();
         FiscalXmlEnderecoDTO emitAddress = emit == null ? null : emit.endereco();
         String issuerCpf = emit == null ? null : emit.cpf();
-        invoice.setIssuer(Party.of(metadata.issuerCnpj(), issuerCpf, null, emit == null ? null : emit.nome(),
+        PartyDocuments.Tagged issuer = PartyDocuments.of(metadata.issuerCnpj(), issuerCpf, "Nfe.issuer");
+        invoice.setIssuer(Party.tagged(issuer, null, emit == null ? null : emit.nome(),
                 emitAddress == null ? null : emitAddress.uf(), emitAddress == null ? null : emitAddress.codigoMunicipio()));
         FiscalXmlDestinatarioDTO dest = metadata.destinatario();
         FiscalXmlEnderecoDTO destAddress = dest == null ? null : dest.endereco();
-        invoice.setRecipient(Party.of(metadata.recipientCnpj(), dest == null ? null : dest.cpf(),
-                dest == null ? null : dest.idEstrangeiro(), dest == null ? null : dest.nome(),
+        invoice.setRecipient(Party.tagged(PartyDocuments.of(metadata.recipientCnpj(), dest == null ? null : dest.cpf(),
+                        "Nfe.recipient"), dest == null ? null : dest.idEstrangeiro(), dest == null ? null : dest.nome(),
                 destAddress == null ? null : destAddress.uf(), destAddress == null ? null : destAddress.codigoMunicipio()));
         invoice.setHeader(ide == null ? null : header(ide));
         invoice.setIssuerDetails(emit == null ? null : new IssuerDetails(emit.nomeFantasia(), emit.inscricaoEstadual(),
@@ -115,7 +117,7 @@ public final class FiscalDocumentFactory {
         applyTotals(invoice, metadata.totais());
         invoice.setWithholdings(retentions == null ? null : retentions.toWithholdings());
 
-        boolean ownIssue = isOwnIssue(company, metadata.issuerCnpj(), issuerCpf);
+        boolean ownIssue = isOwnIssue(company, invoice.getIssuer().cnpj(), invoice.getIssuer().cpf());
         String operationType = ide == null ? null : ide.tipoOperacao();
         invoice.assignRole(ownIssue ? CompanyDocumentRole.ISSUER : CompanyDocumentRole.RECIPIENT,
                 directionOf(ownIssue, operationType));
@@ -291,17 +293,17 @@ public final class FiscalDocumentFactory {
         CteParticipants groups = metadata.cte();
         CteParticipants.Party issuer = groups == null ? null : groups.issuer();
         CteParticipants.Party recipient = groups == null ? null : groups.recipient();
-        cte.setIssuer(Party.of(metadata.issuerCnpj(), issuer == null ? null : issuer.cpf(), null,
-                issuer == null ? null : issuer.name(), issuer == null ? null : issuer.uf(), null));
-        cte.setRecipient(Party.of(metadata.recipientCnpj(), recipient == null ? null : recipient.cpf(), null,
-                recipient == null ? null : recipient.name(), recipient == null ? null : recipient.uf(), null));
+        cte.setIssuer(Party.tagged(PartyDocuments.of(metadata.issuerCnpj(), issuer == null ? null : issuer.cpf(), "Cte.issuer"),
+                null, issuer == null ? null : issuer.name(), issuer == null ? null : issuer.uf(), null));
+        cte.setRecipient(Party.tagged(PartyDocuments.of(metadata.recipientCnpj(), recipient == null ? null : recipient.cpf(),
+                "Cte.recipient"), null, recipient == null ? null : recipient.name(), recipient == null ? null : recipient.uf(), null));
         cte.setWithholdings(retentions == null ? null : retentions.toWithholdings());
         if (groups != null) {
-            cte.setSender(cteParty(groups.sender()));
+            cte.setSender(cteParty(groups.sender(), "Cte.sender"));
             cte.setSenderUf(groups.sender() == null ? null : groups.sender().uf());
-            cte.setShipper(cteParty(groups.shipper()));
-            cte.setReceiver(cteParty(groups.receiver()));
-            cte.setTaker(cteParty(groups.taker()));
+            cte.setShipper(cteParty(groups.shipper(), "Cte.shipper"));
+            cte.setReceiver(cteParty(groups.receiver(), "Cte.receiver"));
+            cte.setTaker(cteParty(groups.taker(), "Cte.taker"));
             cte.setTakerUf(groups.taker() == null ? null : groups.taker().uf());
             cte.setTakerRole(groups.takerRole());
         }
@@ -327,17 +329,12 @@ public final class FiscalDocumentFactory {
         return own.equals(DocumentNumbers.onlyDigits(party.document()));
     }
 
-    private static CteParty cteParty(CteParticipants.Party party) {
+    private static CteParty cteParty(CteParticipants.Party party, String field) {
         if (party == null) {
             return null;
         }
-        if (FiscalText.hasText(party.cnpj())) {
-            return new CteParty(party.cnpj(), TaxpayerDocumentType.CNPJ, party.name());
-        }
-        if (FiscalText.hasText(party.cpf())) {
-            return new CteParty(party.cpf(), TaxpayerDocumentType.CPF, party.name());
-        }
-        return new CteParty(null, null, party.name());
+        PartyDocuments.Tagged document = PartyDocuments.of(party.cnpj(), party.cpf(), field);
+        return new CteParty(document.document(), document.type(), party.name());
     }
 
     // ---------------------------------------------------------------- NFS-e
@@ -357,9 +354,10 @@ public final class FiscalDocumentFactory {
                 : nfse.issueDate() != null ? nfse.issueDate().toLocalDate() : null);
         LegacyNfseDirection direction = nfseDirection(company, nfse);
         invoice.assignRole(direction.role(), direction.direction());
-        invoice.setIssuer(Party.brazilian(blankToNull(nfse.prestadorDocumento()), nfse.prestadorNome(), null,
-                nfse.prestadorMunicipio()));
-        invoice.setRecipient(Party.brazilian(blankToNull(nfse.tomadorDocumento()), nfse.tomadorNome(), null, null));
+        invoice.setIssuer(Party.tagged(PartyDocuments.of(nfse.prestadorCnpj(), nfse.prestadorCpf(), "Nfse.issuer"), null,
+                nfse.prestadorNome(), null, nfse.prestadorMunicipio()));
+        invoice.setRecipient(Party.tagged(PartyDocuments.of(nfse.tomadorCnpj(), nfse.tomadorCpf(), "Nfse.recipient"), null,
+                nfse.tomadorNome(), null, null));
         invoice.setIncidenceCityCode(nfse.municipioIncidencia());
         invoice.setServiceCode(nfse.codigoServico());
         invoice.setMunicipalTaxCode(nfse.codigoTributacaoMunicipal());

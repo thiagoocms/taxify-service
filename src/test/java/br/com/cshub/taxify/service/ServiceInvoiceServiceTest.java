@@ -25,7 +25,9 @@ import org.mockito.junit.jupiter.MockitoSettings;
 import org.mockito.quality.Strictness;
 
 import java.nio.charset.StandardCharsets;
+import java.time.Clock;
 import java.time.LocalDate;
+import java.time.ZoneId;
 import java.util.List;
 import java.util.Optional;
 import java.util.UUID;
@@ -59,7 +61,8 @@ class ServiceInvoiceServiceTest {
 
     @BeforeEach
     void setUp() {
-        service = new ServiceInvoiceService(repository, fileStorage, siegClient, firmIntegrationService, companyValidation);
+        service = new ServiceInvoiceService(repository, fileStorage, siegClient, firmIntegrationService, companyValidation,
+                Clock.system(ZoneId.of("America/Recife")));
         company = new Company(UUID.randomUUID());
         company.setDocument(new Document("11222333000181", DocumentTypeEnum.CNPJ));
         AccountingFirm firm = new AccountingFirm();
@@ -111,9 +114,13 @@ class ServiceInvoiceServiceTest {
         assertThat(invoice.firstSeenIn(DocumentSourceKey.SIEG)).isPresent();
         assertThat(invoice.firstSeenIn(DocumentSourceKey.NFSE_ADN)).isEmpty();
 
+        invoice.setId(UUID.randomUUID()); // as stored
         when(repository.findByCompany_IdAndAccessKey(company.getId(), invoice.getAccessKey())).thenReturn(Optional.of(invoice));
         assertThat(service.store(company, bytes(NfseXmlTest.ABRASF), "ADN")).isEqualTo(ServiceInvoiceService.Stored.DUPLICATE);
-        assertThat(invoice.firstSeenIn(DocumentSourceKey.NFSE_ADN)).isPresent();
+        // FD-RN-31 + I-3: the new origin as one atomic upsert (ADN, by cursor); the invoice is not saved again
+        verify(repository).recordSeen(anyString(), eq(invoice.getId().toString()), eq(company.getId().toString()),
+                eq("NFSE_ADN"), eq("CURSOR"), any());
+        verify(repository, times(1)).save(any());
         assertThat(invoice.getSourceSystem()).isEqualTo(DocumentSourceKey.SIEG); // the origin stays the first source
     }
 

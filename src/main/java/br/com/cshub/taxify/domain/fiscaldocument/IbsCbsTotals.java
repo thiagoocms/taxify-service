@@ -17,10 +17,10 @@ public record IbsCbsTotals(
         @Column(name = "cbs_amount", precision = 19, scale = 2) BigDecimal cbsAmount
 ) {
     public IbsCbsTotals {
-        base = money(base);
-        ibsStateAmount = money(ibsStateAmount);
-        ibsCityAmount = money(ibsCityAmount);
-        ibsAmount = money(ibsAmount);
-        cbsAmount = money(cbsAmount);
+        base = money(base, "IbsCbsTotals.base");
+        ibsStateAmount = money(ibsStateAmount, "IbsCbsTotals.ibsStateAmount");
+        ibsCityAmount = money(ibsCityAmount, "IbsCbsTotals.ibsCityAmount");
+        ibsAmount = money(ibsAmount, "IbsCbsTotals.ibsAmount");
+        cbsAmount = money(cbsAmount, "IbsCbsTotals.cbsAmount");
     }
 }

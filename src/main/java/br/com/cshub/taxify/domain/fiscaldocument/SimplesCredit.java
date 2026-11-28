@@ -20,7 +20,7 @@ public record SimplesCredit(
     public static final SimplesCredit EMPTY = new SimplesCredit(null, null);
 
     public SimplesCredit {
-        rate = FiscalDecimals.rate(rate);
-        amount = money(amount);
+        rate = FiscalDecimals.rate(rate, "SimplesCredit.rate");
+        amount = money(amount, "SimplesCredit.amount");
     }
 }

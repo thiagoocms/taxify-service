@@ -22,7 +22,7 @@ import java.util.UUID;
  * old notes table held (FD-RN-15); the NFS-e have their own screen ({@link NfseRepository}).
  */
 @Repository
-public interface FiscalDocumentRepository extends AbstractJpaRepository<FiscalDocument, UUID> {
+public interface FiscalDocumentRepository extends AbstractJpaRepository<FiscalDocument, UUID>, FiscalDocumentSourceRepository {
 
     /** The idempotency of the import (FD-RN-12): one document per company and access key, any type. */
     boolean existsByCompany_IdAndAccessKey(UUID companyId, String accessKey);

@@ -21,8 +21,8 @@ public record ItemFederalTax(
     public static final ItemFederalTax EMPTY = new ItemFederalTax(null, null, null, null);
 
     public ItemFederalTax {
-        base = money(base);
-        rate = FiscalDecimals.rate(rate);
-        amount = money(amount);
+        base = money(base, "ItemFederalTax.base");
+        rate = FiscalDecimals.rate(rate, "ItemFederalTax.rate");
+        amount = money(amount, "ItemFederalTax.amount");
     }
 }

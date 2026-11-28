@@ -10,6 +10,7 @@ import br.com.cshub.taxify.repository.CapturePeriodCountRepository;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 
+import java.time.Clock;
 import java.time.LocalDateTime;
 import java.util.ArrayList;
 import java.util.Collection;
@@ -27,10 +28,14 @@ import java.util.UUID;
 @Service
 public class CaptureCountsService {
 
-    private final CapturePeriodCountRepository repository;
+    static final String WRITER = "system";
 
-    public CaptureCountsService(CapturePeriodCountRepository repository) {
+    private final CapturePeriodCountRepository repository;
+    private final Clock clock;
+
+    public CaptureCountsService(CapturePeriodCountRepository repository, Clock clock) {
         this.repository = repository;
+        this.clock = clock;
     }
 
     /** The SIEG NF-e counts of the company, every month. */
@@ -39,10 +44,33 @@ public class CaptureCountsService {
         return CaptureCounts.siegNfe(company, repository.findOfCompany(company.getId(), ProviderKey.SIEG, FiscalDocumentType.NFE));
     }
 
-    /** Writes the rows the counts created or changed. */
+    /**
+     * Writes the rows the counts created or changed: a row already stored is updated as an entity; a row created now
+     * goes as an atomic upsert ({@link CapturePeriodCountRepository#upsert}) - two writers creating the same month
+     * (the scheduler and a manual sync, or two instances) never fail on the unique key (I-3).
+     */
     @Transactional
     public void save(CaptureCounts counts) {
-        repository.saveAll(counts.changedRows());
+        List<CapturePeriodCount> stored = new ArrayList<>();
+        LocalDateTime now = LocalDateTime.now(clock);
+        for (CapturePeriodCount row : counts.changedRows()) {
+            if (row.getId() == null) {
+                insert(row, now);
+            } else {
+                stored.add(row);
+            }
+        }
+        if (!stored.isEmpty()) {
+            repository.saveAll(stored);
+        }
+    }
+
+    /** One row created by the counts, upserted (overridden by the in-memory counts of the unit tests). */
+    protected void insert(CapturePeriodCount row, LocalDateTime now) {
+        repository.upsert(UUID.randomUUID().toString(), row.getCompany().getId().toString(), row.getChannel().value(),
+                row.getDocumentType().name(), row.getSide().name(), row.getPeriodMonth().toString(), row.getWindowStart(),
+                row.getWindowEnd(), row.getProviderTotal(), row.getProviderCountedAt(), row.getImportedTotal(),
+                row.getStoredAnySourceTotal(), row.getKnownGap(), row.getImportedCountedAt(), row.getClosedAt(), WRITER, now);
     }
 
     /** The SIEG NF-e counts of several companies at once (one query). Companies without any row get empty counts. */

@@ -194,7 +194,7 @@ public class Nfse extends FiscalDocument {
     }
 
     public void setDeductionsAmount(BigDecimal deductionsAmount) {
-        this.deductionsAmount = money(deductionsAmount);
+        this.deductionsAmount = money(deductionsAmount, "Nfse.deductionsAmount");
     }
 
     /** Never null: not withheld and without values when every ISS column is null. */
@@ -211,7 +211,7 @@ public class Nfse extends FiscalDocument {
     }
 
     public void setPisAmount(BigDecimal pisAmount) {
-        this.pisAmount = money(pisAmount);
+        this.pisAmount = money(pisAmount, "Nfse.pisAmount");
     }
 
     public BigDecimal getCofinsAmount() {
@@ -219,7 +219,7 @@ public class Nfse extends FiscalDocument {
     }
 
     public void setCofinsAmount(BigDecimal cofinsAmount) {
-        this.cofinsAmount = money(cofinsAmount);
+        this.cofinsAmount = money(cofinsAmount, "Nfse.cofinsAmount");
     }
 
     public Boolean getPisCofinsWithheld() {
@@ -235,6 +235,6 @@ public class Nfse extends FiscalDocument {
     }
 
     public void setNetAmount(BigDecimal netAmount) {
-        this.netAmount = money(netAmount);
+        this.netAmount = money(netAmount, "Nfse.netAmount");
     }
 }

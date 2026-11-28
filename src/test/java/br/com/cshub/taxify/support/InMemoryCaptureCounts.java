@@ -9,7 +9,9 @@ import br.com.cshub.taxify.enumerated.FiscalDocumentType;
 import br.com.cshub.taxify.repository.CapturePeriodCountRepository;
 import br.com.cshub.taxify.service.capture.CaptureCountsService;
 
+import java.time.Clock;
 import java.time.LocalDate;
+import java.time.ZoneId;
 import java.time.LocalDateTime;
 import java.time.YearMonth;
 import java.util.ArrayList;
@@ -33,7 +35,15 @@ public final class InMemoryCaptureCounts {
 
     private final List<CapturePeriodCount> rows = new ArrayList<>();
     private final CapturePeriodCountRepository repository = mock(CapturePeriodCountRepository.class);
-    private final CaptureCountsService service = new CaptureCountsService(repository);
+    /** A new row is "upserted" into the list (the native upsert of the real service needs MySQL). */
+    private final CaptureCountsService service = new CaptureCountsService(repository, Clock.system(ZoneId.of("America/Recife"))) {
+        @Override
+        protected void insert(CapturePeriodCount row, LocalDateTime now) {
+            if (rows.stream().noneMatch(existing -> existing == row)) {
+                rows.add(row);
+            }
+        }
+    };
 
     @SuppressWarnings("unchecked")
     public InMemoryCaptureCounts() {

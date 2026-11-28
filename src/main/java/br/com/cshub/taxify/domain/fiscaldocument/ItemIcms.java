@@ -29,10 +29,10 @@ public record ItemIcms(
     public static final ItemIcms EMPTY = new ItemIcms(null, null, null, null, null, null, null, null, null);
 
     public ItemIcms {
-        base = money(base);
-        rate = FiscalDecimals.rate(rate);
-        baseReduction = FiscalDecimals.rate(baseReduction);
-        amount = money(amount);
-        reliefAmount = money(reliefAmount);
+        base = money(base, "ItemIcms.base");
+        rate = FiscalDecimals.rate(rate, "ItemIcms.rate");
+        baseReduction = FiscalDecimals.rate(baseReduction, "ItemIcms.baseReduction");
+        amount = money(amount, "ItemIcms.amount");
+        reliefAmount = money(reliefAmount, "ItemIcms.reliefAmount");
     }
 }

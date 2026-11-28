@@ -4,6 +4,7 @@ import br.com.cshub.taxify.common.AbstractJpaRepository;
 import br.com.cshub.taxify.domain.fiscaldocument.CapturePeriodCount;
 import br.com.cshub.taxify.domain.fiscaldocument.ProviderKey;
 import br.com.cshub.taxify.enumerated.FiscalDocumentType;
+import org.springframework.data.jpa.repository.Modifying;
 import org.springframework.data.jpa.repository.Query;
 import org.springframework.data.repository.query.Param;
 import org.springframework.stereotype.Repository;
@@ -27,6 +28,31 @@ public interface CapturePeriodCountRepository extends AbstractJpaRepository<Capt
     List<CapturePeriodCount> findOfCompanies(@Param("companyIds") java.util.Collection<UUID> companyIds,
                                              @Param("channel") ProviderKey channel,
                                              @Param("documentType") FiscalDocumentType documentType);
+
+    /**
+     * A row the counts created, as one atomic upsert on the unique key (company, channel, type, side, month): the
+     * scheduler and a manual sync (or two instances) creating the same month never collide (I-3) - the later write wins,
+     * as for a row both update; {@code closed_at}: the first close wins. No {@code AS new} syntax (MySQL 5.7).
+     */
+    @Modifying(flushAutomatically = true)
+    @Query(value = "INSERT INTO capture_period_counts (id, company_id, channel, document_type, side, period_month, window_start,"
+            + " window_end, provider_total, provider_counted_at, imported_total, stored_any_source_total, known_gap,"
+            + " imported_counted_at, closed_at, created_by, created_date, deleted)"
+            + " VALUES (:id, :companyId, :channel, :documentType, :side, :month, :windowStart, :windowEnd, :providerTotal,"
+            + " :providerCountedAt, :importedTotal, :storedAnySource, :knownGap, :importedCountedAt, :closedAt, :by, :now, 0)"
+            + " ON DUPLICATE KEY UPDATE window_start = :windowStart, window_end = :windowEnd, provider_total = :providerTotal,"
+            + " provider_counted_at = :providerCountedAt, imported_total = :importedTotal,"
+            + " stored_any_source_total = :storedAnySource, known_gap = :knownGap, imported_counted_at = :importedCountedAt,"
+            + " closed_at = COALESCE(closed_at, :closedAt), last_modified_by = :by, last_modified_date = :now",
+            nativeQuery = true)
+    int upsert(@Param("id") String id, @Param("companyId") String companyId, @Param("channel") String channel,
+               @Param("documentType") String documentType, @Param("side") String side, @Param("month") String month,
+               @Param("windowStart") java.time.LocalDate windowStart, @Param("windowEnd") java.time.LocalDate windowEnd,
+               @Param("providerTotal") Integer providerTotal, @Param("providerCountedAt") java.time.LocalDateTime providerCountedAt,
+               @Param("importedTotal") int importedTotal, @Param("storedAnySource") Integer storedAnySource,
+               @Param("knownGap") Integer knownGap, @Param("importedCountedAt") java.time.LocalDateTime importedCountedAt,
+               @Param("closedAt") java.time.LocalDateTime closedAt, @Param("by") String by,
+               @Param("now") java.time.LocalDateTime now);
 
     /**
      * When each side of each company was last checked, any month: rows {company id, side, last check} - the queue

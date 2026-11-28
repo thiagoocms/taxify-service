@@ -21,8 +21,8 @@ public record CteIcms(
         @Column(name = "icms_amount", precision = 19, scale = 2) BigDecimal amount
 ) {
     public CteIcms {
-        base = money(base);
-        rate = FiscalDecimals.rate(rate);
-        amount = money(amount);
+        base = money(base, "CteIcms.base");
+        rate = FiscalDecimals.rate(rate, "CteIcms.rate");
+        amount = money(amount, "CteIcms.amount");
     }
 }

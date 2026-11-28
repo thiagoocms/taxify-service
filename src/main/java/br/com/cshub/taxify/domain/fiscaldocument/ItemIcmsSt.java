@@ -21,9 +21,9 @@ public record ItemIcmsSt(
     public static final ItemIcmsSt EMPTY = new ItemIcmsSt(null, null, null, null, null);
 
     public ItemIcmsSt {
-        mva = FiscalDecimals.rate(mva);
-        base = money(base);
-        rate = FiscalDecimals.rate(rate);
-        amount = money(amount);
+        mva = FiscalDecimals.rate(mva, "ItemIcmsSt.mva");
+        base = money(base, "ItemIcmsSt.base");
+        rate = FiscalDecimals.rate(rate, "ItemIcmsSt.rate");
+        amount = money(amount, "ItemIcmsSt.amount");
     }
 }

@@ -24,10 +24,10 @@ public record Withholdings(
     public static final Withholdings EMPTY = new Withholdings(null, null, null, null, null);
 
     public Withholdings {
-        pis = money(pis);
-        cofins = money(cofins);
-        csll = money(csll);
-        irrf = money(irrf);
-        inss = money(inss);
+        pis = money(pis, "Withholdings.pis");
+        cofins = money(cofins, "Withholdings.cofins");
+        csll = money(csll, "Withholdings.csll");
+        irrf = money(irrf, "Withholdings.irrf");
+        inss = money(inss, "Withholdings.inss");
     }
 }

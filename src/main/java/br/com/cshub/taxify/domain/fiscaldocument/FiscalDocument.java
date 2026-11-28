@@ -521,7 +521,7 @@ public abstract class FiscalDocument extends AbstractAuditingEntity {
     }
 
     public void setTotalAmount(BigDecimal totalAmount) {
-        this.totalAmount = FiscalDecimals.money(totalAmount);
+        this.totalAmount = FiscalDecimals.money(totalAmount, "FiscalDocument.totalAmount");
     }
 
     public IbsCbsTotals getIbsCbsTotals() {
