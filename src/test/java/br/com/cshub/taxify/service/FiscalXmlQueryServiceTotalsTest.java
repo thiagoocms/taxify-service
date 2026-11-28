@@ -116,7 +116,7 @@ class FiscalXmlQueryServiceTotalsTest {
         assertThat(used.getValue().participant()).isEqualTo("%alfa%");
         assertThat(used.getValue().cfops().values()).containsExactly("5102");
         assertThat(used.getValue().onlySiegBefore()).isEqualTo(LocalDateTime.of(2026, 11, 26, 9, 0)); // Recife clock - 48h
-        assertThat(used.getValue().issueDateTo()).isEqualTo(LocalDate.of(2026, 11, 30).atTime(java.time.LocalTime.MAX));
+        assertThat(used.getValue().issuedBefore()).isEqualTo(LocalDateTime.of(2026, 12, 1, 0, 0)); // half-open period
         verify(itemRepository).cfopItemTotalsByDirection(used.getValue());
         assertThat(totals.filtered()).isTrue();
         assertThat(totals.inbound().count()).isEqualTo(3);

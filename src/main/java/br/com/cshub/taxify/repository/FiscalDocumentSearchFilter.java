@@ -17,7 +17,7 @@ import java.util.UUID;
  * cards never drift from the list (spec 2026-11-27, CF-RN-10, risk R-01). The queries bind the record as
  * {@code @Param(PARAM)} and the predicate reads its accessors ({@code :#{#filter.x()}}).
  *
- * <p>Every field but the company and the period is optional (null = not applied): {@code number} exact,
+ * <p>The period is half-open, {@code [issuedFrom, issuedBefore)} ({@code IssuePeriod}). Every field but the company and the period is optional (null = not applied): {@code number} exact,
  * {@code direction} entries/exits, {@code participant} a lower-case {@code %piece%} of the issuer's or recipient's name
  * or digits of their document, {@code reviewStatus} (null review = PENDING), {@code source} the first origin,
  * {@code onlySiegBefore}/{@code onlySefazBefore} the SIEG x SEFAZ comparison (FD-RN-13) and {@code cfops} some item with
@@ -34,8 +34,8 @@ import java.util.UUID;
  */
 public record FiscalDocumentSearchFilter(
         UUID companyId,
-        LocalDateTime issueDateFrom,
-        LocalDateTime issueDateTo,
+        LocalDateTime issuedFrom,
+        LocalDateTime issuedBefore,
         String number,
         FiscalDirection direction,
         String participant,
@@ -51,7 +51,7 @@ public record FiscalDocumentSearchFilter(
 
     /** The predicate over {@code d} (a FiscalDocument, or a subtype); the caller adds the document type. */
     public static final String WHERE = " d.company.id = :#{#filter.companyId()} and d.deleted = false"
-            + " and d.issueDate between :#{#filter.issueDateFrom()} and :#{#filter.issueDateTo()}"
+            + " and d.issueDate >= :#{#filter.issuedFrom()} and d.issueDate < :#{#filter.issuedBefore()}"
             + " and (:#{#filter.number() == null} = true or d.number = :#{#filter.number()})"
             + " and (:#{#filter.direction() == null} = true or d.direction = :#{#filter.direction()})"
             + " and (:#{#filter.participant() == null} = true"
@@ -75,14 +75,14 @@ public record FiscalDocumentSearchFilter(
 
     public FiscalDocumentSearchFilter {
         Objects.requireNonNull(companyId, "companyId");
-        Objects.requireNonNull(issueDateFrom, "issueDateFrom");
-        Objects.requireNonNull(issueDateTo, "issueDateTo");
+        Objects.requireNonNull(issuedFrom, "issuedFrom");
+        Objects.requireNonNull(issuedBefore, "issuedBefore");
         cfops = cfops == null ? CfopFilter.none() : cfops;
     }
 
     /** CF-RN-11: the cards are the tab selector - the same filter without the tab. */
     public FiscalDocumentSearchFilter withoutDirection() {
-        return new FiscalDocumentSearchFilter(companyId, issueDateFrom, issueDateTo, number, null, participant, reviewStatus,
+        return new FiscalDocumentSearchFilter(companyId, issuedFrom, issuedBefore, number, null, participant, reviewStatus,
                 source, onlySiegBefore, onlySefazBefore, cfops);
     }
 

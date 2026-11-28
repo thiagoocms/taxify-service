@@ -1,5 +1,6 @@
 package br.com.cshub.taxify.service.fronteira;
 
+import br.com.cshub.taxify.common.IssuePeriod;
 import br.com.cshub.taxify.common.MessageService;
 import br.com.cshub.taxify.domain.company.Company;
 import br.com.cshub.taxify.domain.company.StateRegistration;
@@ -571,7 +572,7 @@ public class FronteiraService {
     /** Entries from another UF issued in the month, not canceled, that the extract doesn't list. */
     private List<GoodsInvoice> interstateEntries(UUID companyId, YearMonth month, Set<String> charged) {
         return documentRepository.findIssuedBetween(
-                        companyId, month.atDay(1).atStartOfDay(), month.atEndOfMonth().atTime(23, 59, 59, 999_999_999))
+                        companyId, IssuePeriod.monthStart(month), IssuePeriod.monthEndExclusive(month))
                 .stream()
                 .filter(document -> !document.isDeleted() && !document.isCanceled())
                 .filter(document -> document.getDirection() == FiscalDirection.INBOUND)

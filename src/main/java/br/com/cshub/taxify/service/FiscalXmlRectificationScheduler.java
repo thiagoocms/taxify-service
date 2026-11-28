@@ -1,5 +1,6 @@
 package br.com.cshub.taxify.service;
 
+import br.com.cshub.taxify.common.IssuePeriod;
 import br.com.cshub.taxify.domain.subscription.Subscription;
 import br.com.cshub.taxify.enumerated.PlanServiceEnum;
 import br.com.cshub.taxify.repository.SubscriptionRepository;
@@ -18,7 +19,6 @@ import org.springframework.stereotype.Component;
 
 import java.time.LocalDate;
 import java.time.LocalDateTime;
-import java.time.LocalTime;
 import java.util.List;
 
 @Component
@@ -91,7 +91,7 @@ public class FiscalXmlRectificationScheduler {
 
     private void rectifyCompany(Company company) {
         LocalDateTime from = LocalDateTime.now().minusDays(properties.getLookbackDays()).toLocalDate().atStartOfDay();
-        LocalDateTime to = LocalDateTime.now().toLocalDate().atTime(LocalTime.MAX);
+        LocalDateTime to = IssuePeriod.endExclusive(LocalDateTime.now().toLocalDate());
 
         // only goods invoices (NF-e, NFC-e) can be rectified - a CT-e would fail on every run
         List<GoodsInvoice> documents = documentRepository.findIssuedBetween(company.getId(), from, to);

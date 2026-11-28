@@ -32,9 +32,9 @@ public interface FiscalDocumentItemRepository extends JpaRepository<FiscalDocume
      */
     @EntityGraph(attributePaths = "document")
     @Query("select i from FiscalDocumentItem i join i.document d where d.company.id = :companyId"
-            + " and d.issueDate between :issueDateFrom and :issueDateTo"
+            + " and d.issueDate >= :issueDateFrom and d.issueDate < :issueDateTo"
             + " order by d.issueDate, d.id, i.product.cfop, i.totalAmount, i.id")
-    List<FiscalDocumentItem> findByDocument_Company_IdAndDocument_IssueDateBetween(
+    List<FiscalDocumentItem> findIssuedInPeriodOrdered(
             @Param("companyId") UUID companyId, @Param("issueDateFrom") LocalDateTime issueDateFrom,
             @Param("issueDateTo") LocalDateTime issueDateTo);
 

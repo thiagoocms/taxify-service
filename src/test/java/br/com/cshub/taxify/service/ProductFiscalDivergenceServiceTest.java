@@ -79,7 +79,7 @@ class ProductFiscalDivergenceServiceTest {
     @Test
     void flagsAnItemWhoseCfopDoesNotMatchTheRegisteredRule() {
         FiscalDocumentItem item = itemWith("P001", "5405", "12345678");
-        when(itemRepository.findByDocument_Company_IdAndDocument_IssueDateBetween(eq(companyId), any(), any()))
+        when(itemRepository.findIssuedInPeriodOrdered(eq(companyId), any(), any()))
                 .thenReturn(List.of(item));
 
         ProductFiscalRule rule = ruleWith("P001", "5102", null);
@@ -97,7 +97,7 @@ class ProductFiscalDivergenceServiceTest {
     @Test
     void flagsAnItemWhoseNcmDivergesWhenTheRulePinsOne() {
         FiscalDocumentItem item = itemWith("P002", "5102", "11111111");
-        when(itemRepository.findByDocument_Company_IdAndDocument_IssueDateBetween(eq(companyId), any(), any()))
+        when(itemRepository.findIssuedInPeriodOrdered(eq(companyId), any(), any()))
                 .thenReturn(List.of(item));
 
         ProductFiscalRule rule = ruleWith("P002", "5102", "22222222");
@@ -113,7 +113,7 @@ class ProductFiscalDivergenceServiceTest {
     @Test
     void doesNotFlagAnItemThatMatchesTheRule() {
         FiscalDocumentItem item = itemWith("P003", "5102", "12345678");
-        when(itemRepository.findByDocument_Company_IdAndDocument_IssueDateBetween(eq(companyId), any(), any()))
+        when(itemRepository.findIssuedInPeriodOrdered(eq(companyId), any(), any()))
                 .thenReturn(List.of(item));
 
         ProductFiscalRule rule = ruleWith("P003", "5102", "12345678");
@@ -125,7 +125,7 @@ class ProductFiscalDivergenceServiceTest {
     @Test
     void skipsItemsWithNoRegisteredRule() {
         FiscalDocumentItem item = itemWith("P004", "5405", "12345678");
-        when(itemRepository.findByDocument_Company_IdAndDocument_IssueDateBetween(eq(companyId), any(), any()))
+        when(itemRepository.findIssuedInPeriodOrdered(eq(companyId), any(), any()))
                 .thenReturn(List.of(item));
         when(ruleRepository.findByCompany_IdAndDeletedIsFalse(companyId)).thenReturn(List.of(ruleWith("OUTRO", "5102", null)));
 
@@ -137,7 +137,7 @@ class ProductFiscalDivergenceServiceTest {
         FiscalDocumentItem item = itemWith("P005", "5405", "11111111");
         item.getDocument().setRectifiedFilePath("s3://bucket/fiscal-xml/retificado.xml");
         item.getDocument().setLastRectificationCheckedAt(LocalDateTime.now());
-        when(itemRepository.findByDocument_Company_IdAndDocument_IssueDateBetween(eq(companyId), any(), any()))
+        when(itemRepository.findIssuedInPeriodOrdered(eq(companyId), any(), any()))
                 .thenReturn(List.of(item));
         ProductFiscalRule rule = ruleWith("P005", "5102", "22222222");
         ReflectionTestUtils.setField(rule, "lastModifiedDate", LocalDateTime.now().minusDays(1));
@@ -150,7 +150,7 @@ class ProductFiscalDivergenceServiceTest {
     void theCompanysOwnNotesAreNotCheckedAgainstTheEntryRules() {
         FiscalDocumentItem sale = itemWith("P010", "5102", "11111111");
         TestNotes.asOwnIssue(sale.getDocument());
-        when(itemRepository.findByDocument_Company_IdAndDocument_IssueDateBetween(eq(companyId), any(), any()))
+        when(itemRepository.findIssuedInPeriodOrdered(eq(companyId), any(), any()))
                 .thenReturn(List.of(sale));
         when(ruleRepository.findByCompany_IdAndDeletedIsFalse(companyId)).thenReturn(List.of(ruleWith("P010", "1102", null)));
 
@@ -163,7 +163,7 @@ class ProductFiscalDivergenceServiceTest {
         TestNotes.withDestinationType(interstate.getDocument(), "2");
         FiscalDocumentItem internalWrong = itemWith("P011", "2102", "11111111");
         TestNotes.withDestinationType(internalWrong.getDocument(), "1");
-        when(itemRepository.findByDocument_Company_IdAndDocument_IssueDateBetween(eq(companyId), any(), any()))
+        when(itemRepository.findIssuedInPeriodOrdered(eq(companyId), any(), any()))
                 .thenReturn(List.of(interstate, internalWrong));
         when(ruleRepository.findByCompany_IdAndDeletedIsFalse(companyId)).thenReturn(List.of(ruleWith("P011", "1102", null)));
 
@@ -180,7 +180,7 @@ class ProductFiscalDivergenceServiceTest {
         TestNotes.withIssuerCnpj(fromA.getDocument(), "11222333000181");
         FiscalDocumentItem fromB = itemWith("001", "5102", "11111111");
         TestNotes.withIssuerCnpj(fromB.getDocument(), "99888777000166");
-        when(itemRepository.findByDocument_Company_IdAndDocument_IssueDateBetween(eq(companyId), any(), any()))
+        when(itemRepository.findIssuedInPeriodOrdered(eq(companyId), any(), any()))
                 .thenReturn(List.of(fromA, fromB));
         ProductFiscalRule ofA = ruleWith("001", "1102", null);
         ofA.setSupplierDocument("11222333000181");
@@ -197,7 +197,7 @@ class ProductFiscalDivergenceServiceTest {
         canceled.getDocument().cancel(null);
         FiscalDocumentItem deleted = itemWith("P007", "5405", "11111111");
         deleted.getDocument().setDeleted(true);
-        when(itemRepository.findByDocument_Company_IdAndDocument_IssueDateBetween(eq(companyId), any(), any()))
+        when(itemRepository.findIssuedInPeriodOrdered(eq(companyId), any(), any()))
                 .thenReturn(List.of(canceled, deleted));
         when(ruleRepository.findByCompany_IdAndDeletedIsFalse(companyId)).thenReturn(List.of(ruleWith("P007", "5102", null)));
 
@@ -209,7 +209,7 @@ class ProductFiscalDivergenceServiceTest {
         FiscalDocumentItem item = itemWith("P006", "5405", "11111111");
         item.getDocument().setRectifiedFilePath("s3://bucket/fiscal-xml/retificado.xml");
         item.getDocument().setLastRectificationCheckedAt(LocalDateTime.now().minusDays(2));
-        when(itemRepository.findByDocument_Company_IdAndDocument_IssueDateBetween(eq(companyId), any(), any()))
+        when(itemRepository.findIssuedInPeriodOrdered(eq(companyId), any(), any()))
                 .thenReturn(List.of(item));
         ProductFiscalRule rule = ruleWith("P006", "6102", null);
         ReflectionTestUtils.setField(rule, "lastModifiedDate", LocalDateTime.now().minusDays(1));

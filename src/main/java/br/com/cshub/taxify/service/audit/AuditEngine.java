@@ -1,5 +1,6 @@
 package br.com.cshub.taxify.service.audit;
 
+import br.com.cshub.taxify.common.IssuePeriod;
 import br.com.cshub.taxify.domain.company.Company;
 import br.com.cshub.taxify.domain.pendency.Pendency;
 import br.com.cshub.taxify.domain.fiscaldocument.GoodsInvoice;
@@ -115,7 +116,7 @@ public class AuditEngine {
     @Transactional(readOnly = true)
     public Result audit(Company company, YearMonth month) {
         List<GoodsInvoice> notes = documentRepository.findIssuedBetween(
-                company.getId(), month.atDay(1).atStartOfDay(), month.atEndOfMonth().atTime(23, 59, 59, 999_999_999));
+                company.getId(), IssuePeriod.monthStart(month), IssuePeriod.monthEndExclusive(month));
         List<GoodsInvoice> issued = notes.stream().filter(note -> !note.isDeleted() && note.isOwnIssue()).toList();
         List<Finding> findings = new ArrayList<>();
         numbering(issued, findings);
@@ -223,8 +224,8 @@ public class AuditEngine {
     /** Entries of the month SEFAZ gave only as a summary, still without XML after the grace days. */
     void summaries(Company company, YearMonth month, List<Finding> findings) {
         LocalDateTime cutoff = LocalDateTime.now().minusDays(SUMMARY_GRACE_DAYS);
-        List<SefazNoteSummary> waiting = summaryRepository.findByCompany_IdAndCompletedAtIsNullAndIssueDateBetween(company.getId(),
-                        month.atDay(1).atStartOfDay(), month.atEndOfMonth().atTime(23, 59, 59)).stream()
+        List<SefazNoteSummary> waiting = summaryRepository.findByCompany_IdAndCompletedAtIsNullAndIssueDateGreaterThanEqualAndIssueDateLessThan(company.getId(),
+                        IssuePeriod.monthStart(month), IssuePeriod.monthEndExclusive(month)).stream()
                 .filter(summary -> summary.getCreatedDate() == null || summary.getCreatedDate().isBefore(cutoff))
                 .filter(SefazNoteSummary::isAuthorized)
                 .toList();

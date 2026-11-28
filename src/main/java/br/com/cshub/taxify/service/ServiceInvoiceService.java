@@ -166,7 +166,7 @@ public class ServiceInvoiceService {
     }
 
     private long siegDelivered(UUID companyId, LocalDate from, LocalDate to) {
-        return repository.countDeliveredBy(companyId, IssuePeriod.siegStart(from), IssuePeriod.siegEnd(to),
+        return repository.countDeliveredBy(companyId, IssuePeriod.siegStart(from), IssuePeriod.siegEndExclusive(to),
                 DocumentSourceKey.SIEG, RetrievalMode.PERIOD);
     }
 

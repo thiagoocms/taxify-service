@@ -1,5 +1,6 @@
 package br.com.cshub.taxify.service.retention;
 
+import br.com.cshub.taxify.common.IssuePeriod;
 import br.com.cshub.taxify.domain.company.Company;
 import br.com.cshub.taxify.domain.fiscaldocument.GoodsInvoice;
 import br.com.cshub.taxify.domain.fiscaldocument.Party;
@@ -86,8 +87,8 @@ public class RetentionCalculator {
             Company company = byId.get(s.getCompany().getId());
             fromServiceInvoice(company, s, month, regime(regimes, company), retentions, issues);
         }
-        for (GoodsInvoice d : documentRepository.findForRetentions(byId.keySet(), month.atDay(1).atStartOfDay(),
-                month.atEndOfMonth().atTime(23, 59, 59))) {
+        for (GoodsInvoice d : documentRepository.findForRetentions(byId.keySet(), IssuePeriod.monthStart(month),
+                IssuePeriod.monthEndExclusive(month))) {
             Company company = byId.get(d.getCompany().getId());
             fromGoodsNote(company, d, month, regime(regimes, company), retentions, issues);
         }

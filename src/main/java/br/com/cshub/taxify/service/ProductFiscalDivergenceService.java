@@ -56,9 +56,9 @@ public class ProductFiscalDivergenceService {
         companyValidation.checkExist(id);
 
         LocalDateTime from = IssuePeriod.start(dataEmissaoInicio);
-        LocalDateTime to = IssuePeriod.end(dataEmissaoFim);
+        LocalDateTime to = IssuePeriod.endExclusive(dataEmissaoFim);
 
-        List<FiscalDocumentItem> items = itemRepository.findByDocument_Company_IdAndDocument_IssueDateBetween(id, from, to);
+        List<FiscalDocumentItem> items = itemRepository.findIssuedInPeriodOrdered(id, from, to);
         FiscalCheckContext context = checkEngine.contextFor(id);
 
         List<ProductFiscalDivergenceDTO> divergences = new ArrayList<>();

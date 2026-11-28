@@ -288,7 +288,7 @@ public class FiscalXmlQueryService {
         DocumentSourceKey source = withOrigin ? sourceOf(dto.origem().strip()) : null;
         LocalDateTime comparisonCutoff = LocalDateTime.now(clock).minusHours(SOURCE_COMPARISON_HOURS);
         FiscalDocumentSearchFilter filter = new FiscalDocumentSearchFilter(company.getId(),
-                IssuePeriod.start(dto.dataEmissaoInicio()), IssuePeriod.end(dto.dataEmissaoFim()),
+                IssuePeriod.start(dto.dataEmissaoInicio()), IssuePeriod.endExclusive(dto.dataEmissaoFim()),
                 number.isEmpty() ? null : number, dto.direction(), participantPattern(dto.participant()), dto.reviewStatus(),
                 source,
                 XmlSearchFilterDTO.ONLY_SIEG.equals(dto.fonte()) ? comparisonCutoff : null,

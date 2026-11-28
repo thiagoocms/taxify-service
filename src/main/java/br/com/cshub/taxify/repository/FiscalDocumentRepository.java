@@ -53,9 +53,9 @@ public interface FiscalDocumentRepository extends AbstractJpaRepository<FiscalDo
     @Query("select d from FiscalDocument d where d.id in :ids and d.deleted = false and type(d) in (Nfe, Nfce, Cte)")
     List<FiscalDocument> findXmlDocuments(@Param("ids") java.util.Collection<UUID> ids);
 
-    /** The company's NF-e, NFC-e and CT-e issued in [from, to], latest first - the export and the rectification job. */
+    /** The company's NF-e, NFC-e and CT-e issued in [from, to), latest first - the export and the rectification job. */
     @Query("select d from FiscalDocument d where d.company.id = :companyId and type(d) in (Nfe, Nfce, Cte)"
-            + " and d.issueDate between :from and :to order by d.issueDate desc")
+            + " and d.issueDate >= :from and d.issueDate < :to order by d.issueDate desc")
     List<FiscalDocument> findXmlDocumentsIssuedBetween(@Param("companyId") UUID companyId, @Param("from") LocalDateTime from,
                                                        @Param("to") LocalDateTime to);
 
