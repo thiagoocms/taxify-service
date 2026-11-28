@@ -16,17 +16,25 @@ import java.time.ZoneOffset;
  */
 public final class IssuePeriod {
 
+    /**
+     * The open ends: inside MySQL's DATETIME range (1000-01-01 to 9999-12-31). The old {@code LocalDateTime} minimum and
+     * maximum only worked with {@code between}; compared with {@code >=} and {@code <} the server refuses them
+     * ("Incorrect DATETIME value").
+     */
+    public static final LocalDateTime OPEN_START = LocalDateTime.of(1000, 1, 1, 0, 0);
+    public static final LocalDateTime OPEN_END = LocalDateTime.of(9999, 12, 31, 0, 0);
+
     private IssuePeriod() {
     }
 
     /** Start of {@code day}; no day = no lower bound. */
     public static LocalDateTime start(LocalDate day) {
-        return day != null ? day.atStartOfDay() : LocalDateTime.MIN;
+        return day != null ? day.atStartOfDay() : OPEN_START;
     }
 
     /** Start of the day after {@code day} - the exclusive end of a period that includes {@code day}; no day = no upper bound. */
     public static LocalDateTime endExclusive(LocalDate day) {
-        return day != null ? day.plusDays(1).atStartOfDay() : LocalDateTime.MAX;
+        return day != null ? day.plusDays(1).atStartOfDay() : OPEN_END;
     }
 
     /** Start of the month. */
@@ -46,12 +54,12 @@ public final class IssuePeriod {
      * another offset (-04:00, -05:00) can be off by its difference.
      */
     public static LocalDateTime siegStart(LocalDate day) {
-        return day != null ? day.atStartOfDay(ZoneOffset.UTC).withZoneSameInstant(SIEG_LOCAL).toLocalDateTime() : LocalDateTime.MIN;
+        return day != null ? day.atStartOfDay(ZoneOffset.UTC).withZoneSameInstant(SIEG_LOCAL).toLocalDateTime() : OPEN_START;
     }
 
     /** The exclusive end of SIEG's day {@code day} as the stored issue time: for Recife, 21:00 of the same day. */
     public static LocalDateTime siegEndExclusive(LocalDate day) {
-        return day != null ? siegStart(day.plusDays(1)) : LocalDateTime.MAX;
+        return day != null ? siegStart(day.plusDays(1)) : OPEN_END;
     }
 
     /** The local time the stored issue times are compared in (America/Recife). */
