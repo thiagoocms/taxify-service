@@ -18,7 +18,8 @@ import java.util.Map;
  *   <li><b>Checks, before touching anything:</b> no id of {@code service_invoices} is also an id of
  *   {@code fiscal_xml_documents} (FD-RN-20, log {@code fiscal.documents.cutover.id.collision}), no access key is in
  *   both for the same company (the new unique key), no value the copy can't translate (document type, direction,
- *   status, NFS-e layout, model longer than 2) and every column the copy reads exists. Any failure stops here: no
+ *   status, NFS-e layout, model longer than 2), no CT-e whose derived direction breaks I-04-T (log
+ *   {@code fiscal.documents.cutover.cte.direction.invalid}) and every column the copy reads exists. Any failure stops here: no
  *   rename, nothing copied.</li>
  *   <li><b>Rename</b> of the four tables in one {@code RENAME TABLE} (atomic). Tables already renamed are skipped - a
  *   run that fell after the rename goes straight to the copy.</li>
@@ -120,6 +121,13 @@ public class V87__FiscalDocumentsCutover extends BaseJavaMigration {
             if (unresolved > 0) {
                 log.error("fiscal.documents.cutover.direction.unresolved count={}", unresolved);
                 problems.add(unresolved + " own-issue row(s) without direction nor ide_tipo_operacao 0/1 (FD-RN-56)");
+            }
+            // I-04-T: the domain would refuse these CT-e on their first update (ISSUER = OUTBOUND, RECIPIENT = INBOUND)
+            long cteDirection = db.count("SELECT COUNT(*) FROM " + documents + " l WHERE " + CopyMappings.CTE_DIRECTION_VIOLATES_I04T);
+            if (cteDirection > 0) {
+                log.error("fiscal.documents.cutover.cte.direction.invalid count={}", cteDirection);
+                problems.add(cteDirection + " CT-e row(s) whose derived direction breaks I-04-T (own issue = OUTBOUND,"
+                        + " received = INBOUND)");
             }
             if (present(LegacyTable.ITEMS, locations)) {
                 long cteItems = db.count("SELECT COUNT(*) FROM " + nameOf(LegacyTable.ITEMS, locations) + " i JOIN " + documents

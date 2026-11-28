@@ -129,6 +129,7 @@ class FiscalDocumentsCutoverVolumeTest {
                 + " '2026-11-26 10:00:00', '2026-11-01', '2026-11-30', i % 9, i % 9, '2026-11-26 10:05:00',"
                 + " IF(i % 2 = 0, '2026-10', NULL), 30, 30 FROM n");
         long seedMs = System.currentTimeMillis() - seedStarted;
+        FiscalDocumentsMigrationsTest.recordBackup(jdbc);
 
         long started = System.currentTimeMillis();
         flyway("latest").migrate();

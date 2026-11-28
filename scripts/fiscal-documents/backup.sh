@@ -10,14 +10,18 @@
 #   2. grava o SHA-256 do arquivo ao lado (<arquivo>.sha256);
 #   3. restaura o arquivo num schema descartável (CHECK_SCHEMA) e compara, tabela a tabela, COUNT(*) e as somas
 #      (total_valor_total_nota, valor_servico, valor_total dos itens, total_sieg) com a origem;
-#   4. apaga o schema de conferência (ou o mantém com KEEP_CHECK_SCHEMA=1, para o scripts/fiscal-documents/parity.sql).
+#   4. apaga o schema de conferência (ou o mantém com KEEP_CHECK_SCHEMA=1, para o scripts/fiscal-documents/parity.sql);
+#   5. só se conferiu: grava no schema da aplicação, em fiscal_documents_backup_checks (criada por backup-checks.sql se
+#      não existir), o SHA-256 do arquivo e o COUNT(*) de cada tabela. A V89 só apaga as legacy_* se o FD_BACKUP_SHA256
+#      informado for o do último registro e as legacy_* tiverem as contagens registradas (trava do FD-RN-52).
 #
 #
 # Uso (na EC2, com o MySQL no container do compose):
 #   DOCKER_CONTAINER=taxify-mysql DB_USER=root DB_NAME=<schema> OUT_DIR=/home/ec2-user/fd-backup \
 #     scripts/fiscal-documents/backup.sh
 # A senha é pedida no terminal (sem eco) e vai para um arquivo de opções temporário (umask 077, apagado no fim, também
-# dentro do container), passado por --defaults-extra-file: nunca na linha de comando nem em variável de ambiente.
+# dentro do container), passado por --defaults-extra-file: nunca na linha de comando nem em variável de ambiente. No
+# arquivo, o valor vai entre aspas duplas com \ e " escapados: senha com #, espaço ou aspas funciona.
 # Para automação (o teste), DB_DEFAULTS_FILE aponta para um arquivo de opções [client] já pronto (permissão 600).
 # Sem DOCKER_CONTAINER, usa os clientes mysql/mysqldump do host com DB_HOST (padrão 127.0.0.1) e DB_PORT (3306).
 # O schema de conferência (CHECK_SCHEMA, padrão fd_backup_check) precisa começar com fd_; um schema que já existe e que
@@ -41,6 +45,8 @@ CHECK_SCHEMA="${CHECK_SCHEMA:-fd_backup_check}"
 KEEP_CHECK_SCHEMA="${KEEP_CHECK_SCHEMA:-0}"
 TABLES=(fiscal_xml_documents fiscal_xml_document_items service_invoices fiscal_xml_events fiscal_xml_sync_control)
 MARKER=fd_backup_check_marker
+CHECKS_TABLE=fiscal_documents_backup_checks
+SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 
 [[ "$CHECK_SCHEMA" =~ ^fd_[a-z0-9_]+$ ]] || { echo "CHECK_SCHEMA precisa começar com fd_ (só minúsculas, números e _)"; exit 2; }
 [[ "$CHECK_SCHEMA" != "$DB_NAME" ]] || { echo "CHECK_SCHEMA não pode ser o schema da aplicação"; exit 2; }
@@ -53,11 +59,18 @@ cleanup() {
   if [[ -n "${DOCKER_CONTAINER:-}" ]]; then docker exec "$DOCKER_CONTAINER" rm -f "$remote_cnf" >/dev/null 2>&1 || true; fi
 }
 trap cleanup EXIT
+# A value of the options file between double quotes, with \ and " escaped (the client reads \\ and \" back): a password
+# with #, spaces or quotes is read as it is (unquoted, # starts a comment and the spaces around the value are cut).
+option_value() {
+  local value="${1//\\/\\\\}"
+  printf '%s' "${value//\"/\\\"}"
+}
 if [[ -n "${DB_DEFAULTS_FILE:-}" ]]; then
   cat "$DB_DEFAULTS_FILE" > "$local_cnf"
 else
-  read -rsp "senha do MySQL para $DB_USER: " password; echo
-  printf '[client]\nuser=%s\npassword=%s\n' "$DB_USER" "$password" > "$local_cnf"
+  # IFS= keeps spaces at the start and at the end of the password (read trims them otherwise)
+  IFS= read -rsp "senha do MySQL para $DB_USER: " password; echo
+  printf '[client]\nuser="%s"\npassword="%s"\n' "$(option_value "$DB_USER")" "$(option_value "$password")" > "$local_cnf"
   unset password
 fi
 if [[ -n "${DOCKER_CONTAINER:-}" ]]; then
@@ -136,4 +149,16 @@ if [[ $status -ne 0 ]]; then
   echo "BACKUP NÃO CONFERE: o deploy não passa do passo 1 (CA-FD-26). Arquivo: $file"
   exit 1
 fi
+# FD-RN-52: the record V89 checks (FD_BACKUP_SHA256 = this SHA-256, legacy rows = these counts); only for a checked backup
+sha="$(cut -d' ' -f1 "$file.sha256")"
+[[ "$sha" =~ ^[0-9a-f]{64}$ ]] || { echo "SHA-256 inválido em $file.sha256"; exit 1; }
+values=""
+while IFS=$'\t' read -r table rows _; do
+  [[ "$table" =~ ^[a-z_]+$ && "$rows" =~ ^[0-9]+$ ]] || { echo "contagem inválida para o registro do backup"; exit 1; }
+  values+="${values:+, }('$sha', '$table', $rows, NOW())"
+done <<< "$source_summary"
+client mysql "$DB_NAME" < "$SCRIPT_DIR/backup-checks.sql"
+client mysql "$DB_NAME" -e "INSERT INTO $CHECKS_TABLE (backup_sha256, table_name, row_count, created_at) VALUES $values"
+echo "registrado em $CHECKS_TABLE (a V89 confere o FD_BACKUP_SHA256 e as contagens das legacy_* com este registro)"
 echo "BACKUP CONFERIDO: $file"
+echo "FD_BACKUP_SHA256=$sha"

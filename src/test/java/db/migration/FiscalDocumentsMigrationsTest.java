@@ -16,7 +16,11 @@ import org.slf4j.LoggerFactory;
 import org.springframework.jdbc.core.JdbcTemplate;
 import org.springframework.jdbc.datasource.DriverManagerDataSource;
 
+import java.io.IOException;
+import java.io.UncheckedIOException;
 import java.math.BigDecimal;
+import java.nio.file.Files;
+import java.nio.file.Path;
 import java.sql.Connection;
 import java.sql.Date;
 import java.sql.DriverManager;
@@ -122,6 +126,33 @@ class FiscalDocumentsMigrationsTest {
 
     private static BigDecimal money(String value) {
         return new BigDecimal(value);
+    }
+
+    /** The DDL backup.sh runs before recording a checked backup (one source for the script and the tests). */
+    static final Path BACKUP_CHECKS_DDL = Path.of("scripts", "fiscal-documents", "backup-checks.sql");
+
+    /**
+     * What backup.sh records after a checked backup: the SHA-256 ({@link #BACKUP_SHA256}) and the rows of each dumped table
+     * as they are now (original name, or legacy_* after V87), with {@code adjust} added to the named tables.
+     */
+    static void recordBackup(JdbcTemplate jdbc, String sha, Map<String, Integer> adjust) {
+        try {
+            jdbc.execute(Files.readString(BACKUP_CHECKS_DDL).replaceAll("(?m)^--.*$", "").strip().replaceAll(";$", ""));
+        } catch (IOException e) {
+            throw new UncheckedIOException(e);
+        }
+        List<String> tables = List.of("fiscal_xml_documents", "fiscal_xml_document_items", "service_invoices", "fiscal_xml_events",
+                "fiscal_xml_sync_control");
+        for (String table : tables) {
+            String source = tableExists(jdbc, table) ? table : "legacy_" + table;
+            long rows = jdbc.queryForObject("SELECT COUNT(*) FROM " + source, Long.class) + adjust.getOrDefault(table, 0);
+            jdbc.update("INSERT INTO fiscal_documents_backup_checks (backup_sha256, table_name, row_count, created_at)"
+                    + " VALUES (?, ?, ?, NOW())", sha, table, rows);
+        }
+    }
+
+    static void recordBackup(JdbcTemplate jdbc) {
+        recordBackup(jdbc, BACKUP_SHA256, Map.of());
     }
 
     private static boolean historySuccess(JdbcTemplate jdbc, String version) {
@@ -348,7 +379,8 @@ class FiscalDocumentsMigrationsTest {
                 E2 + "|RECEIVED|2026-11|2026-11-01|2026-11-30|8|2026-11-25 10:00:00.000000|8|-|-|2026-11-25 10:00:00.000000|open|SIEG|NFE",
                 E3 + "|RECEIVED|2026-11|-|-|-|-|0|-|1|-|closed|SIEG|NFE");
 
-        // V89 (CT-FD-35, CA-FD-23)
+        // V89 (CT-FD-35, CA-FD-23), with the checked backup recorded (FD-RN-52)
+        recordBackup(jdbc);
         flyway("89").migrate();
         for (LegacyTable table : LegacyTable.values()) {
             assertThat(tableExists(jdbc, table.originalName())).as(table.originalName()).isFalse();
@@ -461,6 +493,7 @@ class FiscalDocumentsMigrationsTest {
         jdbc.execute("INSERT /*+ SET_VAR(cte_max_recursion_depth = 1000000) */ INTO fiscal_xml_document_items (id, document_id, numero_item, cfop, valor_total)"
                 + " WITH RECURSIVE n (i) AS (SELECT 1 UNION ALL SELECT i + 1 FROM n WHERE i < 12000)"
                 + " SELECT CONCAT('j', LPAD(i, 35, '0')), '" + doc("k1") + "', i, '1102', 1.00 FROM n");
+        recordBackup(jdbc);
         // the third batch fails (a stand-in for a lock timeout or a kill in the middle of the copy)
         flyway("86.4").migrate();
         jdbc.execute("CREATE TRIGGER fd_fail BEFORE INSERT ON fiscal_document_items FOR EACH ROW BEGIN"
@@ -570,16 +603,106 @@ class FiscalDocumentsMigrationsTest {
                 .placeholders(Map.of("fd_backup_sha256", "")).load();
 
         assertThatThrownBy(withoutBackup::migrate).rootCause().hasMessageContaining("SHA-256 of the checked backup");
+        assertV89RefusedAndLegacyKept(jdbc);
 
-        assertThat(historySuccess(jdbc, "88")).isTrue();
-        assertThat(historySuccess(jdbc, "89")).isFalse();
-        assertThat(jdbc.queryForObject("SELECT COUNT(*) FROM legacy_fiscal_xml_documents", Integer.class)).isEqualTo(13);
-        assertThat(columns(jdbc, "fiscal_xml_sync_control")).contains("total_sieg");
+        // a SHA-256 but no backup recorded by backup.sh on this database
+        assertThatThrownBy(() -> flyway("latest").migrate()).rootCause()
+                .hasMessageContaining("no backup was checked by backup.sh on this database (fiscal_documents_backup_checks is missing)");
+        assertV89RefusedAndLegacyKept(jdbc);
 
+        // happy path: the SHA-256 of the last checked backup and the same rows
+        recordBackup(jdbc);
         flyway("latest").repair();
         flyway("latest").migrate();
         assertThat(tableExists(jdbc, "legacy_fiscal_xml_documents")).isFalse();
         assertThat(log("fiscal.documents.cutover.backup.sha256")).isEqualTo("fiscal.documents.cutover.backup.sha256 prefix=0123456789ab");
+    }
+
+    private static final String OTHER_SHA256 = "fedcba9876543210fedcba9876543210fedcba9876543210fedcba9876543210";
+
+    /** FD-RN-52: the SHA-256 given is of another file than the last checked backup - V89 stops, legacy_* kept. */
+    @Test
+    void v89RefusesTheSha256OfAnotherFile() {
+        flyway(BEFORE).migrate();
+        JdbcTemplate jdbc = jdbc(SCRATCH);
+        LegacyFixtures.scenario(jdbc);
+        recordBackup(jdbc);
+        // a later backup (another file) is the last one checked: the earlier SHA-256 no longer opens V89
+        recordBackup(jdbc, OTHER_SHA256, Map.of());
+
+        assertThatThrownBy(() -> flyway("latest").migrate()).rootCause()
+                .hasMessageContaining("FD_BACKUP_SHA256 is not the SHA-256 of the last backup checked by backup.sh")
+                .hasMessageContaining("the legacy_* tables are kept");
+        assertThat(log("fiscal.documents.cutover.backup.sha256.mismatch"))
+                .isEqualTo("fiscal.documents.cutover.backup.sha256.mismatch given=0123456789ab recorded=fedcba987654");
+        assertV89RefusedAndLegacyKept(jdbc);
+
+        Flyway withTheLastBackup = Flyway.configure().configuration(flyway("latest").getConfiguration())
+                .placeholders(Map.of("fd_backup_sha256", OTHER_SHA256.toUpperCase())).load();
+        withTheLastBackup.repair();
+        withTheLastBackup.migrate();
+        assertThat(tableExists(jdbc, "legacy_fiscal_xml_documents")).isFalse();
+    }
+
+    /** FD-RN-52: a legacy table with other rows than the checked backup (written after it) - V89 stops, legacy_* kept. */
+    @Test
+    void v89RefusesWhenTheLegacyRowsAreNotTheBackupOnes() {
+        flyway(BEFORE).migrate();
+        JdbcTemplate jdbc = jdbc(SCRATCH);
+        LegacyFixtures.scenario(jdbc);
+        // the backup had one NF-e less and one event more than the tables hold now; the sync control is not compared
+        recordBackup(jdbc, BACKUP_SHA256, Map.of("fiscal_xml_documents", -1, "fiscal_xml_events", 1, "fiscal_xml_sync_control", 5));
+
+        assertThatThrownBy(() -> flyway("latest").migrate()).rootCause()
+                .hasMessageContaining("the rows of [fiscal_xml_events, fiscal_xml_documents] are not the ones of the checked backup");
+        assertThat(logs.list.stream().map(ILoggingEvent::getFormattedMessage)
+                .filter(m -> m.startsWith("fiscal.documents.cutover.backup.count.mismatch")).toList()).containsExactly(
+                "fiscal.documents.cutover.backup.count.mismatch table=fiscal_xml_events backup=3 now=2",
+                "fiscal.documents.cutover.backup.count.mismatch table=fiscal_xml_documents backup=12 now=13");
+        assertV89RefusedAndLegacyKept(jdbc);
+    }
+
+    private static void assertV89RefusedAndLegacyKept(JdbcTemplate jdbc) {
+        assertThat(historySuccess(jdbc, "88")).isTrue();
+        assertThat(historySuccess(jdbc, "89")).isFalse();
+        assertThat(jdbc.queryForObject("SELECT COUNT(*) FROM legacy_fiscal_xml_documents", Integer.class)).isEqualTo(13);
+        assertThat(jdbc.queryForObject("SELECT COUNT(*) FROM legacy_fiscal_xml_events", Integer.class)).isEqualTo(2);
+        assertThat(columns(jdbc, "fiscal_xml_sync_control")).contains("total_sieg");
+        jdbc.update("DELETE FROM flyway_schema_history WHERE version = '89' AND success = 0");
+    }
+
+    /** I-04-T: a CT-e whose derived direction is not the one of its role stops V87 before the rename, with the count. */
+    @Test
+    void cteWhoseDirectionBreaksI04TStopsBeforeTheRename() {
+        flyway(BEFORE).migrate();
+        JdbcTemplate jdbc = jdbc(SCRATCH);
+        LegacyFixtures.scenario(jdbc);
+        // received CT-e stored as OUTBOUND; own-issue CT-e stored as INBOUND; own-issue CT-e derived (tpNF 0) as INBOUND
+        jdbc.update("UPDATE fiscal_xml_documents SET direction = 'OUTBOUND' WHERE id = ?", doc("k7"));
+        LegacyFixtures.insert(jdbc, "fiscal_xml_documents", LegacyFixtures.nfe(doc("c2"), E1, "document_type", "CTE",
+                "access_key", key(72), "direction", "INBOUND", "own_issue", 1, "issue_date", "2026-10-12 10:00:00"));
+        LegacyFixtures.insert(jdbc, "fiscal_xml_documents", LegacyFixtures.nfe(doc("c3"), E1, "document_type", "CTE",
+                "access_key", key(73), "direction", null, "own_issue", 1, "ide_tipo_operacao", "0", "issue_date", "2026-10-12 10:00:00"));
+        // still fine: received CT-e with own_issue NULL and no direction (derived INBOUND); own-issue OUTBOUND
+        LegacyFixtures.insert(jdbc, "fiscal_xml_documents", LegacyFixtures.nfe(doc("c4"), E1, "document_type", "CTE",
+                "access_key", key(74), "direction", null, "own_issue", null, "issue_date", "2026-10-12 10:00:00"));
+        LegacyFixtures.insert(jdbc, "fiscal_xml_documents", LegacyFixtures.nfe(doc("c5"), E1, "document_type", "CTE",
+                "access_key", key(75), "direction", "OUTBOUND", "own_issue", 1, "issue_date", "2026-10-12 10:00:00"));
+
+        assertThatThrownBy(() -> flyway("latest").migrate()).rootCause()
+                .hasMessageContaining("3 CT-e row(s) whose derived direction breaks I-04-T").hasMessageContaining("before the rename");
+        assertThat(log("fiscal.documents.cutover.cte.direction.invalid")).isEqualTo("fiscal.documents.cutover.cte.direction.invalid count=3");
+        assertThat(tableExists(jdbc, "fiscal_xml_documents")).isTrue();
+        assertThat(tableExists(jdbc, "legacy_fiscal_xml_documents")).isFalse();
+        assertThat(jdbc.queryForObject("SELECT COUNT(*) FROM fiscal_documents", Integer.class)).isZero();
+
+        // fixed by hand (the Tony decides), the cutover goes on
+        jdbc.update("UPDATE fiscal_xml_documents SET direction = 'INBOUND' WHERE id = ?", doc("k7"));
+        jdbc.update("DELETE FROM fiscal_xml_documents WHERE id IN (?, ?)", doc("c2"), doc("c3"));
+        flyway("latest").repair();
+        flyway("88").migrate();
+        assertThat(jdbc.queryForObject("SELECT direction FROM fiscal_documents WHERE id = ?", String.class, doc("c4"))).isEqualTo("INBOUND");
+        assertThat(jdbc.queryForObject("SELECT company_role FROM fiscal_documents WHERE id = ?", String.class, doc("c5"))).isEqualTo("ISSUER");
     }
 
     // ------------------------------------------------------------------ CA-FD-25; CT-FD-34

@@ -7,8 +7,10 @@ import org.slf4j.LoggerFactory;
 import org.springframework.dao.DataAccessException;
 
 import java.util.ArrayList;
+import java.util.LinkedHashMap;
 import java.util.List;
 import java.util.Locale;
+import java.util.Map;
 
 /**
  * Remodel of the fiscal documents (spec 2026-11-27, FD-RN-53, decision P-FD-03): drops the four {@code legacy_*}
@@ -18,8 +20,10 @@ import java.util.Locale;
  * <p>Runs only after V88 (parity) succeeded: Flyway stops at the first failure, and this migration checks the history again
  * (V87 ran = V88 must have succeeded, also before dropping the counter columns). With legacy rows to drop it also needs
  * the SHA-256 of the checked backup ({@code FD_BACKUP_SHA256} or the Flyway placeholder {@code fd_backup_sha256}):
- * without it, it stops and the legacy_* tables stay. Checked
- * before dropping anything. Idempotent ({@code DROP TABLE IF EXISTS}, a column only when it is
+ * without it, it stops and the legacy_* tables stay. The value must be the SHA-256 of the last backup that
+ * {@code backup.sh} checked and recorded in {@value #BACKUP_CHECKS_TABLE}, and the row counts recorded there must be
+ * the ones of the legacy tables now (a typo, the hash of another file or a row written after the backup stop it too).
+ * Checked before dropping anything. Idempotent ({@code DROP TABLE IF EXISTS}, a column only when it is
  * there). On a database without the old tables nothing is dropped but the counter columns, when present - the new
  * {@code FiscalXmlSyncControl} no longer maps them, and {@code total_sieg}/{@code total_importado}/
  * {@code ultima_verificacao_em} are {@code NOT NULL} without default, so leaving them would break its inserts.
@@ -72,7 +76,68 @@ public class V89__DropLegacyFiscalDocuments extends BaseJavaMigration {
                     + BACKUP_VARIABLE + " (or the Flyway placeholder " + BACKUP_PLACEHOLDER + ") to the value backup.sh wrote;"
                     + " the legacy_* tables are kept");
         }
+        requireCheckedBackup(db, sha);
         log.info("fiscal.documents.cutover.backup.sha256 prefix={}", sha.substring(0, 12));
+    }
+
+    /**
+     * Written by {@code scripts/fiscal-documents/backup.sh} (DDL in {@code scripts/fiscal-documents/backup-checks.sql})
+     * only after the dump was restored and checked: one row per dumped table with the SHA-256 of the file and the row
+     * count of the source. Holds no client data.
+     */
+    static final String BACKUP_CHECKS_TABLE = "fiscal_documents_backup_checks";
+
+    /**
+     * The given SHA-256 must be the one of the last backup {@code backup.sh} checked on this database, and the rows the
+     * four legacy tables hold now must be the ones it dumped - a row written after the backup would have no way back
+     * once dropped. {@code fiscal_xml_sync_control} is recorded but not compared: it is not dropped, V87 copied every
+     * row it had and V88 compared them, and after the rename the backup could no longer be taken again. A legacy table
+     * already gone was dropped by an earlier run of this migration (V88 had passed), so it is not compared: that is
+     * what lets a V89 that fell in the middle resume.
+     */
+    private static void requireCheckedBackup(CutoverDatabase db, String sha) {
+        if (!db.tableExists(BACKUP_CHECKS_TABLE)) {
+            throw refused("no backup was checked by backup.sh on this database (" + BACKUP_CHECKS_TABLE + " is missing)");
+        }
+        List<String> last = db.strings("SELECT backup_sha256 FROM " + BACKUP_CHECKS_TABLE + " ORDER BY id DESC LIMIT 1");
+        if (last.isEmpty()) {
+            throw refused("no backup was checked by backup.sh on this database (" + BACKUP_CHECKS_TABLE + " is empty)");
+        }
+        String recorded = last.getFirst();
+        if (!sha.equals(recorded)) {
+            log.error("fiscal.documents.cutover.backup.sha256.mismatch given={} recorded={}", sha.substring(0, 12),
+                    recorded.substring(0, Math.min(12, recorded.length())));
+            throw refused(BACKUP_VARIABLE + " is not the SHA-256 of the last backup checked by backup.sh");
+        }
+        Map<String, Long> dumped = new LinkedHashMap<>();
+        for (Map<String, Object> row : db.jdbc.queryForList("SELECT table_name, row_count FROM " + BACKUP_CHECKS_TABLE
+                + " WHERE backup_sha256 = ? ORDER BY id DESC", sha)) {
+            dumped.putIfAbsent((String) row.get("table_name"), ((Number) row.get("row_count")).longValue());
+        }
+        Map<String, String> present = new LinkedHashMap<>();
+        for (LegacyTable table : LegacyTable.values()) {
+            if (db.tableExists(table.legacyName())) {
+                present.put(table.originalName(), table.legacyName());
+            }
+        }
+        List<String> divergent = new ArrayList<>();
+        for (Map.Entry<String, String> table : present.entrySet()) {
+            long now = db.count("SELECT COUNT(*) FROM " + table.getValue());
+            Long backup = dumped.get(table.getKey());
+            if (backup == null || backup != now) {
+                log.error("fiscal.documents.cutover.backup.count.mismatch table={} backup={} now={}", table.getKey(),
+                        backup == null ? "-" : backup, now);
+                divergent.add(table.getKey());
+            }
+        }
+        if (!divergent.isEmpty()) {
+            throw refused("the rows of " + divergent + " are not the ones of the checked backup (see"
+                    + " fiscal.documents.cutover.backup.count.mismatch) - take the backup again with every routine stopped");
+        }
+    }
+
+    private static IllegalStateException refused(String reason) {
+        return new IllegalStateException("V89 refused: " + reason + " (FD-RN-52); the legacy_* tables are kept");
     }
 
     private static String backupSha256(Context context) {
